@@ -36,7 +36,7 @@ export default function ResetPasswordPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
+const [resetAudience, setResetAudience] = useState<"customer" | "team">("customer");
   const supabaseAvailable = isSupabaseConfigured();
 
   useEffect(() => {
@@ -47,7 +47,9 @@ export default function ResetPasswordPage() {
     const search = window.location.search || "";
     const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
     const searchParams = new URLSearchParams(search);
-
+setResetAudience(
+  searchParams.get("audience") === "team" ? "team" : "customer"
+);
     const errorParam = hashParams.get("error") || searchParams.get("error");
     const errorDescription =
       hashParams.get("error_description") ||
@@ -194,9 +196,29 @@ export default function ResetPasswordPage() {
       }
 
       // Live Supabase Auth password update
-      await updatePassword(password);
-      toast.success("Password updated successfully!");
-      setPageState("success");
+      // Live Supabase Auth password update
+await updatePassword(password);
+
+// Notify the original ShePlates tab
+const audience =
+  new URLSearchParams(window.location.search).get("audience") === "team"
+    ? "team"
+    : "customer";
+
+if ("BroadcastChannel" in window) {
+  const channel = new BroadcastChannel("sheplates-password-reset");
+
+  channel.postMessage({
+    type: "PASSWORD_RESET_COMPLETED",
+    audience,
+  });
+
+  channel.close();
+}
+
+toast.success("Password updated successfully!");
+setPageState("success");
+
     } catch (caught: unknown) {
       const msg =
         caught instanceof Error
@@ -332,12 +354,15 @@ export default function ResetPasswordPage() {
                     sign in with your new credentials.
                   </p>
                 </div>
-                <Button
-                  onClick={() => router.push("/")}
-                  className="h-12 w-full rounded-xl bg-[#238247] text-sm font-black text-white hover:bg-[#1b6e3b]"
-                >
-                  Go to customer sign in <ArrowRight className="size-4" />
-                </Button>
+              <Button
+  onClick={() =>
+    router.push(`/?login=${resetAudience}`)
+  }
+  className="h-12 w-full rounded-xl bg-[#238247] text-sm font-black text-white hover:bg-[#1b6e3b]"
+>
+  Go to {resetAudience === "team" ? "Vendor / Team" : "Customer"} sign in
+  <ArrowRight className="size-4" />
+</Button>
               </div>
             )}
 
