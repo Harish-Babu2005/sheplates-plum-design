@@ -373,12 +373,15 @@ const volumePacks = (emoji: string): SellingSpec[] => [
 const unitsByCategory: Record<string, SellingSpec[]> = {
   "Milk & dairy": [...volumePacks("🥛"), ...weightPacks("🥣")],
   "Home food": [{ key: "meal", label: "1 complete meal", amount: 1, measure: "meal", emoji: "🍱" }, { key: "portion", label: "1 portion", amount: 1, measure: "portion", emoji: "🍲" }],
+  Caterer: [{ key: "meal", label: "1 complete meal", amount: 1, measure: "meal", emoji: "🍽️" }, { key: "portion", label: "1 portion", amount: 1, measure: "portion", emoji: "🍱" }],
   "Meat & fish": [...weightPacks("🍗"), { key: "piece", label: "1 whole piece", amount: 1, measure: "piece", emoji: "🐟" }],
   Vegetables: [...weightPacks("🥬"), { key: "bundle", label: "1 bundle", amount: 1, measure: "pack", emoji: "🥦" }],
   Groceries: [...weightPacks("🛍️"), ...volumePacks("🫗"), { key: "piece", label: "1 retail pack/piece", amount: 1, measure: "pack", emoji: "📦" }],
   Eggs: [{ key: "egg", label: "1 egg", amount: 1, measure: "piece", emoji: "🥚" }, { key: "six-eggs", label: "Pack of 6 eggs", amount: 6, measure: "piece", emoji: "🥚" }, { key: "dozen", label: "Tray of 12 eggs", amount: 12, measure: "piece", emoji: "🥚" }],
   Bakery: [{ key: "piece", label: "1 piece", amount: 1, measure: "piece", emoji: "🥖" }, ...weightPacks("🍞")],
+  Snacks: [{ key: "piece", label: "1 piece", amount: 1, measure: "piece", emoji: "🍿" }, ...weightPacks("🍿")],
   "Rice & staples": [...weightPacks("🍚"), { key: "5-kg", label: "5 kg bag", amount: 5, measure: "kg", emoji: "🍚" }, { key: "25-kg", label: "25 kg bag", amount: 25, measure: "kg", emoji: "🍚" }],
+  Other: [{ key: "piece", label: "1 pack or item", amount: 1, measure: "pack", emoji: "📦" }, ...weightPacks("📦")],
 };
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
@@ -639,6 +642,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [dismissed, setDismissed] = useState("");
   useEffect(() => {
+    setSuggestions([]);
     if (trimmed.length < 3 || trimmed === dismissed) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -657,7 +661,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
       {visibleSuggestions.map((item, index) => {
         const [primary, ...rest] = item.address.split(",");
         return (
-          <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(trimmed); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#f1f6e8]">
+          <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(item.address); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#f1f6e8]">
             <MapPin className="mt-0.5 size-4 shrink-0 text-[#5f8f2d]" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-bold text-stone-800">{primary.trim()}</span>
@@ -1102,7 +1106,7 @@ export function ShePlatesV3() {
             : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
         };
       })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
-      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save your like"))} onView={(id) => shorts.recordView(id).catch((e) => toast.error(e instanceof Error ? e.message : "Could not record this view"))} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
+      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save your like"))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(e instanceof Error ? e.message : "Could not record this view"); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} close={() => setPlanProduct(null)} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
     </main> : <div className="mx-auto flex max-w-425 gap-0 lg:gap-4">
       {menuOpen && <button className="sp-mobile-nav-overlay lg:hidden" onClick={() => setMenuOpen(false)} aria-label="Close navigation" />}
@@ -1239,15 +1243,27 @@ const inputClass = "h-11 w-full rounded-2xl border border-stone-200/80 bg-white/
 function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSession; onSave: (profile: CustomerProfile) => void; onLogout: () => void }) {
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
   const [address, setAddress] = useState(""), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({});
+  const pinLookup = useRef(0);
   const [household, setHousehold] = useState(2), [diet, setDiet] = useState("No preference"), [allergies, setAllergies] = useState<string[]>([]), [goals, setGoals] = useState<string[]>([]), [dislikes, setDislikes] = useState("");
   const [privateAccount, setPrivateAccount] = useState(session.privateAccount ?? false);
-  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address pinned on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
-  async function finish() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect your GPS location or find the typed address on the map first"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address, latitude: coords.lat!, longitude: coords.lng! }); onSave({ email: session.email, address, latitude: coords.lat, longitude: coords.lng, householdSize: household, diet, allergies, goals, dislikes, onboardingComplete: true, privateAccount }); toast.success("Your food profile and exact service pin are ready"); } catch (error) { toast.error(error instanceof Error ? error.message : "Location could not be saved"); } }
-  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#5f8f2d]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#5ba400]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#ef3d3d]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><Field label="Delivery address"><Textarea value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
+  const roundPoint = (point: { lat: number; lng: number }) => ({ lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) });
+  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); const request = ++pinLookup.current; setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = roundPoint({ lat: position.coords.latitude, lng: position.coords.longitude }); setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); } toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { if (request === pinLookup.current) toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
+  async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); const request = ++pinLookup.current; setMapBusy(true); try { const place = await findLocation({ address }); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); toast.success("Address pinned on the map"); } } catch (error) { if (request === pinLookup.current) toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
+  function movePin(point: { lat: number; lng: number }) {
+    const next = roundPoint(point);
+    setCoords(next);
+    setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+  }
+  function continueSetup() {
+    if (step === 1 && !address.trim()) return toast.error("Enter your delivery address first");
+    if (step === 1 && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng))) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before continuing");
+    setStep((current) => current + 1);
+  }
+  async function finish() { if (!address.trim()) return toast.error("Enter your delivery address first"); if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving"); const latitude = Number(coords.lat?.toFixed(6)); const longitude = Number(coords.lng?.toFixed(6)); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address, latitude, longitude }); onSave({ email: session.email, address, latitude, longitude, householdSize: household, diet, allergies, goals, dislikes, onboardingComplete: true, privateAccount }); toast.success("Your food profile and exact service pin are ready"); } catch (error) { toast.error(error instanceof Error ? error.message : "Location could not be saved"); } }
+  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#5f8f2d]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#5ba400]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#ef3d3d]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
   {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["No preference", "Vegetarian", "Vegan", "Eggetarian", "Non-vegetarian", "Jain", "Low carb", "High protein"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={["Milk", "Egg", "Peanut", "Tree nuts", "Gluten", "Soy", "Fish", "Shellfish"]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={["Balanced meals", "Weight management", "High protein", "Low sodium", "Diabetes aware", "Heart friendly"]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
   {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#f6f8f2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#5ba400] bg-[#eff7e5]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#5ba400] bg-[#eff7e5]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={() => address.trim() || step > 1 ? setStep((s) => s + 1) : toast.error("Add your address first")} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]"><Check />Save profile</Button>}</div></div></div></div>;
+  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]"><Check />Save profile</Button>}</div></div></div></div>;
 }
 
 function ChoiceGroup({ label, options, value, setValue }: { label: string; options: string[]; value: string[]; setValue: (next: string[]) => void }) { return <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">{label}</div><div className="flex flex-wrap gap-2">{options.map((option) => <button type="button" key={option} onClick={() => setValue(value.includes(option) ? value.filter((x) => x !== option) : [...value, option])} className={`rounded-full border px-3 py-2 text-sm font-bold ${value.includes(option) ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : "bg-white text-stone-500"}`}>{option}</button>)}</div></div>; }
@@ -1258,43 +1274,47 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false);
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
   const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "" });
+  const [otherCategory, setOtherCategory] = useState("");
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
+  function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
   async function submit() {
     if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
+    if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
     if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
     if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
     setBusy(true);
     let vendorId = id("VEN");
     try {
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category: form.category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 } });
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category: form.category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave" };
+      const category = form.category === "Other" ? otherCategory.trim() : form.category;
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 } });
+      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave" };
       setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
       toast.success("Vendor application sent to Operations"); close?.();
     } catch (caught) { toast.error(caught instanceof Error ? caught.message : "Application could not be submitted"); } finally { setBusy(false); }
   }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 min-h-screen bg-[#f2f4ed] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={`${operationsCreated ? "" : "mx-auto mt-8 max-w-6xl"}`}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.15em] text-[#5ba400]">Vendor onboarding · {step}/4</p><h1 className="mt-2 text-xl font-black">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div><div className="flex gap-1">{[1, 2, 3, 4].map((n) => <span key={n} className={`h-2 w-12 rounded-full ${n <= step ? "bg-[#5ba400]" : "bg-stone-200"}`} />)}</div></div>
-  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}</div>}
+  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}</div>}
   {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
   {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#5ba400]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
   {step === 4 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Food certificate / FSSAI number"><input value={form.fssai} onChange={(e) => set("fssai", e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={tomorrow()} value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inputClass} /></Field><label className="surface-card-muted md:col-span-2 grid min-h-36 cursor-pointer place-items-center rounded-3xl border-2 border-dashed p-5 text-center"><input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /><Upload className="mx-auto text-[#ef3d3d]" /><div className="mt-2 font-black">{file?.name || "Upload certificate PDF or image"}</div><div className="text-xs text-stone-500">Private document; accessible only to this vendor and authorised Operations/Admin users.</div></label></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={() => setStep((s) => s + 1)} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy} className="rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
+  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy} className="rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
 }
 
 /** The map libraries need the browser, so the small location map is loaded only there. */
-function PinMap(props: { lat: number; lng: number; radiusKm?: number }) {
-  const [Component, setComponent] = useState<null | ((p: { lat: number; lng: number; radiusKm?: number }) => React.ReactElement)>(null);
+function PinMap(props: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) {
+  const [Component, setComponent] = useState<null | ((p: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) => React.ReactElement)>(null);
   useEffect(() => { let alive = true; void import("@/components/pin-map").then((mod) => { if (alive) setComponent(() => mod.PinMap); }); return () => { alive = false; }; }, []);
   return Component ? <Component {...props} /> : <div className="grid h-full w-full place-items-center bg-stone-100 text-sm text-stone-400">Loading map…</div>;
 }
 
-function MapPreview({ lat, lng, radius, label = "Selected location" }: { lat?: number; lng?: number; radius: number; label?: string }) {
+function MapPreview({ lat, lng, radius, label = "Selected location", onPinChange }: { lat?: number; lng?: number; radius: number; label?: string; onPinChange?: (point: { lat: number; lng: number }) => void }) {
   const latitude = lat ?? 11.0168;
   const longitude = lng ?? 76.9558;
   const fullMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=15/${latitude}/${longitude}`;
   const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${latitude}%2C${longitude}`;
-  return <div className="surface-card overflow-hidden rounded-[22px]"><div className="relative h-72 bg-stone-100"><PinMap lat={latitude} lng={longitude} radiusKm={radius} /><div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-black shadow-lg backdrop-blur">{lat ? label : "Coimbatore preview — detect or search to place pin"}</div>{radius > 0 && <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl bg-[#111611]/90 px-3 py-2 text-xs font-black text-white shadow-lg">Service view: {radius} km</div>}</div><div className="flex flex-wrap items-center gap-3 p-3 text-xs text-stone-500"><span className="mr-auto font-mono">{lat ? `Exact pin ${lat.toFixed(6)}, ${lng?.toFixed(6)}` : "No confirmed pin yet"}</span><a href={googleMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#477f00] hover:underline">Verify in Google Maps ↗</a><a href={fullMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#477f00] hover:underline">OpenStreetMap ↗</a><span className="w-full text-[11px] text-stone-400">Map © OpenStreetMap contributors</span></div></div>;
+  return <div className="surface-card overflow-hidden rounded-[22px]"><div className="relative h-72 bg-stone-100"><PinMap lat={latitude} lng={longitude} radiusKm={radius} onChange={onPinChange} /><div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-black shadow-lg backdrop-blur">{lat !== undefined && lng !== undefined ? label : "Coimbatore preview — detect or search to place pin"}</div>{onPinChange && <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-bold shadow-lg">Drag the pin to adjust your exact location</div>}{radius > 0 && <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl bg-[#111611]/90 px-3 py-2 text-xs font-black text-white shadow-lg">Service view: {radius} km</div>}</div><div className="flex flex-wrap items-center gap-3 p-3 text-xs text-stone-500"><span className="mr-auto font-mono">{lat !== undefined && lng !== undefined ? `Exact pin ${lat.toFixed(6)}, ${lng.toFixed(6)}` : "No confirmed pin yet"}</span><a href={googleMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#477f00] hover:underline">Verify in Google Maps ↗</a><a href={fullMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#477f00] hover:underline">OpenStreetMap ↗</a><span className="w-full text-[11px] text-stone-400">Map © OpenStreetMap contributors</span></div></div>;
 }
 function ToggleCard({ icon: Icon, title, body, checked, setChecked }: { icon: typeof Store; title: string; body: string; checked: boolean; setChecked: (v: boolean) => void }) { return <div className={`rounded-2xl border p-5 ${checked ? "border-[#5ba400] bg-[#f4faed]" : "bg-white"}`}><div className="flex items-center justify-between"><Icon className="text-[#5ba400]" /><Switch checked={checked} onCheckedChange={setChecked} /></div><h3 className="mt-4 font-black">{title}</h3><p className="mt-2 text-sm text-stone-500">{body}</p></div>; }
 
@@ -2147,7 +2167,7 @@ function VendorArea({ active, session, state, setState, shorts }: { active: stri
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
   if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Store & radius") return <StoreRadius vendor={vendor} setState={setState} session={session} />;
-  if (active === "Verification") return <VerificationView vendor={vendor} setState={setState} session={session} />;
+  if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
@@ -2231,7 +2251,8 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const dayValue = orders.reduce((sum, item) => sum + item.total, 0);
   const totalValue = baseOrders.reduce((sum, item) => sum + item.total, 0);
 
-  async function update(order: Order, status: Order["status"]) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, status); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x) })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Order status could not be saved"); } }
+  const DELIVERY_STATUSES: Order["status"][] = ["Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed", "Delivered"];
+  async function update(order: Order, status: Order["status"]) { try { if (DELIVERY_STATUSES.includes(status) && order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Delivery actions are only allowed on or after the delivery date.`); return; } if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, status); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x) })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Order status could not be saved"); } }
   async function acceptThirdPartyRequest(order: Order) {
     setDeliveryActionId(order.id);
     try {
@@ -2262,7 +2283,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       toast.error(error instanceof Error ? error.message : "A handover code could not be issued");
     } finally { setDeliveryActionId(null); }
   }
-  async function verifyThirdPartyCode(order: Order) {
+  async function verifyThirdPartyCode(order: Order) { if (order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Handover verification is only allowed on or after the delivery date.`); return; }
     const code = verificationInputs[order.id] || "";
     setDeliveryActionId(order.id);
     try {
@@ -2344,7 +2365,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
                 {["Completed", "Delivered"].includes(order.status) && product && <Button size="sm" onClick={() => setRatingOrder(order)} className="bg-[#e3a008] hover:bg-[#c98a00]"><Star />{state.reviews.some((review) => review.productId === product.id && review.customerEmail === session.email) ? "Edit rating" : "Rate"}</Button>}
               </> : <>
                 <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
-{order.mode !== "Third-party delivery" && <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}                {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#5ba400]"><MapPinned />Share live position</Button>}
+{order.mode !== "Third-party delivery" && <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((status) => <SelectItem key={status} value={status} disabled={DELIVERY_STATUSES.includes(status as Order["status"]) && order.date > todayISO()}>{status}</SelectItem>)}</SelectContent></Select>}                {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#5ba400]"><MapPinned />Share live position</Button>}
               </>}
             </div>
           </div>
@@ -2566,12 +2587,68 @@ function StoreRadius({ vendor, setState, session }: { vendor: Vendor; setState: 
     </div>
   </div>;
 }
+const THREE_VENDOR_PLANS = [
+  {
+    name: "Crave" as const,
+    price: 699,
+    description: "Pre-orders, subscriptions, delivery fleet management and Food Stories.",
+    features: [
+      "Pre-orders & scheduled subscriptions",
+      "Delivery fleet & staff assignment",
+      "Customer Food Stories & storefront",
+    ],
+  },
+  {
+    name: "Thrive" as const,
+    price: 799,
+    popular: true,
+    description: "Everything in Crave, plus daily Food Drops for surplus promotions.",
+    features: [
+      "Everything in Crave plan",
+      "Daily Food Drops (evening promotions)",
+      "Surplus deals badge & live countdown",
+    ],
+  },
+  {
+    name: "Crown" as const,
+    price: 999,
+    description: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance.",
+    features: [
+      "Everything in Thrive plan",
+      "Request for Quote (RFQ) opportunities",
+      "AI quotation assistant & demand alerts",
+    ],
+  },
+];
+const vendorPlanRank: Record<string, number> = { Taster: 0, Crave: 1, Thrive: 2, Crown: 3 };
+
 function VerificationView({ vendor, setState, session }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [editing, setEditing] = useState(false);
   const [certificate, setCertificate] = useState(vendor.fssaiNumber || "");
   const [fileName, setFileName] = useState(vendor.certificateName || "");
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
+  const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
+
+  async function upgradePlan(newPlan: Vendor["plan"]) {
+    if (vendor.plan === newPlan) return;
+    setUpgradingTo(newPlan);
+    try {
+      if (isLiveSupabaseMode()) {
+        await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+      }
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan } : x),
+        audit: [audit(session, "Vendor upgraded plan", `${vendor.businessName} switched to ${newPlan}`), ...s.audit],
+      }));
+      toast.success(`Plan upgraded to ${newPlan}!`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Plan upgrade could not be saved");
+    } finally {
+      setUpgradingTo(null);
+    }
+  }
   async function save(resubmit = false) {
     if (!certificate.trim()) return toast.error("Enter the certification / licence number");
     try {
@@ -2585,9 +2662,90 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
     } catch (error) { toast.error(error instanceof Error ? error.message : "Verification details could not be saved"); }
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil />{editing ? "Close editor" : "Edit details"}</Button>} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><Status>{vendor.verification}</Status></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#5ba400]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /></div>}
-    </div></div>;
+    <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#5ba400]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /></div>}
+    </div>
+    <div className="surface-card rounded-[28px] p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-black">Subscription plans</h3>
+            <Status className="border-emerald-200 bg-emerald-50 text-emerald-800 font-bold">Active: {vendor.plan}</Status>
+          </div>
+          <p className="mt-1 text-sm text-stone-500">
+            Choose a plan to upgrade your store capabilities, food drops, and quotation opportunities.
+          </p>
+        </div>
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {THREE_VENDOR_PLANS.map((plan) => {
+          const isCurrent = vendor.plan === plan.name;
+          const isHigher = (vendorPlanRank[plan.name] ?? 0) > (vendorPlanRank[vendor.plan || "Taster"] ?? 0);
+          return (
+            <div
+              key={plan.name}
+              data-plan-card={plan.name}
+              className={`flex flex-col justify-between rounded-3xl border p-5 transition ${
+                isCurrent
+                  ? "border-[#5ba400] bg-[#f7faf3] shadow-sm ring-2 ring-[#5ba400]/20"
+                  : "border-stone-200/80 bg-white hover:border-stone-300"
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-lg font-black">{plan.name}</h4>
+                  {isCurrent ? (
+                    <Status className="border-emerald-200 bg-emerald-100 text-emerald-800 font-bold">Current plan</Status>
+                  ) : plan.popular ? (
+                    <span className="rounded-full bg-[#ef3d3d]/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#ef3d3d]">Popular</span>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-2xl font-black">{money(plan.price)}</span>
+                  <span className="text-xs font-bold text-stone-500">/ month + GST</span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-stone-500">{plan.description}</p>
+                <ul className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-xs text-stone-600">
+                  {plan.features.map((feat) => (
+                    <li key={feat} className="flex items-center gap-2">
+                      <Check className="size-3.5 text-[#5ba400] shrink-0" />
+                      <span>{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="mt-5">
+                {isCurrent ? (
+                  <Button disabled variant="outline" className="w-full rounded-xl border-emerald-300 bg-emerald-50 text-emerald-800 font-black opacity-90 cursor-default">
+                    <Check className="mr-1.5 size-4" />Current plan
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => void upgradePlan(plan.name)}
+                    disabled={upgradingTo === plan.name}
+                    className={`w-full rounded-xl font-black ${
+                      isHigher
+                        ? "bg-[#5ba400] hover:bg-[#4d8b00] text-white shadow-sm"
+                        : "bg-stone-900 hover:bg-stone-800 text-white"
+                    }`}
+                  >
+                    {upgradingTo === plan.name ? (
+                      "Updating…"
+                    ) : isHigher ? (
+                      <><Sparkles className="mr-1.5 size-4" />Upgrade to {plan.name}</>
+                    ) : (
+                      <>Switch to {plan.name}</>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  </div>;
 }
 
 function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
