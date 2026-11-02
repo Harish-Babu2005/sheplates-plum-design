@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import Image from "next/image";
-import { QrCode, Download } from "lucide-react";
+import { QrCode, Download } from "@/components/icons";
 
 /** Scanning this opens ShePlates directly at this vendor's shop (see the
  * "?vendor=" query-param handling in sheplates-entry.tsx / sheplates-v3.tsx —
@@ -24,7 +24,7 @@ export function VendorQrCode({ vendorId, vendorName }: { vendorId: string; vendo
 
   return (
     <div className="surface-card rounded-[26px] p-5">
-      <div className="flex items-center gap-2 text-[#171917]"><QrCode className="size-5 text-[#237a45]" /><h3 className="font-black">Your shop QR code</h3></div>
+      <div className="flex items-center gap-2 text-[#0A0A0A]"><QrCode className="size-5 text-[#B34D00]" /><h3 className="font-black">Your shop QR code</h3></div>
       <p className="mt-1.5 text-sm leading-5 text-stone-500">Print this at your counter or packaging. Scanning it opens ShePlates straight at your shop, and a signed-in customer can Add to Cart or Schedule right away.</p>
       <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:items-start">
         <div className="grid size-40 shrink-0 place-items-center overflow-hidden rounded-2xl border border-stone-200/70 bg-white p-2">
@@ -32,7 +32,7 @@ export function VendorQrCode({ vendorId, vendorName }: { vendorId: string; vendo
         </div>
         <div className="min-w-0 flex-1 space-y-2">
           <div className="truncate rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-500">{shopUrl || "…"}</div>
-          {dataUrl && <a href={dataUrl} download={`${vendorName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-qr.png`} className="inline-flex items-center gap-2 rounded-xl bg-[#237a45] px-4 py-2.5 text-sm font-black text-white hover:bg-[#153d2a]"><Download className="size-4" />Download QR</a>}
+          {dataUrl && <a href={dataUrl} download={`${vendorName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-qr.png`} className="inline-flex items-center gap-2 rounded-xl bg-[#FF7B00] px-4 py-2.5 text-sm font-black text-[#0A0A0A] hover:bg-[#0A0A0A]"><Download className="size-4" />Download QR</a>}
         </div>
       </div>
     </div>

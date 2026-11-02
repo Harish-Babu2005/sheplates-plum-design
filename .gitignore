@@ -54,3 +54,6 @@ next-env.d.ts
 
 # local server settings for tests
 .dev.vars
+
+# redesign review screenshots (local only)
+/qa-screenshots/redesign/

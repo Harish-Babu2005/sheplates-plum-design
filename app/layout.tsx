@@ -1,12 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import "./theme-customer.css";
+import "./theme-2.css";
+import "./design-kit.css";
+import "./shell-kit.css";
+import "./staff-kit.css";
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#151813",
+  themeColor: "#FF7B00",
 };
 
 export const metadata: Metadata = {

@@ -1,4 +1,4 @@
-import { Milk, Soup, Drumstick, Carrot, ShoppingBag, Egg, Croissant, Wheat, Package, type LucideIcon } from "lucide-react";
+import { Milk, Soup, Drumstick, Carrot, ShoppingBag, Egg, Croissant, Wheat, Package, type LucideIcon } from "@/components/icons";
 
 export type Role = "customer" | "vendor" | "operations" | "admin";
 export type SubscriptionStatus = "active" | "paused" | "cancelled";

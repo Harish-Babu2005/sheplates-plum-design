@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MapPin, ShoppingBag } from "lucide-react";
+import { MapPin, ShoppingBag } from "@/components/icons";
 import { HANDLE_HTML, YOU_HTML, haversineKm, personPinHtml, photoPinHtml, pointAtDistanceNorth, spreadOverlaps, vendorPinHtml, zoomForRadius, type MapPerson, type MapVendor } from "./map-shared";
 import { olaAuthNow, type OlaAccess } from "@/lib/ola-client";
 
@@ -128,7 +128,7 @@ export function NearbyVendorsMapOla({
         const body = document.createElement("div"); body.className = "min-w-[160px] text-sm";
         const name = document.createElement("div"); name.className = "font-black"; name.textContent = vendor.name + (vendor.id === closestId ? "  · Closest" : ""); body.append(name);
         const meta = document.createElement("div"); meta.className = "mt-1 text-xs text-stone-500"; meta.textContent = `${vendor.distanceKm.toFixed(1)} km away${vendor.verified ? " · Verified" : ""}`; body.append(meta);
-        if (onSelectVendor) { const b = document.createElement("button"); b.className = "mt-2 w-full rounded-lg bg-[#c62653] px-2 py-1.5 text-xs font-black text-white"; b.textContent = "View products"; b.onclick = () => onSelectVendor(vendor.id); body.append(b); }
+        if (onSelectVendor) { const b = document.createElement("button"); b.className = "mt-2 w-full rounded-lg bg-[#FF7B00] px-2 py-1.5 text-xs font-black text-[#0A0A0A]"; b.textContent = "View products"; b.onclick = () => onSelectVendor(vendor.id); body.append(b); }
         marker.setPopup(new maplibregl.Popup({ offset: 18, closeButton: false }).setDOMContent(body));
       }
       marker.addTo(map); created.push(marker);
@@ -162,13 +162,13 @@ export function NearbyVendorsMapOla({
 
   const centre = useCallback(() => mapRef.current?.flyTo({ center: [customerLng, customerLat], zoom: toGl(zoomForRadius(radiusKm)), duration: 500 }), [customerLat, customerLng, radiusKm]);
   const inRange = vendors.filter((v) => v.distanceKm <= radiusKm).length;
-  const round = "grid size-9 place-items-center rounded-full border border-white/70 bg-white/95 text-lg font-black leading-none text-[#171917] shadow-md backdrop-blur";
+  const round = "grid size-9 place-items-center rounded-full border border-white/70 bg-white/95 text-lg font-black leading-none text-[#0A0A0A] shadow-md backdrop-blur";
 
   return (
     <div className="sp-vendor-map relative overflow-hidden rounded-[26px] border border-stone-200/70" data-map-engine="ola">
       <div ref={box} style={{ height: `${height}px`, width: "100%" }} />
-      <div className="absolute left-3 top-3 z-[5] flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#171917] shadow-sm backdrop-blur">
-        <MapPin className="size-3.5 shrink-0 text-[#c62653]" />
+      <div className="absolute left-3 top-3 z-[5] flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#0A0A0A] shadow-sm backdrop-blur">
+        <MapPin className="size-3.5 shrink-0 text-[#B34D00]" />
         <span className="whitespace-nowrap" data-testid="map-count">{people ? `${radiusKm} km · ${people.length} ${people.length === 1 ? "person" : "people"} nearby` : `${radiusKm} km · ${inRange} vendor${inRange === 1 ? "" : "s"} in range`}</span>
         <span className="ml-1 flex shrink-0 items-center gap-0.5">
           <button type="button" aria-label="Decrease radius" onClick={() => onRadiusChange(Math.max(1, radiusKm - 1))} className="grid size-6 place-items-center rounded-full bg-stone-100 text-sm font-black leading-none hover:bg-stone-200">−</button>
@@ -181,7 +181,7 @@ export function NearbyVendorsMapOla({
         <button type="button" aria-label="Centre the map on my location" title="Centre the map on my location" onClick={centre} className={round}>◎</button>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-3 z-[5] flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-[10px] font-bold text-stone-500 shadow-sm backdrop-blur">
-        <ShoppingBag className="hidden size-3 shrink-0 text-[#c62653] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">© Ola Maps</span><span className="hidden sm:inline">&middot; © Ola Maps · OpenStreetMap contributors</span>
+        <ShoppingBag className="hidden size-3 shrink-0 text-[#B34D00] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">© Ola Maps</span><span className="hidden sm:inline">&middot; © Ola Maps · OpenStreetMap contributors</span>
       </div>
     </div>
   );

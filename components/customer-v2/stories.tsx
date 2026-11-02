@@ -5,7 +5,7 @@
 //   Food Shorts — what vendors share: reel-style videos, from vendors nearby or vendors you follow.
 // There is no permanent customer gallery or feed.
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search } from "@/components/icons";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { V3State } from "@/components/sheplates-v3";
 import type { SocialApi } from "@/lib/social";
@@ -39,8 +39,8 @@ export function StoriesTab({ state, social, shorts, people, statuses, shortsRadi
     <div className="flex items-center justify-between gap-3">
       <h1 className="text-xl font-black tracking-[-.02em]">Stories</h1>
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setFinder(true)} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black shadow-sm transition hover:border-[#f4a3b9]"><Search className="size-4" />Find people</button>
-        <button type="button" onClick={() => setComposer(true)} className="inline-flex items-center gap-1.5 rounded-full bg-[#e0194f] px-4 py-2 text-sm font-black text-white shadow-[0_8px_20px_rgba(224,25,79,.28)]">Add status</button>
+        <button type="button" onClick={() => setFinder(true)} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black shadow-sm transition hover:border-[#FFDDB8]"><Search className="size-4" />Find people</button>
+        <button type="button" onClick={() => setComposer(true)} className="inline-flex items-center gap-1.5 rounded-full bg-[#FF7B00] px-4 py-2 text-sm font-black text-[#0A0A0A] shadow-[0_8px_20px_rgba(224,25,79,.28)]">Add status</button>
       </div>
     </div>
 
@@ -53,7 +53,7 @@ export function StoriesTab({ state, social, shorts, people, statuses, shortsRadi
       {shorts.feedError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">Food Shorts could not be loaded: {shorts.feedError}. Check that the Food Shorts database migrations are applied.</p>}
       <SegTabs tabs={SHORT_SCOPES} value={scope} onChange={setScope} />
       {scope === "Nearby" && (hasPin ? <DistanceChips value={shortsRadius} onChange={onShortsRadius} /> : null)}
-      {scope === "Nearby" && !hasPin ? <EmptyState emoji="📍" title="Set your location to see Food Shorts" body="Shorts are shown by distance, so we need your delivery pin first." action={onSetLocation ? <button type="button" onClick={onSetLocation} className="rounded-full bg-[#e0194f] px-5 py-2 text-sm font-black text-white">Set my location</button> : undefined} />
+      {scope === "Nearby" && !hasPin ? <EmptyState emoji="📍" title="Set your location to see Food Shorts" body="Shorts are shown by distance, so we need your delivery pin first." action={onSetLocation ? <button type="button" onClick={onSetLocation} className="rounded-full bg-[#FF7B00] px-5 py-2 text-sm font-black text-[#0A0A0A]">Set my location</button> : undefined} />
         : list.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" data-testid="shorts-grid">{list.map((s, i) => <ShortThumb key={s.id} short={s} onOpen={() => onOpenShorts(list, i)} />)}</div>
         : scope === "Following" ? <EmptyState emoji="💛" title={social.followed.length ? "No shorts from vendors you follow" : "You are not following any vendors yet"} body={social.followed.length ? "Shorts from vendors you follow appear here when they post one that reaches you." : "Open a vendor and tap Follow to see their Food Shorts here."} />
         : <EmptyState emoji="🎬" title={`No Food Shorts within ${shortsRadius} km`} body={shortsRadius < 30 ? "Try a wider distance. New shorts from nearby vendors appear here as they are posted." : "Vendors around you haven't posted a short yet."} />}

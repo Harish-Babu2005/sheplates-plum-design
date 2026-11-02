@@ -8,7 +8,7 @@ test("the delivery pin dialog shows a map with the pin", async ({ page }) => {
   const session = { email: DEMO_CUSTOMER.email, name: DEMO_CUSTOMER.name, role: "customer", toursCompleted: ["customer_v1"] };
   await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); }, [state, session] as const);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Marketplace", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: /RS Puram|Change delivery|delivery location/i }).first().click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Save this delivery pin" });
   await expect(dialog).toBeVisible();

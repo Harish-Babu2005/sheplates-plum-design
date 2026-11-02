@@ -71,7 +71,7 @@ const PERMISSION_LABELS: Array<{ key: Permission; label: string }> = [
   { key: "can_upload", label: "Upload certificates" },
 ];
 
-const inputClass = "mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#5ba400]";
+const inputClass = "mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#FF7B00]";
 
 async function p0Request<T>(action: string, body?: Record<string, unknown>, method = "POST"): Promise<T> {
   const token = await getAccessToken();
@@ -342,7 +342,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
 
   return <div className="space-y-6">
     <header>
-      <p className="text-xs font-black uppercase tracking-[.15em] text-[#5ba400]">P0 Connect · staff-managed</p>
+      <p className="text-xs font-black uppercase tracking-[.15em] text-[#B34D00]">P0 Connect · staff-managed</p>
       <h1 className="mt-1 text-2xl font-black">Connect vendors</h1>
       <p className="mt-2 text-sm text-stone-600">P0 is independent of the Taster, Crave, Thrive and Crown plans. Vendors remain hidden until approval and can be upgraded without creating a second vendor record.</p>
     </header>
@@ -376,7 +376,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
         <label className="text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
       </div>}
-      <button disabled={busy} className="mt-4 rounded-xl bg-[#5ba400] px-5 py-3 text-sm font-black text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
+      <button disabled={busy} className="mt-4 rounded-xl bg-[#FF7B00] px-5 py-3 text-sm font-black text-[#0A0A0A] disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
     </form>}
 
     {isAdmin && <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
@@ -447,7 +447,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
                 <select aria-label="Subscription plan" value={upgradeValue.planCode} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, planCode: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">
                   <option value="crave">Crave · ₹699</option><option value="thrive">Thrive · ₹799</option><option value="crown">Crown · ₹999</option>
                 </select>
-                <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#5ba400] px-4 py-2 text-xs font-black text-white disabled:opacity-50">Invite / claim</button>
+                <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#FF7B00] px-4 py-2 text-xs font-black text-[#0A0A0A] disabled:opacity-50">Invite / claim</button>
               </div>}
             </article>;
           })}

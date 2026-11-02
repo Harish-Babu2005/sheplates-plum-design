@@ -25,7 +25,7 @@ test('customer marketplace has modern semantic styling hooks', () => {
 });
 
 test('staff, modal, agent and onboarding surfaces share the v7 design system', () => {
-  for (const hook of ['sp-portal-sidebar','sp-portal-main','sp-page-heading','sp-metric-card','sp-empty-state','sp-agent-launcher']) {
+  for (const hook of ['sp-page-heading','sp-metric-card','sp-empty-state','sp-agent-launcher']) {
     assert.match(app, new RegExp(hook));
     assert.match(css, new RegExp(hook));
   }

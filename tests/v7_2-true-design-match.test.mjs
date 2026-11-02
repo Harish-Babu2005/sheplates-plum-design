@@ -25,11 +25,13 @@ test('public entry uses the approved light editorial visual system', () => {
   assert.match(css, /\.sp-entry-plan-card/);
 });
 
-test('staff portal is light and modern while navigation logic is unchanged', () => {
-  assert.match(shell, /sp-portal-sidebar/);
-  assert.match(css, /Light, modern operational portal/);
-  assert.match(css, /\.sp-v7 \.sp-portal-sidebar[\s\S]*rgba\(255,255,255/);
-  assert.match(css, /\.sp-v7 \.sp-portal-sidebar \.nav-item-active/);
+test('staff portal is light: white sidebar with an orange active pill, navigation logic unchanged', () => {
+  const staffShell = fs.readFileSync(new URL('../components/staff/shell.tsx', import.meta.url), 'utf8');
+  const staffCss = fs.readFileSync(new URL('../app/staff-kit.css', import.meta.url), 'utf8');
+  assert.match(staffShell, /k-side/);
+  assert.match(staffShell, /data-tour-nav/);
+  assert.match(staffCss, /\.k-side \{[^}]*background: #fff/);
+  assert.match(staffCss, /\.k-nv\.on \{ background: #ff7b00/);
 });
 
 test('glass remains limited to navigation overlays and She Agent', () => {

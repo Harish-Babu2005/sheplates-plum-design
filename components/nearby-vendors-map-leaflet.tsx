@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Circle, Popup, useMap } from "react-le
 import L from "leaflet";
 import { HANDLE_HTML, YOU_HTML, haversineKm, personPinHtml, photoPinHtml, pointAtDistanceNorth, spreadOverlaps, vendorPinHtml, zoomForRadius, type MapPerson, type MapVendor } from "./map-shared";
 export type { MapPerson, MapVendor } from "./map-shared";
-import { MapPin, ShoppingBag } from "lucide-react";
+import { MapPin, ShoppingBag } from "@/components/icons";
 
 function divIcon(html: string, size: number) {
   return L.divIcon({ html, className: "sp-map-icon", iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
@@ -174,17 +174,17 @@ export function NearbyVendorsMapLeaflet({
           >
             {!onPinClick && <Popup>
               <div className="min-w-40 text-sm">
-                <div className="font-black text-[#171917]">{vendor.name}{vendor.id === closestId && <span className="ml-1.5 rounded-full bg-[#f8e2e8] px-1.5 py-0.5 text-[10px] font-black text-[#c62653]">Closest</span>}</div>
+                <div className="font-black text-[#0A0A0A]">{vendor.name}{vendor.id === closestId && <span className="ml-1.5 rounded-full bg-[#FFF0E0] px-1.5 py-0.5 text-[10px] font-black text-[#B34D00]">Closest</span>}</div>
                 <div className="mt-1 text-xs text-stone-500">{vendor.distanceKm.toFixed(1)} km away{vendor.verified ? " · Verified" : ""}</div>
                 {vendor.productCount ? <div className="mt-0.5 text-xs text-stone-500">{vendor.productCount} product{vendor.productCount === 1 ? "" : "s"} in range</div> : null}
-                {onSelectVendor && <button onClick={() => onSelectVendor(vendor.id)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#c62653] px-2 py-1.5 text-xs font-black text-white">View products</button>}
+                {onSelectVendor && <button onClick={() => onSelectVendor(vendor.id)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#FF7B00] px-2 py-1.5 text-xs font-black text-[#0A0A0A]">View products</button>}
               </div>
             </Popup>}
           </Marker>
         ))}
       </MapContainer>
-      <div className="absolute left-3 top-3 z-1000 flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#171917] shadow-sm backdrop-blur">
-        <MapPin className="size-3.5 shrink-0 text-[#c62653]" />
+      <div className="absolute left-3 top-3 z-1000 flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#0A0A0A] shadow-sm backdrop-blur">
+        <MapPin className="size-3.5 shrink-0 text-[#B34D00]" />
         <span className="whitespace-nowrap" data-testid="map-count">{people ? `${radiusKm} km · ${people.length} ${people.length === 1 ? "person" : "people"} nearby` : `${radiusKm} km · ${vendors.filter((v) => v.distanceKm <= radiusKm).length} vendor${vendors.filter((v) => v.distanceKm <= radiusKm).length === 1 ? "" : "s"} in range`}</span>
         <span className="ml-1 flex shrink-0 items-center gap-0.5">
           <button type="button" aria-label="Decrease radius" onClick={() => onRadiusChange(Math.max(1, radiusKm - 1))} className="grid size-6 place-items-center rounded-full bg-stone-100 text-sm font-black leading-none hover:bg-stone-200">−</button>
@@ -192,7 +192,7 @@ export function NearbyVendorsMapLeaflet({
         </span>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-3 z-1000 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-[10px] font-bold text-stone-500 shadow-sm backdrop-blur">
-        <ShoppingBag className="hidden size-3 shrink-0 text-[#c62653] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">Tiles &copy; Esri</span><span className="hidden sm:inline">&middot; Tiles &copy; Esri</span>
+        <ShoppingBag className="hidden size-3 shrink-0 text-[#B34D00] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">Tiles &copy; Esri</span><span className="hidden sm:inline">&middot; Tiles &copy; Esri</span>
       </div>
     </div>
   );

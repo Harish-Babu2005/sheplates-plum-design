@@ -9,20 +9,29 @@ const layout = fs.readFileSync(new URL('../app/layout.tsx', import.meta.url), 'u
 const manifest = fs.readFileSync(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
-test('customer portal exposes a native-style mobile navigation with the six primary tabs', () => {
+test('customer portal exposes the 2.0 navigation: top bar and menu row on the website, a floating pill on phones', () => {
   const shell = fs.readFileSync(new URL('../components/customer-v2/shell.tsx', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../app/shell-kit.css', import.meta.url), 'utf8');
   assert.match(app, /<CustomerBottomNav/);
-  assert.match(app, /<CustomerTopNav/);
-  for (const tab of ['Maps', 'Marketplace', 'Schedules', 'Food Drops', 'Stories', 'Profile']) assert.match(shell, new RegExp(`key: "${tab}"`));
-  assert.match(shell, /md:hidden/); // bottom bar on phones only
+  assert.match(app, /<CustomerHeader/);
+  assert.match(app, /<CustomerFooter/);
+  for (const tab of ['Marketplace', 'Food Drops', 'Stories', 'Maps', 'My schedule', 'Orders', 'My quotations']) assert.match(shell, new RegExp(`key: "${tab}"`));
+  for (const tab of ['Marketplace', 'Maps', 'Stories', 'Orders', 'Profile']) assert.match(shell, new RegExp(`key: "${tab}", label`));
+  assert.match(css, /\.k-pill, \.k-fab \{ display: none; \}/); // bottom pill is phones only
   assert.match(shell, /account-mobile/);
   assert.match(shell, /Open She Agent/);
+  assert.match(shell, /Terms and Conditions/);
+  assert.match(shell, /9600037836/);
 });
 
-test('staff navigation remains collapsible and has a mobile overlay', () => {
-  assert.match(app, /sp-mobile-nav-overlay/);
-  assert.match(app, /setSidebarCollapsed\(false\)/);
-  assert.match(app, /← Collapse/);
+test('staff navigation is a sidebar on the website and a menu with bottom tabs on phones', () => {
+  const shell = fs.readFileSync(new URL('../components/staff/shell.tsx', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../app/staff-kit.css', import.meta.url), 'utf8');
+  assert.match(app, /<StaffShell/);
+  assert.match(shell, /Toggle navigation/);
+  assert.match(shell, /k-scrim/);
+  assert.match(shell, /Quick tabs/);
+  assert.match(css, /\.k-nv\.on \{ background: #ff7b00/);
 });
 
 test('marketplace is explicitly designed for compact mobile product browsing', () => {
