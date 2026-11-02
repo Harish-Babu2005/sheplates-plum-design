@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -17,6 +18,18 @@ function clients(request: Request) {
 }
 
 type AdminClient = NonNullable<ReturnType<typeof clients>>["admin"];
+
+function errorDetails(error: unknown) {
+  if (error instanceof Error) return { message: error.message, code: "" };
+  if (typeof error === "object" && error !== null) {
+    const value = error as { message?: unknown; code?: unknown };
+    return {
+      message: typeof value.message === "string" ? value.message : "",
+      code: typeof value.code === "string" ? value.code : "",
+    };
+  }
+  return { message: "", code: "" };
+}
 
 async function identity(request: Request) {
   const c = clients(request);
@@ -38,6 +51,7 @@ function recurrence(value: string) {
 }
 
 function fulfilment(value: string) {
+  if (/third[\s-]*party/i.test(value)) return "third_party_delivery";
   return /pickup/i.test(value) ? "self_pickup" : "vendor_delivery";
 }
 
@@ -45,6 +59,7 @@ function resolveFulfilmentMode(vendor: { delivery_enabled?: boolean | null; pick
   const deliveryEnabled = vendor?.delivery_enabled !== false;
   const pickupEnabled = vendor?.pickup_enabled === true;
   const requested = fulfilment(requestedMode);
+  if (requested === "third_party_delivery") return requested;
   if (requested === "self_pickup" && pickupEnabled) return "self_pickup";
   if (requested === "vendor_delivery" && deliveryEnabled) return "vendor_delivery";
   if (deliveryEnabled) return "vendor_delivery";
@@ -53,6 +68,17 @@ function resolveFulfilmentMode(vendor: { delivery_enabled?: boolean | null; pick
 }
 
 const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+function timeToMinutes(timeStr: string): number {
+  const parts = String(timeStr || "").split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+
+function slotsOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  return timeToMinutes(startA) < timeToMinutes(endB) && timeToMinutes(startB) < timeToMinutes(endA);
+}
 
 function addDays(dateISO: string, days: number) { const date = new Date(`${dateISO}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function isFutureDate(dateISO: string) {
@@ -116,6 +142,16 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   const [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
   if (orders.error) throw orders.error;
   if (schedules.error) throw schedules.error;
+  const orderIds = (orders.data || []).map((order) => String(order.id));
+  const deliveryRequests = await admin.from("third_party_delivery_requests")
+    .select("order_id,customer_id,vendor_id,customer_notes,status,accepted_at,code_expires_at,code_issued_count,delivered_at,created_at,updated_at")
+    .in("order_id", orderIds);
+  const deliveryMigrationMissing = Boolean(deliveryRequests.error && (
+    deliveryRequests.error.code === "42P01" ||
+    deliveryRequests.error.code === "PGRST205" ||
+    /third_party_delivery_requests.*(does not exist|not found)|could not find the table .*third_party_delivery_requests/i.test(deliveryRequests.error.message || "")
+  ));
+  if (deliveryRequests.error && !deliveryMigrationMissing) throw deliveryRequests.error;
 
   let staff: unknown[] = [];
   let assignments: Array<{ delivery_staff_id?: unknown; [key: string]: unknown }> = [];
@@ -158,7 +194,29 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     cart = draft.cart;
     cartItems = draft.items;
   }
-  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems };
+  let deliverySlots: unknown[] = [];
+  try {
+    const slotsQuery = admin.from("vendor_delivery_slots")
+      .select("id,vendor_id,slot_name,start_time,end_time,is_active,created_at,updated_at")
+      .order("start_time");
+    if (role === "vendor" && profile.vendor_id) {
+      slotsQuery.eq("vendor_id", profile.vendor_id);
+    } else if (role === "customer") {
+      slotsQuery.eq("is_active", true);
+    }
+    const slotsResult = await slotsQuery;
+    if (!slotsResult.error) {
+      deliverySlots = slotsResult.data || [];
+    }
+  } catch {
+    deliverySlots = [];
+  }
+
+  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
+    thirdPartyDeliveries: deliveryRequests.data || [],
+    thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
+    deliverySlots,
+  };
 }
 
 export async function GET(request: Request) {
@@ -213,6 +271,12 @@ export async function POST(request: Request) {
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const deliveryAddress = String(body.deliveryAddress || "").trim();
       if (!deliveryAddress) return NextResponse.json({ error: "Choose or enter a delivery address before checkout." }, { status: 400 });
+      const requestedMode = String(body.mode || "Vendor delivery");
+      const isThirdParty = fulfilment(requestedMode) === "third_party_delivery";
+      const customerNotes = String(body.deliveryInstructions || "").trim();
+      if (isThirdParty && (!customerNotes || customerNotes.length > 1000)) {
+        return NextResponse.json({ error: "Enter delivery instructions (up to 1,000 characters) for third-party delivery." }, { status: 400 });
+      }
       const draft = await draftCartForCustomer(admin, profile.id);
       const cartId = draft.cart?.id ? String(draft.cart.id) : "";
       if (!cartId || !draft.items.length) return NextResponse.json({ error: "Your cart is empty." }, { status: 409 });
@@ -235,7 +299,7 @@ export async function POST(request: Request) {
       const orderIds: string[] = [];
       for (const [vendorId, items] of grouped.entries()) {
         const vendor = await admin.from("vendors").select("delivery_enabled,pickup_enabled").eq("id", vendorId).maybeSingle();
-        const fulfilmentMode = resolveFulfilmentMode(vendor.data, String(body.mode || "Vendor delivery"));
+        const fulfilmentMode = resolveFulfilmentMode(vendor.data, requestedMode);
         if (!fulfilmentMode) return NextResponse.json({ error: "This vendor does not currently support delivery or pickup." }, { status: 409 });
         let vendorBaseTotal = 0; let customerTotal = 0;
         const orderItems = items.map((item) => {
@@ -249,6 +313,12 @@ export async function POST(request: Request) {
         const inserted = await admin.from("orders").insert({ order_number: orderNumber(), customer_id: profile.id, vendor_id: vendorId, vendor_base_total: vendorBaseTotal, markup_total: Math.max(0, customerTotal - vendorBaseTotal), tax_amount: 0, delivery_fee: 0, customer_total: customerTotal, delivery_address: deliveryAddress, fulfilment_mode: fulfilmentMode, scheduled_date: scheduledDate, scheduled_slot: scheduledSlot, status: "awarded" }).select("id,order_number").single();
         if (inserted.error) throw inserted.error;
         orderIds.push(inserted.data.id);
+        if (fulfilmentMode === "third_party_delivery") {
+          const requestInsert = await admin.from("third_party_delivery_requests").insert({
+            order_id: inserted.data.id, customer_id: profile.id, vendor_id: vendorId, customer_notes: customerNotes,
+          });
+          if (requestInsert.error) throw requestInsert.error;
+        }
         const itemInsert = await admin.from("order_items").insert(orderItems.map((item) => ({ order_id: inserted.data.id, ...item })));
         if (itemInsert.error) throw itemInsert.error;
         const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: customerTotal, status: "pending", provider: "checkout" });
@@ -267,6 +337,14 @@ export async function POST(request: Request) {
       const vendorRow = await admin.from("vendors").select("delivery_enabled,pickup_enabled").eq("id", product.vendor_id).maybeSingle();
       const fulfilmentMode = resolveFulfilmentMode(vendorRow.data, String(body.mode || "Vendor delivery"));
       if (!fulfilmentMode) return NextResponse.json({ error: "This vendor does not currently support delivery or pickup." }, { status: 409 });
+      const requestedRecurrence = recurrence(String(body.recurrence || "once"));
+      const customerNotes = String(body.deliveryInstructions || "").trim();
+      if (fulfilmentMode === "third_party_delivery" && requestedRecurrence !== "once") {
+        return NextResponse.json({ error: "Third-party delivery is available for one-time plans only." }, { status: 400 });
+      }
+      if (fulfilmentMode === "third_party_delivery" && (!customerNotes || customerNotes.length > 1000)) {
+        return NextResponse.json({ error: "Enter delivery instructions (up to 1,000 characters) for third-party delivery." }, { status: 400 });
+      }
       const quantity = Math.max(0.001, Number(body.quantity || 1));
       const customerPrice = Math.max(0, Number(body.customerPrice || product.vendor_base_price));
       const startDate = String(body.startDate || "");
@@ -276,11 +354,11 @@ export async function POST(request: Request) {
       const scheduleInsert = await admin.from("product_schedules").insert({
         customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
         start_date: startDate, end_date: endDate || null,
-        recurrence: recurrence(String(body.recurrence || "once")),
+        recurrence: requestedRecurrence,
         weekdays: Array.isArray(body.weekdays) ? body.weekdays.map((d) => weekdayMap[String(d)]).filter((n) => Number.isInteger(n)) : [],
         scheduled_slot: String(body.slot || "Vendor to confirm"), quantity, unit: String(body.unit || product.unit),
         fulfilment_mode: fulfilmentMode, status: "awaiting_payment",
-        whatsapp_reminder_enabled: body.whatsappReminder !== false,
+        whatsapp_reminder_enabled: fulfilmentMode === "third_party_delivery" ? false : body.whatsappReminder !== false,
       }).select("id").single();
       if (scheduleInsert.error) throw scheduleInsert.error;
       const orderInsert = await admin.from("orders").insert({
@@ -291,6 +369,12 @@ export async function POST(request: Request) {
         scheduled_slot: String(body.slot || "Vendor to confirm"), status: "awarded",
       }).select("id,order_number").single();
       if (orderInsert.error) throw orderInsert.error;
+      if (fulfilmentMode === "third_party_delivery") {
+        const requestInsert = await admin.from("third_party_delivery_requests").insert({
+          order_id: orderInsert.data.id, customer_id: profile.id, vendor_id: String(product.vendor_id), customer_notes: customerNotes,
+        });
+        if (requestInsert.error) throw requestInsert.error;
+      }
       const itemInsert = await admin.from("order_items").insert({
         order_id: orderInsert.data.id, product_name: product.name, quantity, unit: String(body.unit || product.unit),
         vendor_base_price: Number(product.vendor_base_price), markup_percent: Number(product.vendor_base_price) > 0 ? Math.max(0, ((customerPrice / Number(product.vendor_base_price)) - 1) * 100) : 0,
@@ -304,15 +388,21 @@ export async function POST(request: Request) {
     }
 
     if (action === "mark_paid") {
+      if (process.env.NEXT_PUBLIC_DEMO_MODE === "false") {
+        return NextResponse.json({ error: "Direct payment marking is disabled in live mode. Please complete checkout via Razorpay." }, { status: 403 });
+      }
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const orderId = String(body.orderId || "");
       const { data: order } = await admin.from("orders").select("id,order_number,schedule_id,customer_id,vendor_id,customer_total,scheduled_date,scheduled_slot,fulfilment_mode,vendor_base_total,markup_total,tax_amount,delivery_fee,order_items(product_name,quantity,unit,vendor_base_price,markup_percent,customer_price),product_schedules(start_date,end_date,recurrence,weekdays)").eq("id", orderId).eq("customer_id", profile.id).maybeSingle();
       if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+      const rawSchedule = Array.isArray(order.product_schedules) ? order.product_schedules[0] : order.product_schedules;
+      if (order.fulfilment_mode === "third_party_delivery" && rawSchedule && String(rawSchedule.recurrence) !== "once") {
+        return NextResponse.json({ error: "Third-party delivery is available for one-time plans only." }, { status: 400 });
+      }
       const updated = await admin.from("payments").update({ status: "paid", provider: String(body.method || "checkout").toLowerCase(), provider_reference: String(body.reference || `SIM-${Date.now()}`), updated_at: new Date().toISOString() }).eq("order_id", order.id).eq("customer_id", profile.id);
       if (updated.error) throw updated.error;
       await admin.from("orders").update({ status: "confirmed", updated_at: new Date().toISOString() }).eq("id", order.id);
       if (order.schedule_id) await admin.from("product_schedules").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", order.schedule_id).eq("status", "awaiting_payment");
-      const rawSchedule = Array.isArray(order.product_schedules) ? order.product_schedules[0] : order.product_schedules;
       const dates = rawSchedule ? scheduleDates(rawSchedule as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null }) : [String(order.scheduled_date)];
       const firstItem = Array.isArray(order.order_items) ? order.order_items[0] : order.order_items;
       const remainingDates = dates.filter((date) => date !== String(order.scheduled_date));
@@ -338,6 +428,81 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
     }
 
+    if (action === "accept_third_party_delivery") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const accepted = await ctx.caller.rpc("accept_third_party_delivery", { p_order_id: String(body.orderId || "") });
+      if (accepted.error) throw accepted.error;
+      const result = accepted.data as { ok?: boolean; error?: string; status?: string } | null;
+      if (!result?.ok) {
+        const messages: Record<string, { message: string; status: number }> = {
+          unauthorized: { message: "Vendor access required.", status: 403 },
+          not_found: { message: "Third-party delivery request not found for this store.", status: 404 },
+          payment_required: { message: "The customer must complete payment before this request can be accepted.", status: 409 },
+          not_pending: { message: "This delivery request can no longer be accepted.", status: 409 },
+        };
+        const failure = messages[String(result?.error || "")] || { message: "The delivery request could not be accepted.", status: 409 };
+        return NextResponse.json({ error: failure.message }, { status: failure.status });
+      }
+      return NextResponse.json({ ok: true, status: "accepted" });
+    }
+
+    if (action === "issue_third_party_delivery_code") {
+      if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
+      const orderId = String(body.orderId || "");
+      const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!secret) return NextResponse.json({ error: "Secure code service is unavailable." }, { status: 503 });
+      const code = generateDeliveryVerificationCode();
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const issued = await ctx.caller.rpc("issue_third_party_delivery_code", {
+        p_order_id: orderId,
+        p_code_hash: hashDeliveryVerificationCode(orderId, code, secret),
+        p_code_expires_at: expiresAt,
+      });
+      if (issued.error) throw issued.error;
+      const result = issued.data as { ok?: boolean; error?: string } | null;
+      if (!result?.ok) {
+        const messages: Record<string, { message: string; status: number }> = {
+          unauthorized: { message: "Customer access required.", status: 403 },
+          not_found: { message: "Third-party delivery request not found.", status: 404 },
+          not_accepted: { message: "Wait for the vendor to accept this delivery request before requesting a code.", status: 409 },
+          attempt_limit: { message: "This delivery request has reached its verification-attempt limit.", status: 429 },
+          issue_limit: { message: "This delivery request has reached its code-issue limit.", status: 429 },
+          invalid_code_request: { message: "A secure code could not be issued. Please try again.", status: 400 },
+        };
+        const failure = messages[String(result?.error || "")] || { message: "A delivery code could not be issued.", status: 409 };
+        return NextResponse.json({ error: failure.message }, { status: failure.status });
+      }
+      return NextResponse.json({ ok: true, code, expiresAt });
+    }
+
+    if (action === "verify_third_party_delivery_code") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const orderId = String(body.orderId || "");
+      const code = String(body.code || "").trim();
+      if (!/^\d{6}$/.test(code)) return NextResponse.json({ error: "Enter the six-digit customer handover code." }, { status: 400 });
+      const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!secret) return NextResponse.json({ error: "Secure code service is unavailable." }, { status: 503 });
+      const verified = await ctx.caller.rpc("verify_third_party_delivery_code", {
+        p_order_id: orderId,
+        p_code_hash: hashDeliveryVerificationCode(orderId, code, secret),
+      });
+      if (verified.error) throw verified.error;
+      const result = verified.data as { ok?: boolean; error?: string; remaining_attempts?: number } | null;
+      if (!result?.ok) {
+        const messages: Record<string, { message: string; status: number }> = {
+          unauthorized: { message: "Vendor access required.", status: 403 },
+          not_found: { message: "Third-party delivery request not found for this store.", status: 404 },
+          already_delivered: { message: "This order has already been delivered.", status: 409 },
+          attempt_limit: { message: "Verification is locked after five incorrect attempts.", status: 429 },
+          code_not_issued: { message: "The customer has not issued a delivery code yet.", status: 409 },
+          expired: { message: "This delivery code has expired. Ask the customer to issue a new code.", status: 410 },
+          invalid_code: { message: `The code is incorrect. ${result?.remaining_attempts ?? 0} attempt(s) remain.`, status: 400 },
+        };
+        const failure = messages[String(result?.error || "")] || { message: "The delivery code could not be verified.", status: 409 };
+        return NextResponse.json({ error: failure.message }, { status: failure.status });
+      }
+      return NextResponse.json({ ok: true, status: "delivered" });
+    }
 
     if (action === "notify_nutrition_review") {
       if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
@@ -391,9 +556,16 @@ export async function POST(request: Request) {
       if (!allowedStatuses.has(nextStatus)) {
         return NextResponse.json({ error: "Cancellation and unsupported order statuses are disabled." }, { status: 400 });
       }
-      const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number").eq("id", orderId).maybeSingle();
+      const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number,fulfilment_mode,scheduled_date").eq("id", orderId).maybeSingle();
       if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
       if (profile.role === "vendor" && order.vendor_id !== profile.vendor_id) return NextResponse.json({ error: "This order belongs to another store." }, { status: 403 });
+      if (order.fulfilment_mode === "third_party_delivery" && nextStatus === "completed") {
+        return NextResponse.json({ error: "Third-party orders can only be marked delivered after the handover code is verified." }, { status: 409 });
+      }
+      const deliveryStatuses = new Set(["preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed", "delivered"]);
+      if (deliveryStatuses.has(nextStatus) && order.scheduled_date && isFutureDate(order.scheduled_date)) {
+        return NextResponse.json({ error: `This order is scheduled for ${order.scheduled_date}. Delivery actions are only allowed on or after the delivery date.` }, { status: 400 });
+      }
       const updated = await admin.from("orders").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", orderId);
       if (updated.error) throw updated.error;
       await admin.from("notifications").insert({ recipient_id: order.customer_id, kind: "order", title: `Order ${String(body.status || "updated").toLowerCase()}`, body: `${order.order_number} is now ${String(body.status || "updated").toLowerCase()}.`, entity_type: "order", entity_id: orderId });
@@ -470,8 +642,101 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    if (action === "save_delivery_slot") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const slotName = String(body.slotName || "").trim();
+      if (!slotName) return NextResponse.json({ error: "Slot name is required." }, { status: 400 });
+      if (slotName.length > 80) return NextResponse.json({ error: "Slot name cannot exceed 80 characters." }, { status: 400 });
+
+      const startTime = String(body.startTime || "").trim().slice(0, 5);
+      const endTime = String(body.endTime || "").trim().slice(0, 5);
+      if (!startTime) return NextResponse.json({ error: "Start time is required." }, { status: 400 });
+      if (!endTime) return NextResponse.json({ error: "End time is required." }, { status: 400 });
+
+      if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+        return NextResponse.json({ error: "End time must be later than start time." }, { status: 400 });
+      }
+
+      const slotId = body.slotId ? String(body.slotId) : "";
+      const isActive = body.isActive !== false;
+
+      // Duplicate name check
+      const { data: existingSlots } = await admin.from("vendor_delivery_slots")
+        .select("id,slot_name,start_time,end_time,is_active")
+        .eq("vendor_id", profile.vendor_id);
+
+      const allSlots = existingSlots || [];
+      const duplicateName = allSlots.find(
+        (s) => s.id !== slotId && String(s.slot_name).trim().toLowerCase() === slotName.toLowerCase()
+      );
+      if (duplicateName) {
+        return NextResponse.json({ error: `A delivery slot named "${duplicateName.slot_name}" already exists for your store.` }, { status: 400 });
+      }
+
+      // Overlap check for active slots
+      if (isActive) {
+        const conflicting = allSlots.find(
+          (s) => s.id !== slotId && s.is_active && slotsOverlap(startTime, endTime, String(s.start_time), String(s.end_time))
+        );
+        if (conflicting) {
+          return NextResponse.json({
+            error: `This time window overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}).`,
+          }, { status: 400 });
+        }
+      }
+
+      const row = {
+        vendor_id: profile.vendor_id,
+        slot_name: slotName,
+        start_time: startTime,
+        end_time: endTime,
+        is_active: isActive,
+        updated_at: new Date().toISOString(),
+      };
+
+      const result = slotId
+        ? await admin.from("vendor_delivery_slots").update(row).eq("id", slotId).eq("vendor_id", profile.vendor_id).select("id").single()
+        : await admin.from("vendor_delivery_slots").insert(row).select("id").single();
+
+      if (result.error) throw result.error;
+      return NextResponse.json({ ok: true, id: result.data.id, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "delete_delivery_slot") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const slotId = String(body.slotId || "");
+      if (!slotId) return NextResponse.json({ error: "Slot ID required." }, { status: 400 });
+      const deleted = await admin.from("vendor_delivery_slots").delete().eq("id", slotId).eq("vendor_id", profile.vendor_id);
+      if (deleted.error) throw deleted.error;
+      return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "toggle_delivery_slot") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const slotId = String(body.slotId || "");
+      if (!slotId) return NextResponse.json({ error: "Slot ID required." }, { status: 400 });
+      const active = Boolean(body.active);
+
+      if (active) {
+        const { data: targetSlot } = await admin.from("vendor_delivery_slots").select("*").eq("id", slotId).eq("vendor_id", profile.vendor_id).maybeSingle();
+        if (!targetSlot) return NextResponse.json({ error: "Slot not found." }, { status: 404 });
+        const { data: otherSlots } = await admin.from("vendor_delivery_slots").select("*").eq("vendor_id", profile.vendor_id).eq("is_active", true).neq("id", slotId);
+        const conflicting = (otherSlots || []).find((s) => slotsOverlap(String(targetSlot.start_time), String(targetSlot.end_time), String(s.start_time), String(s.end_time)));
+        if (conflicting) {
+          return NextResponse.json({
+            error: `Cannot activate: overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}).`,
+          }, { status: 400 });
+        }
+      }
+
+      const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", profile.vendor_id);
+      if (updated.error) throw updated.error;
+      return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+    }
+
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The request could not be completed." }, { status: 500 });
+    const { message } = errorDetails(error);
+    return NextResponse.json({ error: message || "The request could not be completed." }, { status: 500 });
   }
 }

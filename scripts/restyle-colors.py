@@ -21,8 +21,13 @@ def hls(h):
     return hh * 360, l, s, (max(r, g, b) - min(r, g, b)) * 255
 
 
+NEW_PALETTE = {'#ff7b00', '#e86f00', '#fff0e0', '#ffddb8', '#b34d00', '#0a0a0a', '#f4f4f4', '#c20000', '#035bf3', '#e3f8e3', '#ffe9e9', '#e6eefe', '#fff4cf', '#0a7a2a', '#7a5a00', '#0a44b8', '#66666b', '#70707a', '#e7e7ea', '#eaeaec', '#404040'}
+
+
 def mapped(util, hexv):
     x = hexv.lower()
+    if x in NEW_PALETTE:
+        return None
     if x in KEEP:
         return None
     h, l, s, chroma = hls(x)

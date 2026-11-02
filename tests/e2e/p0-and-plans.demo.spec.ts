@@ -41,6 +41,17 @@ test("Operations and Super Admin both have a P0 Connect vendors screen in the me
   }
 });
 
+test("Super Admin can open the Operations Orders profile", async ({ page }) => {
+  await openAs(page, "admin");
+  await dismissTourIfOpen(page);
+  await openStaffNavIfCollapsed(page);
+  const ordersEntry = page.getByRole("button", { name: "Orders", exact: true }).first();
+  await expect(ordersEntry).toBeVisible({ timeout: 60_000 });
+  await ordersEntry.click();
+  await expect(page.getByRole("heading", { name: "Platform order control" })).toBeVisible();
+  await expect(page.getByText("Orders in view")).toBeVisible();
+});
+
 test("vendors are not offered a P0 menu or a made-up 'Vendor workspace' entry", async ({ page }) => {
   await openAs(page, "vendor");
   await dismissTourIfOpen(page);

@@ -14,7 +14,8 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, Crown, ReceiptText } from "@/components/icons";
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, Crown,
+} from "@/components/icons";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
 import { createStaffUser } from "@/lib/supabase";
@@ -37,11 +38,12 @@ import { categories, categoryVisual } from "@/lib/sheplates-data";
 import { demoAccounts, type DemoSession } from "@/lib/sheplates-v2-data";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import {
+  acceptLiveThirdPartyDelivery, issueLiveThirdPartyDeliveryCode, verifyLiveThirdPartyDeliveryCode,
   decideLiveVendorVerification, getAccessToken, isLiveSupabaseMode, isSupabaseConfigured,
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, submitLiveVendorApplication, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, submitLiveVendorApplication, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, claimLiveFoodDrop, loadLiveFoodDropClaims,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
@@ -72,7 +74,7 @@ import { usePeople, type PeopleApi } from "@/lib/people";
 import { useStatuses } from "@/lib/statuses";
 import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
-import { shortArea, useTicker } from "@/components/customer-v2/kit";
+import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
 
 function CategoryBadge({ name, className = "size-5" }: { name: string; className?: string }) {
   const { Icon, fg } = categoryVisual(name);
@@ -84,7 +86,10 @@ function ProductGlyph({ category, iconClassName = "size-6" }: { category: string
 }
 
 type Role = DemoSession["role"];
-type DeliveryMode = "Vendor delivery" | "Self pickup";
+type DeliveryMode = "Vendor delivery" | "Self pickup" | "Third-party delivery";
+
+
+
 type Verification = "Draft" | "Submitted" | "Under review" | "Changes required" | "Verified" | "Rejected";
 export type Product = {
   id: string; vendorId: string; name: string; category: string; emoji: string; baseUnit: string;
@@ -139,12 +144,32 @@ type Schedule = {
   timeSlot: string; quantity: number; unit: string; mode: DeliveryMode; estimatedOccurrences: number;
   status?: "Awaiting payment" | "Active" | "Paused" | "Cancelled" | "Completed"; nextDeliveryAt?: string; whatsappReminder?: boolean;
 };
+export type VendorDeliverySlot = {
+  id: string;
+  vendorId: string;
+  slotName: string;
+  startTime: string; // "09:00"
+  endTime: string;   // "11:00"
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type Order = {
   id: string; scheduleId?: string; customerEmail: string; vendorId: string; productId?: string;
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
-  mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Cancellation requested" | "Cancelled";
-  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded";
+mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded";
   trackingLatitude?: number; trackingLongitude?: number; cancellationFee?: number;
+  orderNumber?: string;
+  paymentReference?: string;
+  paymentProvider?: string;
+  createdAt?: string;
+  items?: Array<{ name: string; quantity: number; unit?: string; price?: number }>;
+};
+type ThirdPartyDeliveryRequest = {
+  orderId: string; customerId: string; vendorId: string; notes: string;
+  status: "pending" | "accepted" | "delivered" | "expired" | "locked";
+  acceptedAt?: string; codeExpiresAt?: string; codeIssuedCount: number; deliveredAt?: string;
 };
 type Staff = { id: string; vendorId: string; name: string; phone: string; active: boolean };
 type Assignment = { id: string; orderId: string; staffId: string; assignedAt: string };
@@ -171,7 +196,7 @@ type TasteProfileRow = { customerEmail: string; weights: TasteWeights; onboarded
 
 export type V3State = {
   customers: CustomerProfile[]; vendors: Vendor[]; products: Product[]; schedules: Schedule[];
-  orders: Order[]; staff: Staff[]; assignments: Assignment[]; requirements: Requirement[];
+  orders: Order[]; thirdPartyDeliveries: ThirdPartyDeliveryRequest[]; thirdPartyDeliveryAvailable: boolean; staff: Staff[]; assignments: Assignment[]; requirements: Requirement[];
   quotes: Quote[]; markups: Record<string, number>; notifications: Notification[];
   cancellations: Cancellation[]; audit: Audit[];
   cart: CartItem[]; tickets: Ticket[]; transactions: Transaction[]; staffAccounts: StaffAccount[];
@@ -179,14 +204,14 @@ export type V3State = {
   wishlist: WishlistItem[]; reviews: Review[];
   tasteProfiles: TasteProfileRow[]; productAttributes: Record<string, TasteWeights>;
   foodDrops: FoodDrop[]; foodDropClaims: FoodDropClaim[];
+  deliverySlots?: VendorDeliverySlot[];
 };
 
 const EMPTY_STATE: V3State = {
-  customers: [], vendors: [], products: [], schedules: [], orders: [], staff: [], assignments: [],
-  requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [],
+customers: [], vendors: [], products: [], schedules: [], orders: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: false, staff: [], assignments: [],  requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [],
   transactions: [], staffAccounts: [], campaigns: [], merchandising: { featuredProductIds: [], recommendationPopupEnabled: true, maxFeatured: 6 },
   wishlist: [], reviews: [], tasteProfiles: [], productAttributes: {},
-  foodDrops: [], foodDropClaims: [],
+  foodDrops: [], foodDropClaims: [], deliverySlots: [],
 };
 
 function stateWithoutInlineProductImages(state: V3State): V3State {
@@ -326,7 +351,7 @@ function TasteOnboardingBanner({ state, setState, session }: { state: V3State; s
   return <section className="sp-ai-card relative overflow-hidden rounded-[30px] p-5 sm:p-6">
     <button onClick={() => finish(true)} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-stone-100" aria-label="Skip taste setup"><X className="size-4" /></button>
     <div className="pr-12"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-[.16em] text-[#B34D00]"><Flame className="size-4" />Taste Match</div><h2 className="mt-2 text-lg font-black tracking-[-.02em]">What tastes like you?</h2><p className="mt-1 max-w-3xl text-sm text-stone-500">Pick a few things you enjoy — we&apos;ll show a Taste Match % on products and learn more from what you view, save and order.</p></div>
-    <div className="mt-5 flex flex-wrap gap-2">{TASTE_SETUP_CHOICES.map((dimension) => <button type="button" key={dimension} onClick={() => toggle(dimension)} className={`rounded-full border px-3 py-2 text-sm font-bold ${selected.includes(dimension) ? "border-[#C20000] bg-[#FFF0E0] text-[#C20000]" : "bg-white text-stone-500"}`}>{TASTE_DIMENSION_LABELS[dimension]}</button>)}</div>
+    <div className="mt-5 flex flex-wrap gap-2">{TASTE_SETUP_CHOICES.map((dimension) => <button type="button" key={dimension} onClick={() => toggle(dimension)} className={`rounded-full border px-3 py-2 text-sm font-bold ${selected.includes(dimension) ? "border-[#C20000] bg-[#FFE9E9] text-[#C20000]" : "bg-white text-stone-500"}`}>{TASTE_DIMENSION_LABELS[dimension]}</button>)}</div>
     <div className="mt-4 flex flex-wrap gap-2"><Button onClick={() => finish(false)} disabled={!selected.length} className="rounded-xl bg-[#0A0A0A]"><Check />Continue</Button><Button variant="outline" onClick={() => finish(true)} className="rounded-xl">Skip for now</Button></div>
   </section>;
 }
@@ -340,7 +365,7 @@ const nav: Record<Role, string[]> = {
   customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre"],
   vendor: ["Dashboard", "AI insights", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre"],
   operations: ["Command centre", "AI insights", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Ticket centre"],
-  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Pricing policies", "Vendor payments", "Reports", "Ticket centre", "Audit log"],
+  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Pricing policies", "Orders", "Vendor payments", "Reports", "Ticket centre", "Audit log"],
 };
 const navIcons: Record<string, typeof Store> = {
   Marketplace: ShoppingBag, Cart: ShoppingCart, Wishlist: Heart, "My schedule": CalendarDays, "Monthly requirement": ListChecks, "My quotations": ClipboardCheck,
@@ -366,12 +391,15 @@ const volumePacks = (emoji: string): SellingSpec[] => [
 const unitsByCategory: Record<string, SellingSpec[]> = {
   "Milk & dairy": [...volumePacks("🥛"), ...weightPacks("🥣")],
   "Home food": [{ key: "meal", label: "1 complete meal", amount: 1, measure: "meal", emoji: "🍱" }, { key: "portion", label: "1 portion", amount: 1, measure: "portion", emoji: "🍲" }],
+  Caterer: [{ key: "meal", label: "1 complete meal", amount: 1, measure: "meal", emoji: "🍽️" }, { key: "portion", label: "1 portion", amount: 1, measure: "portion", emoji: "🍱" }],
   "Meat & fish": [...weightPacks("🍗"), { key: "piece", label: "1 whole piece", amount: 1, measure: "piece", emoji: "🐟" }],
   Vegetables: [...weightPacks("🥬"), { key: "bundle", label: "1 bundle", amount: 1, measure: "pack", emoji: "🥦" }],
   Groceries: [...weightPacks("🛍️"), ...volumePacks("🫗"), { key: "piece", label: "1 retail pack/piece", amount: 1, measure: "pack", emoji: "📦" }],
   Eggs: [{ key: "egg", label: "1 egg", amount: 1, measure: "piece", emoji: "🥚" }, { key: "six-eggs", label: "Pack of 6 eggs", amount: 6, measure: "piece", emoji: "🥚" }, { key: "dozen", label: "Tray of 12 eggs", amount: 12, measure: "piece", emoji: "🥚" }],
   Bakery: [{ key: "piece", label: "1 piece", amount: 1, measure: "piece", emoji: "🥖" }, ...weightPacks("🍞")],
+  Snacks: [{ key: "piece", label: "1 piece", amount: 1, measure: "piece", emoji: "🍿" }, ...weightPacks("🍿")],
   "Rice & staples": [...weightPacks("🍚"), { key: "5-kg", label: "5 kg bag", amount: 5, measure: "kg", emoji: "🍚" }, { key: "25-kg", label: "25 kg bag", amount: 25, measure: "kg", emoji: "🍚" }],
+  Other: [{ key: "piece", label: "1 pack or item", amount: 1, measure: "pack", emoji: "📦" }, ...weightPacks("📦")],
 };
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
@@ -443,6 +471,9 @@ function repairSavedState(raw: V3State): V3State {
     // Discard those ambiguous entries instead of risking cross-role disclosure.
     notifications: (raw.notifications || []).filter((item) => Boolean(item.recipientRole)),
     cart: raw.cart || [],
+    thirdPartyDeliveries: raw.thirdPartyDeliveries || [],
+    thirdPartyDeliveryAvailable: raw.thirdPartyDeliveryAvailable || false,
+    wishlist: raw.wishlist || [],
     tickets: raw.tickets || [],
     transactions: raw.transactions || [],
     staffAccounts: raw.staffAccounts || [],
@@ -549,8 +580,7 @@ function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
 function liveOrderStatus(value: unknown): Order["status"] {
   const map: Record<string, Order["status"]> = {
     awarded: "Scheduled", confirmed: "Confirmed", preparing: "Preparing", ready: "Ready",
-    out_for_delivery: "Out for delivery", ready_for_pickup: "Ready for pickup", completed: "Completed",
-    cancellation_requested: "Cancellation requested", cancelled: "Cancelled",
+out_for_delivery: "Out for delivery", ready_for_pickup: "Ready for pickup", completed: "Completed", delivered: "Delivered",    cancellation_requested: "Cancellation requested", cancelled: "Cancelled",
   };
   return map[String(value || "")] || "Scheduled";
 }
@@ -560,15 +590,17 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => status === "refunded")) return "Refunded";
   if (statuses.some((status) => status.includes("reversal"))) return "Reversal pending";
   if (statuses.some((status) => ["paid", "captured", "success", "succeeded"].includes(status))) return "Paid";
-  const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed"].includes(String(orderStatus || "").toLowerCase());
-  return progressed ? "Paid" : "Pending";
+const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed", "delivered"].includes(String(orderStatus || "").toLowerCase());  return progressed ? "Paid" : "Pending";
 }
-type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>> };
-function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
+type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
   const orders: Order[] = orderRows.map((row) => {
     const items = Array.isArray(row.order_items) ? row.order_items as Array<Record<string, unknown>> : [];
     const first = items[0];
+    const fulfilmentMode = String(row.fulfilment_mode);
+    const isThirdParty = fulfilmentMode === "third_party_delivery";
+    const payments = Array.isArray(row.payments) ? row.payments as Array<Record<string, unknown>> : [];
+    const firstPayment = payments[0];
     return {
       id: String(row.id), scheduleId: row.schedule_id ? String(row.schedule_id) : undefined,
       customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), vendorId: String(row.vendor_id),
@@ -577,11 +609,20 @@ function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot
       quantity: Number(first?.quantity || items.length || 1), unit: String(first?.unit || "items"), total: Number(row.customer_total || 0),
       date: String(row.scheduled_date || ""), slot: String(row.scheduled_slot || "Vendor to confirm"),
       deliveryAddress: typeof row.delivery_address === "string" ? row.delivery_address : undefined,
-      mode: String(row.fulfilment_mode) === "self_pickup" ? "Self pickup" : "Vendor delivery",
-      status: liveOrderStatus(row.status), payment: livePaymentStatus(row.payments, row.status),
+mode: isThirdParty ? "Third-party delivery" : fulfilmentMode === "self_pickup" ? "Self pickup" : "Vendor delivery",      status: liveOrderStatus(row.status), payment: livePaymentStatus(row.payments, row.status),
       trackingLatitude: row.tracking_latitude == null ? undefined : Number(row.tracking_latitude),
       trackingLongitude: row.tracking_longitude == null ? undefined : Number(row.tracking_longitude),
       cancellationFee: Number(row.cancellation_fee || 0),
+      orderNumber: row.order_number ? String(row.order_number) : undefined,
+      paymentReference: firstPayment?.provider_reference ? String(firstPayment.provider_reference) : undefined,
+      paymentProvider: firstPayment?.provider ? String(firstPayment.provider) : undefined,
+      createdAt: row.created_at ? String(row.created_at) : undefined,
+      items: items.map((it) => ({
+        name: String(it.product_name || "Item"),
+        quantity: Number(it.quantity || 1),
+        unit: it.unit ? String(it.unit) : undefined,
+        price: it.customer_price != null ? Number(it.customer_price) : undefined,
+      })),
     };
   });
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -589,8 +630,7 @@ function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot
     id: String(row.id), customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), productId: String(row.menu_item_id), vendorId: String(row.vendor_id),
     startDate: String(row.start_date), endDate: row.end_date ? String(row.end_date) : "", recurrence: (String(row.recurrence || "once")[0].toUpperCase() + String(row.recurrence || "once").slice(1)) as Schedule["recurrence"],
     weekdays: Array.isArray(row.weekdays) ? (row.weekdays as number[]).map((day) => dayNames[Number(day)]).filter(Boolean) : [], timeSlot: String(row.scheduled_slot),
-    quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: String(row.fulfilment_mode) === "self_pickup" ? "Self pickup" : "Vendor delivery",
-    estimatedOccurrences: 1, status: String(row.status || "active") === "paused" ? "Paused" : String(row.status || "active") === "cancelled" ? "Cancelled" : String(row.status || "active") === "completed" ? "Completed" : String(row.status || "active") === "awaiting_payment" ? "Awaiting payment" : "Active",
+quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: String(row.fulfilment_mode) === "third_party_delivery" ? "Third-party delivery" : String(row.fulfilment_mode) === "self_pickup" ? "Self pickup" : "Vendor delivery",    estimatedOccurrences: 1, status: String(row.status || "active") === "paused" ? "Paused" : String(row.status || "active") === "cancelled" ? "Cancelled" : String(row.status || "active") === "completed" ? "Completed" : String(row.status || "active") === "awaiting_payment" ? "Awaiting payment" : "Active",
     nextDeliveryAt: row.next_delivery_at ? String(row.next_delivery_at) : undefined, whatsappReminder: row.whatsapp_reminder_enabled !== false,
   }));
   const orderScheduleIds = new Set(orders.map((order) => order.scheduleId).filter(Boolean) as string[]);
@@ -598,9 +638,20 @@ function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot
   const mergedSchedules = [...schedules, ...preservedSchedules];
   const staff: Staff[] = (snapshot.staff || []).map((row) => ({ id: String(row.id), vendorId: String(row.vendor_id), name: String(row.full_name || "Delivery person"), phone: String(row.phone || ""), active: row.active !== false }));
   const assignments: Assignment[] = (snapshot.assignments || []).map((row) => ({ id: String(row.id), orderId: String(row.order_id), staffId: String(row.delivery_staff_id), assignedAt: String(row.assigned_at || "") }));
+  const thirdPartyDeliveries: ThirdPartyDeliveryRequest[] = (snapshot.thirdPartyDeliveries || []).map((row) => ({
+    orderId: String(row.order_id), customerId: String(row.customer_id), vendorId: String(row.vendor_id),
+    notes: String(row.customer_notes || ""), status: String(row.status || "pending") as ThirdPartyDeliveryRequest["status"],
+    acceptedAt: row.accepted_at ? String(row.accepted_at) : undefined,
+    codeExpiresAt: row.code_expires_at ? String(row.code_expires_at) : undefined,
+    codeIssuedCount: Number(row.code_issued_count || 0),
+    deliveredAt: row.delivered_at ? String(row.delivered_at) : undefined,
+  }));
   const syncedCart: CartItem[] = session.role === "customer" ? (snapshot.cartItems || []).map((row) => ({ id: String(row.id), customerEmail: session.email, productId: String(row.menu_item_id), quantity: Math.max(0.001, Number(row.quantity || 1)) })) : [];
   const cart = session.role === "customer" ? [...current.cart.filter((item) => item.customerEmail !== session.email), ...syncedCart] : current.cart;
-  return { ...current, orders, schedules: mergedSchedules, staff, assignments, cart };
+  return {
+    ...current, orders, schedules: mergedSchedules, staff, assignments, thirdPartyDeliveries, cart,
+    thirdPartyDeliveryAvailable: snapshot.thirdPartyDeliveryAvailable === true,
+  };
 }
 async function findLocation(params: { lat?: number; lng?: number; address?: string }) {
   const query = params.address ? `q=${encodeURIComponent(params.address)}` : `lat=${params.lat}&lng=${params.lng}`;
@@ -621,6 +672,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [dismissed, setDismissed] = useState("");
   useEffect(() => {
+    setSuggestions([]);
     if (trimmed.length < 3 || trimmed === dismissed) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -639,7 +691,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
       {visibleSuggestions.map((item, index) => {
         const [primary, ...rest] = item.address.split(",");
         return (
-          <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(trimmed); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#FFF0E0]">
+          <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(item.address); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#FFF0E0]">
             <MapPin className="mt-0.5 size-4 shrink-0 text-[#B34D00]" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-bold text-stone-800">{primary.trim()}</span>
@@ -655,6 +707,15 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
 export function ShePlatesV3() {
   const [session, setSession] = useState<DemoSession | null>(null);
   const [state, setState] = useState<V3State>(EMPTY_STATE);
+  const syncEmail = session?.email;
+  const syncName = session?.name;
+  const syncRole = session?.role;
+  const syncUserId = session?.userId;
+  const syncVendorId = session?.vendorId;
+  const syncSession = useMemo(() => {
+    if (!syncEmail || !syncName || !syncRole) return null;
+    return { email: syncEmail, name: syncName, role: syncRole, userId: syncUserId, vendorId: syncVendorId };
+  }, [syncEmail, syncName, syncRole, syncUserId, syncVendorId]);
   const [active, setActive] = useState("Marketplace");
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -863,7 +924,7 @@ export function ShePlatesV3() {
     return unsubscribe;
   }, [session, notificationSessionUserId, notificationSessionEmail, notificationSessionRole]);
   useEffect(() => {
-    if (!hydrated || !session) return;
+    if (!hydrated || !syncSession) return;
     if (!isLiveSupabaseMode()) { queueMicrotask(() => setLiveSync("ready")); return; }
     let cancelled = false;
     const syncTimeout = window.setTimeout(() => {
@@ -874,9 +935,9 @@ export function ShePlatesV3() {
     }, 10000);
     queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
     (async () => {
-      if (session.role === "customer") {
-        const preference = session.userId ? await loadLiveCustomerPreference(session.userId) : null;
-        const memoryRows = session.userId ? await loadLiveCustomerMemory(session.userId) : [];
+      if (syncSession.role === "customer") {
+        const preference = syncSession.userId ? await loadLiveCustomerPreference(syncSession.userId) : null;
+        const memoryRows = syncSession.userId ? await loadLiveCustomerMemory(syncSession.userId) : [];
         const liveMemory: AgentMemory = {};
         for (const row of memoryRows as Array<{ memory_key: string; memory_value: string }>) {
           if (row.memory_key === "preferred_budget") liveMemory.lastBudget = Number(row.memory_value) || undefined;
@@ -903,18 +964,35 @@ export function ShePlatesV3() {
         }
         if (!cancelled) setState((current) => ({
           ...current,
-          customers: preference ? [...current.customers.filter((item) => item.email !== session.email), {
-            email: session.email, address: String(preference.address), latitude: Number(preference.latitude), longitude: Number(preference.longitude),
-            householdSize: Number(preference.household_size || 1), diet: String(preference.diet || "No preference"),
-            allergies: preference.allergies || [], goals: preference.health_goals || [], dislikes: String(preference.dislikes_and_instructions || ""),
-            onboardingComplete: Boolean(preference.onboarding_complete), agentMemory: liveMemory,
-          }] : current.customers.filter((item) => item.email !== session.email),
+          customers: preference ? [...current.customers.filter((item) => item.email !== syncSession.email), {
+            email: syncSession.email,
+            phone: String(preference.phone || ""),
+            address: String(preference.address || ""),
+            latitude: Number(preference.latitude),
+            longitude: Number(preference.longitude),
+            householdSize: Number(preference.household_size || 1),
+            diet: String(preference.diet || "No preference"),
+            allergies: Array.isArray(preference.allergies) ? preference.allergies : [],
+            goals: Array.isArray(preference.health_goals) ? preference.health_goals : [],
+            dislikes: String(preference.dislikes_and_instructions || ""),
+            onboardingComplete: Boolean(preference.onboarding_complete),
+            agentMemory: liveMemory,
+            addresses: [{
+              id: id("ADR"),
+              label: "Home",
+              address: String(preference.address || ""),
+              latitude: Number(preference.latitude),
+              longitude: Number(preference.longitude),
+              phone: String(preference.phone || ""),
+              isDefault: true,
+            }],
+          }] : current.customers.filter((item) => item.email !== syncSession.email),
           vendors, products, markups: {}, merchandising, merchandisingError,
         }));
-      } else if (session.role === "vendor" && session.vendorId) {
-        const workspace = await loadLiveVendorWorkspace(session.vendorId);
+      } else if (syncSession.role === "vendor" && syncSession.vendorId) {
+        const workspace = await loadLiveVendorWorkspace(syncSession.vendorId);
         if (!cancelled) setState((current) => ({ ...current,
-          vendors: [vendorFromLive(workspace.vendor, { email: session.email, name: session.name }, workspace.document || undefined)],
+          vendors: [vendorFromLive(workspace.vendor, { email: syncSession.email, name: syncSession.name }, workspace.document || undefined)],
           products: workspace.products.map(productFromLive),
         }));
       } else {
@@ -937,12 +1015,12 @@ export function ShePlatesV3() {
         }));
       }
       const commerce = await loadLiveCommerceSnapshot();
-      if (!cancelled) setState((current) => mergeLiveCommerce(current, commerce, session));
+      if (!cancelled) setState((current) => mergeLiveCommerce(current, commerce, syncSession));
       window.clearTimeout(syncTimeout);
       if (!cancelled) setLiveSync("ready");
     })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled) { setLiveSync("error"); setLiveSyncError(error instanceof Error ? error.message : "Your latest account data could not be loaded"); } });
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
-  }, [hydrated, session, syncVersion]);
+  }, [hydrated, syncSession, syncVersion]);
 
   async function signOut() { await liveSignOut(); setSession(null); setActive("Marketplace"); toast.success("Signed out"); }
   function finishTour(skipped: boolean) {
@@ -1029,8 +1107,16 @@ export function ShePlatesV3() {
       {content}
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setAgentOpen(true)} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
-      <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} social={social} profile={{ latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); setVendorProfileId(null); setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
-      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save your like"))} onView={shorts.recordView} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
+      <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); setVendorProfileId(null); setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onToggleWishlist={(product) => setState((current) => {
+        const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
+        return {
+          ...current,
+          wishlist: alreadySaved
+            ? current.wishlist.filter((item) => !(item.customerEmail === session.email && item.productId === product.id))
+            : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
+        };
+      })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
+      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save your like"))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(e instanceof Error ? e.message : "Could not record this view"); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} close={() => setPlanProduct(null)} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
     </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
       banner={<>
@@ -1154,22 +1240,107 @@ const METRIC_TONES = {
   violet: { bg: "bg-gradient-to-br from-[#FFF0E0] to-[#F4F4F4]", fg: "text-[#0A0A0A]" },
 } as const;
 function Metric({ label, value, icon: Icon, note }: { label: string; value: string; icon: typeof Store; note?: string; tone?: keyof typeof METRIC_TONES }) { const up = !!note && /^\+/.test(note); return <div className="surface-card sp-metric-card rounded-3xl p-5"><div className="flex items-start justify-between gap-3"><div className="text-[13px] font-medium text-[#66666B]">{label}</div><div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#FFF0E0] text-[#0A0A0A]"><Icon className="size-5" /></div></div><div className="mt-2 text-[28px] font-bold leading-none tracking-[-.01em] tabular-nums">{value}</div>{note && <div className={`mt-3 text-xs font-semibold ${up ? "text-[#0A7A2A]" : "text-[#66666B]"}`}>{note}</div>}</div>; }
-function Status({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <span className={`sp-status inline-flex rounded-full bg-[#F4F4F4] px-3 py-1 text-xs font-semibold ${className}`}>{children}</span>; }
+function Status({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <span className={`sp-status inline-flex rounded-full border border-stone-200/80 bg-stone-50/90 px-3 py-1 text-[11px] font-black ${className}`}>{children}</span>; }
+export const STANDARD_DIETS = [
+  "No preference",
+  "Vegetarian",
+  "Vegan",
+  "Eggetarian",
+  "Non-vegetarian",
+  "Jain",
+  "Low carb",
+  "High protein",
+] as const;
+
+export const STANDARD_ALLERGIES = [
+  "Milk",
+  "Egg",
+  "Peanut",
+  "Tree nuts",
+  "Gluten",
+  "Soy",
+  "Fish",
+  "Shellfish",
+] as const;
+
+export const STANDARD_GOALS = [
+  "Balanced meals",
+  "Weight management",
+  "High protein",
+  "Low sodium",
+  "Diabetes aware",
+  "Heart friendly",
+] as const;
+
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) { return <label className="sp-field block"><span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-stone-400">{hint}</span>}</label>; }
 const inputClass = "h-11 w-full rounded-2xl border border-stone-200/80 bg-white/90 px-3.5 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,.6)] focus:border-[#FF7B00] focus:ring-2 focus:ring-[#FF7B00]/10";
 
 function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSession; onSave: (profile: CustomerProfile) => void; onLogout: () => void }) {
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
   const [address, setAddress] = useState(""), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({});
+  const pinLookup = useRef(0);
   const [household, setHousehold] = useState(2), [diet, setDiet] = useState("No preference"), [allergies, setAllergies] = useState<string[]>([]), [goals, setGoals] = useState<string[]>([]), [dislikes, setDislikes] = useState("");
   const [privateAccount, setPrivateAccount] = useState(session.privateAccount ?? false);
-  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address pinned on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
-  async function finish() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect your GPS location or find the typed address on the map first"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address, latitude: coords.lat!, longitude: coords.lng! }); onSave({ email: session.email, address, latitude: coords.lat, longitude: coords.lng, householdSize: household, diet, allergies, goals, dislikes, onboardingComplete: true, privateAccount }); toast.success("Your food profile and exact service pin are ready"); } catch (error) { toast.error(error instanceof Error ? error.message : "Location could not be saved"); } }
-  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#FF7B00]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#FF7B00]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#C20000]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><Field label="Delivery address"><Textarea value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
-  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["No preference", "Vegetarian", "Vegan", "Eggetarian", "Non-vegetarian", "Jain", "Low carb", "High protein"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={["Milk", "Egg", "Peanut", "Tree nuts", "Gluten", "Soy", "Fish", "Shellfish"]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={["Balanced meals", "Weight management", "High protein", "Low sodium", "Diabetes aware", "Heart friendly"]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
+  const roundPoint = (point: { lat: number; lng: number }) => ({ lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) });
+  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); const request = ++pinLookup.current; setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = roundPoint({ lat: position.coords.latitude, lng: position.coords.longitude }); setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); } toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { if (request === pinLookup.current) toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
+  async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); const request = ++pinLookup.current; setMapBusy(true); try { const place = await findLocation({ address }); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); toast.success("Address pinned on the map"); } } catch (error) { if (request === pinLookup.current) toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
+  function movePin(point: { lat: number; lng: number }) {
+    const next = roundPoint(point);
+    setCoords(next);
+    setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+  }
+  function continueSetup() {
+    if (step === 1 && !address.trim()) return toast.error("Enter your delivery address first");
+    if (step === 1 && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng))) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before continuing");
+    setStep((current) => current + 1);
+  }
+  async function finish() {
+    if (!address.trim()) return toast.error("Enter your delivery address first");
+    if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving");
+    const latitude = Number(coords.lat?.toFixed(6));
+    const longitude = Number(coords.lng?.toFixed(6));
+    try {
+      if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) {
+        await saveLiveCustomerProfile({
+          userId: session.userId,
+          address,
+          latitude,
+          longitude,
+          householdSize: household,
+          diet,
+          allergies,
+          goals,
+          instructions: dislikes,
+        });
+      }
+      onSave({
+        email: session.email,
+        address,
+        latitude,
+        longitude,
+        householdSize: household,
+        diet,
+        allergies,
+        goals,
+        dislikes,
+        onboardingComplete: true,
+        privateAccount,
+        addresses: [{
+          id: id("ADR"),
+          label: "Home",
+          address,
+          latitude,
+          longitude,
+          isDefault: true,
+        }],
+      });
+      toast.success("Your food profile and exact service pin are ready");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Profile could not be saved"); }
+  }
+  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#FF7B00]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#FF7B00]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#C20000]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
+  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
   {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#F4F4F4] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#FF7B00] bg-[#FFF0E0]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#FF7B00] bg-[#FFF0E0]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={() => address.trim() || step > 1 ? setStep((s) => s + 1) : toast.error("Add your address first")} className="rounded-xl bg-[#FF7B00] hover:bg-[#0A0A0A]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#FF7B00] hover:bg-[#0A0A0A]"><Check />Save profile</Button>}</div></div></div></div>;
+  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#FF7B00] hover:bg-[#0A0A0A]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#FF7B00] hover:bg-[#0A0A0A]"><Check />Save profile</Button>}</div></div></div></div>;
 }
 
 function ChoiceGroup({ label, options, value, setValue }: { label: string; options: string[]; value: string[]; setValue: (next: string[]) => void }) { return <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">{label}</div><div className="flex flex-wrap gap-2">{options.map((option) => <button type="button" key={option} onClick={() => setValue(value.includes(option) ? value.filter((x) => x !== option) : [...value, option])} className={`rounded-full border px-3 py-2 text-sm font-bold ${value.includes(option) ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]" : "bg-white text-stone-500"}`}>{option}</button>)}</div></div>; }
@@ -1180,43 +1351,47 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false);
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
   const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "" });
+  const [otherCategory, setOtherCategory] = useState("");
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
+  function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
   async function submit() {
     if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
+    if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
     if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
     if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
     setBusy(true);
     let vendorId = id("VEN");
     try {
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category: form.category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 } });
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category: form.category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave" };
+      const category = form.category === "Other" ? otherCategory.trim() : form.category;
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 } });
+      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave" };
       setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
       toast.success("Vendor application sent to Operations"); close?.();
     } catch (caught) { toast.error(caught instanceof Error ? caught.message : "Application could not be submitted"); } finally { setBusy(false); }
   }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 min-h-screen bg-[#F4F4F4] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={`${operationsCreated ? "" : "mx-auto mt-8 max-w-6xl"}`}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.15em] text-[#B34D00]">Vendor onboarding · {step}/4</p><h1 className="mt-2 text-xl font-black">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div><div className="flex gap-1">{[1, 2, 3, 4].map((n) => <span key={n} className={`h-2 w-12 rounded-full ${n <= step ? "bg-[#FF7B00]" : "bg-stone-200"}`} />)}</div></div>
-  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}</div>}
+  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}</div>}
   {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
   {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#B34D00]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
   {step === 4 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Food certificate / FSSAI number"><input value={form.fssai} onChange={(e) => set("fssai", e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={tomorrow()} value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inputClass} /></Field><label className="surface-card-muted md:col-span-2 grid min-h-36 cursor-pointer place-items-center rounded-3xl border-2 border-dashed p-5 text-center"><input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /><Upload className="mx-auto text-[#C20000]" /><div className="mt-2 font-black">{file?.name || "Upload certificate PDF or image"}</div><div className="text-xs text-stone-500">Private document; accessible only to this vendor and authorised Operations/Admin users.</div></label></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={() => setStep((s) => s + 1)} className="rounded-xl bg-[#FF7B00] hover:bg-[#0A0A0A]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy} className="rounded-xl bg-[#C20000] hover:bg-[#C20000]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
+  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#FF7B00] hover:bg-[#0A0A0A]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy} className="rounded-xl bg-[#C20000] hover:bg-[#C20000]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
 }
 
 /** The map libraries need the browser, so the small location map is loaded only there. */
-function PinMap(props: { lat: number; lng: number; radiusKm?: number }) {
-  const [Component, setComponent] = useState<null | ((p: { lat: number; lng: number; radiusKm?: number }) => React.ReactElement)>(null);
+function PinMap(props: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) {
+  const [Component, setComponent] = useState<null | ((p: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) => React.ReactElement)>(null);
   useEffect(() => { let alive = true; void import("@/components/pin-map").then((mod) => { if (alive) setComponent(() => mod.PinMap); }); return () => { alive = false; }; }, []);
   return Component ? <Component {...props} /> : <div className="grid h-full w-full place-items-center bg-stone-100 text-sm text-stone-400">Loading map…</div>;
 }
 
-function MapPreview({ lat, lng, radius, label = "Selected location" }: { lat?: number; lng?: number; radius: number; label?: string }) {
+function MapPreview({ lat, lng, radius, label = "Selected location", onPinChange }: { lat?: number; lng?: number; radius: number; label?: string; onPinChange?: (point: { lat: number; lng: number }) => void }) {
   const latitude = lat ?? 11.0168;
   const longitude = lng ?? 76.9558;
   const fullMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=15/${latitude}/${longitude}`;
   const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${latitude}%2C${longitude}`;
-  return <div className="surface-card overflow-hidden rounded-[22px]"><div className="relative h-72 bg-stone-100"><PinMap lat={latitude} lng={longitude} radiusKm={radius} /><div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-black shadow-lg backdrop-blur">{lat ? label : "Coimbatore preview — detect or search to place pin"}</div>{radius > 0 && <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl bg-[#0A0A0A]/90 px-3 py-2 text-xs font-black text-white shadow-lg">Service view: {radius} km</div>}</div><div className="flex flex-wrap items-center gap-3 p-3 text-xs text-stone-500"><span className="mr-auto font-mono">{lat ? `Exact pin ${lat.toFixed(6)}, ${lng?.toFixed(6)}` : "No confirmed pin yet"}</span><a href={googleMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#0A0A0A] hover:underline">Verify in Google Maps ↗</a><a href={fullMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#0A0A0A] hover:underline">OpenStreetMap ↗</a><span className="w-full text-[11px] text-stone-400">Map © OpenStreetMap contributors</span></div></div>;
+  return <div className="surface-card overflow-hidden rounded-[22px]"><div className="relative h-72 bg-stone-100"><PinMap lat={latitude} lng={longitude} radiusKm={radius} onChange={onPinChange} /><div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-black shadow-lg backdrop-blur">{lat !== undefined && lng !== undefined ? label : "Coimbatore preview — detect or search to place pin"}</div>{onPinChange && <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-bold shadow-lg">Drag the pin to adjust your exact location</div>}{radius > 0 && <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl bg-[#0A0A0A]/90 px-3 py-2 text-xs font-black text-white shadow-lg">Service view: {radius} km</div>}</div><div className="flex flex-wrap items-center gap-3 p-3 text-xs text-stone-500"><span className="mr-auto font-mono">{lat !== undefined && lng !== undefined ? `Exact pin ${lat.toFixed(6)}, ${lng.toFixed(6)}` : "No confirmed pin yet"}</span><a href={googleMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#0A0A0A] hover:underline">Verify in Google Maps ↗</a><a href={fullMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#0A0A0A] hover:underline">OpenStreetMap ↗</a><span className="w-full text-[11px] text-stone-400">Map © OpenStreetMap contributors</span></div></div>;
 }
 function ToggleCard({ icon: Icon, title, body, checked, setChecked }: { icon: typeof Store; title: string; body: string; checked: boolean; setChecked: (v: boolean) => void }) { return <div className={`rounded-2xl border p-5 ${checked ? "border-[#FF7B00] bg-[#FFF0E0]" : "bg-white"}`}><div className="flex items-center justify-between"><Icon className="text-[#B34D00]" /><Switch checked={checked} onCheckedChange={setChecked} /></div><h3 className="mt-4 font-black">{title}</h3><p className="mt-2 text-sm text-stone-500">{body}</p></div>; }
 
@@ -1508,13 +1683,52 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
 
 
     <section><div className="flex flex-wrap items-end justify-between gap-3"><Heading eyebrow="MARKETPLACE" title={`${visible.length} option${visible.length === 1 ? "" : "s"} · ${deliveryDate}${periodDays > 1 ? ` to ${periodEndDate}` : ""}`} body="Verified, open and serviceable vendors only. Use search and filters for budget, calories, protein, dietary preferences and your planning window. Current stock is shown; final slot capacity is confirmed when you schedule." /><Button variant="outline" onClick={() => void refreshMarketplace(true)} disabled={refreshing || !isLiveSupabaseMode()} className="rounded-xl"><RefreshCcw className={refreshing ? "animate-spin" : ""} />Refresh</Button></div>{catalogueError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{catalogueError}</div>}
-      <div data-tour="products" className="sp-market-grid mt-5 grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">{visible.map((product) => { const vendor = state.vendors.find((v) => v.id === product.vendorId)!; const distance = product.liveDistanceKm ?? distanceKm(profile.latitude, profile.longitude, vendor.latitude, vendor.longitude); const personalized = preferenceScore(product) > 5; const fulfilmentLabel = vendor.delivery && vendor.pickup ? "Delivery & pickup" : vendor.pickup ? "Pickup only" : "Delivery only"; const isWishlisted = state.wishlist.some((w) => w.customerEmail === session.email && w.productId === product.id); const rating = productRating(product.id, state.reviews); return <article key={product.id} className="sp-product-card group rounded-[28px] p-4"><div className="sp-product-image relative grid h-36 place-items-center overflow-hidden rounded-[22px]" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover transition group-hover:scale-[1.03]" /> : <ProductGlyph category={product.category} iconClassName="size-12" />}{personalized && <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-black text-[#B34D00] shadow"><Sparkles className="mr-1 inline size-3" />For you</span>}<button type="button" onClick={() => setState((s) => ({ ...s, wishlist: isWishlisted ? s.wishlist.filter((w) => !(w.customerEmail === session.email && w.productId === product.id)) : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...s.wishlist] }))} aria-label={isWishlisted ? "Remove from wishlist" : "Save to wishlist"} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 shadow transition hover:scale-110"><Heart className={`size-4 ${isWishlisted ? "fill-[#FF7B00] text-[#B34D00]" : "text-stone-400"}`} /></button></div><div className="mt-4 flex items-start justify-between gap-2"><div><h3 className="font-black">{product.name}</h3><p className="mt-1 text-xs text-stone-500">{vendor.businessName} · {product.baseUnit}</p>{rating && <p className="mt-1 flex items-center gap-1"><StarRow value={rating.average} size="size-3" /><span className="text-[11px] font-bold text-stone-500">{rating.average.toFixed(1)} ({rating.count})</span></p>}<div className="mt-1"><TasteMatchBadge state={state} setState={setState} session={session} product={product} /></div><p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs font-bold text-[#B34D00]"><span>{distance?.toFixed(1)} km {vendor.pickup && !vendor.delivery ? "to pick up" : "away"}</span><span className="text-stone-300">·</span><span className={vendor.pickup && !vendor.delivery ? "text-amber-700" : ""}>{fulfilmentLabel}</span></p></div><BadgeCheck className="size-5 shrink-0 text-[#B34D00]" /></div><div className="mt-3 flex flex-wrap gap-1">{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <Status className="border-amber-200 bg-amber-50 text-amber-800">Nutrition pending</Status> : <><Status>{product.calories} kcal</Status><Status>{product.protein}g protein</Status></>}{product.dietaryTags.slice(0, 2).map((tag) => <Status key={tag}>{tag}</Status>)}</div><div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-lg font-black sm:text-xl">{money(finalPrice(product, state))}</div><div className="text-[10px] text-stone-500 sm:text-xs">per pack</div></div><div className="sp-card-actions flex min-w-0 gap-1.5 sm:gap-2"><Button size="sm" variant="outline" onClick={() => addToCart(product)} className="min-w-0 flex-1 rounded-xl px-2 sm:px-3"><ShoppingCart /><span>Add</span></Button><Button size="sm" onClick={() => openProduct(product)} className="min-w-0 flex-1 rounded-xl bg-[#C20000] px-2 hover:bg-[#C20000] sm:px-3"><CalendarDays /><span>Plan</span></Button></div></div></article>; })}</div>
+      <div data-tour="products" className="sp-market-grid mt-5 grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">{visible.map((product) => {
+        const vendor = state.vendors.find((v) => v.id === product.vendorId)!;
+        const distance = product.liveDistanceKm ?? distanceKm(profile.latitude, profile.longitude, vendor.latitude, vendor.longitude);
+        const personalized = preferenceScore(product) > 5;
+        const fulfilmentLabel = vendor.delivery && vendor.pickup ? "Delivery & pickup" : vendor.pickup ? "Pickup only" : "Delivery only";
+        const isWishlisted = state.wishlist.some((w) => w.customerEmail === session.email && w.productId === product.id);
+        const rating = productRating(product.id, state.reviews);
+        return <article key={product.id} className="sp-product-card group rounded-[28px] p-4">
+          <div className="sp-product-image relative grid h-36 place-items-center overflow-hidden rounded-[22px]" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>
+            {product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover transition group-hover:scale-[1.03]" /> : <ProductGlyph category={product.category} iconClassName="size-12" />}
+            {personalized && <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-black text-[#B34D00] shadow"><Sparkles className="mr-1 inline size-3" />For you</span>}
+          </div>
+          <div className="mt-4 flex items-start justify-between gap-2">
+            <div><h3 className="font-black">{product.name}</h3><p className="mt-1 text-xs text-stone-500">{vendor.businessName} · {product.baseUnit}</p>
+              {rating && <p className="mt-1 flex items-center gap-1"><StarRow value={rating.average} size="size-3" /><span className="text-[11px] font-bold text-stone-500">{rating.average.toFixed(1)} ({rating.count})</span></p>}
+              <div className="mt-1"><TasteMatchBadge state={state} setState={setState} session={session} product={product} /></div>
+              <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs font-bold text-[#B34D00]"><span>{distance?.toFixed(1)} km {vendor.pickup && !vendor.delivery ? "to pick up" : "away"}</span><span className="text-stone-300">·</span><span className={vendor.pickup && !vendor.delivery ? "text-amber-700" : ""}>{fulfilmentLabel}</span></p>
+            </div>
+            <BadgeCheck className="size-5 shrink-0 text-[#B34D00]" />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1">
+            {product.nutritionStatus === "Pending review" || product.calories <= 0 ? <Status className="border-amber-200 bg-amber-50 text-amber-800">Nutrition pending</Status> : <><Status>{product.calories} kcal</Status><Status>{product.protein}g protein</Status></>}
+            {product.dietaryTags.slice(0, 2).map((tag) => <Status key={tag}>{tag}</Status>)}
+          </div>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div><div className="text-lg font-black sm:text-xl">{money(finalPrice(product, state))}</div><div className="text-[10px] text-stone-500 sm:text-xs">per pack</div></div>
+            <div className="sp-card-actions flex min-w-0 gap-1.5 sm:gap-2">
+              <Button size="sm" variant="outline" onClick={() => addToCart(product)} className="min-w-0 flex-1 rounded-xl px-2 sm:px-3"><ShoppingCart /><span>Add</span></Button>
+              <Button size="sm" onClick={() => openProduct(product)} className="min-w-0 flex-1 rounded-xl bg-[#C20000] px-2 hover:bg-[#C20000] sm:px-3"><CalendarDays /><span>Plan</span></Button>
+            </div>
+          </div>
+          <button type="button" onClick={() => setState((s) => ({
+            ...s,
+            wishlist: isWishlisted
+              ? s.wishlist.filter((w) => !(w.customerEmail === session.email && w.productId === product.id))
+              : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...s.wishlist],
+          }))} aria-label={isWishlisted ? "Remove from wishlist" : "Save to wishlist"} aria-pressed={isWishlisted} className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-full px-2 text-xs font-bold text-stone-500 transition hover:bg-rose-50 hover:text-rose-700">
+            <Heart className={`size-4 ${isWishlisted ? "fill-[#FF7B00] text-[#B34D00]" : ""}`} />{isWishlisted ? "Saved to wishlist" : "Wishlist"}
+          </button>
+        </article>;
+      })}</div>
       {!visible.length && (locationConfirmed ? <div className="mt-5 space-y-4"><Empty icon={Store} title="No matching products" body={serviceable.length ? "Your filters are narrowing the currently serviceable marketplace. Clear one or more filters, or ask She Agent for alternatives." : emptyReason} action={serviceable.length ? <Button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setQuery(""); }} variant="outline" className="rounded-xl">Clear marketplace filters</Button> : undefined} /><div className="grid gap-3 sm:grid-cols-5">{diagnostics && [["Verified", diagnostics.verified_vendors], ["Open", diagnostics.open_vendors], ["With stock", diagnostics.vendors_with_products], ["In radius", diagnostics.vendors_in_radius], ["Products", diagnostics.serviceable_products]].map(([label, value]) => <div key={String(label)} className="surface-card rounded-2xl p-3 text-center"><div className="text-xl font-black">{value}</div><div className="text-xs text-stone-500">{label}</div></div>)}</div></div> : <Empty icon={LocateFixed} title="Confirm your actual location first" body="Products are hidden until GPS or a searched address creates a real service pin." action={<Button onClick={() => setLocationOpen(true)} className="rounded-xl bg-[#FF7B00]"><LocateFixed />Detect my location</Button>} />)}
     </section>
 
     <ScheduleDialog product={selected} close={() => setSelected(null)} session={session} state={state} setState={setState} initialStartDate={deliveryDate} onCreated={() => navigate("Cart")} />
-    <Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[26px] sm:max-w-3xl [&>*]:min-w-0"><DialogHeader><DialogTitle className="text-lg font-black">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#FF7B00]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" /><Button onClick={saveLocation} className="h-12 rounded-xl bg-[#C20000] font-black"><Check />Save this delivery pin</Button></DialogContent></Dialog>
-  </div>;
+<Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[26px] sm:max-w-3xl *:min-w-0"><DialogHeader><DialogTitle className="text-lg font-black">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#FF7B00]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" /><Button onClick={saveLocation} className="h-12 rounded-xl bg-[#C20000] font-black"><Check />Save this delivery pin</Button></DialogContent></Dialog>  </div>;
 }
 
 function ScheduleDialog({ product, close, session, state, setState, initialStartDate, onCreated }: { product: Product | null; close: () => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; initialStartDate?: string; onCreated?: () => void }) {
@@ -1525,12 +1739,17 @@ function ScheduleDialog({ product, close, session, state, setState, initialStart
   const [slot, setSlot] = useState("06:00–07:00 AM");
   const [quantity, setQuantity] = useState(1);
   const [mode, setMode] = useState<DeliveryMode>("Vendor delivery");
-  useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence("Once"); setDays([]); setStartDate(initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); }); }, [product, initialStartDate]);
-  if (!product) return null;
+const [deliveryInstructions, setDeliveryInstructions] = useState("");
+  const supportsVendorDelivery = product ? state.vendors.find((item) => item.id === product.vendorId)?.delivery === true : false;
+  const supportsPickup = product ? state.vendors.find((item) => item.id === product.vendorId)?.pickup === true : false;
+  useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence("Once"); setDays([]); setStartDate(initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
   const scheduledProduct = product;
   const vendor = state.vendors.find((v) => v.id === scheduledProduct.vendorId)!;
-  const modes = [vendor.delivery && "Vendor delivery", vendor.pickup && "Self pickup"].filter(Boolean) as DeliveryMode[];
-  const effectiveEnd = endDate || (recurrence === "Once" ? startDate : addDaysISO(startDate || tomorrow(), 29));
+  const activeProductVendorSlots = (state.deliverySlots || []).filter((s) => s.vendorId === scheduledProduct.vendorId && s.isActive);
+  const scheduleSlotOptions: string[] = activeProductVendorSlots.length > 0
+    ? activeProductVendorSlots.map((s) => formatSlotLabel(s))
+    : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
+const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party delivery"];  const effectiveEnd = endDate || (recurrence === "Once" ? startDate : addDaysISO(startDate || tomorrow(), 29));
   const startMs = new Date(`${startDate || tomorrow()}T12:00:00`).getTime();
   const endMs = new Date(`${effectiveEnd}T12:00:00`).getTime();
   const rangeLength = Math.max(1, Math.min(366, Math.floor((endMs - startMs) / 86400000) + 1));
@@ -1548,11 +1767,14 @@ function ScheduleDialog({ product, close, session, state, setState, initialStart
     if (endDate && endDate < startDate) return toast.error("End date must be after the start date");
     if (recurrence === "Custom" && !days.length) return toast.error("Choose at least one weekday");
     if (!occurrences) return toast.error("This schedule has no delivery dates. Adjust the dates or repeat pattern.");
+    if (mode === "Third-party delivery" && !isLiveSupabaseMode()) return toast.error("Third-party delivery requires a live customer account.");
+    if (mode === "Third-party delivery" && recurrence !== "Once") return toast.error("Third-party delivery is available for one-time plans only.");
+    if (mode === "Third-party delivery" && !deliveryInstructions.trim()) return toast.error("Add delivery instructions for the third-party handler.");
+    if (deliveryInstructions.length > 1000) return toast.error("Delivery instructions must be 1,000 characters or fewer.");
     try {
       let scheduleId = id("SCH"); let orderId = id("ORD");
       if (isLiveSupabaseMode()) {
-        const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot, quantity, unit: scheduledProduct.baseUnit, mode, customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });
-        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
+const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: deliveryInstructions.trim(), customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
       const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot, mode, status: "Scheduled", payment: "Pending" };
@@ -1562,8 +1784,7 @@ function ScheduleDialog({ product, close, session, state, setState, initialStart
     } catch (error) { toast.error(error instanceof Error ? error.message : "Schedule could not be saved"); }
   }
 
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#0A0A0A] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#FF7B00]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]"><div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#FF7B00] bg-[#FF7B00] text-[#0A0A0A]" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => setMode(v as DeliveryMode)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div className="rounded-2xl bg-[#F4F4F4] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#F4F4F4] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#C20000] font-black hover:bg-[#C20000]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;
-}
+return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#0A0A0A] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#FF7B00]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#FF7B00] bg-[#FF7B00] text-[#0A0A0A]" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#F4F4F4] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#F4F4F4] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#C20000] font-black hover:bg-[#C20000]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -1628,9 +1849,15 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const [selectedAddressId, setSelectedAddressId] = useState(savedAddresses.find((address) => address.isDefault)?.id || savedAddresses[0]?.id || "");
   const [newAddress, setNewAddress] = useState("");
   const [useNewAddress, setUseNewAddress] = useState(false);
+  const [checkoutMode, setCheckoutMode] = useState<DeliveryMode>("Vendor delivery");
+  const [deliveryInstructions, setDeliveryInstructions] = useState("");
+  const cartVendorIds = [...new Set(items.map((it) => state.products.find((p) => p.id === it.productId)?.vendorId).filter(Boolean))];
+  const activeCartVendorSlots = (state.deliverySlots || []).filter((s) => cartVendorIds.includes(s.vendorId) && s.isActive);
+  const cartSlotOptions: string[] = activeCartVendorSlots.length > 0
+    ? activeCartVendorSlots.map((s) => formatSlotLabel(s))
+    : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
+  const [selectedSlot, setSelectedSlot] = useState(cartSlotOptions[0] || "07:00–08:00 AM");
   const total = items.reduce((sum, item) => { const product = state.products.find((x) => x.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
-  const singlePendingOrder = pendingOrders.length === 1 ? pendingOrders[0] : null;
-  useEffect(() => { if (!paying && singlePendingOrder) queueMicrotask(() => setPaying(singlePendingOrder)); }, [paying, singlePendingOrder]);
 
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
     setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));
@@ -1667,13 +1894,29 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       toast.error("Choose a saved delivery address or enter a new one.");
       return;
     }
+    if (checkoutMode === "Third-party delivery" && !isLiveSupabaseMode()) {
+      toast.error("Third-party delivery requires a live customer account.");
+      return;
+    }
+    if (checkoutMode === "Third-party delivery" && !deliveryInstructions.trim()) {
+      toast.error("Add delivery instructions for the third-party handler.");
+      return;
+    }
+    if (deliveryInstructions.length > 1000) {
+      toast.error("Delivery instructions must be 1,000 characters or fewer.");
+      return;
+    }
     if (isLiveSupabaseMode()) {
       setSavingCart(true);
       try {
         // Sync first so carts created on another device / older build are reconciled before checkout.
         await syncLiveCart({ items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })) });
-        const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: "07:00–08:00 AM", deliveryAddress: address });
-        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
+const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]);
+        if (checkoutMode !== "Self pickup" && !effectiveSlot) {
+          toast.error("Please select a delivery time slot.");
+          return;
+        }
+        const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: effectiveSlot, deliveryAddress: address, mode: checkoutMode, deliveryInstructions: deliveryInstructions.trim() });        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
         if (!snapshot) throw new Error("Checkout did not return the latest order state.");
         const next = mergeLiveCommerce(state, snapshot, session);
         setState(next);
@@ -1688,8 +1931,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-    const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: "07:00–08:00 AM", deliveryAddress: address, mode: vendor?.delivery ? "Vendor delivery" : "Self pickup", status: "Scheduled", payment: "Pending", cancellationFee: 0 };
-    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
+const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]), deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
     setAddressDialogOpen(false);
     setPaying(order);
   }
@@ -1699,8 +1941,11 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   }
   return <div className="space-y-6"><Heading eyebrow="CHECKOUT" title="Your Cart" body="Your basket is saved with your account. She Agent, Marketplace and Cart all use the same basket, including when you switch devices." />
     <div><h2 className="text-lg font-black">Plan Your Order, Your Way!</h2><p className="mt-1 text-sm text-stone-500">Choose your Preferred delivery date and schedule your order in advance...</p></div>
-    {pendingOrders.length > 0 && <div className="space-y-3"><h3 className="text-lg font-black">Awaiting payment</h3>{pendingOrders.map((order) => <div key={order.id} className="surface-card flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center"><div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div><div className="min-w-0 flex-1"><b>{order.description}</b><div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div><div className="mt-2 text-xl font-black">{money(order.total)}</div></div><Button onClick={() => setPaying(order)} className="rounded-xl bg-[#FF7B00] transition hover:-translate-y-0.5 hover:shadow-lg"><CreditCard />Pay & place order</Button></div>)}</div>}
-    {items.length ? <div className="grid gap-5 lg:grid-cols-[1fr_340px]"><div className="space-y-3">{items.map((item) => { const product = state.products.find((x) => x.id === item.productId); if (!product) return null; return <div key={item.id} className="surface-card flex flex-wrap items-center gap-3 rounded-[22px] p-4 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-nowrap sm:gap-4"><div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-35 flex-1"><b>{product.name}</b><div className="text-xs text-stone-500">{product.baseUnit} · {money(finalPrice(product, state))} each</div></div><div className="ml-auto flex items-center gap-2"><Button disabled={savingCart} variant="outline" size="sm" onClick={() => void changeQuantity(item, -1)}>−</Button><b className="min-w-6 text-center">{item.quantity}</b><Button disabled={savingCart} variant="outline" size="sm" onClick={() => void changeQuantity(item, 1)}>+</Button><button disabled={savingCart} onClick={() => void removeItem(item)} className="grid size-9 place-items-center rounded-xl hover:bg-red-50 hover:text-red-600"><X className="size-4" /></button></div></div>; })}</div><div className="surface-card h-fit rounded-3xl p-5 lg:sticky lg:top-40"><h3 className="text-lg font-semibold">Review basket</h3><Review label="Products" value={String(items.length)} /><label className="mt-3 block text-sm font-semibold text-[#404040]">Delivery date<input aria-label="Order delivery date" type="date" min={tomorrow()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2 text-stone-900`} /></label><Review label="Estimated total" value={money(total)} /><Button disabled={savingCart} onClick={() => setAddressDialogOpen(true)} className="mt-5 w-full"><CreditCard />{savingCart ? "Saving…" : "Continue to payment"}</Button></div></div> : pendingOrders.length === 0 ? <Empty icon={ShoppingCart} title="Your cart is empty" body="Ask She Agent to add products or add them from the marketplace. The same saved basket appears everywhere." /> : null}
+    {pendingOrders.length > 0 && <div className="space-y-3"><h3 className="text-lg font-black">Awaiting payment</h3>{pendingOrders.map((order) => {
+      const scheduledDatePassed = order.date < todayISO();
+      return <div key={order.id} className="surface-card flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center"><div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div><div className="min-w-0 flex-1"><b>{order.description}</b><div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div><div className="mt-2 text-xl font-black">{money(order.total)}</div>{scheduledDatePassed && <p className="mt-2 text-sm font-medium text-amber-800">Payment unavailable: the scheduled date has passed.</p>}</div><Button disabled={scheduledDatePassed} onClick={() => setPaying(order)} title={scheduledDatePassed ? "Payment is unavailable because the scheduled date has passed" : undefined} className="rounded-xl bg-[#FF7B00] transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600 disabled:hover:transform-none disabled:hover:shadow-none">{scheduledDatePassed ? "Scheduled date passed" : <><CreditCard />Pay & place order</>}</Button></div>;
+    })}</div>}
+    {items.length ? <div className="grid gap-5 lg:grid-cols-[1fr_340px]"><div className="space-y-3">{items.map((item) => { const product = state.products.find((x) => x.id === item.productId); if (!product) return null; return <div key={item.id} className="surface-card flex flex-wrap items-center gap-3 rounded-[22px] p-4 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-nowrap sm:gap-4"><div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-35 flex-1"><b>{product.name}</b><div className="text-xs text-stone-500">{product.baseUnit} · {money(finalPrice(product, state))} each</div></div><div className="ml-auto flex items-center gap-2"><Button disabled={savingCart} variant="outline" size="sm" onClick={() => void changeQuantity(item, -1)}>−</Button><b className="min-w-6 text-center">{item.quantity}</b><Button disabled={savingCart} variant="outline" size="sm" onClick={() => void changeQuantity(item, 1)}>+</Button><button disabled={savingCart} onClick={() => void removeItem(item)} className="grid size-9 place-items-center rounded-xl hover:bg-red-50 hover:text-red-600"><X className="size-4" /></button></div></div>; })}</div><div className="surface-dark h-fit rounded-[28px] p-6 text-white lg:sticky lg:top-6"><h3 className="text-xl font-black">Review basket</h3><Review label="Products" value={String(items.length)} /><label className="mt-3 block text-sm font-bold text-white/70">Delivery date<input aria-label="Order delivery date" type="date" min={tomorrow()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2 text-stone-900`} /></label><Review label="Estimated total" value={money(total)} /><Button disabled={savingCart} onClick={() => setAddressDialogOpen(true)} className="mt-5 w-full rounded-xl bg-[#C20000]"><CreditCard />{savingCart ? "Saving…" : "Continue to payment"}</Button></div></div> : pendingOrders.length === 0 ? <Empty icon={ShoppingCart} title="Your cart is empty" body="Ask She Agent to add products or add them from the marketplace. The same saved basket appears everywhere." /> : null}
     <Dialog open={addressDialogOpen} onOpenChange={setAddressDialogOpen}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[28px] sm:max-w-xl">
         <DialogHeader>
@@ -1708,6 +1953,33 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
           <DialogDescription>Select a saved address or enter a new one before continuing to payment.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          <Field label="Delivery method">
+            <Select value={checkoutMode} onValueChange={(value) => setCheckoutMode(value as DeliveryMode)}>
+              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Vendor delivery">Vendor delivery</SelectItem>
+                <SelectItem value="Self pickup">Self-pickup</SelectItem>
+                <SelectItem value="Third-party delivery" disabled={!isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable}>3rd Party Delivery</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}
+          {checkoutMode !== "Self pickup" && (
+            <Field label="Delivery time window">
+              <Select value={selectedSlot || cartSlotOptions[0]} onValueChange={setSelectedSlot}>
+                <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {cartSlotOptions.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+          {checkoutMode === "Third-party delivery" && <Field label="Instructions for the delivery handler">
+            <Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" />
+            <span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span>
+          </Field>}
           {savedAddresses.map((address) => (
             <button type="button" key={address.id} aria-pressed={!useNewAddress && selectedAddressId === address.id} onClick={() => { setSelectedAddressId(address.id); setUseNewAddress(false); }} className={`w-full rounded-2xl border p-4 text-left transition ${!useNewAddress && selectedAddressId === address.id ? "border-[#FF7B00] bg-[#F4F4F4]" : "border-stone-200 bg-white"}`}>
               <span className="flex items-center justify-between gap-3"><span className="font-black">{address.label}{address.isDefault ? " · Default" : ""}</span><MapPin className="size-4 shrink-0 text-[#B34D00]" /></span>
@@ -1841,33 +2113,203 @@ function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; 
 }
 
 function CustomerProfileV4({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const profile = state.customers.find((x) => x.email === session.email)!;
+  const profile = state.customers.find((x) => x.email === session.email) || {
+    email: session.email,
+    address: "",
+    householdSize: 2,
+    diet: "No preference",
+    allergies: [],
+    goals: [],
+    dislikes: "",
+    onboardingComplete: false,
+    phone: "",
+    latitude: 11.0168,
+    longitude: 76.9558,
+  };
   const memory = profile.agentMemory || {};
-  const [phone, setPhone] = useState(profile.phone || ""), [address, setAddress] = useState(profile.address), [diet, setDiet] = useState(profile.diet), [allergies, setAllergies] = useState(profile.allergies.join(", ")), [goals, setGoals] = useState(profile.goals.join(", ")), [instructions, setInstructions] = useState(profile.dislikes), [coords, setCoords] = useState({ lat: profile.latitude, lng: profile.longitude });
+
+  const normalizeList = (val: unknown): string[] => {
+    if (Array.isArray(val)) return val.flatMap((x) => (typeof x === "string" ? x.split(",") : [])).map((x) => x.trim()).filter(Boolean);
+    if (typeof val === "string") return val.split(",").map((x) => x.trim()).filter(Boolean);
+    return [];
+  };
+
+  const initialAllergies = normalizeList(profile.allergies);
+  const initialGoals = normalizeList(profile.goals);
+
+  const [phone, setPhone] = useState(profile.phone || "");
+  const [address, setAddress] = useState(profile.address || "");
+  const [diet, setDiet] = useState(profile.diet || "No preference");
+  const [household, setHousehold] = useState(profile.householdSize || 2);
+  const [selectedAllergies, setSelectedAllergies] = useState<string[]>(() =>
+    initialAllergies.filter((a) => (STANDARD_ALLERGIES as readonly string[]).includes(a))
+  );
+  const [customAllergies, setCustomAllergies] = useState<string>(() =>
+    initialAllergies.filter((a) => !(STANDARD_ALLERGIES as readonly string[]).includes(a)).join(", ")
+  );
+  const [selectedGoals, setSelectedGoals] = useState<string[]>(() =>
+    initialGoals.filter((g) => (STANDARD_GOALS as readonly string[]).includes(g))
+  );
+  const [customGoals, setCustomGoals] = useState<string>(() =>
+    initialGoals.filter((g) => !(STANDARD_GOALS as readonly string[]).includes(g)).join(", ")
+  );
+  const [instructions, setInstructions] = useState(profile.dislikes || "");
+  const [coords, setCoords] = useState({ lat: profile.latitude, lng: profile.longitude });
+  const [saving, setSaving] = useState(false);
   const [clearingMemory, setClearingMemory] = useState(false);
+
+  // Synchronize component form state whenever profile updates from live sync or external state
+  useEffect(() => {
+    if (profile) {
+      setPhone(profile.phone || "");
+      setAddress(profile.address || "");
+      setDiet(profile.diet || "No preference");
+      setHousehold(profile.householdSize || 2);
+      setInstructions(profile.dislikes || "");
+      setCoords({ lat: profile.latitude, lng: profile.longitude });
+
+      const rawAllergies = normalizeList(profile.allergies);
+      setSelectedAllergies(rawAllergies.filter((a) => (STANDARD_ALLERGIES as readonly string[]).includes(a)));
+      setCustomAllergies(rawAllergies.filter((a) => !(STANDARD_ALLERGIES as readonly string[]).includes(a)).join(", "));
+
+      const rawGoals = normalizeList(profile.goals);
+      setSelectedGoals(rawGoals.filter((g) => (STANDARD_GOALS as readonly string[]).includes(g)));
+      setCustomGoals(rawGoals.filter((g) => !(STANDARD_GOALS as readonly string[]).includes(g)).join(", "));
+    }
+  }, [
+    profile.email,
+    profile.phone,
+    profile.address,
+    profile.diet,
+    profile.householdSize,
+    profile.dislikes,
+    profile.latitude,
+    profile.longitude,
+    JSON.stringify(profile.allergies),
+    JSON.stringify(profile.goals),
+  ]);
+
+  function toggleAllergy(item: string) {
+    setSelectedAllergies((curr) => (curr.includes(item) ? curr.filter((x) => x !== item) : [...curr, item]));
+  }
+
+  function toggleGoal(item: string) {
+    setSelectedGoals((curr) => (curr.includes(item) ? curr.filter((x) => x !== item) : [...curr, item]));
+  }
+
   const tasteProfile = tasteProfileFor(state, session.email);
-  const [tasteSelected, setTasteSelected] = useState<string[]>(TASTE_SETUP_CHOICES.filter((dimension) => (tasteProfile.weights[dimension] || 0) >= 0.5));
-  function toggleTaste(dimension: string) { setTasteSelected((list) => list.includes(dimension) ? list.filter((x) => x !== dimension) : [...list, dimension]); }
+  const [tasteSelected, setTasteSelected] = useState<string[]>(
+    TASTE_SETUP_CHOICES.filter((dimension) => (tasteProfile.weights[dimension] || 0) >= 0.5)
+  );
+  function toggleTaste(dimension: string) {
+    setTasteSelected((list) => (list.includes(dimension) ? list.filter((x) => x !== dimension) : [...list, dimension]));
+  }
   function saveTastePreferences() {
-    const behavioral = Object.fromEntries(Object.entries(tasteProfile.weights).filter(([dimension]) => !(TASTE_SETUP_CHOICES as string[]).includes(dimension)));
+    const behavioral = Object.fromEntries(
+      Object.entries(tasteProfile.weights).filter(([dimension]) => !(TASTE_SETUP_CHOICES as string[]).includes(dimension))
+    );
     const next = { ...behavioral, ...weightsFromSetupChoices(tasteSelected) };
     setState((s) => upsertTasteProfile(s, session.email, next, true));
     if (session.userId) void saveLiveTasteProfile(session.userId, next, true);
     toast.success("Taste preferences saved");
   }
-  function detect() { navigator.geolocation?.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setCoords(point); try { const place = await findLocation(point); setAddress(place.address); } catch { setAddress(`GPS pin ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`); } }, () => toast.error("Allow precise location in your browser"), { enableHighAccuracy: true, maximumAge: 0 }); }
-  async function save() { const next = { ...profile, phone, address, latitude: coords.lat, longitude: coords.lng, diet, allergies: allergies.split(",").map((x) => x.trim()).filter(Boolean), goals: goals.split(",").map((x) => x.trim()).filter(Boolean), dislikes: instructions, addresses: [{ id: profile.addresses?.[0]?.id || id("ADR"), label: "Home", address, latitude: coords.lat, longitude: coords.lng, phone, isDefault: true }, ...(profile.addresses || []).filter((x) => !x.isDefault)] }; try { if (session.userId && isLiveSupabaseMode() && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) await saveLiveCustomerProfile({ userId: session.userId, phone, address, latitude: coords.lat!, longitude: coords.lng!, householdSize: profile.householdSize, diet, allergies: next.allergies, goals: next.goals, instructions }); setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? next : x) })); toast.success("Profile and default address saved"); } catch (error) { toast.error(error instanceof Error ? error.message : "Profile could not be saved"); } }
-  function addAddress() { const value = prompt("Enter another complete delivery address"); if (!value) return; setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? { ...x, addresses: [...(x.addresses || []), { id: id("ADR"), label: `Address ${(x.addresses?.length || 0) + 1}`, address: value, isDefault: false }] } : x) })); }
+
+  function detect() {
+    navigator.geolocation?.getCurrentPosition(
+      async (position) => {
+        const point = { lat: Number(position.coords.latitude.toFixed(6)), lng: Number(position.coords.longitude.toFixed(6)) };
+        setCoords(point);
+        try {
+          const place = await findLocation(point);
+          setAddress(place.address);
+        } catch {
+          setAddress(`GPS pin ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`);
+        }
+      },
+      () => toast.error("Allow precise location in your browser"),
+      { enableHighAccuracy: true, maximumAge: 0 }
+    );
+  }
+
+  async function save() {
+    setSaving(true);
+    const parsedCustomAllergies = customAllergies.split(",").map((x) => x.trim()).filter(Boolean);
+    const finalAllergies = Array.from(new Set([...selectedAllergies, ...parsedCustomAllergies]));
+
+    const parsedCustomGoals = customGoals.split(",").map((x) => x.trim()).filter(Boolean);
+    const finalGoals = Array.from(new Set([...selectedGoals, ...parsedCustomGoals]));
+
+    const next = {
+      ...profile,
+      phone,
+      address,
+      latitude: coords.lat,
+      longitude: coords.lng,
+      householdSize: household,
+      diet,
+      allergies: finalAllergies,
+      goals: finalGoals,
+      dislikes: instructions,
+      addresses: [
+        { id: profile.addresses?.[0]?.id || id("ADR"), label: "Home", address, latitude: coords.lat, longitude: coords.lng, phone, isDefault: true },
+        ...(profile.addresses || []).filter((x) => !x.isDefault),
+      ],
+    };
+
+    try {
+      if (session.userId && isLiveSupabaseMode() && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
+        await saveLiveCustomerProfile({
+          userId: session.userId,
+          phone,
+          address,
+          latitude: coords.lat!,
+          longitude: coords.lng!,
+          householdSize: household,
+          diet,
+          allergies: finalAllergies,
+          goals: finalGoals,
+          instructions,
+        });
+      }
+      setState((s) => ({ ...s, customers: s.customers.map((x) => (x.email === session.email ? next : x)) }));
+      toast.success("Profile and default address saved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Profile could not be saved");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addAddress() {
+    const value = prompt("Enter another complete delivery address");
+    if (!value) return;
+    setState((s) => ({
+      ...s,
+      customers: s.customers.map((x) =>
+        x.email === session.email
+          ? { ...x, addresses: [...(x.addresses || []), { id: id("ADR"), label: `Address ${(x.addresses?.length || 0) + 1}`, address: value, isDefault: false }] }
+          : x
+      ),
+    }));
+  }
+
   async function clearMemory() {
     if (!confirm("Clear She Agent's learned shopping preferences? Your profile, orders, addresses and explicit food settings will stay unchanged.")) return;
     setClearingMemory(true);
     try {
       if (session.userId && isLiveSupabaseMode()) await clearLiveCustomerMemory(session.userId);
-      setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, agentMemory: {} } : item) }));
+      setState((current) => ({
+        ...current,
+        customers: current.customers.map((item) => (item.email === session.email ? { ...item, agentMemory: {} } : item)),
+      }));
       toast.success("She Agent memory cleared");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Memory could not be cleared"); }
-    finally { setClearingMemory(false); }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Memory could not be cleared");
+    } finally {
+      setClearingMemory(false);
+    }
   }
+
   const remembered = [
     ["Typical budget", memory.lastBudget ? money(memory.lastBudget) : "Not learned"],
     ["Favourite categories", memory.favoriteCategories?.join(", ") || "Not learned"],
@@ -1877,12 +2319,220 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
     ["Dietary preference", memory.preferredDietaryTags?.join(", ") || "Not learned"],
     ["Delivery preference", memory.preferredDeliveryPeriod || "Not learned"],
   ];
-  return <div className="space-y-6"><Heading eyebrow="YOUR PROFILE" title="Addresses, food preferences & She Agent memory" body="Your explicit profile and the shopping preferences She Agent remembers are separated. Learned shopping preferences are kept privately with your account and can be cleared here at any time." action={<Button variant="outline" onClick={addAddress}><Plus />Add address</Button>} />
-    <div className="grid gap-5 lg:grid-cols-2"><div className="surface-card space-y-4 rounded-[28px] p-6"><Field label="Phone / WhatsApp"><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} placeholder="+91 ..." /></Field><Field label="Default delivery address"><Textarea value={address} onChange={(e) => setAddress(e.target.value)} className="rounded-xl" /></Field><LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><Button variant="outline" onClick={detect}><LocateFixed />Use actual location</Button><MapPreview lat={coords.lat} lng={coords.lng} radius={0} label="Default delivery address" /><div className="space-y-2">{(profile.addresses || []).filter((x) => !x.isDefault).map((item) => <div key={item.id} className="rounded-2xl bg-[#F4F4F4] p-3 text-sm"><b>{item.label}</b><div>{item.address}</div></div>)}</div></div>
-      <div className="surface-card space-y-4 rounded-[28px] p-6"><Field label="Diet"><input value={diet} onChange={(e) => setDiet(e.target.value)} className={inputClass} /></Field><Field label="Allergies (comma separated)"><input value={allergies} onChange={(e) => setAllergies(e.target.value)} className={inputClass} /></Field><Field label="Health goals (comma separated)"><input value={goals} onChange={(e) => setGoals(e.target.value)} className={inputClass} /></Field><Field label="Instructions for She Agent"><Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} className="min-h-28 rounded-xl" /></Field><Button onClick={() => void save()} className="bg-[#FF7B00]"><Check />Save profile</Button></div></div>
-    <section className="surface-card rounded-[28px] p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><Sparkles className="size-5 text-[#B34D00]" /><h3 className="text-lg font-black">What She Agent remembers</h3></div><p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Only durable commerce preferences should be learned from natural conversations. Sensitive attributes, payment data and precise location are excluded from this memory layer.</p></div><Button variant="outline" disabled={clearingMemory} onClick={() => void clearMemory()} className="rounded-xl text-red-600">{clearingMemory ? <RefreshCcw className="animate-spin" /> : <X />}{clearingMemory ? "Clearing…" : "Clear learned memory"}</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{remembered.map(([label, value]) => <div key={label} className="rounded-[20px] bg-[#F4F4F4] p-4"><div className="text-[11px] font-black uppercase tracking-[.12em] text-stone-400">{label}</div><div className="mt-2 text-sm font-black">{value}</div></div>)}</div></section>
-    <section className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-2"><Flame className="size-5 text-[#C20000]" /><h3 className="text-lg font-black">Taste Match preferences</h3></div><p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Pick what tastes like you. Marketplace products show a Taste Match % based on this, and on what you view, save and order — you can adjust it here anytime.</p><div className="mt-4 flex flex-wrap gap-2">{TASTE_SETUP_CHOICES.map((dimension) => <button type="button" key={dimension} onClick={() => toggleTaste(dimension)} className={`rounded-full border px-3 py-2 text-sm font-bold ${tasteSelected.includes(dimension) ? "border-[#C20000] bg-[#FFF0E0] text-[#C20000]" : "bg-white text-stone-500"}`}>{TASTE_DIMENSION_LABELS[dimension]}</button>)}</div><Button onClick={saveTastePreferences} className="mt-4 rounded-xl bg-[#C20000] hover:bg-[#C20000]"><Check />Save taste preferences</Button></section>
-  </div>;
+
+  return (
+    <div className="space-y-6">
+      <Heading
+        eyebrow="YOUR PROFILE"
+        title="Addresses, food preferences & She Agent memory"
+        body="Your explicit profile and the shopping preferences She Agent remembers are separated. Learned shopping preferences are kept privately with your account and can be cleared here at any time."
+        action={
+          <Button variant="outline" onClick={addAddress}>
+            <Plus />Add address
+          </Button>
+        }
+      />
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="surface-card space-y-4 rounded-[28px] p-6">
+          <Field label="Phone / WhatsApp">
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} placeholder="+91 ..." />
+          </Field>
+          <Field label="Default delivery address">
+            <Textarea value={address} onChange={(e) => setAddress(e.target.value)} className="rounded-xl" />
+          </Field>
+          <LocationSuggestions
+            query={address}
+            onSelect={(place) => {
+              setAddress(place.address);
+              setCoords({ lat: place.latitude, lng: place.longitude });
+            }}
+          />
+          <Button variant="outline" onClick={detect}>
+            <LocateFixed />Use actual location
+          </Button>
+          <MapPreview
+            lat={coords.lat}
+            lng={coords.lng}
+            radius={0}
+            label="Default delivery address"
+            onPinChange={(point) => {
+              const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) };
+              setCoords(next);
+              setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+            }}
+          />
+          <div className="space-y-2">
+            {(profile.addresses || []).filter((x) => !x.isDefault).map((item) => (
+              <div key={item.id} className="rounded-2xl bg-[#F4F4F4] p-3 text-sm">
+                <b>{item.label}</b>
+                <div>{item.address}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="surface-card space-y-4 rounded-[28px] p-6">
+          <Field label="Diet">
+            <Select value={diet} onValueChange={setDiet}>
+              <SelectTrigger className="h-11 rounded-xl">
+                <SelectValue placeholder="Select diet" />
+              </SelectTrigger>
+              <SelectContent>
+                {STANDARD_DIETS.map((x) => (
+                  <SelectItem key={x} value={x}>{x}</SelectItem>
+                ))}
+                {!STANDARD_DIETS.includes(diet as any) && diet ? (
+                  <SelectItem value={diet}>{diet}</SelectItem>
+                ) : null}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <div className="sp-field block">
+            <span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">Allergies</span>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {STANDARD_ALLERGIES.map((option) => {
+                const selected = selectedAllergies.includes(option);
+                return (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => toggleAllergy(option)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                      selected
+                        ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]"
+                        : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                    }`}
+                  >
+                    {selected ? "✓ " : "+ "}{option}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={customAllergies}
+              onChange={(e) => setCustomAllergies(e.target.value)}
+              className={inputClass}
+              placeholder="Other allergies (comma separated)"
+            />
+            <span className="mt-1 block text-xs text-stone-400">Standard options (tap to toggle) plus custom allergies</span>
+          </div>
+
+          <div className="sp-field block">
+            <span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">Health goals</span>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {STANDARD_GOALS.map((option) => {
+                const selected = selectedGoals.includes(option);
+                return (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => toggleGoal(option)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                      selected
+                        ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]"
+                        : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                    }`}
+                  >
+                    {selected ? "✓ " : "+ "}{option}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={customGoals}
+              onChange={(e) => setCustomGoals(e.target.value)}
+              className={inputClass}
+              placeholder="Other goals (comma separated)"
+            />
+            <span className="mt-1 block text-xs text-stone-400">Standard options (tap to toggle) plus custom goals</span>
+          </div>
+
+          <Field label="Household size">
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={household}
+              onChange={(e) => setHousehold(Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Instructions for She Agent">
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              className="min-h-24 rounded-xl"
+              placeholder="Example: no coriander, mild spice"
+            />
+          </Field>
+
+          <Button onClick={() => void save()} disabled={saving} className="bg-[#FF7B00]">
+            <Check />{saving ? "Saving…" : "Save profile"}
+          </Button>
+        </div>
+      </div>
+
+      <section className="surface-card rounded-[28px] p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-5 text-[#B34D00]" />
+              <h3 className="text-lg font-black">What She Agent remembers</h3>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+              Only durable commerce preferences should be learned from natural conversations. Sensitive attributes, payment data and precise location are excluded from this memory layer.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={clearingMemory}
+            onClick={() => void clearMemory()}
+            className="rounded-xl text-red-600"
+          >
+            {clearingMemory ? <RefreshCcw className="animate-spin" /> : <X />}
+            {clearingMemory ? "Clearing…" : "Clear learned memory"}
+          </Button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {remembered.map(([label, value]) => (
+            <div key={label} className="rounded-[20px] bg-[#F4F4F4] p-4">
+              <div className="text-[11px] font-black uppercase tracking-[.12em] text-stone-400">{label}</div>
+              <div className="mt-2 text-sm font-black">{value}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="surface-card rounded-[28px] p-6">
+        <div className="flex items-center gap-2">
+          <Flame className="size-5 text-[#C20000]" />
+          <h3 className="text-lg font-black">Taste Match preferences</h3>
+        </div>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+          Pick what tastes like you. Marketplace products show a Taste Match % based on this, and on what you view, save and order — you can adjust it here anytime.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TASTE_SETUP_CHOICES.map((dimension) => (
+            <button
+              type="button"
+              key={dimension}
+              onClick={() => toggleTaste(dimension)}
+              className={`rounded-full border px-3 py-2 text-sm font-bold ${
+                tasteSelected.includes(dimension) ? "border-[#C20000] bg-[#FFE9E9] text-[#C20000]" : "bg-white text-stone-500"
+              }`}
+            >
+              {TASTE_DIMENSION_LABELS[dimension]}
+            </button>
+          ))}
+        </div>
+        <Button onClick={saveTastePreferences} className="mt-4 rounded-xl bg-[#C20000] hover:bg-[#C20000]">
+          <Check />Save taste preferences
+        </Button>
+      </section>
+    </div>
+  );
 }
 
 /** Re-renders once a second purely to keep a countdown string fresh — the
@@ -2000,8 +2650,8 @@ function VendorArea({ active, session, state, setState, shorts }: { active: stri
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
   if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} />;
-  if (active === "Store & radius") return <StoreRadius vendor={vendor} setState={setState} session={session} />;
-  if (active === "Verification") return <VerificationView vendor={vendor} setState={setState} session={session} />;
+  if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
+  if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
@@ -2025,7 +2675,7 @@ function VendorArea({ active, session, state, setState, shorts }: { active: stri
   async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(error instanceof Error ? error.message : "The order could not be accepted"); } }
   const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need the Thrive or Crown plan.", Crave: "Food Drops need the Thrive or Crown plan. Quotation requests are on Crown.", Thrive: "Food Drops are on. Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops and customer quotation requests are both on." };
   return <div className="space-y-5">
-    <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#E3F8E3] text-[#0A7A2A]" : "bg-[#FFE9E9] text-[#C20000]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#E3F8E3] text-[#0A7A2A]" : "bg-[#FFF4CF] text-[#7A5A00]"}`}>{vendor.verification}</span></div>} />
+    <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#E3F8E3] text-[#0A7A2A]" : "bg-[#E3F8E3] text-[#C20000]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#E3F8E3] text-[#0A7A2A]" : "bg-[#E3F8E3] text-[#7A5A00]"}`}>{vendor.verification}</span></div>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="Orders today" value={String(ordersToday.length)} icon={ReceiptText} note={`${orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)).length} upcoming in total`} />
       <Metric label="Sales today" value={money(ordersToday.reduce((sum, x) => sum + x.total, 0))} icon={IndianRupee} />
@@ -2041,7 +2691,7 @@ function VendorArea({ active, session, state, setState, shorts }: { active: stri
     </div>
     <div className="grid gap-5 xl:grid-cols-[1.4fr_.9fr]">
       <div className="rounded-3xl bg-[#FF7B00] p-5 text-[#0A0A0A]"><div className="flex items-center gap-3"><Crown className="size-9 shrink-0" /><div><div className="text-lg font-bold">You are on the {vendor.plan} plan</div><div className="text-xs font-medium">{planNote[vendor.plan] || ""}</div></div></div></div>
-      <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Low stock</h3>{lowStock.length ? <div className="mt-3 space-y-2">{lowStock.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 text-sm"><span className="min-w-0 truncate">{item.name}</span><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${item.stock <= 2 ? "bg-[#FFE9E9] text-[#C20000]" : "bg-[#FFF4CF] text-[#7A5A00]"}`}>{item.stock} left</span></div>)}</div> : <p className="mt-3 text-sm text-[#66666B]">Every active product has healthy stock.</p>}</section>
+      <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Low stock</h3>{lowStock.length ? <div className="mt-3 space-y-2">{lowStock.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 text-sm"><span className="min-w-0 truncate">{item.name}</span><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${item.stock <= 2 ? "bg-[#FFE9E9] text-[#C20000]" : "bg-[#FFE9E9] text-[#7A5A00]"}`}>{item.stock} left</span></div>)}</div> : <p className="mt-3 text-sm text-[#66666B]">Every active product has healthy stock.</p>}</section>
     </div>
     {vendor.verification !== "Verified" && <div className="rounded-3xl bg-[#FFF4CF] p-4 text-sm text-[#7A5A00]"><AlertTriangle className="mr-2 inline size-4" />Marketplace remains locked until Operations verifies the food certification.</div>}
     <div className="surface-card rounded-[28px] p-6"><div className="flex items-center justify-between"><h3 className="font-black">Customer feedback</h3>{vendorRatingAvg && <div className="flex items-center gap-1.5"><StarRow value={vendorRatingAvg} /><span className="text-xs font-black text-stone-500">{vendorRatingAvg.toFixed(1)} average</span></div>}</div>
@@ -2097,6 +2747,695 @@ function StorefrontPos({ vendor, state, setState, session }: { vendor: Vendor; s
 
 function cancellationCharge(order: Order) { if (["Out for delivery", "Ready", "Ready for pickup"].includes(order.status)) return order.total; if (order.status === "Preparing") return Math.round(order.total * .25); return Math.min(25, Math.round(order.total * .05)); }
 
+
+function orderStatusTone(status: Order["status"]): string {
+  switch (status) {
+    case "Delivered":
+    case "Completed":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "Out for delivery":
+      return "border-sky-200 bg-sky-50 text-sky-700 font-bold";
+    case "Confirmed":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "Preparing":
+    case "Ready":
+    case "Ready for pickup":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "Scheduled":
+      return "border-stone-200 bg-stone-50 text-stone-700";
+    case "Cancelled":
+    case "Cancellation requested":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "";
+  }
+}
+
+type TimelineStep = {
+  key: string;
+  label: string;
+  state: "completed" | "current" | "upcoming" | "cancelled";
+  caption?: string;
+};
+
+function getOrderTimeline(order: Order): TimelineStep[] {
+  const isPickup = order.mode === "Self pickup";
+  const step3Label = isPickup ? "Ready for Pickup" : "Out for Delivery";
+  const step4Label = isPickup ? "Picked Up" : "Delivered";
+
+  if (order.status === "Cancelled" || order.status === "Cancellation requested") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed", caption: "Received" },
+      { key: "confirmed", label: order.status === "Cancelled" ? "Cancelled" : "Cancellation Pending", state: "cancelled", caption: "Stopped" },
+      { key: "transit", label: step3Label, state: "upcoming" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Delivered" || order.status === "Completed") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed", caption: "Confirmed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed", caption: "Prepared" },
+      { key: "transit", label: step3Label, state: "completed", caption: isPickup ? "Ready" : "Dispatched" },
+      { key: "delivered", label: step4Label, state: "completed", caption: isPickup ? "Collected" : "Fulfilled" },
+    ];
+  }
+
+  if (order.status === "Out for delivery") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed" },
+      { key: "transit", label: step3Label, state: "current", caption: "On the way" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Ready" || order.status === "Ready for pickup") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed" },
+      { key: "transit", label: step3Label, state: "current", caption: isPickup ? "Ready to pick" : "Packed & ready" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Preparing") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "current", caption: "In kitchen" },
+      { key: "transit", label: step3Label, state: "upcoming" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Confirmed") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed", caption: "Slot booked" },
+      { key: "transit", label: step3Label, state: "upcoming" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  // Default / Scheduled
+  return [
+    { key: "placed", label: "Order Placed", state: "completed", caption: "Recorded" },
+    { key: "confirmed", label: "Vendor Confirmed", state: "current", caption: "Awaiting slot" },
+    { key: "transit", label: step3Label, state: "upcoming" },
+    { key: "delivered", label: step4Label, state: "upcoming" },
+  ];
+}
+
+function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
+  return (
+    <div className="w-full">
+      <div className="relative flex items-center justify-between">
+        {timeline.map((step, idx) => {
+          const isLast = idx === timeline.length - 1;
+          const isCompleted = step.state === "completed";
+          const isCurrent = step.state === "current";
+          const isCancelled = step.state === "cancelled";
+          const nextStep = timeline[idx + 1];
+          const isLineActive = isCompleted && nextStep && (nextStep.state === "completed" || nextStep.state === "current");
+
+          return (
+            <Fragment key={step.key}>
+              <div className="relative z-10 flex flex-col items-center text-center">
+                <div
+                  className={`grid size-7 sm:size-8 place-items-center rounded-full text-xs font-bold transition-all ${
+                    isCancelled
+                      ? "bg-rose-500 text-white ring-4 ring-rose-100"
+                      : isCompleted
+                      ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
+                      : isCurrent
+                      ? "bg-[#0A0A0A] text-white ring-4 ring-stone-200 animate-pulse"
+                      : "bg-stone-200 text-stone-500"
+                  }`}
+                >
+                  {isCancelled ? (
+                    <X className="size-3.5" />
+                  ) : isCompleted ? (
+                    <CheckCircle2 className="size-4" />
+                  ) : isCurrent ? (
+                    <span className="size-2 rounded-full bg-white" />
+                  ) : (
+                    <span className="size-1.5 rounded-full bg-stone-400" />
+                  )}
+                </div>
+                <div className="mt-1.5 max-w-[70px] sm:max-w-[100px]">
+                  <p
+                    className={`text-[11px] sm:text-xs font-bold leading-tight ${
+                      isCancelled
+                        ? "text-rose-600"
+                        : isCurrent
+                        ? "text-stone-900"
+                        : isCompleted
+                        ? "text-emerald-800"
+                        : "text-stone-400"
+                    }`}
+                  >
+                    {step.label}
+                  </p>
+                  {step.caption && (
+                    <p className="mt-0.5 text-[10px] text-stone-500 font-medium hidden sm:block">
+                      {step.caption}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {!isLast && (
+                <div className="relative mb-5 flex-1 mx-1.5 sm:mx-3 h-0.5 sm:h-1 bg-stone-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      isLineActive ? "bg-emerald-500" : isCancelled ? "bg-rose-300" : "bg-transparent"
+                    }`}
+                  />
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OrderDetailsDialog({
+  order,
+  close,
+  state,
+  session,
+}: {
+  order: Order | null;
+  close: () => void;
+  state: V3State;
+  session: DemoSession;
+}) {
+  if (!order) return null;
+  const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
+  const vendor = state.vendors.find((v) => v.id === order.vendorId);
+  const assignment = state.assignments.find((item) => item.orderId === order.id);
+  const person = state.staff.find((item) => item.id === assignment?.staffId);
+  const customer = state.customers.find((c) => c.email === session.email);
+  const deliveryAddress = order.deliveryAddress || customer?.address || "Address confirmed on profile";
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
+        <div className="border-b bg-[#0A0A0A] p-6 text-white">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+                <ReceiptText className="size-5 text-emerald-400" />
+                Order Details
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-stone-300 bg-white/10 px-2.5 py-1 rounded-lg">
+                  {displayOrderNo}
+                </span>
+                <Status className={orderStatusTone(order.status)}>{order.status}</Status>
+              </div>
+            </div>
+            <DialogDescription className="text-stone-300 text-xs mt-1">
+              Placed on {order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : order.date}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="space-y-6 p-6">
+          {/* Vendor Details */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Store & Kitchen</div>
+                <h4 className="mt-1 font-black text-stone-900 text-base">{vendor?.businessName || "ShePlates Kitchen Partner"}</h4>
+                {vendor?.address && (
+                  <p className="mt-1 text-xs text-stone-600 flex items-center gap-1.5">
+                    <MapPin className="size-3.5 shrink-0 text-stone-400" />
+                    {vendor.address}
+                  </p>
+                )}
+                {vendor?.ownerEmail && (
+                  <p className="mt-1 text-xs text-stone-600 flex items-center gap-1.5">
+                    <PhoneCall className="size-3.5 shrink-0 text-stone-400" />
+                    {vendor.ownerEmail}
+                  </p>
+                )}
+              </div>
+              {vendor && <Status className={vendor.verification === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{vendor.verification}</Status>}
+            </div>
+          </div>
+
+          {/* Delivery & Schedule Information */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+              <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Scheduled Fulfilment</div>
+              <div className="mt-2 space-y-1 text-sm">
+                <div className="flex items-center gap-2 font-bold text-stone-900">
+                  <CalendarDays className="size-4 text-stone-500" />
+                  {order.date}
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-stone-600">
+                  <Clock3 className="size-4 text-stone-400" />
+                  {order.slot}
+                </div>
+                <div className="mt-2 text-xs font-medium text-stone-500">
+                  Mode: <span className="font-bold text-stone-800">{order.mode}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+              <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Delivery Address</div>
+              <div className="mt-2 text-xs leading-5 text-stone-700 flex items-start gap-1.5">
+                <MapPin className="size-4 shrink-0 text-stone-400 mt-0.5" />
+                <span>{deliveryAddress}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Delivery Partner */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Delivery Partner</div>
+            {person ? (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-stone-900 text-sm">{person.name}</div>
+                  <div className="text-xs text-stone-500 font-mono mt-0.5">{person.phone}</div>
+                </div>
+                <a
+                  href={`tel:${person.phone}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-50"
+                >
+                  <PhoneCall className="size-3.5 text-emerald-600" />
+                  Call Partner
+                </a>
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-stone-500">
+                {order.mode === "Self pickup"
+                  ? "Self pickup chosen. Please collect from the vendor kitchen during the scheduled slot."
+                  : "A delivery partner will be assigned once preparation is underway."}
+              </p>
+            )}
+          </div>
+
+          {/* Items breakdown */}
+          <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Ordered Items</div>
+            <div className="mt-3 divide-y divide-stone-100">
+              {order.items && order.items.length > 0 ? (
+                order.items.map((it, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2 text-sm">
+                    <div className="font-bold text-stone-900">
+                      {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
+                    </div>
+                    {it.price != null && (
+                      <div className="font-mono text-stone-700 font-semibold">{money(it.price * it.quantity)}</div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="flex items-center justify-between py-2 text-sm">
+                  <div className="font-bold text-stone-900">
+                    {order.quantity} × {product?.name || order.description} {order.unit ? `(${order.unit})` : ""}
+                  </div>
+                  <div className="font-mono text-stone-700 font-semibold">{money(order.total)}</div>
+                </div>
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3 text-base font-black text-stone-900">
+              <span>Total Paid</span>
+              <span>{money(order.total)}</span>
+            </div>
+          </div>
+
+          {/* Payment Details */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Payment Information</div>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-stone-500">Status:</span>
+                <span className="ml-1 font-bold text-emerald-700">{order.payment}</span>
+              </div>
+              <div>
+                <span className="text-stone-500">Method:</span>
+                <span className="ml-1 font-bold text-stone-800">{order.paymentProvider || (order.payment === "Paid" ? "Razorpay" : "Prepaid")}</span>
+              </div>
+              {order.paymentReference && (
+                <div className="col-span-2">
+                  <span className="text-stone-500">Transaction ID:</span>
+                  <span className="ml-1 font-mono text-stone-700 break-all">{order.paymentReference}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Button onClick={close} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OrderTrackingDialog({
+  order,
+  close,
+  state,
+}: {
+  order: Order | null;
+  close: () => void;
+  state: V3State;
+}) {
+  if (!order) return null;
+  const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
+  const vendor = state.vendors.find((v) => v.id === order.vendorId);
+  const assignment = state.assignments.find((item) => item.orderId === order.id);
+  const person = state.staff.find((item) => item.id === assignment?.staffId);
+  const timeline = getOrderTimeline(order);
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  // Hero status message
+  let heroTitle = "Order in Progress";
+  let heroSubtitle = "Your fresh meal is being coordinated with the kitchen.";
+  if (order.status === "Delivered" || order.status === "Completed") {
+    heroTitle = "Delivered!";
+    heroSubtitle = "Your order was successfully completed. Bon appétit!";
+  } else if (order.status === "Out for delivery") {
+    heroTitle = "Out for Delivery";
+    heroSubtitle = person ? `${person.name} is on the way to your delivery address.` : "Your delivery partner is en route!";
+  } else if (order.status === "Ready" || order.status === "Ready for pickup") {
+    heroTitle = order.mode === "Self pickup" ? "Ready for Pickup" : "Food Ready for Dispatch";
+    heroSubtitle = "Freshly prepared and packed by the kitchen.";
+  } else if (order.status === "Preparing") {
+    heroTitle = "Preparing in Kitchen";
+    heroSubtitle = `${vendor?.businessName || "The kitchen"} is currently preparing your meal.`;
+  } else if (order.status === "Confirmed") {
+    heroTitle = "Order Confirmed";
+    heroSubtitle = "The vendor has accepted your order and slot.";
+  } else if (order.status === "Scheduled") {
+    heroTitle = "Order Scheduled";
+    heroSubtitle = `Scheduled for delivery on ${order.date} during ${order.slot}.`;
+  } else if (order.status === "Cancelled" || order.status === "Cancellation requested") {
+    heroTitle = order.status === "Cancelled" ? "Order Cancelled" : "Cancellation Pending";
+    heroSubtitle = "This order is no longer in active fulfilment.";
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
+        {/* Header */}
+        <div className="border-b bg-[#0A0A0A] p-6 text-white">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+                <Compass className="size-5 text-emerald-400" />
+                Live Order Tracking
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-stone-300 bg-white/10 px-2.5 py-1 rounded-lg">
+                  {displayOrderNo}
+                </span>
+                <Status className={orderStatusTone(order.status)}>{order.status}</Status>
+              </div>
+            </div>
+            <DialogDescription className="text-stone-300 text-xs mt-1">
+              Estimated delivery: {order.date} • {order.slot}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="space-y-6 p-6">
+          {/* Hero status box */}
+          <div className="rounded-2xl bg-gradient-to-br from-emerald-50 via-emerald-100/40 to-white p-5 border border-emerald-200/80">
+            <div className="flex items-start gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-emerald-600 text-white shrink-0">
+                {order.status === "Delivered" || order.status === "Completed" ? (
+                  <CheckCircle2 className="size-6" />
+                ) : (
+                  <Package className="size-5" />
+                )}
+              </div>
+              <div>
+                <h3 className="font-black text-emerald-950 text-base">{heroTitle}</h3>
+                <p className="mt-0.5 text-xs text-emerald-800 leading-relaxed font-medium">{heroSubtitle}</p>
+                <div className="mt-2 text-xs font-bold text-emerald-900">
+                  {order.quantity} × {product?.name || order.description}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Timeline */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-5">
+            <div className="text-xs font-black uppercase tracking-wider text-stone-400 mb-4">Delivery Progress</div>
+            <CompactDeliveryTimeline timeline={timeline} />
+          </div>
+
+          {/* Delivery Partner Details (if assigned) */}
+          <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Fulfilment & Partner</div>
+            {person ? (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="grid size-10 place-items-center rounded-full bg-stone-100 text-stone-700 font-black text-sm">
+                    {person.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="font-bold text-stone-900 text-sm">{person.name}</div>
+                    <div className="text-xs text-stone-500">Assigned Delivery Partner</div>
+                  </div>
+                </div>
+                <a
+                  href={`tel:${person.phone}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-50"
+                >
+                  <PhoneCall className="size-3.5 text-emerald-600" />
+                  {person.phone}
+                </a>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-stone-500">
+                {order.mode === "Self pickup"
+                  ? "Self pickup order. Collect your meal from the kitchen during the chosen time slot."
+                  : "A delivery partner will be designated closer to dispatch time."}
+              </p>
+            )}
+          </div>
+
+          {/* Future GPS Map Notice */}
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-4 text-center">
+            <Compass className="size-6 text-stone-400 mx-auto" />
+            <div className="mt-2 text-xs font-black text-stone-700">Live GPS Map Tracking</div>
+            <p className="mt-1 text-xs text-stone-500 max-w-md mx-auto">
+              Real-time map tracking will be active on this screen once our partner telemetry system goes live for live coordinates.
+            </p>
+          </div>
+
+          <Button onClick={close} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
+            Back to Orders
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CustomerOrderCard({
+  order,
+  state,
+  session,
+  onViewDetails,
+  onTrackOrder,
+  onReschedule,
+  onRateOrder,
+  onIssueThirdPartyCode,
+  deliveryCodes,
+  deliveryActionId,
+}: {
+  order: Order;
+  state: V3State;
+  session: DemoSession;
+  onViewDetails: (order: Order) => void;
+  onTrackOrder: (order: Order) => void;
+  onReschedule: (order: Order) => void;
+  onRateOrder: (order: Order) => void;
+  onIssueThirdPartyCode: (order: Order) => void;
+  deliveryCodes: Record<string, { code: string; expiresAt: string }>;
+  deliveryActionId: string | null;
+}) {
+  const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
+  const vendor = state.vendors.find((v) => v.id === order.vendorId);
+  const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
+  const timeline = getOrderTimeline(order);
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  return (
+    <div className="surface-card rounded-[28px] p-5 sm:p-6 transition-all hover:shadow-md">
+      {/* Header row: Order #, Date, Status Badges */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 pb-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-mono font-bold text-stone-700 bg-stone-100 px-2.5 py-1 rounded-lg">
+            {displayOrderNo}
+          </span>
+          <span className="text-stone-300">•</span>
+          <span className="text-stone-500 font-medium">
+            {order.createdAt
+              ? new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+              : order.date}
+          </span>
+          <span className="text-stone-300">•</span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2.5 py-0.5 text-xs font-semibold text-stone-700">
+            {order.mode}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700 font-bold" : ""}>
+            {order.payment}
+          </Status>
+          <Status className={orderStatusTone(order.status)}>
+            {order.status}
+          </Status>
+        </div>
+      </div>
+
+      {/* Main content row: Thumbnail + Product Info + Price */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <PhotoTile
+            imageUrl={product?.imageUrl || product?.originalImageUrl}
+            category={product?.category}
+            className="size-16 sm:size-20 shrink-0 rounded-2xl shadow-sm"
+            emojiSize={32}
+          />
+          <div className="min-w-0">
+            <h4 className="font-black text-stone-900 text-base sm:text-lg truncate">
+              {product?.name || order.description}
+            </h4>
+            <p className="text-xs sm:text-sm text-stone-500 font-medium mt-0.5">
+              {order.quantity} × {product?.baseUnit || order.unit || "item"}
+              {vendor ? ` • ${vendor.businessName}` : ""}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-stone-600">
+              <span className="inline-flex items-center gap-1 font-semibold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md">
+                <CalendarDays className="size-3 text-stone-500" />
+                {order.date}
+              </span>
+              <span className="inline-flex items-center gap-1 text-stone-600 bg-stone-50 px-2 py-0.5 rounded-md border border-stone-200/60">
+                <Clock3 className="size-3 text-stone-400" />
+                {order.slot}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Amount */}
+        <div className="sm:text-right shrink-0">
+          <div className="text-xs uppercase font-bold tracking-wider text-stone-400">Total</div>
+          <div className="text-xl sm:text-2xl font-black text-stone-900">{money(order.total)}</div>
+          {order.items && order.items.length > 1 && (
+            <div className="text-[11px] text-stone-400 font-medium">+{order.items.length - 1} more item(s)</div>
+          )}
+        </div>
+      </div>
+
+      {/* Compact Delivery Timeline */}
+      <div className="rounded-2xl bg-stone-50/80 p-4 border border-stone-100">
+        <CompactDeliveryTimeline timeline={timeline} />
+      </div>
+
+      {/* Third party delivery handling if requested */}
+      {order.mode === "Third-party delivery" && thirdPartyDelivery && (
+        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <b className="text-sm text-violet-950">3rd Party Delivery Request</b>
+            <Status>{thirdPartyDelivery.status}</Status>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-violet-950">{thirdPartyDelivery.notes}</p>
+          {thirdPartyDelivery.status === "pending" && (
+            <p className="mt-3 text-xs text-violet-900">The vendor must accept this request before you can issue the handover code.</p>
+          )}
+          {thirdPartyDelivery.status === "accepted" && (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-violet-900">Issue a secure, one-time code for handover. The code expires after 30 minutes.</p>
+              {deliveryCodes[order.id] && (
+                <div className="rounded-xl border border-violet-200 bg-white p-3 text-center">
+                  <div className="font-mono text-2xl font-black tracking-[0.3em] text-violet-950">{deliveryCodes[order.id].code}</div>
+                  <div className="mt-1 text-xs text-violet-800">Expires {new Date(deliveryCodes[order.id].expiresAt).toLocaleTimeString()}</div>
+                </div>
+              )}
+              <Button
+                disabled={deliveryActionId === order.id}
+                size="sm"
+                onClick={() => onIssueThirdPartyCode(order)}
+                variant="outline"
+                className="rounded-xl border-violet-300"
+              >
+                {deliveryActionId === order.id ? "Issuing…" : deliveryCodes[order.id] ? "Issue replacement code" : "Show handover code"}
+              </Button>
+            </div>
+          )}
+          {thirdPartyDelivery.status === "delivered" && (
+            <p className="mt-3 text-sm font-bold text-emerald-800">Handover verified. This order has been delivered.</p>
+          )}
+          {thirdPartyDelivery.status === "locked" && (
+            <p className="mt-3 text-sm font-bold text-red-700">Code verification is locked after five incorrect attempts.</p>
+          )}
+        </div>
+      )}
+
+      {/* Action Footer */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-stone-100 mt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onViewDetails(order)}
+            className="rounded-xl border-stone-300 font-bold hover:bg-stone-50 text-stone-700"
+          >
+            <ReceiptText className="size-4" />
+            View Details
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onTrackOrder(order)}
+            className="rounded-xl bg-[#0A0A0A] text-white hover:bg-stone-800 font-bold"
+          >
+            <Compass className="size-4" />
+            Track Order
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={["Completed", "Delivered", "Cancelled", "Cancellation requested", "Preparing", "Out for delivery"].includes(order.status)}
+            onClick={() => onReschedule(order)}
+            className="rounded-xl"
+          >
+            <CalendarDays className="size-4" />
+            Reschedule
+          </Button>
+          {["Completed", "Delivered"].includes(order.status) && product && (
+            <Button
+              size="sm"
+              onClick={() => onRateOrder(order)}
+              className="rounded-xl bg-[#e3a008] text-white hover:bg-[#c98a00] font-bold"
+            >
+              <Star className="size-4" />
+              {state.reviews.some((review) => review.productId === product.id && review.customerEmail === session.email) ? "Edit rating" : "Rate"}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) {
   const baseOrders = scope === "customer"
     ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending")
@@ -2106,6 +3445,11 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const [rescheduling, setRescheduling] = useState<Order | null>(null);
   const [paying, setPaying] = useState<Order | null>(null);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
+  const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
+  const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const [deliveryCodes, setDeliveryCodes] = useState<Record<string, { code: string; expiresAt: string }>>({});
+  const [verificationInputs, setVerificationInputs] = useState<Record<string, string>>({});
+  const [deliveryActionId, setDeliveryActionId] = useState<string | null>(null);
   const [dateMode, setDateMode] = useState<"today" | "tomorrow" | "all" | "custom">(scope === "customer" ? "all" : "today");
   const [customDate, setCustomDate] = useState(todayISO());
   const targetDate = dateMode === "today" ? todayISO() : dateMode === "tomorrow" ? tomorrow() : dateMode === "custom" ? customDate : "";
@@ -2113,7 +3457,65 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const dayValue = orders.reduce((sum, item) => sum + item.total, 0);
   const totalValue = baseOrders.reduce((sum, item) => sum + item.total, 0);
 
-  async function update(order: Order, status: Order["status"]) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, status); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x) })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Order status could not be saved"); } }
+  const DELIVERY_STATUSES: Order["status"][] = ["Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed", "Delivered"];
+  async function update(order: Order, status: Order["status"]) { try { if (DELIVERY_STATUSES.includes(status) && order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Delivery actions are only allowed on or after the delivery date.`); return; } if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, status); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x) })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Order status could not be saved"); } }
+  async function acceptThirdPartyRequest(order: Order) {
+    setDeliveryActionId(order.id);
+    try {
+      await acceptLiveThirdPartyDelivery(order.id);
+      setState((current) => ({
+        ...current,
+        thirdPartyDeliveries: current.thirdPartyDeliveries.map((request) => request.orderId === order.id
+          ? { ...request, status: "accepted", acceptedAt: new Date().toISOString() }
+          : request),
+      }));
+      toast.success("Request accepted. The customer can now issue a secure handover code.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The delivery request could not be accepted");
+    } finally { setDeliveryActionId(null); }
+  }
+  async function issueThirdPartyCode(order: Order) {
+    setDeliveryActionId(order.id);
+    try {
+      const issued = await issueLiveThirdPartyDeliveryCode(order.id);
+      setDeliveryCodes((current) => ({ ...current, [order.id]: issued }));
+      setState((current) => ({
+        ...current,
+        thirdPartyDeliveries: current.thirdPartyDeliveries.map((request) => request.orderId === order.id
+          ? { ...request, codeExpiresAt: issued.expiresAt, codeIssuedCount: request.codeIssuedCount + 1 }
+          : request),
+      }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "A handover code could not be issued");
+    } finally { setDeliveryActionId(null); }
+  }
+  async function verifyThirdPartyCode(order: Order) { if (order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Handover verification is only allowed on or after the delivery date.`); return; }
+    const code = verificationInputs[order.id] || "";
+    setDeliveryActionId(order.id);
+    try {
+      await verifyLiveThirdPartyDeliveryCode(order.id, code);
+      setVerificationInputs((current) => ({ ...current, [order.id]: "" }));
+      setDeliveryCodes((current) => { const next = { ...current }; delete next[order.id]; return next; });
+      setState((current) => ({
+        ...current,
+        orders: current.orders.map((item) => item.id === order.id ? { ...item, status: "Delivered" } : item),
+        thirdPartyDeliveries: current.thirdPartyDeliveries.map((request) => request.orderId === order.id
+          ? { ...request, status: "delivered", deliveredAt: new Date().toISOString(), codeExpiresAt: undefined }
+          : request),
+      }));
+      toast.success("Handover verified. Order marked delivered.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The handover code could not be verified");
+    } finally { setDeliveryActionId(null); }
+  }
+  async function refreshCommerce() {
+    try {
+      const snapshot = await loadLiveCommerceSnapshot();
+      setState((current) => mergeLiveCommerce(current, snapshot, session));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Orders could not be refreshed");
+    }
+  }
   function cancel(order: Order) { const fee = cancellationCharge(order); if (!confirm(`Cancellation charge: ${money(fee)} based on the current fulfilment stage. Send to Operations for final review?`)) return; const reason = prompt("Cancellation reason"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested", cancellationFee: fee } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: `Review with estimated charge ${money(fee)}`, confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation review", `${order.id}: proposed charge ${money(fee)}.`), ...s.notifications] })); }
   function locate(order: Order) { navigator.geolocation?.getCurrentPosition((position) => { setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, trackingLatitude: position.coords.latitude, trackingLongitude: position.coords.longitude } : x), notifications: [notice(order.customerEmail, "customer", "Live location updated", `${order.id} location was refreshed by the vendor.`), ...s.notifications] })); toast.success("Live delivery position updated"); }, () => toast.error("Allow location access on the delivery device"), { enableHighAccuracy: true, maximumAge: 0 }); }
   async function assign(order: Order, staffId: string) { try { if (isLiveSupabaseMode()) await assignLiveDeliveryStaff(order.id, staffId === "unassigned" ? undefined : staffId); const nextAssignments = staffId === "unassigned" ? state.assignments.filter((x) => x.orderId !== order.id) : [{ id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }, ...state.assignments.filter((x) => x.orderId !== order.id)]; setState((s) => ({ ...s, assignments: nextAssignments, notifications: staffId === "unassigned" ? s.notifications : [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name || "Your delivery person"} will handle ${order.id}.`), ...s.notifications] })); toast.success(staffId === "unassigned" ? "Delivery assignment cleared" : "Delivery person assigned"); } catch (error) { toast.error(error instanceof Error ? error.message : "Delivery assignment could not be saved"); } }
@@ -2121,12 +3523,29 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const customerSchedules = scope === "customer" ? state.schedules.filter((item) => item.customerEmail === session.email && (item.status || "Active") === "Active").length : 0;
   const customerOpenRequirements = scope === "customer" ? state.requirements.filter((item) => item.customerEmail === session.email && item.status !== "Awarded").length : 0;
 
-  return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope === "customer" ? "Orders & live tracking" : scope === "vendor" ? "Fulfilment & tracking" : "Platform order control"} body={scope === "vendor" ? "Paid orders remain visible for every future delivery date. Use Today, Tomorrow or a date filter to plan fulfilment and assign an active delivery person." : "Track paid orders, fulfilment status and delivery progress."} />
-    {scope === "customer" ? <div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Paid orders" value={String(baseOrders.length)} icon={Package} tone="green" /><Metric label="Active schedules" value={String(customerSchedules)} icon={CalendarDays} tone="blue" /><Metric label="Open requirements" value={String(customerOpenRequirements)} icon={ListChecks} tone="violet" /><Metric label="Order value" value={money(totalValue)} icon={CreditCard} tone="amber" /></div> : <><div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-3"><Metric label="Orders in view" value={String(orders.length)} icon={Package} tone="green" /><Metric label="Value in view" value={money(dayValue)} icon={IndianRupee} tone="amber" /><Metric label="All future order value" value={money(totalValue)} icon={CalendarDays} tone="blue" /></div><div className="surface-card flex flex-wrap items-center gap-2 rounded-3xl p-3">{([['today','Today'],['tomorrow','Tomorrow'],['all','All dates'],['custom','Choose date']] as const).map(([value,label]) => <button key={value} onClick={() => setDateMode(value)} className={`rounded-xl px-4 py-2 text-sm font-black ${dateMode === value ? "bg-[#0A0A0A] text-white" : "bg-stone-50 text-stone-600"}`}>{label}</button>)}{dateMode === "custom" && <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className={`${inputClass} max-w-48`} />}</div></>}
+return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope === "customer" ? "Orders & live tracking" : scope === "vendor" ? "Fulfilment & tracking" : "Platform order control"} body={scope === "vendor" ? "Paid orders remain visible for every future delivery date. Use Today, Tomorrow or a date filter to plan fulfilment and assign an active delivery person." : "Track paid orders, fulfilment status and delivery progress."} action={isLiveSupabaseMode() && scope !== "operations" ? <Button onClick={() => void refreshCommerce()} variant="outline" className="rounded-xl"><RefreshCcw />Refresh orders</Button> : undefined} />    {scope === "customer" ? <div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Paid orders" value={String(baseOrders.length)} icon={Package} tone="green" /><Metric label="Active schedules" value={String(customerSchedules)} icon={CalendarDays} tone="blue" /><Metric label="Open requirements" value={String(customerOpenRequirements)} icon={ListChecks} tone="violet" /><Metric label="Order value" value={money(totalValue)} icon={CreditCard} tone="amber" /></div> : <><div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-3"><Metric label="Orders in view" value={String(orders.length)} icon={Package} tone="green" /><Metric label="Value in view" value={money(dayValue)} icon={IndianRupee} tone="amber" /><Metric label="All future order value" value={money(totalValue)} icon={CalendarDays} tone="blue" /></div><div className="surface-card flex flex-wrap items-center gap-2 rounded-3xl p-3">{([['today','Today'],['tomorrow','Tomorrow'],['all','All dates'],['custom','Choose date']] as const).map(([value,label]) => <button key={value} onClick={() => setDateMode(value)} className={`rounded-xl px-4 py-2 text-sm font-black ${dateMode === value ? "bg-[#0A0A0A] text-white" : "bg-stone-50 text-stone-600"}`}>{label}</button>)}{dateMode === "custom" && <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className={`${inputClass} max-w-48`} />}</div></>}
     {orders.length ? <div className="space-y-4">
       {orders.sort((a, b) => a.date.localeCompare(b.date)).map((order) => {
+        if (scope === "customer") {
+          return (
+            <CustomerOrderCard
+              key={order.id}
+              order={order}
+              state={state}
+              session={session}
+              onViewDetails={(ord) => setDetailsOrder(ord)}
+              onTrackOrder={(ord) => setTrackingOrder(ord)}
+              onReschedule={(ord) => setRescheduling(ord)}
+              onRateOrder={(ord) => setRatingOrder(ord)}
+              onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
+              deliveryCodes={deliveryCodes}
+              deliveryActionId={deliveryActionId}
+            />
+          );
+        }
         const assignment = state.assignments.find((item) => item.orderId === order.id);
         const person = state.staff.find((item) => item.id === assignment?.staffId);
+        const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
         const available = state.staff.filter((item) => item.vendorId === order.vendorId && item.active);
         const product = order.productId ? state.products.find((item) => item.id === order.productId) : undefined;
         const details = [
@@ -2136,39 +3555,34 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
           ["Mode", order.mode],
           ["Delivery person", person ? <Fragment key="delivery-person"><span className="block">{person.name}</span><span className="mt-1 block break-all text-xs font-semibold text-stone-600">{person.phone}</span></Fragment> : "Not assigned"],
         ] as const;
-        if (scope === "customer") {
-          const vendorName = state.vendors.find((v) => v.id === order.vendorId)?.businessName || "Vendor";
-          const tone = order.status === "Completed" ? "bg-[#E3F8E3] text-[#0A7A2A]" : order.status === "Cancelled" || order.status === "Cancellation requested" ? "bg-[#FFE9E9] text-[#C20000]" : "bg-[#FFF0E0] text-[#B34D00]";
-          return <div key={order.id} className="rounded-3xl bg-[#F4F4F4] p-4">
-            <div className="flex items-center gap-3"><div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[#FFDDB8]"><Package className="size-7" /></div>
-              <div className="min-w-0 flex-1"><div className="truncate text-[16px] font-semibold">{order.quantity} × {product?.name || order.description}</div><div className="truncate text-xs text-[#66666B]">{vendorName} · {order.date} · {order.slot}</div><div className="mt-1 text-[11px] text-[#70707A]">{order.id} · {order.mode} · {order.payment}</div></div>
-              <div className="flex shrink-0 flex-col items-end gap-1.5"><b className="tabular-nums">{money(order.total)}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>{order.status}</span></div></div>
-            {order.status === "Out for delivery" && <div className="mt-3"><MapPreview lat={order.trackingLatitude || vendor?.latitude} lng={order.trackingLongitude || vendor?.longitude} radius={0} label="Live delivery position" /></div>}
-            {person && <div className="mt-3 text-xs text-[#66666B]">Delivery person: <b className="text-[#0A0A0A]">{person.name}</b> · {person.phone}</div>}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" disabled={["Completed", "Cancelled", "Cancellation requested", "Preparing", "Out for delivery"].includes(order.status)} onClick={() => setRescheduling(order)}><CalendarDays />Reschedule</Button>
-              {order.status === "Completed" && product && <Button size="sm" onClick={() => setRatingOrder(order)}><Star />{state.reviews.some((review) => review.productId === product.id && review.customerEmail === session.email) ? "Edit rating" : "Rate"}</Button>}
-            </div>
-          </div>;
-        }
         return <div key={order.id} className="surface-card rounded-[28px] p-5">
           <div className="flex flex-col gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><b>{order.description}</b><Status>{order.status}</Status><Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{order.payment}</Status><span className="font-mono text-xs text-stone-400">{order.id}</span></div>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-5">{details.map(([label, value]) => <OrderDetail key={label} label={label} value={value} />)}</div>
               {order.status === "Out for delivery" && <div className="mt-4"><MapPreview lat={order.trackingLatitude || vendor?.latitude} lng={order.trackingLongitude || vendor?.longitude} radius={0} label="Live delivery position" /></div>}
+              {order.mode === "Third-party delivery" && thirdPartyDelivery && <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2"><b className="text-sm text-violet-950">3rd Party Delivery Request</b><Status>{thirdPartyDelivery.status}</Status></div>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-violet-950">{thirdPartyDelivery.notes}</p>
+                {scope === "vendor" && thirdPartyDelivery.status === "pending" && <Button disabled={deliveryActionId === order.id} size="sm" onClick={() => void acceptThirdPartyRequest(order)} className="mt-3 rounded-xl bg-violet-700 hover:bg-violet-800">{deliveryActionId === order.id ? "Accepting…" : "Accept delivery request"}</Button>}
+                {scope === "vendor" && thirdPartyDelivery.status === "accepted" && <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <Field label="Customer handover code"><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={verificationInputs[order.id] || ""} onChange={(event) => setVerificationInputs((current) => ({ ...current, [order.id]: event.target.value.replace(/\D/g, "").slice(0, 6) }))} placeholder="6-digit code" className={`${inputClass} w-40 font-mono tracking-widest`} /></Field>
+                  <Button disabled={deliveryActionId === order.id || (verificationInputs[order.id] || "").length !== 6} size="sm" onClick={() => void verifyThirdPartyCode(order)} className="rounded-xl bg-violet-700 hover:bg-violet-800">{deliveryActionId === order.id ? "Verifying…" : "Verify & mark delivered"}</Button>
+                </div>}
+                {thirdPartyDelivery.status === "delivered" && <p className="mt-3 text-sm font-bold text-emerald-800">Handover verified. This order has been delivered.</p>}
+                {thirdPartyDelivery.status === "locked" && <p className="mt-3 text-sm font-bold text-red-700">Code verification is locked after five incorrect attempts.</p>}
+              </div>}
             </div>
             <div className="flex flex-wrap gap-2">
-              <>
-                <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
-                <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>
-                {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#FF7B00]"><MapPinned />Share live position</Button>}
-              </>
+              <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+{order.mode !== "Third-party delivery" && <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((status) => <SelectItem key={status} value={status} disabled={DELIVERY_STATUSES.includes(status as Order["status"]) && order.date > todayISO()}>{status}</SelectItem>)}</SelectContent></Select>}                {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#FF7B00]"><MapPinned />Share live position</Button>}
             </div>
           </div>
         </div>;
       })}
     </div> : <Empty icon={Package} title="No orders for this selection" body={scope === "vendor" ? "Try Tomorrow or All dates. Unpaid schedules stay with the customer until payment is completed." : "No paid orders are available in this view."} />}
+    <OrderDetailsDialog order={detailsOrder} close={() => setDetailsOrder(null)} state={state} session={session} />
+    <OrderTrackingDialog order={trackingOrder} close={() => setTrackingOrder(null)} state={state} />
     <OrderRescheduleDialog order={rescheduling} close={() => setRescheduling(null)} state={state} setState={setState} />
     <PaymentDialog order={paying} close={() => setPaying(null)} state={state} setState={setState} />
     <RateOrderDialog key={ratingOrder?.id || "closed"} order={ratingOrder} close={() => setRatingOrder(null)} state={state} setState={setState} session={session} />
@@ -2201,6 +3615,10 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
   const [date, setDate] = useState(tomorrow());
   const [slot, setSlot] = useState("06:00–07:00 AM");
   const maxDate = addDaysISO(todayISO(), 15);
+  const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => s.vendorId === order.vendorId && s.isActive) : [];
+  const rescheduleSlotOptions: string[] = vendorActiveSlots.length > 0
+    ? vendorActiveSlots.map((s) => formatSlotLabel(s))
+    : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
   useEffect(() => { if (order) queueMicrotask(() => { setDate(order.date < tomorrow() || order.date > maxDate ? tomorrow() : order.date); setSlot(order.slot); }); }, [order, maxDate]);
   if (!order) return null;
   async function save() {
@@ -2212,24 +3630,129 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#C20000] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
 }
 
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(false);
+    if ((window as unknown as { Razorpay?: unknown }).Razorpay) return resolve(true);
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true));
+      existing.addEventListener("error", () => resolve(false));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
 function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order | null; close: () => void; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onPaid?: () => void }) {
   const [method, setMethod] = useState<"UPI" | "Card" | "Net banking">("UPI");
   const [busy, setBusy] = useState(false);
   if (!order) return null;
   const vendor = state.vendors.find((x) => x.id === order.vendorId);
+  const isLive = isLiveSupabaseMode();
+
   async function pay() {
     if (!order) return;
     setBusy(true);
+
+    if (isLive) {
+      try {
+        const loaded = await loadRazorpayScript();
+        if (!loaded || !(window as unknown as { Razorpay?: unknown }).Razorpay) {
+          throw new Error("Unable to load secure Razorpay Checkout. Please check your connection and try again.");
+        }
+
+        const rzpOrder = await createLiveRazorpayOrder(order.id);
+
+        const RazorpayConstructor = (window as unknown as { Razorpay: new (options: Record<string, unknown>) => { open: () => void; on: (event: string, handler: (resp: unknown) => void) => void } }).Razorpay;
+
+        const rzp = new RazorpayConstructor({
+          key: rzpOrder.keyId,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency || "INR",
+          name: "ShePlates",
+          description: rzpOrder.description || `Order ${rzpOrder.orderNumber}`,
+          order_id: rzpOrder.razorpayOrderId,
+          prefill: {
+            name: rzpOrder.customer?.name || "",
+            email: rzpOrder.customer?.email || order.customerEmail || "",
+          },
+          theme: {
+            color: "#5ba400",
+          },
+          handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+            try {
+              setBusy(true);
+              const result = await verifyLiveRazorpayPayment({
+                orderId: order.id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              });
+
+              const liveSnapshot = (result.snapshot || null) as { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>> } | null;
+              const transaction = recordTransaction(order, "Razorpay");
+
+              setState((s) => {
+                const base = liveSnapshot
+                  ? mergeLiveCommerce(s, liveSnapshot, { email: order.customerEmail, name: order.customerEmail, role: "customer" })
+                  : { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
+                return {
+                  ...base,
+                  transactions: [transaction, ...base.transactions],
+                  notifications: [
+                    notice(order.customerEmail, "customer", "Payment successful", `${money(order.total)} collected via Razorpay. Your scheduled deliveries are now confirmed.`),
+                    ...base.notifications,
+                  ],
+                  audit: [
+                    audit({ email: order.customerEmail, name: order.customerEmail, role: "customer" }, "Customer paid via Razorpay", `${order.id} · ${money(order.total)} (Payment ID: ${response.razorpay_payment_id})`),
+                    ...base.audit,
+                  ],
+                };
+              });
+
+              toast.success("Payment confirmed! Your delivery schedule is active.");
+              close();
+              onPaid?.();
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Payment verification failed.");
+            } finally {
+              setBusy(false);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setBusy(false);
+              toast.info("Payment cancelled.");
+            },
+          },
+        });
+
+        rzp.on("payment.failed", (resp: unknown) => {
+          setBusy(false);
+          const errDesc = (resp as { error?: { description?: string } })?.error?.description;
+          toast.error(errDesc || "Payment failed. Please try again.");
+        });
+
+        rzp.open();
+      } catch (error) {
+        setBusy(false);
+        toast.error(error instanceof Error ? error.message : "Payment could not be initiated");
+      }
+      return;
+    }
+
+    // Demo Mode Simulated Payment
     await new Promise((resolve) => setTimeout(resolve, 350));
     try {
       const transaction = recordTransaction(order, method);
-      let liveSnapshot: { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>> } | null = null;
-      if (isLiveSupabaseMode()) {
-        const result = await markLiveOrderPaid({ orderId: order.id, method });
-        liveSnapshot = (result.snapshot || null) as typeof liveSnapshot;
-      }
       setState((s) => {
-        const base = liveSnapshot ? mergeLiveCommerce(s, liveSnapshot, { email: order.customerEmail, name: order.customerEmail, role: "customer" }) : { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
+        const base = { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
         return {
           ...base,
           transactions: [transaction, ...base.transactions],
@@ -2237,15 +3760,22 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
           audit: [audit({ email: order.customerEmail, name: order.customerEmail, role: "customer" }, "Customer paid for schedule", `${order.id} · ${money(order.total)} via ${method}`), ...base.audit],
         };
       });
-      toast.success(`Payment confirmed. Your delivery schedule is active.`); close(); onPaid?.();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Payment could not be confirmed"); }
-    finally { setBusy(false); }
+      toast.success("Payment confirmed. Your delivery schedule is active.");
+      close();
+      onPaid?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Payment could not be confirmed");
+    } finally {
+      setBusy(false);
+    }
   }
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Pay for {order.id}</DialogTitle><DialogDescription>Simulated secure checkout for this environment. Confirming here records a real transaction and schedules the vendor payout — no external gateway is charged.</DialogDescription></DialogHeader>
+
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Pay for {order.id}</DialogTitle><DialogDescription>{isLive ? "Secure checkout powered by Razorpay Test Mode. All test payment methods (UPI, Cards, Net banking) are supported." : "Simulated secure checkout for this environment. Confirming here records a real transaction and schedules the vendor payout — no external gateway is charged."}</DialogDescription></DialogHeader>
     <div className="space-y-4">
       <div className="rounded-2xl bg-[#F4F4F4] p-4 text-sm"><Review label="Order" value={order.description} /><Review label="Vendor" value={vendor?.businessName || "—"} /><Review label="Delivery address" value={order.deliveryAddress || "Not provided"} /><Review label="Amount payable" value={money(order.total)} /></div>
-      <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Payment method</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`rounded-xl border p-3 text-sm font-black ${method === item ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]" : ""}`}>{item}</button>)}</div></div>
-      <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full rounded-xl bg-[#FF7B00] font-black hover:bg-[#0A0A0A]"><CreditCard />{busy ? "Processing…" : `Pay ${money(order.total)}`}</Button>
+      {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Payment method</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`rounded-xl border p-3 text-sm font-black ${method === item ? "border-[#FF7B00] bg-[#FFF0E0] text-[#0A0A0A]" : ""}`}>{item}</button>)}</div></div>}
+      {isLive && <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex items-center gap-2"><CreditCard className="size-4 shrink-0 text-emerald-600" /><span>Test Mode: Complete payment securely using Razorpay standard checkout popup.</span></div>}
+      <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full rounded-xl bg-[#FF7B00] font-black hover:bg-[#0A0A0A]"><CreditCard />{busy ? (isLive ? "Opening Razorpay…" : "Processing…") : (isLive ? `Pay ${money(order.total)} with Razorpay` : `Pay ${money(order.total)}`)}</Button>
       <p className="text-[11px] leading-5 text-stone-400">A {PLATFORM_COMMISSION_PERCENT}% platform commission is retained; the rest is scheduled to reach the vendor {PAYOUT_CYCLE_DAYS} days after collection.</p>
     </div>
   </DialogContent></Dialog>;
@@ -2326,7 +3856,457 @@ function AIInsights({ role, state }: { role: "operations" | "admin"; state: V3St
   </div>;
 }
 
-function StoreRadius({ vendor, setState, session }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+
+export function formatTime12(timeStr: string): string {
+  if (!timeStr) return "";
+  const parts = String(timeStr).split(":");
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+export function timeToMinutes(timeStr: string): number {
+  const parts = String(timeStr || "").split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+
+export function slotsOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  return timeToMinutes(startA) < timeToMinutes(endB) && timeToMinutes(startB) < timeToMinutes(endA);
+}
+
+export function formatSlotLabel(slot: VendorDeliverySlot): string {
+  return `${slot.slotName} (${formatTime12(slot.startTime)} - ${formatTime12(slot.endTime)})`;
+}
+
+export function validateDeliverySlot({
+  slotName,
+  startTime,
+  endTime,
+  isActive,
+  slotId,
+  existingSlots,
+}: {
+  slotName: string;
+  startTime: string;
+  endTime: string;
+  isActive: boolean;
+  slotId?: string;
+  existingSlots: VendorDeliverySlot[];
+}): { valid: boolean; error?: string } {
+  const name = slotName.trim();
+  if (!name) return { valid: false, error: "Slot name is required." };
+  if (!startTime) return { valid: false, error: "Start time is required." };
+  if (!endTime) return { valid: false, error: "End time is required." };
+  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+    return { valid: false, error: "End time must be later than start time." };
+  }
+  const duplicate = existingSlots.find(
+    (s) => s.id !== slotId && s.slotName.trim().toLowerCase() === name.toLowerCase()
+  );
+  if (duplicate) {
+    return { valid: false, error: `A delivery slot named "${duplicate.slotName}" already exists for your store.` };
+  }
+  if (isActive) {
+    const conflicting = existingSlots.find(
+      (s) => s.id !== slotId && s.isActive && slotsOverlap(startTime, endTime, s.startTime, s.endTime)
+    );
+    if (conflicting) {
+      return {
+        valid: false,
+        error: `This time window overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`,
+      };
+    }
+  }
+  return { valid: true };
+}
+
+function DeliverySlotsSection({
+  vendor,
+  state,
+  setState,
+  session,
+}: {
+  vendor: Vendor;
+  state: V3State;
+  setState: React.Dispatch<React.SetStateAction<V3State>>;
+  session: DemoSession;
+}) {
+  const slots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<VendorDeliverySlot | null>(null);
+  const [slotName, setSlotName] = useState("");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("11:00");
+  const [isActive, setIsActive] = useState(true);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  function handleOpenAdd() {
+    setEditingSlot(null);
+    setSlotName("");
+    setStartTime("09:00");
+    setEndTime("11:00");
+    setIsActive(true);
+    setFormError("");
+    setModalOpen(true);
+  }
+
+  function handleOpenEdit(slot: VendorDeliverySlot) {
+    setEditingSlot(slot);
+    setSlotName(slot.slotName);
+    setStartTime(slot.startTime);
+    setEndTime(slot.endTime);
+    setIsActive(slot.isActive);
+    setFormError("");
+    setModalOpen(true);
+  }
+
+  async function handleSave() {
+    const validation = validateDeliverySlot({
+      slotName,
+      startTime,
+      endTime,
+      isActive,
+      slotId: editingSlot?.id,
+      existingSlots: slots,
+    });
+    if (!validation.valid) {
+      setFormError(validation.error || "Please check slot details.");
+      return;
+    }
+
+    setSaving(true);
+    setFormError("");
+    const slotId = editingSlot?.id || id("SLOT");
+    const newSlot: VendorDeliverySlot = {
+      id: slotId,
+      vendorId: vendor.id,
+      slotName: slotName.trim(),
+      startTime,
+      endTime,
+      isActive,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (isLiveSupabaseMode()) {
+      try {
+        const res = await saveLiveDeliverySlot({
+          slotId: editingSlot?.id,
+          vendorId: vendor.id,
+          slotName: slotName.trim(),
+          startTime,
+          endTime,
+          isActive,
+        });
+        if (res.snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+        } else {
+          setState((curr) => {
+            const currentSlots = curr.deliverySlots || [];
+            const nextSlots = editingSlot
+              ? currentSlots.map((s) => (s.id === editingSlot.id ? newSlot : s))
+              : [...currentSlots, newSlot];
+            return { ...curr, deliverySlots: nextSlots };
+          });
+        }
+        toast.success(editingSlot ? "Delivery slot updated." : "Delivery slot added.");
+        setModalOpen(false);
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : "Failed to save delivery slot.");
+        toast.error(err instanceof Error ? err.message : "Delivery slot could not be saved.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // Demo Mode Persistence
+    setState((curr) => {
+      const currentSlots = curr.deliverySlots || [];
+      const nextSlots = editingSlot
+        ? currentSlots.map((s) => (s.id === editingSlot.id ? newSlot : s))
+        : [...currentSlots, newSlot];
+      return { ...curr, deliverySlots: nextSlots };
+    });
+    toast.success(editingSlot ? "Delivery slot updated." : "Delivery slot added.");
+    setSaving(false);
+    setModalOpen(false);
+  }
+
+  async function handleToggle(slot: VendorDeliverySlot) {
+    const nextActive = !slot.isActive;
+    if (nextActive) {
+      const conflicting = slots.find(
+        (s) => s.id !== slot.id && s.isActive && slotsOverlap(slot.startTime, slot.endTime, s.startTime, s.endTime)
+      );
+      if (conflicting) {
+        toast.error(`Cannot activate: overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`);
+        return;
+      }
+    }
+
+    setActionId(slot.id);
+    if (isLiveSupabaseMode()) {
+      try {
+        const res = await toggleLiveDeliverySlot(slot.id, nextActive);
+        if (res.snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+        } else {
+          setState((curr) => ({
+            ...curr,
+            deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
+          }));
+        }
+        toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update slot status.");
+      } finally {
+        setActionId(null);
+      }
+      return;
+    }
+
+    // Demo mode
+    setState((curr) => ({
+      ...curr,
+      deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
+    }));
+    toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
+    setActionId(null);
+  }
+
+  async function handleDelete(slot: VendorDeliverySlot) {
+    if (!confirm(`Delete delivery slot "${slot.slotName}" (${formatTime12(slot.startTime)} - ${formatTime12(slot.endTime)})?`)) return;
+    setActionId(slot.id);
+    if (isLiveSupabaseMode()) {
+      try {
+        const res = await deleteLiveDeliverySlot(slot.id);
+        if (res.snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+        } else {
+          setState((curr) => ({
+            ...curr,
+            deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
+          }));
+        }
+        toast.success("Delivery slot deleted.");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete slot.");
+      } finally {
+        setActionId(null);
+      }
+      return;
+    }
+
+    // Demo mode
+    setState((curr) => ({
+      ...curr,
+      deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
+    }));
+    toast.success("Delivery slot deleted.");
+    setActionId(null);
+  }
+
+  return (
+    <div className="mt-6 border-t border-stone-200/80 pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-base font-black text-stone-900">Delivery Slots</h3>
+          <p className="text-xs text-stone-500">Configure the time windows when your store can deliver orders.</p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleOpenAdd}
+          className="rounded-xl bg-[#0A0A0A] text-white hover:bg-stone-800 font-bold"
+        >
+          <Plus className="size-4 mr-1.5" />
+          Add Delivery Slot
+        </Button>
+      </div>
+
+      {slots.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/60 p-6 text-center">
+          <Clock3 className="size-6 text-stone-400 mx-auto" />
+          <div className="mt-2 text-xs font-bold text-stone-700">No delivery slots configured</div>
+          <p className="text-xs text-stone-500 mt-0.5">Add delivery time slots so customers can schedule their orders.</p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {slots.map((slot) => (
+            <div
+              key={slot.id}
+              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${
+                slot.isActive ? "border-stone-200/90 bg-white shadow-xs" : "border-stone-200/60 bg-stone-50/70 opacity-75"
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`grid size-9 shrink-0 place-items-center rounded-xl ${
+                    slot.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"
+                  }`}
+                >
+                  <Clock3 className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-stone-900 text-sm truncate">{slot.slotName}</span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        slot.isActive
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-stone-100 text-stone-500 border border-stone-200"
+                      }`}
+                    >
+                      {slot.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-stone-500 font-medium mt-0.5">
+                    {formatTime12(slot.startTime)} – {formatTime12(slot.endTime)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => void handleToggle(slot)}
+                  disabled={actionId === slot.id}
+                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                    slot.isActive
+                      ? "bg-emerald-100/70 text-emerald-800 hover:bg-emerald-200"
+                      : "bg-stone-200 text-stone-700 hover:bg-stone-300"
+                  }`}
+                >
+                  {slot.isActive ? "Active" : "Disabled"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(slot)}
+                  className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
+                  title="Edit slot"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(slot)}
+                  disabled={actionId === slot.id}
+                  className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                  title="Delete slot"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="rounded-[26px] sm:max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-stone-900">
+              {editingSlot ? "Edit Delivery Slot" : "Add Delivery Slot"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-500">
+              Set the time window when your kitchen can deliver orders.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            {formError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 font-semibold">
+                {formError}
+              </div>
+            )}
+
+            <Field label="Slot Name" hint="e.g. Morning, Afternoon, Evening">
+              <input
+                type="text"
+                maxLength={80}
+                value={slotName}
+                onChange={(e) => {
+                  setSlotName(e.target.value);
+                  setFormError("");
+                }}
+                placeholder="e.g. Morning"
+                className={inputClass}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Start Time">
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => {
+                    setStartTime(e.target.value);
+                    setFormError("");
+                  }}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="End Time">
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => {
+                    setEndTime(e.target.value);
+                    setFormError("");
+                  }}
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <div>
+                <div className="text-xs font-bold text-stone-800">Active status</div>
+                <div className="text-[11px] text-stone-500">Enable this slot for customer checkout</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="size-4 accent-[#5ba400] rounded"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setModalOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={saving}
+                onClick={() => void handleSave()}
+                className="rounded-xl bg-[#C20000] font-bold text-white hover:bg-[#C20000]"
+              >
+                {saving ? "Saving…" : editingSlot ? "Save Changes" : "Add Slot"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [radius, setRadius] = useState(vendor.radiusKm), [address, setAddress] = useState(vendor.address), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({ lat: vendor.latitude, lng: vendor.longitude }), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
   async function update(patch: Partial<Vendor>, message: string) { try { if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { ...(patch.openToday !== undefined ? { store_open_today: patch.openToday } : {}), ...(patch.operational ? { operational_status: patch.operational.toLowerCase() } : {}), ...(patch.delivery !== undefined ? { delivery_enabled: patch.delivery } : {}), ...(patch.pickup !== undefined ? { pickup_enabled: patch.pickup } : {}), ...(patch.openToday === true && vendor.verification === "Verified" ? { marketplace_visible: true } : {}) }); setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, ...patch } : x), audit: [audit(session, message, vendor.businessName), ...s.audit] })); toast.success(message); } catch (error) { toast.error(error instanceof Error ? error.message : "Store control could not be saved"); } }
   function detectStore() {
@@ -2379,17 +4359,74 @@ function StoreRadius({ vendor, setState, session }: { vendor: Vendor; setState: 
           <ToggleCard icon={Truck} title="Delivery" body="Your own team" checked={vendor.delivery} setChecked={(v) => update({ delivery: v }, "Delivery mode updated")} />
           <ToggleCard icon={ShoppingBag} title="Pickup" body="At your store" checked={vendor.pickup} setChecked={(v) => update({ pickup: v }, "Pickup mode updated")} />
         </div>
+        <DeliverySlotsSection vendor={vendor} state={state} setState={setState} session={session} />
       </div>
       <MapPreview lat={coords.lat} lng={coords.lng} radius={radius} label="Exact store pin" />
     </div>
   </div>;
 }
+const THREE_VENDOR_PLANS = [
+  {
+    name: "Crave" as const,
+    price: 699,
+    description: "Pre-orders, subscriptions, delivery fleet management and Food Stories.",
+    features: [
+      "Pre-orders & scheduled subscriptions",
+      "Delivery fleet & staff assignment",
+      "Customer Food Stories & storefront",
+    ],
+  },
+  {
+    name: "Thrive" as const,
+    price: 799,
+    popular: true,
+    description: "Everything in Crave, plus daily Food Drops for surplus promotions.",
+    features: [
+      "Everything in Crave plan",
+      "Daily Food Drops (evening promotions)",
+      "Surplus deals badge & live countdown",
+    ],
+  },
+  {
+    name: "Crown" as const,
+    price: 999,
+    description: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance.",
+    features: [
+      "Everything in Thrive plan",
+      "Request for Quote (RFQ) opportunities",
+      "AI quotation assistant & demand alerts",
+    ],
+  },
+];
+const vendorPlanRank: Record<string, number> = { Taster: 0, Crave: 1, Thrive: 2, Crown: 3 };
+
 function VerificationView({ vendor, setState, session }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [editing, setEditing] = useState(false);
   const [certificate, setCertificate] = useState(vendor.fssaiNumber || "");
   const [fileName, setFileName] = useState(vendor.certificateName || "");
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
+  const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
+
+  async function upgradePlan(newPlan: Vendor["plan"]) {
+    if (vendor.plan === newPlan) return;
+    setUpgradingTo(newPlan);
+    try {
+      if (isLiveSupabaseMode()) {
+        await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+      }
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan } : x),
+        audit: [audit(session, "Vendor upgraded plan", `${vendor.businessName} switched to ${newPlan}`), ...s.audit],
+      }));
+      toast.success(`Plan upgraded to ${newPlan}!`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Plan upgrade could not be saved");
+    } finally {
+      setUpgradingTo(null);
+    }
+  }
   async function save(resubmit = false) {
     if (!certificate.trim()) return toast.error("Enter the certification / licence number");
     try {
@@ -2403,9 +4440,90 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
     } catch (error) { toast.error(error instanceof Error ? error.message : "Verification details could not be saved"); }
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil />{editing ? "Close editor" : "Edit details"}</Button>} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#FFF0E0] text-[#B34D00]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><Status>{vendor.verification}</Status></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#FF7B00]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /></div>}
-    </div></div>;
+    <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#FFF0E0] text-[#B34D00]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#FF7B00]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /></div>}
+    </div>
+    <div className="surface-card rounded-[28px] p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-black">Subscription plans</h3>
+            <Status className="border-emerald-200 bg-emerald-50 text-emerald-800 font-bold">Active: {vendor.plan}</Status>
+          </div>
+          <p className="mt-1 text-sm text-stone-500">
+            Choose a plan to upgrade your store capabilities, food drops, and quotation opportunities.
+          </p>
+        </div>
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {THREE_VENDOR_PLANS.map((plan) => {
+          const isCurrent = vendor.plan === plan.name;
+          const isHigher = (vendorPlanRank[plan.name] ?? 0) > (vendorPlanRank[vendor.plan || "Taster"] ?? 0);
+          return (
+            <div
+              key={plan.name}
+              data-plan-card={plan.name}
+              className={`flex flex-col justify-between rounded-3xl border p-5 transition ${
+                isCurrent
+                  ? "border-[#FF7B00] bg-[#F4F4F4] shadow-sm ring-2 ring-[#FF7B00]/20"
+                  : "border-stone-200/80 bg-white hover:border-stone-300"
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-lg font-black">{plan.name}</h4>
+                  {isCurrent ? (
+                    <Status className="border-emerald-200 bg-emerald-100 text-emerald-800 font-bold">Current plan</Status>
+                  ) : plan.popular ? (
+                    <span className="rounded-full bg-[#C20000]/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#C20000]">Popular</span>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-2xl font-black">{money(plan.price)}</span>
+                  <span className="text-xs font-bold text-stone-500">/ month + GST</span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-stone-500">{plan.description}</p>
+                <ul className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-xs text-stone-600">
+                  {plan.features.map((feat) => (
+                    <li key={feat} className="flex items-center gap-2">
+                      <Check className="size-3.5 text-[#B34D00] shrink-0" />
+                      <span>{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="mt-5">
+                {isCurrent ? (
+                  <Button disabled variant="outline" className="w-full rounded-xl border-emerald-300 bg-emerald-50 text-emerald-800 font-black opacity-90 cursor-default">
+                    <Check className="mr-1.5 size-4" />Current plan
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => void upgradePlan(plan.name)}
+                    disabled={upgradingTo === plan.name}
+                    className={`w-full rounded-xl font-black ${
+                      isHigher
+                        ? "bg-[#FF7B00] hover:bg-[#4d8b00] text-[#0A0A0A] shadow-sm"
+                        : "bg-stone-900 hover:bg-stone-800 text-[#0A0A0A]"
+                    }`}
+                  >
+                    {upgradingTo === plan.name ? (
+                      "Updating…"
+                    ) : isHigher ? (
+                      <><Sparkles className="mr-1.5 size-4" />Upgrade to {plan.name}</>
+                    ) : (
+                      <>Switch to {plan.name}</>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  </div>;
 }
 
 function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
@@ -2654,9 +4772,9 @@ function OperationsArea({ active, session, state, setState, navigate, openAgent 
   const cancelQueue = state.cancellations.filter((x) => x.status === "Awaiting operations");
   const openTickets = state.tickets.filter((t) => t.status !== "Resolved");
   const attention: { icon: typeof Store; tint: string; title: string; sub: string; go: string }[] = [
-    ...unassigned.slice(0, 2).map((o) => ({ icon: AlertTriangle, tint: "bg-[#FFF4CF]", title: `Order ${o.id} has no delivery partner`, sub: `${state.vendors.find((v) => v.id === o.vendorId)?.businessName || "Vendor"} · ${o.slot}`, go: "Orders" })),
-    ...awaitingVerification.slice(0, 2).map((v) => ({ icon: BadgeCheck, tint: "bg-[#E6EEFE]", title: `${v.businessName} is waiting for verification`, sub: "Review the certificate and approve or reject", go: "Vendor verification" })),
-    ...cancelQueue.slice(0, 2).map((c) => ({ icon: RefreshCcw, tint: "bg-[#FFE9E9]", title: `Cancellation request for ${c.orderId}`, sub: "Awaiting Operations review", go: "Cancellations" })),
+    ...unassigned.slice(0, 2).map((o) => ({ icon: AlertTriangle, tint: "bg-[#FFF0E0]", title: `Order ${o.id} has no delivery partner`, sub: `${state.vendors.find((v) => v.id === o.vendorId)?.businessName || "Vendor"} · ${o.slot}`, go: "Orders" })),
+    ...awaitingVerification.slice(0, 2).map((v) => ({ icon: BadgeCheck, tint: "bg-[#FFF0E0]", title: `${v.businessName} is waiting for verification`, sub: "Review the certificate and approve or reject", go: "Vendor verification" })),
+    ...cancelQueue.slice(0, 2).map((c) => ({ icon: RefreshCcw, tint: "bg-[#FFF0E0]", title: `Cancellation request for ${c.orderId}`, sub: "Awaiting Operations review", go: "Cancellations" })),
     ...openTickets.slice(0, 2).map((t) => ({ icon: TicketCheck, tint: "bg-[#F4F4F4]", title: t.subject, sub: `Ticket ${t.id} · ${t.status}`, go: "Ticket centre" })),
   ].slice(0, 5);
   const bySlot = Object.entries(activeOrders.reduce<Record<string, number>>((acc, o) => { acc[o.slot] = (acc[o.slot] || 0) + 1; return acc; }, {})).sort(([x], [y]) => x.localeCompare(y)).slice(0, 8).map(([label, value]) => ({ label: label.replace(/ to .*$/, ""), value }));
@@ -2813,6 +4931,7 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
 function AdminArea({ active, session, state, setState }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
+  if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
   if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
   if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
   if (active === "Vendors") return <AdminVendors state={state} setState={setState} />;

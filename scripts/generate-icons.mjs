@@ -149,6 +149,8 @@ const MAP = {
   Coins: "coins",
   Tag: "tag",
   Headset: "headset",
+  Compass: "compass",
+  PhoneCall: "phone-call",
 };
 
 const missing = Object.entries(MAP).filter(([, f]) => !available.has(f));

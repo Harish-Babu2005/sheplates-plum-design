@@ -160,8 +160,12 @@ export function ShePlatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
       queueMicrotask(() => setAuthAudience("customer"));
       toast.info("Sign in to view and order from this vendor's shop.");
     } else if (params.get("forgot") === "true") {
-      queueMicrotask(() => setAuthAudience("customer"));
-    }
+  queueMicrotask(() => setAuthAudience("customer"));
+} else if (params.get("login") === "team") {
+  queueMicrotask(() => setAuthAudience("team"));
+} else if (params.get("login") === "customer") {
+  queueMicrotask(() => setAuthAudience("customer"));
+}
   }, []);
 
   const filteredPlans = useMemo(() => {
@@ -297,14 +301,14 @@ export function ShePlatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
 
       <footer className="sp-entry-footer"><div className="mx-auto flex max-w-370 flex-col gap-5 px-5 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10"><Brand dark /><div className="flex flex-wrap gap-5 text-xs font-bold text-stone-500 sm:text-sm"><button onClick={() => setAuthAudience("team")}>Partner with ShePlates</button><span>Scheduled local commerce</span><span>Coimbatore</span></div></div></footer>
 
-      <AuthDialog audience={authAudience} close={() => setAuthAudience(null)} onLogin={onLogin} />
+      <AuthDialog audience={authAudience} close={() => setAuthAudience(null)} onLogin={onLogin} setAudience={setAuthAudience} />
       <AgentPreview open={agentOpen} close={() => setAgentOpen(false)} login={() => { setAgentOpen(false); setAuthAudience("customer"); }} />
     </div>
   );
 
 }
 
-function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; close: () => void; onLogin: (session: DemoSession) => void }) {
+function AuthDialog({ audience, close, onLogin, setAudience }: { audience: Audience | null; close: () => void; onLogin: (session: DemoSession) => void; setAudience?: (audience: Audience | null) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -334,6 +338,27 @@ function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; c
     });
   }, [audience]);
 
+// Listen for password reset completion from another browser tab
+useEffect(() => {
+  if (typeof window === "undefined" || !("BroadcastChannel" in window)) {
+    return;
+  }
+
+  const channel = new BroadcastChannel("sheplates-password-reset");
+
+  channel.onmessage = (event) => {
+    if (event.data?.type === "PASSWORD_RESET_COMPLETED") {
+      const audience = event.data.audience;
+
+      setAudience?.(audience === "team" ? "team" : "customer");
+    }
+  };
+
+  return () => {
+    channel.close();
+  };
+}, []);
+
   if (!audience) return null;
   const registrationRole = audience === "customer" ? "customer" : "vendor";
 
@@ -349,7 +374,10 @@ function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; c
           throw new Error("Supabase authentication is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local and set NEXT_PUBLIC_DEMO_MODE=false to send real password reset emails.");
         }
 
-        await sendPasswordResetEmail(normalizedEmail);
+await sendPasswordResetEmail(
+  normalizedEmail,
+  `${window.location.origin}/reset-password?audience=${audience}`
+);
         setResetSent(true);
         toast.success("Password reset instructions sent to your email.");
         return;
@@ -503,7 +531,7 @@ function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; c
       ) : (
         <form onSubmit={submit} className="sp-auth-form mt-2 space-y-4">
           <p className="text-xs leading-5 text-stone-600">
-            Enter the email address associated with your ShePlates customer account. We will send you a secure link to reset your password.
+            Enter the email address associated with your ShePlates account. We will send you a secure link to reset your password.
           </p>
           <InputField label="Registered Email">
             <input
@@ -531,7 +559,7 @@ function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; c
             onClick={() => { setMode("login"); setError(""); }}
             className="mt-2 w-full text-center text-sm font-bold text-stone-500 hover:text-stone-900"
           >
-            ← Back to customer sign in
+            ← Back to sign in
           </button>
         </form>
       )
@@ -544,8 +572,8 @@ function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; c
           <InputField
             label="Password"
             rightAction={
-              audience === "customer" && mode === "login" ? (
-                <button
+mode === "login" ? (
+              <button
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();

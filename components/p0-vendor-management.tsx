@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAccessToken, normalizeWhatsAppNumber, uploadLiveCertificate } from "@/lib/supabase";
+import { P0VendorLocationPicker } from "@/components/p0-vendor-location-picker";
 
 type Permission = "can_create" | "can_review" | "can_cancel" | "can_reactivate" | "can_upgrade" | "can_upload";
 type Permissions = Record<Permission, boolean>;
@@ -73,16 +74,17 @@ const PERMISSION_LABELS: Array<{ key: Permission; label: string }> = [
 
 const inputClass = "mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#FF7B00]";
 
-async function p0Request<T>(action: string, body?: Record<string, unknown>, method = "POST"): Promise<T> {
+async function p0Request<T>(action: string, body?: Record<string, unknown> | FormData, method = "POST"): Promise<T> {
   const token = await getAccessToken();
   if (!token) throw new Error("Sign in again before managing P0 vendors.");
+  const isFormData = body instanceof FormData;
   const response = await fetch("/api/p0/vendors", {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
-      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+      ...(method === "POST" && !isFormData ? { "Content-Type": "application/json" } : {}),
     },
-    ...(method === "POST" ? { body: JSON.stringify({ action, ...body }) } : {}),
+    ...(method === "POST" ? { body: isFormData ? body : JSON.stringify({ action, ...body }) } : {}),
   });
   const result = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(result.error || "P0 vendor request failed.");
@@ -103,10 +105,12 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
   const [form, setForm] = useState({
     name: "", category: "", description: "", locality: "", address: "",
     latitude: "", longitude: "", radius: "5", contactName: "", contactPhone: "",
-    whatsappNumber: "", durationHours: "7", logoUrl: "", fssaiRequired: false,
+    whatsappNumber: "", durationHours: "7", fssaiRequired: false,
     fssaiNumber: "", expiryDate: "",
   });
   const [certificate, setCertificate] = useState<File | null>(null);
+  const [shopImage, setShopImage] = useState<File | null>(null);
+  const shopImageInput = useRef<HTMLInputElement>(null);
   const [upgrade, setUpgrade] = useState<Record<string, { email: string; planCode: string }>>({});
   const [certificateInputs, setCertificateInputs] = useState<Record<string, { number: string; expiry: string; file: File | null }>>({});
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, Permissions>>({});
@@ -150,23 +154,6 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  async function findOnMap() {
-    const query = [form.address, form.locality].filter(Boolean).join(", ").trim();
-    if (query.length < 3) return setError("Type the address or locality first, then find it on the map.");
-    setError("");
-    try {
-      const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
-      const result = await response.json() as { suggestions?: { address: string; latitude: number; longitude: number }[] };
-      const place = result.suggestions?.[0];
-      if (!place) return setError("No map match for that address. Check the spelling or type the coordinates.");
-      updateForm("latitude", String(place.latitude));
-      updateForm("longitude", String(place.longitude));
-      setNotice(`Location set from the map: ${place.address}`);
-    } catch {
-      setError("The map search is unavailable. Type the coordinates instead.");
-    }
-  }
-
   async function createVendor(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!permissions.can_create && !isAdmin) return setError("Your account is not authorized to create P0 vendors.");
@@ -181,22 +168,26 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     setNotice("");
     let createdVendorId: string | null = null;
     try {
-      const result = await p0Request<{ vendorId: string }>("create", {
-        name: form.name,
-        category: form.category,
-        description: form.description,
-        locality: form.locality,
-        address: form.address,
-        latitude: Number(form.latitude),
-        longitude: Number(form.longitude),
-        serviceRadiusKm: Number(form.radius),
-        contactName: form.contactName,
-        contactPhone: form.contactPhone,
-        whatsappNumber,
-        durationHours: form.durationHours,
-        fssaiRequired: form.fssaiRequired,
-        logoUrl: form.logoUrl,
-      });
+      if (shopImage && (!["image/png", "image/jpeg", "image/webp"].includes(shopImage.type) || shopImage.size > 10 * 1024 * 1024)) {
+        return setError("Choose a PNG, JPG or WebP shop image under 10 MB.");
+      }
+      const request = new FormData();
+      request.append("action", "create");
+      request.append("name", form.name);
+      request.append("category", form.category);
+      request.append("description", form.description);
+      request.append("locality", form.locality);
+      request.append("address", form.address);
+      request.append("latitude", String(Number(form.latitude)));
+      request.append("longitude", String(Number(form.longitude)));
+      request.append("serviceRadiusKm", String(Number(form.radius)));
+      request.append("contactName", form.contactName);
+      request.append("contactPhone", form.contactPhone);
+      request.append("whatsappNumber", whatsappNumber);
+      request.append("durationHours", form.durationHours);
+      request.append("fssaiRequired", String(form.fssaiRequired));
+      if (shopImage) request.append("shopImage", shopImage);
+      const result = await p0Request<{ vendorId: string }>("create", request);
       createdVendorId = result.vendorId;
       if (form.fssaiRequired && certificate) {
         await uploadLiveCertificate({
@@ -208,10 +199,12 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       }
       setNotice("P0 vendor saved as pending, inactive and hidden until authorized approval.");
       setCertificate(null);
+      setShopImage(null);
+      if (shopImageInput.current) shopImageInput.current.value = "";
       setForm({
         name: "", category: "", description: "", locality: "", address: "",
         latitude: "", longitude: "", radius: "5", contactName: "", contactPhone: "",
-        whatsappNumber: "", durationHours: "7", logoUrl: "", fssaiRequired: false, fssaiNumber: "", expiryDate: "",
+        whatsappNumber: "", durationHours: "7", fssaiRequired: false, fssaiNumber: "", expiryDate: "",
       });
       await reload();
     } catch (caught) {
@@ -360,14 +353,34 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
         <label className="text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
-        <label className="text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => updateForm("locality", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold sm:col-span-2">Address<textarea value={form.address} onChange={(event) => updateForm("address", event.target.value)} className={inputClass} /></label>
-        <div className="sm:col-span-2"><button type="button" onClick={() => void findOnMap()} className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-black hover:bg-stone-50">Find address on map</button><span className="ml-2 text-xs text-stone-500">Fills latitude and longitude from the address and locality.</span></div>
+        <label className="text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => {
+          updateForm("locality", event.target.value);
+          updateForm("latitude", "");
+          updateForm("longitude", "");
+        }} className={inputClass} /></label>
+        <label className="text-xs font-bold sm:col-span-2">Address<textarea value={form.address} onChange={(event) => {
+          updateForm("address", event.target.value);
+          updateForm("latitude", "");
+          updateForm("longitude", "");
+        }} className={inputClass} /></label>
+        <P0VendorLocationPicker
+          address={form.address}
+          locality={form.locality}
+          latitude={form.latitude}
+          longitude={form.longitude}
+          radiusKm={form.radius}
+          onSave={(place) => {
+            updateForm("address", place.address);
+            updateForm("latitude", String(place.latitude));
+            updateForm("longitude", String(place.longitude));
+            setNotice(`Vendor pin saved: ${place.address}`);
+          }}
+        />
         <label className="text-xs font-bold">Latitude<input required type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateForm("latitude", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Longitude<input required type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateForm("longitude", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Service radius (km)<input required type="number" step="0.5" min="0.5" max="100" value={form.radius} onChange={(event) => updateForm("radius", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Operating duration (hours/day)<input required type="number" min="1" max="24" value={form.durationHours} onChange={(event) => updateForm("durationHours", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Shop image URL<input type="url" value={form.logoUrl} onChange={(event) => updateForm("logoUrl", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Shop image (optional)<input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setShopImage(event.target.files?.[0] || null)} className={inputClass} /><span className="mt-1 block font-normal text-stone-500">PNG, JPG or WebP · max 10 MB{shopImage ? ` · ${shopImage.name}` : ""}</span></label>
         <label className="text-xs font-bold sm:col-span-2">Description<textarea value={form.description} onChange={(event) => updateForm("description", event.target.value)} className={inputClass} /></label>
       </div>
       <label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.fssaiRequired} onChange={(event) => updateForm("fssaiRequired", event.target.checked)} />FSSAI certificate is required for this business</label>
@@ -445,7 +458,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
               {!cancelled && vendor.operational_status === "active" && hasPermission("can_upgrade") && <div className="mt-4 grid gap-2 border-t border-stone-100 pt-4 sm:grid-cols-[1fr_180px_auto]">
                 <input type="email" placeholder="Vendor account email" value={upgradeValue.email} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, email: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm" />
                 <select aria-label="Subscription plan" value={upgradeValue.planCode} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, planCode: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">
-                  <option value="crave">Crave · ₹699</option><option value="thrive">Thrive · ₹799</option><option value="crown">Crown · ₹999</option>
+                  <option value="taster">Taster · ₹499</option><option value="crave">Crave · ₹699</option><option value="thrive">Thrive · ₹799</option><option value="crown">Crown · ₹999</option>
                 </select>
                 <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#FF7B00] px-4 py-2 text-xs font-black text-[#0A0A0A] disabled:opacity-50">Invite / claim</button>
               </div>}

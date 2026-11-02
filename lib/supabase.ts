@@ -206,9 +206,25 @@ export async function saveLiveCustomerLocation(input: { userId: string; address:
 export async function loadLiveCustomerPreference(userId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const result = await supabase.from("customer_preferences").select("*").eq("customer_id", userId).maybeSingle();
-  if (result.error) throw result.error;
-  return result.data;
+  const [prefResult, profileResult] = await Promise.all([
+    supabase.from("customer_preferences").select("*").eq("customer_id", userId).maybeSingle(),
+    supabase.from("profiles").select("phone, full_name").eq("id", userId).maybeSingle(),
+  ]);
+  if (prefResult.error) throw prefResult.error;
+  if (!prefResult.data) {
+    if (profileResult.data) {
+      return {
+        phone: profileResult.data.phone || "",
+        full_name: profileResult.data.full_name || "",
+      };
+    }
+    return null;
+  }
+  return {
+    ...prefResult.data,
+    phone: profileResult.data?.phone || "",
+    full_name: profileResult.data?.full_name || "",
+  };
 }
 
 export async function loadLiveCustomerMemory(userId: string) {
@@ -336,6 +352,15 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (productError) throw productError;
   if (documents.error) throw documents.error;
   return { vendor: vendor.data as LiveVendorRow, products: productRows || [], document: documents.data?.[0] || null };
+}
+
+export async function loadLiveVendorWorkspaceForOwner(userId: string) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendors").select("id").eq("owner_id", userId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (result.error) throw result.error;
+  return result.data ? loadLiveVendorWorkspace(result.data.id) : null;
 }
 
 export async function loadLiveOperationsWorkspace() {
@@ -569,22 +594,26 @@ export async function saveLiveTourCompleted(userId: string, toursCompleted: stri
 }
 
 export async function saveLiveCustomerProfile(input: {
-  userId: string; phone: string; address: string; latitude: number; longitude: number;
+  userId: string; phone?: string; address: string; latitude: number; longitude: number;
   householdSize: number; diet: string; allergies: string[]; goals: string[]; instructions: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const [profile, preference] = await Promise.all([
-    supabase.from("profiles").update({ phone: input.phone }).eq("id", input.userId),
+  const operations: Array<PromiseLike<{ error: unknown }>> = [
     supabase.from("customer_preferences").upsert({
       customer_id: input.userId, address: input.address, latitude: input.latitude, longitude: input.longitude,
       household_size: input.householdSize, diet: input.diet, allergies: input.allergies,
       health_goals: input.goals, dislikes_and_instructions: input.instructions,
       onboarding_complete: true, updated_at: new Date().toISOString(),
     }, { onConflict: "customer_id" }),
-  ]);
-  if (profile.error) throw profile.error;
-  if (preference.error) throw preference.error;
+  ];
+  if (input.phone !== undefined && input.phone.trim().length > 0) {
+    operations.push(supabase.from("profiles").update({ phone: input.phone.trim() }).eq("id", input.userId));
+  }
+  const results = await Promise.all(operations);
+  for (const res of results) {
+    if (res.error) throw res.error;
+  }
 }
 
 export async function saveLiveVendorLocation(input: { vendorId: string; address: string; latitude: number; longitude: number; radiusKm: number }) {
@@ -626,8 +655,9 @@ export async function submitLiveVendorApplication(input: {
     storage_path: objectPath, expiry_date: input.expiryDate, verification_status: "submitted",
   });
   if (document.error) throw document.error;
-  const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id }).eq("id", input.userId);
+  const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id }).eq("id", input.userId).select("id").maybeSingle();
   if (profile.error) throw profile.error;
+  if (!profile.data) throw new Error("Your vendor application was saved, but your account could not be linked to it. Please contact Operations before submitting again.");
   return vendor.data.id as string;
 }
 
@@ -674,6 +704,8 @@ export type LiveCommerceSnapshot = {
   schedules: Array<Record<string, unknown>>;
   staff: Array<Record<string, unknown>>;
   assignments: Array<Record<string, unknown>>;
+  thirdPartyDeliveries: Array<Record<string, unknown>>;
+  thirdPartyDeliveryAvailable: boolean;
   cart?: Record<string, unknown> | null;
   cartItems?: Array<Record<string, unknown>>;
 };
@@ -696,7 +728,7 @@ export async function loadLiveCommerceSnapshot() {
 
 export async function createLiveScheduledCheckout(input: {
   productId: string; startDate: string; endDate?: string; recurrence: string; weekdays: string[]; slot: string;
-  quantity: number; unit: string; mode: string; customerPrice: number; perDeliveryTotal: number; total: number; whatsappReminder?: boolean;
+  quantity: number; unit: string; mode: string; deliveryInstructions?: string; customerPrice: number; perDeliveryTotal: number; total: number; whatsappReminder?: boolean;
 }) {
   return commerceRequest({ action: "create_schedule", ...input });
 }
@@ -705,20 +737,86 @@ export async function syncLiveCart(input: { items: Array<{ productId: string; qu
   return commerceRequest({ action: "sync_cart", items: input.items, createdBy: input.createdBy || "customer" });
 }
 
-export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string }) {
+export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string; mode?: string; deliveryInstructions?: string }) {
   return commerceRequest({ action: "checkout_cart", ...(input || {}) });
+}
+
+export async function acceptLiveThirdPartyDelivery(orderId: string) {
+  return commerceRequest({ action: "accept_third_party_delivery", orderId });
+}
+
+export async function issueLiveThirdPartyDeliveryCode(orderId: string) {
+  const result = await commerceRequest({ action: "issue_third_party_delivery_code", orderId });
+  if (typeof result.code !== "string" || typeof result.expiresAt !== "string") {
+    throw new Error("The delivery code response was incomplete.");
+  }
+  return { code: result.code, expiresAt: result.expiresAt };
+}
+
+export async function verifyLiveThirdPartyDeliveryCode(orderId: string, code: string) {
+  return commerceRequest({ action: "verify_third_party_delivery_code", orderId, code });
 }
 
 export async function markLiveOrderPaid(input: { orderId: string; method: string; reference?: string }) {
   return commerceRequest({ action: "mark_paid", ...input });
 }
 
+export async function createLiveRazorpayOrder(orderId: string) {
+  const token = await getAccessToken();
+  const response = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "create_order", orderId }),
+  });
+  const result = await response.json() as Record<string, unknown> & { error?: string };
+  if (!response.ok) throw new Error(result.error || "Could not create Razorpay order.");
+  return result as {
+    ok: boolean;
+    keyId: string;
+    razorpayOrderId: string;
+    amount: number;
+    currency: string;
+    orderNumber: string;
+    orderId: string;
+    customer?: { name?: string; email?: string };
+    description?: string;
+  };
+}
+
+export async function verifyLiveRazorpayPayment(payload: {
+  orderId: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) {
+  const token = await getAccessToken();
+  const response = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "verify_payment", ...payload }),
+  });
+  const result = await response.json() as Record<string, unknown> & { error?: string };
+  if (!response.ok) throw new Error(result.error || "Payment verification failed.");
+  return result;
+}
 export async function saveLiveDeliveryStaff(input: { staffId?: string; name: string; phone: string; active?: boolean }) {
   return commerceRequest({ action: "save_staff", ...input });
 }
 
 export async function deleteLiveDeliveryStaff(staffId: string) {
   return commerceRequest({ action: "delete_staff", staffId });
+}
+
+export async function saveLiveDeliverySlot(input: { slotId?: string; vendorId?: string; slotName: string; startTime: string; endTime: string; isActive?: boolean }) {
+  return commerceRequest({ action: "save_delivery_slot", ...input });
+}
+
+export async function deleteLiveDeliverySlot(slotId: string) {
+  return commerceRequest({ action: "delete_delivery_slot", slotId });
+}
+
+export async function toggleLiveDeliverySlot(slotId: string, active: boolean) {
+  return commerceRequest({ action: "toggle_delivery_slot", slotId, active });
 }
 
 export async function assignLiveDeliveryStaff(orderId: string, staffId?: string) {
