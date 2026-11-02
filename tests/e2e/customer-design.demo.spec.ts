@@ -21,6 +21,17 @@ async function openAsCustomer(page: Page, extra?: { socialPosts?: unknown[] }) {
   await expect(page.getByRole("button", { name: "Stories", exact: true })).toBeVisible({ timeout: 15_000 });
 }
 const tab = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
+/** Website: the menu row. Phone: the bottom pill has five tabs, so Food Drops comes from the Home promo and Schedules from Profile. */
+async function go(page: Page, name: "Food Drops" | "Schedules") {
+  if ((page.viewportSize()?.width ?? 1280) >= 768) return tab(page, name).click();
+  if (name === "Food Drops") { await tab(page, "Home").click(); return page.getByRole("button", { name: "See today's drops" }).click(); }
+  await openProfile(page);
+  return page.getByRole("button", { name: "My schedule", exact: true }).click();
+}
+async function openProfile(page: Page) {
+  if ((page.viewportSize()?.width ?? 1280) >= 768) await page.locator('[data-tour="account"]').click(); // desktop: Profile lives in the account menu
+  await tab(page, "Profile").click();
+}
 
 test.describe("Customer portal — redesigned shell (demo data)", () => {
   test("crimson theme applies only to signed-in customers, with the six primary tabs", async ({ page }) => {
@@ -29,7 +40,8 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
 
     await openAsCustomer(page);
     await expect(page.locator("html")).toHaveClass(/theme-customer/);
-    for (const name of ["Maps", "Marketplace", "Schedules", "Food Drops", "Stories", "Profile"]) await expect(tab(page, name)).toBeVisible();
+    const wide = (page.viewportSize()?.width ?? 1280) >= 768;
+    for (const name of wide ? ["Home", "Food Drops", "Stories", "Maps", "Schedules", "Orders", "Quotations"] : ["Home", "Maps", "Stories", "Orders", "Profile"]) await expect(tab(page, name)).toBeVisible();
   });
 
   test("Marketplace: ten category tiles filter products, and vendor rows open the public vendor profile", async ({ page }) => {
@@ -53,7 +65,7 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
 
   test("Vendor menu: wishlist heart saves the product to the Wishlist page", async ({ page }) => {
     await openAsCustomer(page);
-    await tab(page, "Marketplace").click();
+    await tab(page, "Home").click();
     await page.getByRole("button", { name: "Open Meena's Home Kitchen" }).first().click();
 
     const dialog = page.getByRole("dialog");
@@ -64,15 +76,15 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await expect(dialog.getByRole("button", { name: "Remove from wishlist" }).first()).toHaveAttribute("aria-pressed", "true");
 
     await page.keyboard.press("Escape");
-    await tab(page, "Profile").click();
-    await page.getByRole("button", { name: "Wishlist", exact: true }).click();
+    await openProfile(page);
+    await page.getByRole("button", { name: "Wishlist", exact: true }).first().click();
     await expect(page.getByRole("heading", { name: "Your wishlist" })).toBeVisible();
     await expect(page.getByRole("heading", { name: productName! })).toBeVisible();
   });
 
   test("Food Drops: live cards with countdowns; Following scope fills once a vendor is followed", async ({ page }) => {
     await openAsCustomer(page);
-    await tab(page, "Food Drops").click();
+    await go(page, "Food Drops");
     await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(4);
     await expect(page.getByText("Slightly blemished").first()).toBeVisible();
     await expect(page.getByText(/Closes in/i).first()).toBeVisible();
@@ -80,14 +92,14 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await page.getByRole("tab", { name: "Following" }).click();
     await expect(page.getByText("No drops from vendors you follow")).toBeVisible();
 
-    await tab(page, "Marketplace").click();
+    await tab(page, "Home").click();
     await page.getByRole("button", { name: "Open ABC Bakery" }).first().click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Follow", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "Following", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    await tab(page, "Food Drops").click();
+    await go(page, "Food Drops");
     await page.getByRole("tab", { name: "Following" }).click();
     await expect(page.getByRole("heading", { name: "Fresh Croissants (Surplus)" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(1);
@@ -95,11 +107,11 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
 
   test("Schedules: Orders and Subscriptions live under one tab", async ({ page }) => {
     await openAsCustomer(page);
-    await tab(page, "Schedules").click();
+    await go(page, "Schedules");
     await expect(page.getByRole("heading", { name: "My Schedules" })).toBeVisible();
-    await expect(page.getByText("Orders & live tracking")).toBeVisible();
-    await page.getByRole("tab", { name: "Subscriptions" }).click();
     await expect(page.getByText("Mini Meals").first()).toBeVisible();
+    await page.getByRole("tab", { name: "Orders" }).click();
+    await expect(page.getByText("Orders & live tracking")).toBeVisible();
   });
 
   test("Stories: statuses rail on top, Food Shorts below with Nearby and Following, no posts feed", async ({ page }) => {
@@ -115,13 +127,13 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
 
   test("Profile: public profile with stats and tabs, plus the account hub links", async ({ page }) => {
     await openAsCustomer(page);
-    await tab(page, "Profile").click();
+    await openProfile(page);
     await expect(page.getByRole("heading", { name: "Raj" })).toBeVisible();
     // the profile is slim: no upload gallery any more
     for (const name of ["Photos", "Food Trials", "Saved"]) await expect(page.getByRole("tab", { name })).toHaveCount(0);
     await expect(page.getByTestId("profile-stats")).toBeVisible();
     await expect(page.getByRole("switch", { name: "Show me on the map" })).toHaveAttribute("aria-checked", "false");
-    for (const name of ["Profile & food", "Wishlist", "Orders", "My schedule", "Monthly requirement", "My quotations", "Ticket centre", "Sign out"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+    for (const name of ["Profile & food", "Wishlist", "Orders", "My schedule", "Monthly requirement", "My quotations", "Ticket centre", "Sign out"]) await expect(page.getByRole("button", { name, exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "My food trail", exact: true })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Edit Profile" }).click();

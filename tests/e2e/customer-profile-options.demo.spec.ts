@@ -55,10 +55,11 @@ test("Customer onboarding and profile options are standardized, prefilled, and r
   await page.getByRole("button", { name: "Save profile", exact: true }).click();
 
   // Land on Marketplace
-  await expect(page.getByRole("button", { name: "Marketplace", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible();
   await dismissTourIfOpen(page);
 
   // 5. Navigate to Profile page ("Profile & food") via Profile tab
+  if ((page.viewportSize()?.width ?? 1280) >= 768) await page.locator('[data-tour="account"]').click(); // desktop: Profile lives in the account menu
   await page.getByRole("button", { name: "Profile", exact: true }).click();
   await page.getByRole("button", { name: "Profile & food" }).click();
 
@@ -94,6 +95,7 @@ test("Customer onboarding and profile options are standardized, prefilled, and r
   await expect(page.getByText("Profile and default address saved")).toBeVisible();
 
   // 7. Sign out (navigate to Profile tab and click Sign out)
+  if ((page.viewportSize()?.width ?? 1280) >= 768) await page.locator('[data-tour="account"]').click(); // desktop: Profile lives in the account menu
   await page.getByRole("button", { name: "Profile", exact: true }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByText("Signed out")).toBeVisible();
@@ -104,10 +106,11 @@ test("Customer onboarding and profile options are standardized, prefilled, and r
   await page.locator('input[type="password"]').fill(customerPassword);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page.getByRole("button", { name: "Marketplace", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible();
   await dismissTourIfOpen(page);
 
   // 9. Navigate back to "Profile & food"
+  if ((page.viewportSize()?.width ?? 1280) >= 768) await page.locator('[data-tour="account"]').click(); // desktop: Profile lives in the account menu
   await page.getByRole("button", { name: "Profile", exact: true }).click();
   await page.getByRole("button", { name: "Profile & food" }).click();
 
