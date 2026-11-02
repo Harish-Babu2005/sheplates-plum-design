@@ -14,7 +14,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -73,7 +73,7 @@ import { usePeople, type PeopleApi } from "@/lib/people";
 import { useStatuses } from "@/lib/statuses";
 import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
-import { shortArea, useTicker } from "@/components/customer-v2/kit";
+import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
 
 function CategoryBadge({ name, className = "size-5" }: { name: string; className?: string }) {
   const { Icon, fg } = categoryVisual(name);
@@ -148,6 +148,11 @@ type Order = {
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
 mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded";
   trackingLatitude?: number; trackingLongitude?: number; cancellationFee?: number;
+  orderNumber?: string;
+  paymentReference?: string;
+  paymentProvider?: string;
+  createdAt?: string;
+  items?: Array<{ name: string; quantity: number; unit?: string; price?: number }>;
 };
 type ThirdPartyDeliveryRequest = {
   orderId: string; customerId: string; vendorId: string; notes: string;
@@ -581,6 +586,8 @@ type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; sche
     const first = items[0];
     const fulfilmentMode = String(row.fulfilment_mode);
     const isThirdParty = fulfilmentMode === "third_party_delivery";
+    const payments = Array.isArray(row.payments) ? row.payments as Array<Record<string, unknown>> : [];
+    const firstPayment = payments[0];
     return {
       id: String(row.id), scheduleId: row.schedule_id ? String(row.schedule_id) : undefined,
       customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), vendorId: String(row.vendor_id),
@@ -593,6 +600,16 @@ mode: isThirdParty ? "Third-party delivery" : fulfilmentMode === "self_pickup" ?
       trackingLatitude: row.tracking_latitude == null ? undefined : Number(row.tracking_latitude),
       trackingLongitude: row.tracking_longitude == null ? undefined : Number(row.tracking_longitude),
       cancellationFee: Number(row.cancellation_fee || 0),
+      orderNumber: row.order_number ? String(row.order_number) : undefined,
+      paymentReference: firstPayment?.provider_reference ? String(firstPayment.provider_reference) : undefined,
+      paymentProvider: firstPayment?.provider ? String(firstPayment.provider) : undefined,
+      createdAt: row.created_at ? String(row.created_at) : undefined,
+      items: items.map((it) => ({
+        name: String(it.product_name || "Item"),
+        quantity: Number(it.quantity || 1),
+        unit: it.unit ? String(it.unit) : undefined,
+        price: it.customer_price != null ? Number(it.customer_price) : undefined,
+      })),
     };
   });
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -2700,6 +2717,695 @@ function StorefrontPos({ vendor, state, setState, session }: { vendor: Vendor; s
 
 function cancellationCharge(order: Order) { if (["Out for delivery", "Ready", "Ready for pickup"].includes(order.status)) return order.total; if (order.status === "Preparing") return Math.round(order.total * .25); return Math.min(25, Math.round(order.total * .05)); }
 
+
+function orderStatusTone(status: Order["status"]): string {
+  switch (status) {
+    case "Delivered":
+    case "Completed":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "Out for delivery":
+      return "border-sky-200 bg-sky-50 text-sky-700 font-bold";
+    case "Confirmed":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "Preparing":
+    case "Ready":
+    case "Ready for pickup":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "Scheduled":
+      return "border-stone-200 bg-stone-50 text-stone-700";
+    case "Cancelled":
+    case "Cancellation requested":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "";
+  }
+}
+
+type TimelineStep = {
+  key: string;
+  label: string;
+  state: "completed" | "current" | "upcoming" | "cancelled";
+  caption?: string;
+};
+
+function getOrderTimeline(order: Order): TimelineStep[] {
+  const isPickup = order.mode === "Self pickup";
+  const step3Label = isPickup ? "Ready for Pickup" : "Out for Delivery";
+  const step4Label = isPickup ? "Picked Up" : "Delivered";
+
+  if (order.status === "Cancelled" || order.status === "Cancellation requested") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed", caption: "Received" },
+      { key: "confirmed", label: order.status === "Cancelled" ? "Cancelled" : "Cancellation Pending", state: "cancelled", caption: "Stopped" },
+      { key: "transit", label: step3Label, state: "upcoming" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Delivered" || order.status === "Completed") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed", caption: "Confirmed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed", caption: "Prepared" },
+      { key: "transit", label: step3Label, state: "completed", caption: isPickup ? "Ready" : "Dispatched" },
+      { key: "delivered", label: step4Label, state: "completed", caption: isPickup ? "Collected" : "Fulfilled" },
+    ];
+  }
+
+  if (order.status === "Out for delivery") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed" },
+      { key: "transit", label: step3Label, state: "current", caption: "On the way" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Ready" || order.status === "Ready for pickup") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed" },
+      { key: "transit", label: step3Label, state: "current", caption: isPickup ? "Ready to pick" : "Packed & ready" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Preparing") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "current", caption: "In kitchen" },
+      { key: "transit", label: step3Label, state: "upcoming" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  if (order.status === "Confirmed") {
+    return [
+      { key: "placed", label: "Order Placed", state: "completed" },
+      { key: "confirmed", label: "Vendor Confirmed", state: "completed", caption: "Slot booked" },
+      { key: "transit", label: step3Label, state: "upcoming" },
+      { key: "delivered", label: step4Label, state: "upcoming" },
+    ];
+  }
+
+  // Default / Scheduled
+  return [
+    { key: "placed", label: "Order Placed", state: "completed", caption: "Recorded" },
+    { key: "confirmed", label: "Vendor Confirmed", state: "current", caption: "Awaiting slot" },
+    { key: "transit", label: step3Label, state: "upcoming" },
+    { key: "delivered", label: step4Label, state: "upcoming" },
+  ];
+}
+
+function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
+  return (
+    <div className="w-full">
+      <div className="relative flex items-center justify-between">
+        {timeline.map((step, idx) => {
+          const isLast = idx === timeline.length - 1;
+          const isCompleted = step.state === "completed";
+          const isCurrent = step.state === "current";
+          const isCancelled = step.state === "cancelled";
+          const nextStep = timeline[idx + 1];
+          const isLineActive = isCompleted && nextStep && (nextStep.state === "completed" || nextStep.state === "current");
+
+          return (
+            <Fragment key={step.key}>
+              <div className="relative z-10 flex flex-col items-center text-center">
+                <div
+                  className={`grid size-7 sm:size-8 place-items-center rounded-full text-xs font-bold transition-all ${
+                    isCancelled
+                      ? "bg-rose-500 text-white ring-4 ring-rose-100"
+                      : isCompleted
+                      ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
+                      : isCurrent
+                      ? "bg-[#171914] text-white ring-4 ring-stone-200 animate-pulse"
+                      : "bg-stone-200 text-stone-500"
+                  }`}
+                >
+                  {isCancelled ? (
+                    <X className="size-3.5" />
+                  ) : isCompleted ? (
+                    <CheckCircle2 className="size-4" />
+                  ) : isCurrent ? (
+                    <span className="size-2 rounded-full bg-white" />
+                  ) : (
+                    <span className="size-1.5 rounded-full bg-stone-400" />
+                  )}
+                </div>
+                <div className="mt-1.5 max-w-[70px] sm:max-w-[100px]">
+                  <p
+                    className={`text-[11px] sm:text-xs font-bold leading-tight ${
+                      isCancelled
+                        ? "text-rose-600"
+                        : isCurrent
+                        ? "text-stone-900"
+                        : isCompleted
+                        ? "text-emerald-800"
+                        : "text-stone-400"
+                    }`}
+                  >
+                    {step.label}
+                  </p>
+                  {step.caption && (
+                    <p className="mt-0.5 text-[10px] text-stone-500 font-medium hidden sm:block">
+                      {step.caption}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {!isLast && (
+                <div className="relative mb-5 flex-1 mx-1.5 sm:mx-3 h-0.5 sm:h-1 bg-stone-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      isLineActive ? "bg-emerald-500" : isCancelled ? "bg-rose-300" : "bg-transparent"
+                    }`}
+                  />
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OrderDetailsDialog({
+  order,
+  close,
+  state,
+  session,
+}: {
+  order: Order | null;
+  close: () => void;
+  state: V3State;
+  session: DemoSession;
+}) {
+  if (!order) return null;
+  const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
+  const vendor = state.vendors.find((v) => v.id === order.vendorId);
+  const assignment = state.assignments.find((item) => item.orderId === order.id);
+  const person = state.staff.find((item) => item.id === assignment?.staffId);
+  const customer = state.customers.find((c) => c.email === session.email);
+  const deliveryAddress = order.deliveryAddress || customer?.address || "Address confirmed on profile";
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
+        <div className="border-b bg-[#171914] p-6 text-white">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+                <ReceiptText className="size-5 text-emerald-400" />
+                Order Details
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-stone-300 bg-white/10 px-2.5 py-1 rounded-lg">
+                  {displayOrderNo}
+                </span>
+                <Status className={orderStatusTone(order.status)}>{order.status}</Status>
+              </div>
+            </div>
+            <DialogDescription className="text-stone-300 text-xs mt-1">
+              Placed on {order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : order.date}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="space-y-6 p-6">
+          {/* Vendor Details */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Store & Kitchen</div>
+                <h4 className="mt-1 font-black text-stone-900 text-base">{vendor?.businessName || "ShePlates Kitchen Partner"}</h4>
+                {vendor?.address && (
+                  <p className="mt-1 text-xs text-stone-600 flex items-center gap-1.5">
+                    <MapPin className="size-3.5 shrink-0 text-stone-400" />
+                    {vendor.address}
+                  </p>
+                )}
+                {vendor?.ownerEmail && (
+                  <p className="mt-1 text-xs text-stone-600 flex items-center gap-1.5">
+                    <PhoneCall className="size-3.5 shrink-0 text-stone-400" />
+                    {vendor.ownerEmail}
+                  </p>
+                )}
+              </div>
+              {vendor && <Status className={vendor.verification === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{vendor.verification}</Status>}
+            </div>
+          </div>
+
+          {/* Delivery & Schedule Information */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+              <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Scheduled Fulfilment</div>
+              <div className="mt-2 space-y-1 text-sm">
+                <div className="flex items-center gap-2 font-bold text-stone-900">
+                  <CalendarDays className="size-4 text-stone-500" />
+                  {order.date}
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-stone-600">
+                  <Clock3 className="size-4 text-stone-400" />
+                  {order.slot}
+                </div>
+                <div className="mt-2 text-xs font-medium text-stone-500">
+                  Mode: <span className="font-bold text-stone-800">{order.mode}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+              <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Delivery Address</div>
+              <div className="mt-2 text-xs leading-5 text-stone-700 flex items-start gap-1.5">
+                <MapPin className="size-4 shrink-0 text-stone-400 mt-0.5" />
+                <span>{deliveryAddress}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Delivery Partner */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Delivery Partner</div>
+            {person ? (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-stone-900 text-sm">{person.name}</div>
+                  <div className="text-xs text-stone-500 font-mono mt-0.5">{person.phone}</div>
+                </div>
+                <a
+                  href={`tel:${person.phone}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-50"
+                >
+                  <PhoneCall className="size-3.5 text-emerald-600" />
+                  Call Partner
+                </a>
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-stone-500">
+                {order.mode === "Self pickup"
+                  ? "Self pickup chosen. Please collect from the vendor kitchen during the scheduled slot."
+                  : "A delivery partner will be assigned once preparation is underway."}
+              </p>
+            )}
+          </div>
+
+          {/* Items breakdown */}
+          <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Ordered Items</div>
+            <div className="mt-3 divide-y divide-stone-100">
+              {order.items && order.items.length > 0 ? (
+                order.items.map((it, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2 text-sm">
+                    <div className="font-bold text-stone-900">
+                      {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
+                    </div>
+                    {it.price != null && (
+                      <div className="font-mono text-stone-700 font-semibold">{money(it.price * it.quantity)}</div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="flex items-center justify-between py-2 text-sm">
+                  <div className="font-bold text-stone-900">
+                    {order.quantity} × {product?.name || order.description} {order.unit ? `(${order.unit})` : ""}
+                  </div>
+                  <div className="font-mono text-stone-700 font-semibold">{money(order.total)}</div>
+                </div>
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3 text-base font-black text-stone-900">
+              <span>Total Paid</span>
+              <span>{money(order.total)}</span>
+            </div>
+          </div>
+
+          {/* Payment Details */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Payment Information</div>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-stone-500">Status:</span>
+                <span className="ml-1 font-bold text-emerald-700">{order.payment}</span>
+              </div>
+              <div>
+                <span className="text-stone-500">Method:</span>
+                <span className="ml-1 font-bold text-stone-800">{order.paymentProvider || (order.payment === "Paid" ? "Razorpay" : "Prepaid")}</span>
+              </div>
+              {order.paymentReference && (
+                <div className="col-span-2">
+                  <span className="text-stone-500">Transaction ID:</span>
+                  <span className="ml-1 font-mono text-stone-700 break-all">{order.paymentReference}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Button onClick={close} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OrderTrackingDialog({
+  order,
+  close,
+  state,
+}: {
+  order: Order | null;
+  close: () => void;
+  state: V3State;
+}) {
+  if (!order) return null;
+  const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
+  const vendor = state.vendors.find((v) => v.id === order.vendorId);
+  const assignment = state.assignments.find((item) => item.orderId === order.id);
+  const person = state.staff.find((item) => item.id === assignment?.staffId);
+  const timeline = getOrderTimeline(order);
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  // Hero status message
+  let heroTitle = "Order in Progress";
+  let heroSubtitle = "Your fresh meal is being coordinated with the kitchen.";
+  if (order.status === "Delivered" || order.status === "Completed") {
+    heroTitle = "Delivered!";
+    heroSubtitle = "Your order was successfully completed. Bon appétit!";
+  } else if (order.status === "Out for delivery") {
+    heroTitle = "Out for Delivery";
+    heroSubtitle = person ? `${person.name} is on the way to your delivery address.` : "Your delivery partner is en route!";
+  } else if (order.status === "Ready" || order.status === "Ready for pickup") {
+    heroTitle = order.mode === "Self pickup" ? "Ready for Pickup" : "Food Ready for Dispatch";
+    heroSubtitle = "Freshly prepared and packed by the kitchen.";
+  } else if (order.status === "Preparing") {
+    heroTitle = "Preparing in Kitchen";
+    heroSubtitle = `${vendor?.businessName || "The kitchen"} is currently preparing your meal.`;
+  } else if (order.status === "Confirmed") {
+    heroTitle = "Order Confirmed";
+    heroSubtitle = "The vendor has accepted your order and slot.";
+  } else if (order.status === "Scheduled") {
+    heroTitle = "Order Scheduled";
+    heroSubtitle = `Scheduled for delivery on ${order.date} during ${order.slot}.`;
+  } else if (order.status === "Cancelled" || order.status === "Cancellation requested") {
+    heroTitle = order.status === "Cancelled" ? "Order Cancelled" : "Cancellation Pending";
+    heroSubtitle = "This order is no longer in active fulfilment.";
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
+        {/* Header */}
+        <div className="border-b bg-[#171914] p-6 text-white">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+                <Compass className="size-5 text-emerald-400" />
+                Live Order Tracking
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-stone-300 bg-white/10 px-2.5 py-1 rounded-lg">
+                  {displayOrderNo}
+                </span>
+                <Status className={orderStatusTone(order.status)}>{order.status}</Status>
+              </div>
+            </div>
+            <DialogDescription className="text-stone-300 text-xs mt-1">
+              Estimated delivery: {order.date} • {order.slot}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="space-y-6 p-6">
+          {/* Hero status box */}
+          <div className="rounded-2xl bg-gradient-to-br from-emerald-50 via-emerald-100/40 to-white p-5 border border-emerald-200/80">
+            <div className="flex items-start gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-emerald-600 text-white shrink-0">
+                {order.status === "Delivered" || order.status === "Completed" ? (
+                  <CheckCircle2 className="size-6" />
+                ) : (
+                  <Package className="size-5" />
+                )}
+              </div>
+              <div>
+                <h3 className="font-black text-emerald-950 text-base">{heroTitle}</h3>
+                <p className="mt-0.5 text-xs text-emerald-800 leading-relaxed font-medium">{heroSubtitle}</p>
+                <div className="mt-2 text-xs font-bold text-emerald-900">
+                  {order.quantity} × {product?.name || order.description}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Timeline */}
+          <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-5">
+            <div className="text-xs font-black uppercase tracking-wider text-stone-400 mb-4">Delivery Progress</div>
+            <CompactDeliveryTimeline timeline={timeline} />
+          </div>
+
+          {/* Delivery Partner Details (if assigned) */}
+          <div className="rounded-2xl border border-stone-200/80 bg-white p-4">
+            <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Fulfilment & Partner</div>
+            {person ? (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="grid size-10 place-items-center rounded-full bg-stone-100 text-stone-700 font-black text-sm">
+                    {person.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="font-bold text-stone-900 text-sm">{person.name}</div>
+                    <div className="text-xs text-stone-500">Assigned Delivery Partner</div>
+                  </div>
+                </div>
+                <a
+                  href={`tel:${person.phone}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-50"
+                >
+                  <PhoneCall className="size-3.5 text-emerald-600" />
+                  {person.phone}
+                </a>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-stone-500">
+                {order.mode === "Self pickup"
+                  ? "Self pickup order. Collect your meal from the kitchen during the chosen time slot."
+                  : "A delivery partner will be designated closer to dispatch time."}
+              </p>
+            )}
+          </div>
+
+          {/* Future GPS Map Notice */}
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-4 text-center">
+            <Compass className="size-6 text-stone-400 mx-auto" />
+            <div className="mt-2 text-xs font-black text-stone-700">Live GPS Map Tracking</div>
+            <p className="mt-1 text-xs text-stone-500 max-w-md mx-auto">
+              Real-time map tracking will be active on this screen once our partner telemetry system goes live for live coordinates.
+            </p>
+          </div>
+
+          <Button onClick={close} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
+            Back to Orders
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CustomerOrderCard({
+  order,
+  state,
+  session,
+  onViewDetails,
+  onTrackOrder,
+  onReschedule,
+  onRateOrder,
+  onIssueThirdPartyCode,
+  deliveryCodes,
+  deliveryActionId,
+}: {
+  order: Order;
+  state: V3State;
+  session: DemoSession;
+  onViewDetails: (order: Order) => void;
+  onTrackOrder: (order: Order) => void;
+  onReschedule: (order: Order) => void;
+  onRateOrder: (order: Order) => void;
+  onIssueThirdPartyCode: (order: Order) => void;
+  deliveryCodes: Record<string, { code: string; expiresAt: string }>;
+  deliveryActionId: string | null;
+}) {
+  const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
+  const vendor = state.vendors.find((v) => v.id === order.vendorId);
+  const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
+  const timeline = getOrderTimeline(order);
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  return (
+    <div className="surface-card rounded-[28px] p-5 sm:p-6 transition-all hover:shadow-md">
+      {/* Header row: Order #, Date, Status Badges */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 pb-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-mono font-bold text-stone-700 bg-stone-100 px-2.5 py-1 rounded-lg">
+            {displayOrderNo}
+          </span>
+          <span className="text-stone-300">•</span>
+          <span className="text-stone-500 font-medium">
+            {order.createdAt
+              ? new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+              : order.date}
+          </span>
+          <span className="text-stone-300">•</span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2.5 py-0.5 text-xs font-semibold text-stone-700">
+            {order.mode}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700 font-bold" : ""}>
+            {order.payment}
+          </Status>
+          <Status className={orderStatusTone(order.status)}>
+            {order.status}
+          </Status>
+        </div>
+      </div>
+
+      {/* Main content row: Thumbnail + Product Info + Price */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <PhotoTile
+            imageUrl={product?.imageUrl || product?.originalImageUrl}
+            category={product?.category}
+            className="size-16 sm:size-20 shrink-0 rounded-2xl shadow-sm"
+            emojiSize={32}
+          />
+          <div className="min-w-0">
+            <h4 className="font-black text-stone-900 text-base sm:text-lg truncate">
+              {product?.name || order.description}
+            </h4>
+            <p className="text-xs sm:text-sm text-stone-500 font-medium mt-0.5">
+              {order.quantity} × {product?.baseUnit || order.unit || "item"}
+              {vendor ? ` • ${vendor.businessName}` : ""}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-stone-600">
+              <span className="inline-flex items-center gap-1 font-semibold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md">
+                <CalendarDays className="size-3 text-stone-500" />
+                {order.date}
+              </span>
+              <span className="inline-flex items-center gap-1 text-stone-600 bg-stone-50 px-2 py-0.5 rounded-md border border-stone-200/60">
+                <Clock3 className="size-3 text-stone-400" />
+                {order.slot}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Amount */}
+        <div className="sm:text-right shrink-0">
+          <div className="text-xs uppercase font-bold tracking-wider text-stone-400">Total</div>
+          <div className="text-xl sm:text-2xl font-black text-stone-900">{money(order.total)}</div>
+          {order.items && order.items.length > 1 && (
+            <div className="text-[11px] text-stone-400 font-medium">+{order.items.length - 1} more item(s)</div>
+          )}
+        </div>
+      </div>
+
+      {/* Compact Delivery Timeline */}
+      <div className="rounded-2xl bg-stone-50/80 p-4 border border-stone-100">
+        <CompactDeliveryTimeline timeline={timeline} />
+      </div>
+
+      {/* Third party delivery handling if requested */}
+      {order.mode === "Third-party delivery" && thirdPartyDelivery && (
+        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <b className="text-sm text-violet-950">3rd Party Delivery Request</b>
+            <Status>{thirdPartyDelivery.status}</Status>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-violet-950">{thirdPartyDelivery.notes}</p>
+          {thirdPartyDelivery.status === "pending" && (
+            <p className="mt-3 text-xs text-violet-900">The vendor must accept this request before you can issue the handover code.</p>
+          )}
+          {thirdPartyDelivery.status === "accepted" && (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-violet-900">Issue a secure, one-time code for handover. The code expires after 30 minutes.</p>
+              {deliveryCodes[order.id] && (
+                <div className="rounded-xl border border-violet-200 bg-white p-3 text-center">
+                  <div className="font-mono text-2xl font-black tracking-[0.3em] text-violet-950">{deliveryCodes[order.id].code}</div>
+                  <div className="mt-1 text-xs text-violet-800">Expires {new Date(deliveryCodes[order.id].expiresAt).toLocaleTimeString()}</div>
+                </div>
+              )}
+              <Button
+                disabled={deliveryActionId === order.id}
+                size="sm"
+                onClick={() => onIssueThirdPartyCode(order)}
+                variant="outline"
+                className="rounded-xl border-violet-300"
+              >
+                {deliveryActionId === order.id ? "Issuing…" : deliveryCodes[order.id] ? "Issue replacement code" : "Show handover code"}
+              </Button>
+            </div>
+          )}
+          {thirdPartyDelivery.status === "delivered" && (
+            <p className="mt-3 text-sm font-bold text-emerald-800">Handover verified. This order has been delivered.</p>
+          )}
+          {thirdPartyDelivery.status === "locked" && (
+            <p className="mt-3 text-sm font-bold text-red-700">Code verification is locked after five incorrect attempts.</p>
+          )}
+        </div>
+      )}
+
+      {/* Action Footer */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-stone-100 mt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onViewDetails(order)}
+            className="rounded-xl border-stone-300 font-bold hover:bg-stone-50 text-stone-700"
+          >
+            <ReceiptText className="size-4" />
+            View Details
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onTrackOrder(order)}
+            className="rounded-xl bg-[#171914] text-white hover:bg-stone-800 font-bold"
+          >
+            <Compass className="size-4" />
+            Track Order
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={["Completed", "Delivered", "Cancelled", "Cancellation requested", "Preparing", "Out for delivery"].includes(order.status)}
+            onClick={() => onReschedule(order)}
+            className="rounded-xl"
+          >
+            <CalendarDays className="size-4" />
+            Reschedule
+          </Button>
+          {["Completed", "Delivered"].includes(order.status) && product && (
+            <Button
+              size="sm"
+              onClick={() => onRateOrder(order)}
+              className="rounded-xl bg-[#e3a008] text-white hover:bg-[#c98a00] font-bold"
+            >
+              <Star className="size-4" />
+              {state.reviews.some((review) => review.productId === product.id && review.customerEmail === session.email) ? "Edit rating" : "Rate"}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) {
   const baseOrders = scope === "customer"
     ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending")
@@ -2709,6 +3415,8 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const [rescheduling, setRescheduling] = useState<Order | null>(null);
   const [paying, setPaying] = useState<Order | null>(null);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
+  const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
+  const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
   const [deliveryCodes, setDeliveryCodes] = useState<Record<string, { code: string; expiresAt: string }>>({});
   const [verificationInputs, setVerificationInputs] = useState<Record<string, string>>({});
   const [deliveryActionId, setDeliveryActionId] = useState<string | null>(null);
@@ -2788,6 +3496,23 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
 return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope === "customer" ? "Orders & live tracking" : scope === "vendor" ? "Fulfilment & tracking" : "Platform order control"} body={scope === "vendor" ? "Paid orders remain visible for every future delivery date. Use Today, Tomorrow or a date filter to plan fulfilment and assign an active delivery person." : "Track paid orders, fulfilment status and delivery progress."} action={isLiveSupabaseMode() && scope !== "operations" ? <Button onClick={() => void refreshCommerce()} variant="outline" className="rounded-xl"><RefreshCcw />Refresh orders</Button> : undefined} />    {scope === "customer" ? <div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Paid orders" value={String(baseOrders.length)} icon={Package} tone="green" /><Metric label="Active schedules" value={String(customerSchedules)} icon={CalendarDays} tone="blue" /><Metric label="Open requirements" value={String(customerOpenRequirements)} icon={ListChecks} tone="violet" /><Metric label="Order value" value={money(totalValue)} icon={CreditCard} tone="amber" /></div> : <><div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-3"><Metric label="Orders in view" value={String(orders.length)} icon={Package} tone="green" /><Metric label="Value in view" value={money(dayValue)} icon={IndianRupee} tone="amber" /><Metric label="All future order value" value={money(totalValue)} icon={CalendarDays} tone="blue" /></div><div className="surface-card flex flex-wrap items-center gap-2 rounded-3xl p-3">{([['today','Today'],['tomorrow','Tomorrow'],['all','All dates'],['custom','Choose date']] as const).map(([value,label]) => <button key={value} onClick={() => setDateMode(value)} className={`rounded-xl px-4 py-2 text-sm font-black ${dateMode === value ? "bg-[#171914] text-white" : "bg-stone-50 text-stone-600"}`}>{label}</button>)}{dateMode === "custom" && <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className={`${inputClass} max-w-48`} />}</div></>}
     {orders.length ? <div className="space-y-4">
       {orders.sort((a, b) => a.date.localeCompare(b.date)).map((order) => {
+        if (scope === "customer") {
+          return (
+            <CustomerOrderCard
+              key={order.id}
+              order={order}
+              state={state}
+              session={session}
+              onViewDetails={(ord) => setDetailsOrder(ord)}
+              onTrackOrder={(ord) => setTrackingOrder(ord)}
+              onReschedule={(ord) => setRescheduling(ord)}
+              onRateOrder={(ord) => setRatingOrder(ord)}
+              onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
+              deliveryCodes={deliveryCodes}
+              deliveryActionId={deliveryActionId}
+            />
+          );
+        }
         const assignment = state.assignments.find((item) => item.orderId === order.id);
         const person = state.staff.find((item) => item.id === assignment?.staffId);
         const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
@@ -2810,36 +3535,24 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
                 <div className="flex flex-wrap items-center justify-between gap-2"><b className="text-sm text-violet-950">3rd Party Delivery Request</b><Status>{thirdPartyDelivery.status}</Status></div>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-violet-950">{thirdPartyDelivery.notes}</p>
                 {scope === "vendor" && thirdPartyDelivery.status === "pending" && <Button disabled={deliveryActionId === order.id} size="sm" onClick={() => void acceptThirdPartyRequest(order)} className="mt-3 rounded-xl bg-violet-700 hover:bg-violet-800">{deliveryActionId === order.id ? "Accepting…" : "Accept delivery request"}</Button>}
-                {scope === "customer" && thirdPartyDelivery.status === "pending" && <p className="mt-3 text-xs text-violet-900">The vendor must accept this request before you can issue the handover code.</p>}
-                {scope === "customer" && thirdPartyDelivery.status === "accepted" && <div className="mt-3 space-y-3">
-                  <p className="text-xs text-violet-900">Issue a secure, one-time code for handover. The code expires after 30 minutes and can be displayed only when first issued.</p>
-                  {deliveryCodes[order.id] && <div className="rounded-xl border border-violet-200 bg-white p-3 text-center">
-                    <div className="font-mono text-2xl font-black tracking-[0.3em] text-violet-950">{deliveryCodes[order.id].code}</div>
-                    <div className="mt-1 text-xs text-violet-800">Expires {new Date(deliveryCodes[order.id].expiresAt).toLocaleTimeString()}</div>
-                  </div>}
-                  <Button disabled={deliveryActionId === order.id} size="sm" onClick={() => void issueThirdPartyCode(order)} variant="outline" className="rounded-xl border-violet-300">{deliveryActionId === order.id ? "Issuing…" : deliveryCodes[order.id] ? "Issue replacement code" : "Show handover code"}</Button>
-                </div>}
                 {scope === "vendor" && thirdPartyDelivery.status === "accepted" && <div className="mt-3 flex flex-wrap items-end gap-2">
                   <Field label="Customer handover code"><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={verificationInputs[order.id] || ""} onChange={(event) => setVerificationInputs((current) => ({ ...current, [order.id]: event.target.value.replace(/\D/g, "").slice(0, 6) }))} placeholder="6-digit code" className={`${inputClass} w-40 font-mono tracking-widest`} /></Field>
                   <Button disabled={deliveryActionId === order.id || (verificationInputs[order.id] || "").length !== 6} size="sm" onClick={() => void verifyThirdPartyCode(order)} className="rounded-xl bg-violet-700 hover:bg-violet-800">{deliveryActionId === order.id ? "Verifying…" : "Verify & mark delivered"}</Button>
                 </div>}
-                {scope === "customer" && thirdPartyDelivery.status === "delivered" && <p className="mt-3 text-sm font-bold text-emerald-800">Handover verified. This order has been delivered.</p>}
+                {thirdPartyDelivery.status === "delivered" && <p className="mt-3 text-sm font-bold text-emerald-800">Handover verified. This order has been delivered.</p>}
                 {thirdPartyDelivery.status === "locked" && <p className="mt-3 text-sm font-bold text-red-700">Code verification is locked after five incorrect attempts.</p>}
               </div>}
             </div>
             <div className="flex flex-wrap gap-2">
-              {scope === "customer" ? <>
-               <Button size="sm" variant="outline" disabled={["Completed", "Delivered", "Cancelled", "Cancellation requested", "Preparing", "Out for delivery"].includes(order.status)} onClick={() => setRescheduling(order)}><CalendarDays />Reschedule</Button>
-                {["Completed", "Delivered"].includes(order.status) && product && <Button size="sm" onClick={() => setRatingOrder(order)} className="bg-[#e3a008] hover:bg-[#c98a00]"><Star />{state.reviews.some((review) => review.productId === product.id && review.customerEmail === session.email) ? "Edit rating" : "Rate"}</Button>}
-              </> : <>
-                <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+              <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
 {order.mode !== "Third-party delivery" && <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((status) => <SelectItem key={status} value={status} disabled={DELIVERY_STATUSES.includes(status as Order["status"]) && order.date > todayISO()}>{status}</SelectItem>)}</SelectContent></Select>}                {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#5ba400]"><MapPinned />Share live position</Button>}
-              </>}
             </div>
           </div>
         </div>;
       })}
     </div> : <Empty icon={Package} title="No orders for this selection" body={scope === "vendor" ? "Try Tomorrow or All dates. Unpaid schedules stay with the customer until payment is completed." : "No paid orders are available in this view."} />}
+    <OrderDetailsDialog order={detailsOrder} close={() => setDetailsOrder(null)} state={state} session={session} />
+    <OrderTrackingDialog order={trackingOrder} close={() => setTrackingOrder(null)} state={state} />
     <OrderRescheduleDialog order={rescheduling} close={() => setRescheduling(null)} state={state} setState={setState} />
     <PaymentDialog order={paying} close={() => setPaying(null)} state={state} setState={setState} />
     <RateOrderDialog key={ratingOrder?.id || "closed"} order={ratingOrder} close={() => setRatingOrder(null)} state={state} setState={setState} session={session} />
