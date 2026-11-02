@@ -19,6 +19,15 @@ function clients(request: Request) {
 
 type AdminClient = NonNullable<ReturnType<typeof clients>>["admin"];
 
+function todayInIndia() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 async function identity(request: Request) {
   const c = clients(request);
   if (!c) return null;
@@ -195,8 +204,16 @@ export async function POST(request: Request) {
       if (!payment) {
         return NextResponse.json({ error: "No payment record found for this order." }, { status: 404 });
       }
+      if (order.status === "cancelled") {
+        return NextResponse.json({ error: "This unpaid order was removed and can no longer be paid." }, { status: 409 });
+      }
       if (payment.status === "paid" || order.status === "confirmed") {
         return NextResponse.json({ error: "This order has already been paid and confirmed." }, { status: 400 });
+      }
+      if (order.scheduled_date < todayInIndia()) {
+        return NextResponse.json({
+          error: `The scheduled date (${order.scheduled_date}) has already passed, so this order can no longer be paid.`,
+        }, { status: 409 });
       }
 
       // Trusted pricing recalculation from DB
@@ -466,6 +483,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Payment record not found." }, { status: 404 });
       }
 
+      if (order.status === "cancelled") {
+        return NextResponse.json({ error: "This unpaid order was removed and can no longer be paid." }, { status: 409 });
+      }
+
       // If already paid, return existing snapshot idempotently
       if (payment.status === "paid" && order.status === "confirmed") {
         return NextResponse.json({ ok: true, orderId: order.id, snapshot: await commerceSnapshot(ctx) });
@@ -589,4 +610,3 @@ export async function POST(request: Request) {
     }, { status: 500 });
   }
 }
-

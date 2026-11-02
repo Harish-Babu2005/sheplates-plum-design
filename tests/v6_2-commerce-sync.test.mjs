@@ -25,6 +25,17 @@ test("converts the saved cart into real pending orders before payment", async ()
   assert.match(ui, /checkoutLiveCart/);
 });
 
+test("cart does not expose unpaid-order removal", async () => {
+  const route = await readFile(path.join(root, "app/api/commerce/route.ts"), "utf8");
+  const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
+  const disableMigration = await readFile(path.join(root, "supabase/migrations/20261102000600_disable_customer_unpaid_order_removal.sql"), "utf8");
+  assert.doesNotMatch(route, /action === "remove_pending_order"/);
+  assert.doesNotMatch(route, /customer_remove_unpaid_order/);
+  assert.doesNotMatch(ui, /removeLivePendingOrder|Remove unpaid order:|Cancellation unavailable|cancellationNotice/);
+  assert.match(ui, /Payment unavailable: the scheduled date has passed\./);
+  assert.match(disableMigration, /DROP FUNCTION IF EXISTS public\.customer_remove_unpaid_order\(uuid\)/);
+});
+
 test("lets customers choose an exact future date for cart orders and schedules", async () => {
   const route = await readFile(path.join(root, "app/api/commerce/route.ts"), "utf8");
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");

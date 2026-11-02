@@ -7,7 +7,12 @@ const migration = await readFile(
   "utf8",
 );
 const schema = await readFile(new URL("../supabase/schema.sql", import.meta.url), "utf8");
+const followupMigration = await readFile(
+  new URL("../supabase/migrations/20261102000100_p0_taster_and_shop_images.sql", import.meta.url),
+  "utf8",
+);
 const api = await readFile(new URL("../app/api/p0/vendors/route.ts", import.meta.url), "utf8");
+const management = await readFile(new URL("../components/p0-vendor-management.tsx", import.meta.url), "utf8");
 const completionApi = await readFile(new URL("../app/api/p0/upgrade/complete/route.ts", import.meta.url), "utf8");
 const app = await readFile(new URL("../components/sheplates-v3.tsx", import.meta.url), "utf8");
 const discover = await readFile(new URL("../components/customer-v2/discover.tsx", import.meta.url), "utf8");
@@ -119,4 +124,20 @@ test("Operations P0 actions require explicit permissions and upgrades are invite
   assert.match(api, /claim_pending/);
   assert.match(api, /resend\(/);
   assert.match(api, /A different upgrade invitation is already pending/);
+});
+
+test("P0 upgrades offer the Rs 499 Taster plan and the database accepts it", () => {
+  const body = functionBody(followupMigration, "p0_start_upgrade_invitation");
+  assert.match(management, /<option value="taster">Taster · ₹499<\/option>/);
+  assert.match(body, /code IN \('taster','crave','thrive','crown'\)/i);
+  assert.match(followupMigration, /p0-shop-images[\s\S]*?true[\s\S]*?10485760[\s\S]*?image\/png[\s\S]*?image\/jpeg[\s\S]*?image\/webp/i);
+});
+
+test("P0 listing creation uploads a validated shop image and stores its public URL", () => {
+  assert.match(management, /request\.append\("shopImage", shopImage\)/);
+  assert.match(management, /type="file" accept="image\/png,image\/jpeg,image\/webp"/);
+  assert.match(api, /request\.formData\(\)/);
+  assert.match(api, /p0-shop-images"\)\.upload\(imagePath, shopImage/);
+  assert.match(api, /p_logo_url: logoUrl/);
+  assert.match(api, /Shop image must be under 10 MB/);
 });

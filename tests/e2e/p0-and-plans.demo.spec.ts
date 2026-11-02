@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { buildDemoState } from "./fixtures/demo-state";
-import { dismissTourIfOpen } from "./helpers";
+import { dismissTourIfOpen, openStaffNavIfCollapsed } from "./helpers";
 
 // P0 Connect menu entries, the four vendor plans, plan-gated Food Drops and the removal of customer cancellation.
 // Demo mode (no database): each test seeds its own state and session. The P0 screen itself needs a live account,
@@ -38,6 +38,17 @@ test("Operations and Super Admin both have a P0 Connect vendors screen in the me
     await entry.click();
     await expect(page.getByText(/P0 Connect|Create P0 vendor|P0 vendor/i).first()).toBeVisible({ timeout: 10_000 });
   }
+});
+
+test("Super Admin can open the Operations Orders profile", async ({ page }) => {
+  await openAs(page, "admin");
+  await dismissTourIfOpen(page);
+  await openStaffNavIfCollapsed(page);
+  const ordersEntry = page.getByRole("button", { name: "Orders", exact: true }).first();
+  await expect(ordersEntry).toBeVisible({ timeout: 60_000 });
+  await ordersEntry.click();
+  await expect(page.getByRole("heading", { name: "Platform order control" })).toBeVisible();
+  await expect(page.getByText("Orders in view")).toBeVisible();
 });
 
 test("vendors are not offered a P0 menu or a made-up 'Vendor workspace' entry", async ({ page }) => {

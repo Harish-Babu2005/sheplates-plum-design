@@ -19,6 +19,18 @@ function clients(request: Request) {
 
 type AdminClient = NonNullable<ReturnType<typeof clients>>["admin"];
 
+function errorDetails(error: unknown) {
+  if (error instanceof Error) return { message: error.message, code: "" };
+  if (typeof error === "object" && error !== null) {
+    const value = error as { message?: unknown; code?: unknown };
+    return {
+      message: typeof value.message === "string" ? value.message : "",
+      code: typeof value.code === "string" ? value.code : "",
+    };
+  }
+  return { message: "", code: "" };
+}
+
 async function identity(request: Request) {
   const c = clients(request);
   if (!c) return null;
@@ -724,6 +736,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The request could not be completed." }, { status: 500 });
+    const { message } = errorDetails(error);
+    return NextResponse.json({ error: message || "The request could not be completed." }, { status: 500 });
   }
 }

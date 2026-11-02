@@ -9,9 +9,8 @@ const CUSTOMER_SESSION = {
   toursCompleted: ["customer_v1"],
 };
 
-async function openCustomerWithPendingOrder(page: Page) {
+async function openCustomerWithPendingOrder(page: Page, scheduledDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)) {
   const state = buildDemoState();
-  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 
   // Ensure customer onboarding is marked complete
   const customer = state.customers.find((c) => c.email === CUSTOMER_SESSION.email);
@@ -32,7 +31,7 @@ async function openCustomerWithPendingOrder(page: Page) {
     quantity: 1,
     unit: "1 complete meal",
     total: 120,
-    date: tomorrow,
+    date: scheduledDate,
     slot: "07:00–08:00 AM",
     mode: "Vendor delivery",
     status: "Scheduled",
@@ -49,6 +48,31 @@ async function openCustomerWithPendingOrder(page: Page) {
 }
 
 test.describe("Demo Mode Payment Dialog Flow", () => {
+  test("past-dated unpaid orders cannot be paid", async ({ page }) => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    await openCustomerWithPendingOrder(page, yesterday);
+    await dismissTourIfOpen(page);
+    await page.getByRole("button", { name: /Cart/i }).first().click();
+
+    const orderCard = page.locator(".surface-card", { hasText: "Mini Meals Daily" }).first();
+    await expect(orderCard).toBeVisible();
+    await expect(orderCard.getByRole("button", { name: "Scheduled date passed" })).toBeDisabled();
+    await expect(orderCard).toContainText("Payment unavailable: the scheduled date has passed.");
+    await expect(page.getByRole("dialog", { name: /Pay for/i })).toHaveCount(0);
+    await expect(orderCard.getByRole("button", { name: /Remove unpaid order/i })).toHaveCount(0);
+  });
+
+  test("awaiting-payment orders remain listed without a delete action", async ({ page }) => {
+    await openCustomerWithPendingOrder(page);
+    await dismissTourIfOpen(page);
+    await page.getByRole("button", { name: /Cart/i }).first().click();
+
+    const orderCard = page.locator(".surface-card", { hasText: "Mini Meals Daily" }).first();
+    await expect(orderCard).toBeVisible();
+    await expect(orderCard.getByRole("button", { name: /Remove unpaid order/i })).toHaveCount(0);
+    await expect(orderCard.getByRole("button", { name: "Pay & place order" })).toBeVisible();
+  });
+
   test("pending order displays payment dialog and completes demo payment", async ({ page }) => {
     await openCustomerWithPendingOrder(page);
     await dismissTourIfOpen(page);
