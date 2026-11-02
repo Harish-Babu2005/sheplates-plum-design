@@ -19,6 +19,18 @@ function clients(request: Request) {
 
 type AdminClient = NonNullable<ReturnType<typeof clients>>["admin"];
 
+function errorDetails(error: unknown) {
+  if (error instanceof Error) return { message: error.message, code: "" };
+  if (typeof error === "object" && error !== null) {
+    const value = error as { message?: unknown; code?: unknown };
+    return {
+      message: typeof value.message === "string" ? value.message : "",
+      code: typeof value.code === "string" ? value.code : "",
+    };
+  }
+  return { message: "", code: "" };
+}
+
 async function identity(request: Request) {
   const c = clients(request);
   if (!c) return null;
@@ -285,6 +297,68 @@ export async function POST(request: Request) {
       }
       await admin.from("commerce_carts").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", cartId).eq("customer_id", profile.id);
       return NextResponse.json({ ok: true, orderIds, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "remove_pending_order") {
+      if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
+      const orderId = String(body.orderId || "").trim();
+      if (!orderId) return NextResponse.json({ error: "Order ID is required." }, { status: 400 });
+      const { error } = await ctx.caller.rpc("customer_remove_unpaid_order", { p_order: orderId });
+      if (error) {
+        const details = errorDetails(error);
+        if (details.code === "PGRST202" || details.code === "42883") {
+          return NextResponse.json({
+            error: "Unpaid-order cancellation is not enabled in the database yet. Ask support to apply the latest database migration.",
+            reason: "feature_unavailable",
+          }, { status: 503 });
+        }
+        const scheduledDate = details.message.match(/scheduled_date_passed:(\d{4}-\d{2}-\d{2})/i)?.[1];
+        if (scheduledDate) {
+          return NextResponse.json({
+            error: `The scheduled date (${scheduledDate}) has already passed, so this order can no longer be cancelled.`,
+            reason: "scheduled_date_passed",
+          }, { status: 409 });
+        }
+        if (/payment_completed/i.test(details.message)) {
+          return NextResponse.json({
+            error: "Payment for this order has already been completed, so it can no longer be cancelled from the cart. Please contact Customer Support for help.",
+            reason: "payment_completed",
+          }, { status: 409 });
+        }
+        if (/payment_status_ineligible/i.test(details.message)) {
+          return NextResponse.json({
+            error: "This payment is no longer awaiting payment, so this order cannot be cancelled from the cart. Please contact Customer Support for help.",
+            reason: "payment_status_ineligible",
+          }, { status: 409 });
+        }
+        const ineligibleStatus = details.message.match(/order_status_ineligible:([a-z_]+)/i)?.[1];
+        if (ineligibleStatus) {
+          const statusLabels: Record<string, string> = {
+            confirmed: "confirmed",
+            preparing: "being prepared",
+            ready: "ready",
+            out_for_delivery: "out for delivery",
+            ready_for_pickup: "ready for pickup",
+            completed: "completed",
+            delivered: "delivered",
+            cancelled: "already cancelled",
+            cancellation_requested: "already under cancellation review",
+          };
+          return NextResponse.json({
+            error: `This order is ${statusLabels[ineligibleStatus] || "no longer in its original scheduled state"} and is no longer eligible for cancellation.`,
+            reason: "order_status_ineligible",
+          }, { status: 409 });
+        }
+        if (/not found/i.test(details.message)) {
+          return NextResponse.json({ error: "This order could not be found. Refresh your orders and try again.", reason: "order_not_found" }, { status: 404 });
+        }
+        console.error("Could not verify unpaid-order cancellation eligibility:", { code: details.code });
+        return NextResponse.json({
+          error: "We couldn’t verify whether this order can be cancelled, so it hasn’t been changed. Refresh your orders and try again.",
+          reason: "eligibility_check_failed",
+        }, { status: 503 });
+      }
+      return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
     }
 
     if (action === "create_schedule") {
@@ -602,6 +676,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The request could not be completed." }, { status: 500 });
+    const { message } = errorDetails(error);
+    return NextResponse.json({ error: message || "The request could not be completed." }, { status: 500 });
   }
 }

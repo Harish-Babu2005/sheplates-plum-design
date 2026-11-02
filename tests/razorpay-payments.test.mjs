@@ -16,6 +16,7 @@ test("Razorpay API route creates secure orders using trusted database prices", a
   // Authentication and role enforcement
   assert.match(route, /action === "create_order"/);
   assert.match(route, /if \(profile\.role !== "customer"\)/);
+  assert.match(route, /function todayInIndia\(\)/);
 
   // Validates ownership of the order
   assert.match(route, /\.from\("orders"\)[\s\S]*?\.eq\("customer_id", profile\.id\)/);
@@ -32,6 +33,7 @@ test("Razorpay API route creates secure orders using trusted database prices", a
   // Amount in integer paise
   assert.match(route, /const totalPaise = Math\.round\(totalPayableRupees \* 100\)/);
   assert.match(route, /if \(totalPaise < 100\)/);
+  assert.match(route, /order\.scheduled_date < todayInIndia\(\)[\s\S]*scheduled date \(\$\{order\.scheduled_date\}\) has already passed, so this order can no longer be paid/);
 
   // Idempotency check before creating duplicate Razorpay orders
   assert.match(route, /existingRzpOrderId/);

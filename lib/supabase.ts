@@ -721,6 +721,10 @@ export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: 
   return commerceRequest({ action: "checkout_cart", ...(input || {}) });
 }
 
+export async function removeLivePendingOrder(orderId: string) {
+  return commerceRequest({ action: "remove_pending_order", orderId });
+}
+
 export async function acceptLiveThirdPartyDelivery(orderId: string) {
   return commerceRequest({ action: "accept_third_party_delivery", orderId });
 }

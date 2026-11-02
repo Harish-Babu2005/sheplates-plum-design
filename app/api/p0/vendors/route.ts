@@ -215,7 +215,19 @@ export async function POST(request: Request) {
   try {
     const ctx = await context(request);
     if (!ctx) return NextResponse.json({ error: "Sign in with an authorized Operations or Super Admin account." }, { status: 401 });
-    const body = await request.json() as Record<string, unknown>;
+    let body: Record<string, unknown>;
+    let shopImage: File | null = null;
+    if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await request.formData();
+      const imageValue = form.get("shopImage");
+      if (imageValue !== null) {
+        if (!(imageValue instanceof File)) return NextResponse.json({ error: "Choose a valid shop image file." }, { status: 400 });
+        if (imageValue.size > 0) shopImage = imageValue;
+      }
+      body = Object.fromEntries([...form.entries()].filter(([key]) => key !== "shopImage"));
+    } else {
+      body = await request.json() as Record<string, unknown>;
+    }
     const action = String(body.action || "");
 
     if (action === "permissions") {
@@ -245,25 +257,49 @@ export async function POST(request: Request) {
       if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 24) {
         return NextResponse.json({ error: "Operating duration must be between 1 and 24 hours." }, { status: 400 });
       }
-      const { data, error } = await ctx.admin.rpc("p0_create_vendor", {
-        p_actor: ctx.userId,
-        p_name: body.name,
-        p_category: body.category,
-        p_description: body.description || null,
-        p_locality: body.locality,
-        p_address: body.address || null,
-        p_latitude: Number(body.latitude),
-        p_longitude: Number(body.longitude),
-        p_service_radius_km: Number(body.serviceRadiusKm),
-        p_contact_name: body.contactName,
-        p_contact_phone: body.contactPhone,
-        p_whatsapp_number: body.whatsappNumber,
-        p_fssai_required: body.fssaiRequired === true,
-        p_logo_url: body.logoUrl || null,
-        p_operating_hours: { duration_hours: durationHours },
-      });
-      if (error) throw error;
-      return NextResponse.json({ vendorId: data }, { status: 201 });
+      if (shopImage && !["image/png", "image/jpeg", "image/webp"].includes(shopImage.type)) {
+        return NextResponse.json({ error: "Upload a PNG, JPG or WebP shop image." }, { status: 400 });
+      }
+      let imagePath: string | null = null;
+      let logoUrl = body.logoUrl || null;
+      if (shopImage) {
+        if (shopImage.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Shop image must be under 10 MB." }, { status: 413 });
+        const extension = shopImage.type === "image/jpeg" ? "jpg" : shopImage.type === "image/png" ? "png" : "webp";
+        imagePath = `p0-connect/${crypto.randomUUID()}.${extension}`;
+        const uploaded = await ctx.admin.storage.from("p0-shop-images").upload(imagePath, shopImage, {
+          contentType: shopImage.type,
+          upsert: false,
+        });
+        if (uploaded.error) throw uploaded.error;
+        logoUrl = ctx.admin.storage.from("p0-shop-images").getPublicUrl(imagePath).data.publicUrl;
+      }
+      try {
+        const { data, error } = await ctx.admin.rpc("p0_create_vendor", {
+          p_actor: ctx.userId,
+          p_name: body.name,
+          p_category: body.category,
+          p_description: body.description || null,
+          p_locality: body.locality,
+          p_address: body.address || null,
+          p_latitude: Number(body.latitude),
+          p_longitude: Number(body.longitude),
+          p_service_radius_km: Number(body.serviceRadiusKm),
+          p_contact_name: body.contactName,
+          p_contact_phone: body.contactPhone,
+          p_whatsapp_number: body.whatsappNumber,
+          p_fssai_required: body.fssaiRequired === true || body.fssaiRequired === "true",
+          p_logo_url: logoUrl,
+          p_operating_hours: { duration_hours: durationHours },
+        });
+        if (error) throw error;
+        return NextResponse.json({ vendorId: data }, { status: 201 });
+      } catch (error) {
+        if (imagePath) {
+          const removed = await ctx.admin.storage.from("p0-shop-images").remove([imagePath]);
+          if (removed.error) console.error("P0 shop image cleanup failed:", removed.error.message);
+        }
+        throw error;
+      }
     }
 
     if (action === "review") {
