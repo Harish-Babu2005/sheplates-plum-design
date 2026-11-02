@@ -935,10 +935,27 @@ export function ShePlatesV3() {
         if (!cancelled) setState((current) => ({
           ...current,
           customers: preference ? [...current.customers.filter((item) => item.email !== syncSession.email), {
-            email: syncSession.email, address: String(preference.address), latitude: Number(preference.latitude), longitude: Number(preference.longitude),
-            householdSize: Number(preference.household_size || 1), diet: String(preference.diet || "No preference"),
-            allergies: preference.allergies || [], goals: preference.health_goals || [], dislikes: String(preference.dislikes_and_instructions || ""),
-            onboardingComplete: Boolean(preference.onboarding_complete), agentMemory: liveMemory,
+            email: syncSession.email,
+            phone: String(preference.phone || ""),
+            address: String(preference.address || ""),
+            latitude: Number(preference.latitude),
+            longitude: Number(preference.longitude),
+            householdSize: Number(preference.household_size || 1),
+            diet: String(preference.diet || "No preference"),
+            allergies: Array.isArray(preference.allergies) ? preference.allergies : [],
+            goals: Array.isArray(preference.health_goals) ? preference.health_goals : [],
+            dislikes: String(preference.dislikes_and_instructions || ""),
+            onboardingComplete: Boolean(preference.onboarding_complete),
+            agentMemory: liveMemory,
+            addresses: [{
+              id: id("ADR"),
+              label: "Home",
+              address: String(preference.address || ""),
+              latitude: Number(preference.latitude),
+              longitude: Number(preference.longitude),
+              phone: String(preference.phone || ""),
+              isDefault: true,
+            }],
           }] : current.customers.filter((item) => item.email !== syncSession.email),
           vendors, products, markups: {}, merchandising, merchandisingError,
         }));
@@ -1237,6 +1254,37 @@ const METRIC_TONES = {
 } as const;
 function Metric({ label, value, icon: Icon, note, tone = "green" }: { label: string; value: string; icon: typeof Store; note?: string; tone?: keyof typeof METRIC_TONES }) { const palette = METRIC_TONES[tone]; return <div className="surface-card sp-metric-card group rounded-[26px] p-5 transition hover:-translate-y-0.5 hover:shadow-lg"><div className="flex items-center justify-between"><div className={`grid size-10 place-items-center rounded-[15px] sm:size-11 sm:rounded-2xl ${palette.bg} ${palette.fg}`}><Icon className="size-4.5 sm:size-5" /></div><ArrowRight className="size-4 text-stone-300 transition group-hover:translate-x-0.5" /></div><div className="mt-3 text-lg font-black tracking-[-.03em] sm:mt-4 sm:text-xl">{value}</div><div className="mt-1 text-xs font-semibold text-stone-500 sm:text-sm">{label}</div>{note && <div className="mt-2 text-[10px] font-bold text-[#5f8f2d] sm:text-[11px]">{note}</div>}</div>; }
 function Status({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <span className={`sp-status inline-flex rounded-full border border-stone-200/80 bg-stone-50/90 px-3 py-1 text-[11px] font-black ${className}`}>{children}</span>; }
+export const STANDARD_DIETS = [
+  "No preference",
+  "Vegetarian",
+  "Vegan",
+  "Eggetarian",
+  "Non-vegetarian",
+  "Jain",
+  "Low carb",
+  "High protein",
+] as const;
+
+export const STANDARD_ALLERGIES = [
+  "Milk",
+  "Egg",
+  "Peanut",
+  "Tree nuts",
+  "Gluten",
+  "Soy",
+  "Fish",
+  "Shellfish",
+] as const;
+
+export const STANDARD_GOALS = [
+  "Balanced meals",
+  "Weight management",
+  "High protein",
+  "Low sodium",
+  "Diabetes aware",
+  "Heart friendly",
+] as const;
+
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) { return <label className="sp-field block"><span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-stone-400">{hint}</span>}</label>; }
 const inputClass = "h-11 w-full rounded-2xl border border-stone-200/80 bg-white/90 px-3.5 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,.6)] focus:border-[#5f8f2d] focus:ring-2 focus:ring-[#5f8f2d]/10";
 
@@ -1259,9 +1307,51 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
     if (step === 1 && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng))) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before continuing");
     setStep((current) => current + 1);
   }
-  async function finish() { if (!address.trim()) return toast.error("Enter your delivery address first"); if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving"); const latitude = Number(coords.lat?.toFixed(6)); const longitude = Number(coords.lng?.toFixed(6)); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address, latitude, longitude }); onSave({ email: session.email, address, latitude, longitude, householdSize: household, diet, allergies, goals, dislikes, onboardingComplete: true, privateAccount }); toast.success("Your food profile and exact service pin are ready"); } catch (error) { toast.error(error instanceof Error ? error.message : "Location could not be saved"); } }
+  async function finish() {
+    if (!address.trim()) return toast.error("Enter your delivery address first");
+    if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving");
+    const latitude = Number(coords.lat?.toFixed(6));
+    const longitude = Number(coords.lng?.toFixed(6));
+    try {
+      if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) {
+        await saveLiveCustomerProfile({
+          userId: session.userId,
+          address,
+          latitude,
+          longitude,
+          householdSize: household,
+          diet,
+          allergies,
+          goals,
+          instructions: dislikes,
+        });
+      }
+      onSave({
+        email: session.email,
+        address,
+        latitude,
+        longitude,
+        householdSize: household,
+        diet,
+        allergies,
+        goals,
+        dislikes,
+        onboardingComplete: true,
+        privateAccount,
+        addresses: [{
+          id: id("ADR"),
+          label: "Home",
+          address,
+          latitude,
+          longitude,
+          isDefault: true,
+        }],
+      });
+      toast.success("Your food profile and exact service pin are ready");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Profile could not be saved"); }
+  }
   return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#5f8f2d]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#5ba400]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#ef3d3d]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
-  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["No preference", "Vegetarian", "Vegan", "Eggetarian", "Non-vegetarian", "Jain", "Low carb", "High protein"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={["Milk", "Egg", "Peanut", "Tree nuts", "Gluten", "Soy", "Fish", "Shellfish"]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={["Balanced meals", "Weight management", "High protein", "Low sodium", "Diabetes aware", "Heart friendly"]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
+  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
   {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#f6f8f2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#5ba400] bg-[#eff7e5]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#5ba400] bg-[#eff7e5]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
   <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]"><Check />Save profile</Button>}</div></div></div></div>;
 }
@@ -2007,33 +2097,203 @@ function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; 
 }
 
 function CustomerProfileV4({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const profile = state.customers.find((x) => x.email === session.email)!;
+  const profile = state.customers.find((x) => x.email === session.email) || {
+    email: session.email,
+    address: "",
+    householdSize: 2,
+    diet: "No preference",
+    allergies: [],
+    goals: [],
+    dislikes: "",
+    onboardingComplete: false,
+    phone: "",
+    latitude: 11.0168,
+    longitude: 76.9558,
+  };
   const memory = profile.agentMemory || {};
-  const [phone, setPhone] = useState(profile.phone || ""), [address, setAddress] = useState(profile.address), [diet, setDiet] = useState(profile.diet), [allergies, setAllergies] = useState(profile.allergies.join(", ")), [goals, setGoals] = useState(profile.goals.join(", ")), [instructions, setInstructions] = useState(profile.dislikes), [coords, setCoords] = useState({ lat: profile.latitude, lng: profile.longitude });
+
+  const normalizeList = (val: unknown): string[] => {
+    if (Array.isArray(val)) return val.flatMap((x) => (typeof x === "string" ? x.split(",") : [])).map((x) => x.trim()).filter(Boolean);
+    if (typeof val === "string") return val.split(",").map((x) => x.trim()).filter(Boolean);
+    return [];
+  };
+
+  const initialAllergies = normalizeList(profile.allergies);
+  const initialGoals = normalizeList(profile.goals);
+
+  const [phone, setPhone] = useState(profile.phone || "");
+  const [address, setAddress] = useState(profile.address || "");
+  const [diet, setDiet] = useState(profile.diet || "No preference");
+  const [household, setHousehold] = useState(profile.householdSize || 2);
+  const [selectedAllergies, setSelectedAllergies] = useState<string[]>(() =>
+    initialAllergies.filter((a) => (STANDARD_ALLERGIES as readonly string[]).includes(a))
+  );
+  const [customAllergies, setCustomAllergies] = useState<string>(() =>
+    initialAllergies.filter((a) => !(STANDARD_ALLERGIES as readonly string[]).includes(a)).join(", ")
+  );
+  const [selectedGoals, setSelectedGoals] = useState<string[]>(() =>
+    initialGoals.filter((g) => (STANDARD_GOALS as readonly string[]).includes(g))
+  );
+  const [customGoals, setCustomGoals] = useState<string>(() =>
+    initialGoals.filter((g) => !(STANDARD_GOALS as readonly string[]).includes(g)).join(", ")
+  );
+  const [instructions, setInstructions] = useState(profile.dislikes || "");
+  const [coords, setCoords] = useState({ lat: profile.latitude, lng: profile.longitude });
+  const [saving, setSaving] = useState(false);
   const [clearingMemory, setClearingMemory] = useState(false);
+
+  // Synchronize component form state whenever profile updates from live sync or external state
+  useEffect(() => {
+    if (profile) {
+      setPhone(profile.phone || "");
+      setAddress(profile.address || "");
+      setDiet(profile.diet || "No preference");
+      setHousehold(profile.householdSize || 2);
+      setInstructions(profile.dislikes || "");
+      setCoords({ lat: profile.latitude, lng: profile.longitude });
+
+      const rawAllergies = normalizeList(profile.allergies);
+      setSelectedAllergies(rawAllergies.filter((a) => (STANDARD_ALLERGIES as readonly string[]).includes(a)));
+      setCustomAllergies(rawAllergies.filter((a) => !(STANDARD_ALLERGIES as readonly string[]).includes(a)).join(", "));
+
+      const rawGoals = normalizeList(profile.goals);
+      setSelectedGoals(rawGoals.filter((g) => (STANDARD_GOALS as readonly string[]).includes(g)));
+      setCustomGoals(rawGoals.filter((g) => !(STANDARD_GOALS as readonly string[]).includes(g)).join(", "));
+    }
+  }, [
+    profile.email,
+    profile.phone,
+    profile.address,
+    profile.diet,
+    profile.householdSize,
+    profile.dislikes,
+    profile.latitude,
+    profile.longitude,
+    JSON.stringify(profile.allergies),
+    JSON.stringify(profile.goals),
+  ]);
+
+  function toggleAllergy(item: string) {
+    setSelectedAllergies((curr) => (curr.includes(item) ? curr.filter((x) => x !== item) : [...curr, item]));
+  }
+
+  function toggleGoal(item: string) {
+    setSelectedGoals((curr) => (curr.includes(item) ? curr.filter((x) => x !== item) : [...curr, item]));
+  }
+
   const tasteProfile = tasteProfileFor(state, session.email);
-  const [tasteSelected, setTasteSelected] = useState<string[]>(TASTE_SETUP_CHOICES.filter((dimension) => (tasteProfile.weights[dimension] || 0) >= 0.5));
-  function toggleTaste(dimension: string) { setTasteSelected((list) => list.includes(dimension) ? list.filter((x) => x !== dimension) : [...list, dimension]); }
+  const [tasteSelected, setTasteSelected] = useState<string[]>(
+    TASTE_SETUP_CHOICES.filter((dimension) => (tasteProfile.weights[dimension] || 0) >= 0.5)
+  );
+  function toggleTaste(dimension: string) {
+    setTasteSelected((list) => (list.includes(dimension) ? list.filter((x) => x !== dimension) : [...list, dimension]));
+  }
   function saveTastePreferences() {
-    const behavioral = Object.fromEntries(Object.entries(tasteProfile.weights).filter(([dimension]) => !(TASTE_SETUP_CHOICES as string[]).includes(dimension)));
+    const behavioral = Object.fromEntries(
+      Object.entries(tasteProfile.weights).filter(([dimension]) => !(TASTE_SETUP_CHOICES as string[]).includes(dimension))
+    );
     const next = { ...behavioral, ...weightsFromSetupChoices(tasteSelected) };
     setState((s) => upsertTasteProfile(s, session.email, next, true));
     if (session.userId) void saveLiveTasteProfile(session.userId, next, true);
     toast.success("Taste preferences saved");
   }
-  function detect() { navigator.geolocation?.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setCoords(point); try { const place = await findLocation(point); setAddress(place.address); } catch { setAddress(`GPS pin ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`); } }, () => toast.error("Allow precise location in your browser"), { enableHighAccuracy: true, maximumAge: 0 }); }
-  async function save() { const next = { ...profile, phone, address, latitude: coords.lat, longitude: coords.lng, diet, allergies: allergies.split(",").map((x) => x.trim()).filter(Boolean), goals: goals.split(",").map((x) => x.trim()).filter(Boolean), dislikes: instructions, addresses: [{ id: profile.addresses?.[0]?.id || id("ADR"), label: "Home", address, latitude: coords.lat, longitude: coords.lng, phone, isDefault: true }, ...(profile.addresses || []).filter((x) => !x.isDefault)] }; try { if (session.userId && isLiveSupabaseMode() && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) await saveLiveCustomerProfile({ userId: session.userId, phone, address, latitude: coords.lat!, longitude: coords.lng!, householdSize: profile.householdSize, diet, allergies: next.allergies, goals: next.goals, instructions }); setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? next : x) })); toast.success("Profile and default address saved"); } catch (error) { toast.error(error instanceof Error ? error.message : "Profile could not be saved"); } }
-  function addAddress() { const value = prompt("Enter another complete delivery address"); if (!value) return; setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? { ...x, addresses: [...(x.addresses || []), { id: id("ADR"), label: `Address ${(x.addresses?.length || 0) + 1}`, address: value, isDefault: false }] } : x) })); }
+
+  function detect() {
+    navigator.geolocation?.getCurrentPosition(
+      async (position) => {
+        const point = { lat: Number(position.coords.latitude.toFixed(6)), lng: Number(position.coords.longitude.toFixed(6)) };
+        setCoords(point);
+        try {
+          const place = await findLocation(point);
+          setAddress(place.address);
+        } catch {
+          setAddress(`GPS pin ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`);
+        }
+      },
+      () => toast.error("Allow precise location in your browser"),
+      { enableHighAccuracy: true, maximumAge: 0 }
+    );
+  }
+
+  async function save() {
+    setSaving(true);
+    const parsedCustomAllergies = customAllergies.split(",").map((x) => x.trim()).filter(Boolean);
+    const finalAllergies = Array.from(new Set([...selectedAllergies, ...parsedCustomAllergies]));
+
+    const parsedCustomGoals = customGoals.split(",").map((x) => x.trim()).filter(Boolean);
+    const finalGoals = Array.from(new Set([...selectedGoals, ...parsedCustomGoals]));
+
+    const next = {
+      ...profile,
+      phone,
+      address,
+      latitude: coords.lat,
+      longitude: coords.lng,
+      householdSize: household,
+      diet,
+      allergies: finalAllergies,
+      goals: finalGoals,
+      dislikes: instructions,
+      addresses: [
+        { id: profile.addresses?.[0]?.id || id("ADR"), label: "Home", address, latitude: coords.lat, longitude: coords.lng, phone, isDefault: true },
+        ...(profile.addresses || []).filter((x) => !x.isDefault),
+      ],
+    };
+
+    try {
+      if (session.userId && isLiveSupabaseMode() && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
+        await saveLiveCustomerProfile({
+          userId: session.userId,
+          phone,
+          address,
+          latitude: coords.lat!,
+          longitude: coords.lng!,
+          householdSize: household,
+          diet,
+          allergies: finalAllergies,
+          goals: finalGoals,
+          instructions,
+        });
+      }
+      setState((s) => ({ ...s, customers: s.customers.map((x) => (x.email === session.email ? next : x)) }));
+      toast.success("Profile and default address saved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Profile could not be saved");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addAddress() {
+    const value = prompt("Enter another complete delivery address");
+    if (!value) return;
+    setState((s) => ({
+      ...s,
+      customers: s.customers.map((x) =>
+        x.email === session.email
+          ? { ...x, addresses: [...(x.addresses || []), { id: id("ADR"), label: `Address ${(x.addresses?.length || 0) + 1}`, address: value, isDefault: false }] }
+          : x
+      ),
+    }));
+  }
+
   async function clearMemory() {
     if (!confirm("Clear She Agent's learned shopping preferences? Your profile, orders, addresses and explicit food settings will stay unchanged.")) return;
     setClearingMemory(true);
     try {
       if (session.userId && isLiveSupabaseMode()) await clearLiveCustomerMemory(session.userId);
-      setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, agentMemory: {} } : item) }));
+      setState((current) => ({
+        ...current,
+        customers: current.customers.map((item) => (item.email === session.email ? { ...item, agentMemory: {} } : item)),
+      }));
       toast.success("She Agent memory cleared");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Memory could not be cleared"); }
-    finally { setClearingMemory(false); }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Memory could not be cleared");
+    } finally {
+      setClearingMemory(false);
+    }
   }
+
   const remembered = [
     ["Typical budget", memory.lastBudget ? money(memory.lastBudget) : "Not learned"],
     ["Favourite categories", memory.favoriteCategories?.join(", ") || "Not learned"],
@@ -2043,12 +2303,220 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
     ["Dietary preference", memory.preferredDietaryTags?.join(", ") || "Not learned"],
     ["Delivery preference", memory.preferredDeliveryPeriod || "Not learned"],
   ];
-  return <div className="space-y-6"><Heading eyebrow="YOUR PROFILE" title="Addresses, food preferences & She Agent memory" body="Your explicit profile and the shopping preferences She Agent remembers are separated. Learned shopping preferences are kept privately with your account and can be cleared here at any time." action={<Button variant="outline" onClick={addAddress}><Plus />Add address</Button>} />
-    <div className="grid gap-5 lg:grid-cols-2"><div className="surface-card space-y-4 rounded-[28px] p-6"><Field label="Phone / WhatsApp"><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} placeholder="+91 ..." /></Field><Field label="Default delivery address"><Textarea value={address} onChange={(e) => setAddress(e.target.value)} className="rounded-xl" /></Field><LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><Button variant="outline" onClick={detect}><LocateFixed />Use actual location</Button><MapPreview lat={coords.lat} lng={coords.lng} radius={0} label="Default delivery address" /><div className="space-y-2">{(profile.addresses || []).filter((x) => !x.isDefault).map((item) => <div key={item.id} className="rounded-2xl bg-[#f7f3ed] p-3 text-sm"><b>{item.label}</b><div>{item.address}</div></div>)}</div></div>
-      <div className="surface-card space-y-4 rounded-[28px] p-6"><Field label="Diet"><input value={diet} onChange={(e) => setDiet(e.target.value)} className={inputClass} /></Field><Field label="Allergies (comma separated)"><input value={allergies} onChange={(e) => setAllergies(e.target.value)} className={inputClass} /></Field><Field label="Health goals (comma separated)"><input value={goals} onChange={(e) => setGoals(e.target.value)} className={inputClass} /></Field><Field label="Instructions for She Agent"><Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} className="min-h-28 rounded-xl" /></Field><Button onClick={() => void save()} className="bg-[#5ba400]"><Check />Save profile</Button></div></div>
-    <section className="surface-card rounded-[28px] p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><Sparkles className="size-5 text-[#5f8f2d]" /><h3 className="text-lg font-black">What She Agent remembers</h3></div><p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Only durable commerce preferences should be learned from natural conversations. Sensitive attributes, payment data and precise location are excluded from this memory layer.</p></div><Button variant="outline" disabled={clearingMemory} onClick={() => void clearMemory()} className="rounded-xl text-red-600">{clearingMemory ? <RefreshCcw className="animate-spin" /> : <X />}{clearingMemory ? "Clearing…" : "Clear learned memory"}</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{remembered.map(([label, value]) => <div key={label} className="rounded-[20px] bg-[#f8f5ef] p-4"><div className="text-[11px] font-black uppercase tracking-[.12em] text-stone-400">{label}</div><div className="mt-2 text-sm font-black">{value}</div></div>)}</div></section>
-    <section className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-2"><Flame className="size-5 text-[#ef3d3d]" /><h3 className="text-lg font-black">Taste Match preferences</h3></div><p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Pick what tastes like you. Marketplace products show a Taste Match % based on this, and on what you view, save and order — you can adjust it here anytime.</p><div className="mt-4 flex flex-wrap gap-2">{TASTE_SETUP_CHOICES.map((dimension) => <button type="button" key={dimension} onClick={() => toggleTaste(dimension)} className={`rounded-full border px-3 py-2 text-sm font-bold ${tasteSelected.includes(dimension) ? "border-[#ef3d3d] bg-[#fdeceb] text-[#ef3d3d]" : "bg-white text-stone-500"}`}>{TASTE_DIMENSION_LABELS[dimension]}</button>)}</div><Button onClick={saveTastePreferences} className="mt-4 rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f]"><Check />Save taste preferences</Button></section>
-  </div>;
+
+  return (
+    <div className="space-y-6">
+      <Heading
+        eyebrow="YOUR PROFILE"
+        title="Addresses, food preferences & She Agent memory"
+        body="Your explicit profile and the shopping preferences She Agent remembers are separated. Learned shopping preferences are kept privately with your account and can be cleared here at any time."
+        action={
+          <Button variant="outline" onClick={addAddress}>
+            <Plus />Add address
+          </Button>
+        }
+      />
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="surface-card space-y-4 rounded-[28px] p-6">
+          <Field label="Phone / WhatsApp">
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} placeholder="+91 ..." />
+          </Field>
+          <Field label="Default delivery address">
+            <Textarea value={address} onChange={(e) => setAddress(e.target.value)} className="rounded-xl" />
+          </Field>
+          <LocationSuggestions
+            query={address}
+            onSelect={(place) => {
+              setAddress(place.address);
+              setCoords({ lat: place.latitude, lng: place.longitude });
+            }}
+          />
+          <Button variant="outline" onClick={detect}>
+            <LocateFixed />Use actual location
+          </Button>
+          <MapPreview
+            lat={coords.lat}
+            lng={coords.lng}
+            radius={0}
+            label="Default delivery address"
+            onPinChange={(point) => {
+              const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) };
+              setCoords(next);
+              setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+            }}
+          />
+          <div className="space-y-2">
+            {(profile.addresses || []).filter((x) => !x.isDefault).map((item) => (
+              <div key={item.id} className="rounded-2xl bg-[#f7f3ed] p-3 text-sm">
+                <b>{item.label}</b>
+                <div>{item.address}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="surface-card space-y-4 rounded-[28px] p-6">
+          <Field label="Diet">
+            <Select value={diet} onValueChange={setDiet}>
+              <SelectTrigger className="h-11 rounded-xl">
+                <SelectValue placeholder="Select diet" />
+              </SelectTrigger>
+              <SelectContent>
+                {STANDARD_DIETS.map((x) => (
+                  <SelectItem key={x} value={x}>{x}</SelectItem>
+                ))}
+                {!STANDARD_DIETS.includes(diet as any) && diet ? (
+                  <SelectItem value={diet}>{diet}</SelectItem>
+                ) : null}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <div className="sp-field block">
+            <span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">Allergies</span>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {STANDARD_ALLERGIES.map((option) => {
+                const selected = selectedAllergies.includes(option);
+                return (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => toggleAllergy(option)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                      selected
+                        ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]"
+                        : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                    }`}
+                  >
+                    {selected ? "✓ " : "+ "}{option}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={customAllergies}
+              onChange={(e) => setCustomAllergies(e.target.value)}
+              className={inputClass}
+              placeholder="Other allergies (comma separated)"
+            />
+            <span className="mt-1 block text-xs text-stone-400">Standard options (tap to toggle) plus custom allergies</span>
+          </div>
+
+          <div className="sp-field block">
+            <span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">Health goals</span>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {STANDARD_GOALS.map((option) => {
+                const selected = selectedGoals.includes(option);
+                return (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => toggleGoal(option)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                      selected
+                        ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]"
+                        : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                    }`}
+                  >
+                    {selected ? "✓ " : "+ "}{option}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              value={customGoals}
+              onChange={(e) => setCustomGoals(e.target.value)}
+              className={inputClass}
+              placeholder="Other goals (comma separated)"
+            />
+            <span className="mt-1 block text-xs text-stone-400">Standard options (tap to toggle) plus custom goals</span>
+          </div>
+
+          <Field label="Household size">
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={household}
+              onChange={(e) => setHousehold(Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Instructions for She Agent">
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              className="min-h-24 rounded-xl"
+              placeholder="Example: no coriander, mild spice"
+            />
+          </Field>
+
+          <Button onClick={() => void save()} disabled={saving} className="bg-[#5ba400]">
+            <Check />{saving ? "Saving…" : "Save profile"}
+          </Button>
+        </div>
+      </div>
+
+      <section className="surface-card rounded-[28px] p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-5 text-[#5f8f2d]" />
+              <h3 className="text-lg font-black">What She Agent remembers</h3>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+              Only durable commerce preferences should be learned from natural conversations. Sensitive attributes, payment data and precise location are excluded from this memory layer.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={clearingMemory}
+            onClick={() => void clearMemory()}
+            className="rounded-xl text-red-600"
+          >
+            {clearingMemory ? <RefreshCcw className="animate-spin" /> : <X />}
+            {clearingMemory ? "Clearing…" : "Clear learned memory"}
+          </Button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {remembered.map(([label, value]) => (
+            <div key={label} className="rounded-[20px] bg-[#f8f5ef] p-4">
+              <div className="text-[11px] font-black uppercase tracking-[.12em] text-stone-400">{label}</div>
+              <div className="mt-2 text-sm font-black">{value}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="surface-card rounded-[28px] p-6">
+        <div className="flex items-center gap-2">
+          <Flame className="size-5 text-[#ef3d3d]" />
+          <h3 className="text-lg font-black">Taste Match preferences</h3>
+        </div>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+          Pick what tastes like you. Marketplace products show a Taste Match % based on this, and on what you view, save and order — you can adjust it here anytime.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TASTE_SETUP_CHOICES.map((dimension) => (
+            <button
+              type="button"
+              key={dimension}
+              onClick={() => toggleTaste(dimension)}
+              className={`rounded-full border px-3 py-2 text-sm font-bold ${
+                tasteSelected.includes(dimension) ? "border-[#ef3d3d] bg-[#fdeceb] text-[#ef3d3d]" : "bg-white text-stone-500"
+              }`}
+            >
+              {TASTE_DIMENSION_LABELS[dimension]}
+            </button>
+          ))}
+        </div>
+        <Button onClick={saveTastePreferences} className="mt-4 rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f]">
+          <Check />Save taste preferences
+        </Button>
+      </section>
+    </div>
+  );
 }
 
 /** Re-renders once a second purely to keep a countdown string fresh — the

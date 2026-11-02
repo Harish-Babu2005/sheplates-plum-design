@@ -206,9 +206,25 @@ export async function saveLiveCustomerLocation(input: { userId: string; address:
 export async function loadLiveCustomerPreference(userId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const result = await supabase.from("customer_preferences").select("*").eq("customer_id", userId).maybeSingle();
-  if (result.error) throw result.error;
-  return result.data;
+  const [prefResult, profileResult] = await Promise.all([
+    supabase.from("customer_preferences").select("*").eq("customer_id", userId).maybeSingle(),
+    supabase.from("profiles").select("phone, full_name").eq("id", userId).maybeSingle(),
+  ]);
+  if (prefResult.error) throw prefResult.error;
+  if (!prefResult.data) {
+    if (profileResult.data) {
+      return {
+        phone: profileResult.data.phone || "",
+        full_name: profileResult.data.full_name || "",
+      };
+    }
+    return null;
+  }
+  return {
+    ...prefResult.data,
+    phone: profileResult.data?.phone || "",
+    full_name: profileResult.data?.full_name || "",
+  };
 }
 
 export async function loadLiveCustomerMemory(userId: string) {
@@ -578,22 +594,26 @@ export async function saveLiveTourCompleted(userId: string, toursCompleted: stri
 }
 
 export async function saveLiveCustomerProfile(input: {
-  userId: string; phone: string; address: string; latitude: number; longitude: number;
+  userId: string; phone?: string; address: string; latitude: number; longitude: number;
   householdSize: number; diet: string; allergies: string[]; goals: string[]; instructions: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const [profile, preference] = await Promise.all([
-    supabase.from("profiles").update({ phone: input.phone }).eq("id", input.userId),
+  const operations: Array<PromiseLike<{ error: unknown }>> = [
     supabase.from("customer_preferences").upsert({
       customer_id: input.userId, address: input.address, latitude: input.latitude, longitude: input.longitude,
       household_size: input.householdSize, diet: input.diet, allergies: input.allergies,
       health_goals: input.goals, dislikes_and_instructions: input.instructions,
       onboarding_complete: true, updated_at: new Date().toISOString(),
     }, { onConflict: "customer_id" }),
-  ]);
-  if (profile.error) throw profile.error;
-  if (preference.error) throw preference.error;
+  ];
+  if (input.phone !== undefined && input.phone.trim().length > 0) {
+    operations.push(supabase.from("profiles").update({ phone: input.phone.trim() }).eq("id", input.userId));
+  }
+  const results = await Promise.all(operations);
+  for (const res of results) {
+    if (res.error) throw res.error;
+  }
 }
 
 export async function saveLiveVendorLocation(input: { vendorId: string; address: string; latitude: number; longitude: number; radiusKm: number }) {
