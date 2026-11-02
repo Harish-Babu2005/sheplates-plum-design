@@ -807,6 +807,18 @@ export async function deleteLiveDeliveryStaff(staffId: string) {
   return commerceRequest({ action: "delete_staff", staffId });
 }
 
+export async function saveLiveDeliverySlot(input: { slotId?: string; vendorId?: string; slotName: string; startTime: string; endTime: string; isActive?: boolean }) {
+  return commerceRequest({ action: "save_delivery_slot", ...input });
+}
+
+export async function deleteLiveDeliverySlot(slotId: string) {
+  return commerceRequest({ action: "delete_delivery_slot", slotId });
+}
+
+export async function toggleLiveDeliverySlot(slotId: string, active: boolean) {
+  return commerceRequest({ action: "toggle_delivery_slot", slotId, active });
+}
+
 export async function assignLiveDeliveryStaff(orderId: string, staffId?: string) {
   return commerceRequest({ action: "assign_staff", orderId, staffId: staffId || "" });
 }

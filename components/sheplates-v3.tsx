@@ -43,7 +43,7 @@ import {
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, submitLiveVendorApplication, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, submitLiveVendorApplication, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, claimLiveFoodDrop, loadLiveFoodDropClaims,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
@@ -143,6 +143,17 @@ type Schedule = {
   timeSlot: string; quantity: number; unit: string; mode: DeliveryMode; estimatedOccurrences: number;
   status?: "Awaiting payment" | "Active" | "Paused" | "Cancelled" | "Completed"; nextDeliveryAt?: string; whatsappReminder?: boolean;
 };
+export type VendorDeliverySlot = {
+  id: string;
+  vendorId: string;
+  slotName: string;
+  startTime: string; // "09:00"
+  endTime: string;   // "11:00"
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type Order = {
   id: string; scheduleId?: string; customerEmail: string; vendorId: string; productId?: string;
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
@@ -192,13 +203,14 @@ export type V3State = {
   wishlist: WishlistItem[]; reviews: Review[];
   tasteProfiles: TasteProfileRow[]; productAttributes: Record<string, TasteWeights>;
   foodDrops: FoodDrop[]; foodDropClaims: FoodDropClaim[];
+  deliverySlots?: VendorDeliverySlot[];
 };
 
 const EMPTY_STATE: V3State = {
 customers: [], vendors: [], products: [], schedules: [], orders: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: false, staff: [], assignments: [],  requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [],
   transactions: [], staffAccounts: [], campaigns: [], merchandising: { featuredProductIds: [], recommendationPopupEnabled: true, maxFeatured: 6 },
   wishlist: [], reviews: [], tasteProfiles: [], productAttributes: {},
-  foodDrops: [], foodDropClaims: [],
+  foodDrops: [], foodDropClaims: [], deliverySlots: [],
 };
 
 function stateWithoutInlineProductImages(state: V3State): V3State {
@@ -579,7 +591,7 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => ["paid", "captured", "success", "succeeded"].includes(status))) return "Paid";
 const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed", "delivered"].includes(String(orderStatus || "").toLowerCase());  return progressed ? "Paid" : "Pending";
 }
-type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
+type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
   const orders: Order[] = orderRows.map((row) => {
     const items = Array.isArray(row.order_items) ? row.order_items as Array<Record<string, unknown>> : [];
@@ -1776,6 +1788,10 @@ const [deliveryInstructions, setDeliveryInstructions] = useState("");
   useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence("Once"); setDays([]); setStartDate(initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
   const scheduledProduct = product;
   const vendor = state.vendors.find((v) => v.id === scheduledProduct.vendorId)!;
+  const activeProductVendorSlots = (state.deliverySlots || []).filter((s) => s.vendorId === scheduledProduct.vendorId && s.isActive);
+  const scheduleSlotOptions: string[] = activeProductVendorSlots.length > 0
+    ? activeProductVendorSlots.map((s) => formatSlotLabel(s))
+    : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
 const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party delivery"];  const effectiveEnd = endDate || (recurrence === "Once" ? startDate : addDaysISO(startDate || tomorrow(), 29));
   const startMs = new Date(`${startDate || tomorrow()}T12:00:00`).getTime();
   const endMs = new Date(`${effectiveEnd}T12:00:00`).getTime();
@@ -1811,7 +1827,7 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
     } catch (error) { toast.error(error instanceof Error ? error.message : "Schedule could not be saved"); }
   }
 
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
+return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -1878,6 +1894,12 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const [useNewAddress, setUseNewAddress] = useState(false);
   const [checkoutMode, setCheckoutMode] = useState<DeliveryMode>("Vendor delivery");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
+  const cartVendorIds = [...new Set(items.map((it) => state.products.find((p) => p.id === it.productId)?.vendorId).filter(Boolean))];
+  const activeCartVendorSlots = (state.deliverySlots || []).filter((s) => cartVendorIds.includes(s.vendorId) && s.isActive);
+  const cartSlotOptions: string[] = activeCartVendorSlots.length > 0
+    ? activeCartVendorSlots.map((s) => formatSlotLabel(s))
+    : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
+  const [selectedSlot, setSelectedSlot] = useState(cartSlotOptions[0] || "07:00–08:00 AM");
   const total = items.reduce((sum, item) => { const product = state.products.find((x) => x.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
 
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
@@ -1932,7 +1954,12 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       try {
         // Sync first so carts created on another device / older build are reconciled before checkout.
         await syncLiveCart({ items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })) });
-const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: "07:00–08:00 AM", deliveryAddress: address, mode: checkoutMode, deliveryInstructions: deliveryInstructions.trim() });        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
+const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]);
+        if (checkoutMode !== "Self pickup" && !effectiveSlot) {
+          toast.error("Please select a delivery time slot.");
+          return;
+        }
+        const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: effectiveSlot, deliveryAddress: address, mode: checkoutMode, deliveryInstructions: deliveryInstructions.trim() });        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
         if (!snapshot) throw new Error("Checkout did not return the latest order state.");
         const next = mergeLiveCommerce(state, snapshot, session);
         setState(next);
@@ -1947,7 +1974,7 @@ const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: "07:0
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: "07:00–08:00 AM", deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
+const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]), deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
     setAddressDialogOpen(false);
     setPaying(order);
   }
@@ -1977,6 +2004,18 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
             </Select>
           </Field>
           {isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}
+          {checkoutMode !== "Self pickup" && (
+            <Field label="Delivery time window">
+              <Select value={selectedSlot || cartSlotOptions[0]} onValueChange={setSelectedSlot}>
+                <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {cartSlotOptions.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           {checkoutMode === "Third-party delivery" && <Field label="Instructions for the delivery handler">
             <Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" />
             <span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span>
@@ -2651,7 +2690,7 @@ function VendorArea({ active, session, state, setState, shorts }: { active: stri
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
   if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} />;
-  if (active === "Store & radius") return <StoreRadius vendor={vendor} setState={setState} session={session} />;
+  if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
@@ -3585,6 +3624,10 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
   const [date, setDate] = useState(tomorrow());
   const [slot, setSlot] = useState("06:00–07:00 AM");
   const maxDate = addDaysISO(todayISO(), 15);
+  const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => s.vendorId === order.vendorId && s.isActive) : [];
+  const rescheduleSlotOptions: string[] = vendorActiveSlots.length > 0
+    ? vendorActiveSlots.map((s) => formatSlotLabel(s))
+    : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
   useEffect(() => { if (order) queueMicrotask(() => { setDate(order.date < tomorrow() || order.date > maxDate ? tomorrow() : order.date); setSlot(order.slot); }); }, [order, maxDate]);
   if (!order) return null;
   async function save() {
@@ -3822,7 +3865,457 @@ function AIInsights({ role, state }: { role: "operations" | "admin"; state: V3St
   </div>;
 }
 
-function StoreRadius({ vendor, setState, session }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+
+export function formatTime12(timeStr: string): string {
+  if (!timeStr) return "";
+  const parts = String(timeStr).split(":");
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+export function timeToMinutes(timeStr: string): number {
+  const parts = String(timeStr || "").split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+
+export function slotsOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  return timeToMinutes(startA) < timeToMinutes(endB) && timeToMinutes(startB) < timeToMinutes(endA);
+}
+
+export function formatSlotLabel(slot: VendorDeliverySlot): string {
+  return `${slot.slotName} (${formatTime12(slot.startTime)} - ${formatTime12(slot.endTime)})`;
+}
+
+export function validateDeliverySlot({
+  slotName,
+  startTime,
+  endTime,
+  isActive,
+  slotId,
+  existingSlots,
+}: {
+  slotName: string;
+  startTime: string;
+  endTime: string;
+  isActive: boolean;
+  slotId?: string;
+  existingSlots: VendorDeliverySlot[];
+}): { valid: boolean; error?: string } {
+  const name = slotName.trim();
+  if (!name) return { valid: false, error: "Slot name is required." };
+  if (!startTime) return { valid: false, error: "Start time is required." };
+  if (!endTime) return { valid: false, error: "End time is required." };
+  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+    return { valid: false, error: "End time must be later than start time." };
+  }
+  const duplicate = existingSlots.find(
+    (s) => s.id !== slotId && s.slotName.trim().toLowerCase() === name.toLowerCase()
+  );
+  if (duplicate) {
+    return { valid: false, error: `A delivery slot named "${duplicate.slotName}" already exists for your store.` };
+  }
+  if (isActive) {
+    const conflicting = existingSlots.find(
+      (s) => s.id !== slotId && s.isActive && slotsOverlap(startTime, endTime, s.startTime, s.endTime)
+    );
+    if (conflicting) {
+      return {
+        valid: false,
+        error: `This time window overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`,
+      };
+    }
+  }
+  return { valid: true };
+}
+
+function DeliverySlotsSection({
+  vendor,
+  state,
+  setState,
+  session,
+}: {
+  vendor: Vendor;
+  state: V3State;
+  setState: React.Dispatch<React.SetStateAction<V3State>>;
+  session: DemoSession;
+}) {
+  const slots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<VendorDeliverySlot | null>(null);
+  const [slotName, setSlotName] = useState("");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("11:00");
+  const [isActive, setIsActive] = useState(true);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  function handleOpenAdd() {
+    setEditingSlot(null);
+    setSlotName("");
+    setStartTime("09:00");
+    setEndTime("11:00");
+    setIsActive(true);
+    setFormError("");
+    setModalOpen(true);
+  }
+
+  function handleOpenEdit(slot: VendorDeliverySlot) {
+    setEditingSlot(slot);
+    setSlotName(slot.slotName);
+    setStartTime(slot.startTime);
+    setEndTime(slot.endTime);
+    setIsActive(slot.isActive);
+    setFormError("");
+    setModalOpen(true);
+  }
+
+  async function handleSave() {
+    const validation = validateDeliverySlot({
+      slotName,
+      startTime,
+      endTime,
+      isActive,
+      slotId: editingSlot?.id,
+      existingSlots: slots,
+    });
+    if (!validation.valid) {
+      setFormError(validation.error || "Please check slot details.");
+      return;
+    }
+
+    setSaving(true);
+    setFormError("");
+    const slotId = editingSlot?.id || id("SLOT");
+    const newSlot: VendorDeliverySlot = {
+      id: slotId,
+      vendorId: vendor.id,
+      slotName: slotName.trim(),
+      startTime,
+      endTime,
+      isActive,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (isLiveSupabaseMode()) {
+      try {
+        const res = await saveLiveDeliverySlot({
+          slotId: editingSlot?.id,
+          vendorId: vendor.id,
+          slotName: slotName.trim(),
+          startTime,
+          endTime,
+          isActive,
+        });
+        if (res.snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+        } else {
+          setState((curr) => {
+            const currentSlots = curr.deliverySlots || [];
+            const nextSlots = editingSlot
+              ? currentSlots.map((s) => (s.id === editingSlot.id ? newSlot : s))
+              : [...currentSlots, newSlot];
+            return { ...curr, deliverySlots: nextSlots };
+          });
+        }
+        toast.success(editingSlot ? "Delivery slot updated." : "Delivery slot added.");
+        setModalOpen(false);
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : "Failed to save delivery slot.");
+        toast.error(err instanceof Error ? err.message : "Delivery slot could not be saved.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // Demo Mode Persistence
+    setState((curr) => {
+      const currentSlots = curr.deliverySlots || [];
+      const nextSlots = editingSlot
+        ? currentSlots.map((s) => (s.id === editingSlot.id ? newSlot : s))
+        : [...currentSlots, newSlot];
+      return { ...curr, deliverySlots: nextSlots };
+    });
+    toast.success(editingSlot ? "Delivery slot updated." : "Delivery slot added.");
+    setSaving(false);
+    setModalOpen(false);
+  }
+
+  async function handleToggle(slot: VendorDeliverySlot) {
+    const nextActive = !slot.isActive;
+    if (nextActive) {
+      const conflicting = slots.find(
+        (s) => s.id !== slot.id && s.isActive && slotsOverlap(slot.startTime, slot.endTime, s.startTime, s.endTime)
+      );
+      if (conflicting) {
+        toast.error(`Cannot activate: overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`);
+        return;
+      }
+    }
+
+    setActionId(slot.id);
+    if (isLiveSupabaseMode()) {
+      try {
+        const res = await toggleLiveDeliverySlot(slot.id, nextActive);
+        if (res.snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+        } else {
+          setState((curr) => ({
+            ...curr,
+            deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
+          }));
+        }
+        toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update slot status.");
+      } finally {
+        setActionId(null);
+      }
+      return;
+    }
+
+    // Demo mode
+    setState((curr) => ({
+      ...curr,
+      deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
+    }));
+    toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
+    setActionId(null);
+  }
+
+  async function handleDelete(slot: VendorDeliverySlot) {
+    if (!confirm(`Delete delivery slot "${slot.slotName}" (${formatTime12(slot.startTime)} - ${formatTime12(slot.endTime)})?`)) return;
+    setActionId(slot.id);
+    if (isLiveSupabaseMode()) {
+      try {
+        const res = await deleteLiveDeliverySlot(slot.id);
+        if (res.snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+        } else {
+          setState((curr) => ({
+            ...curr,
+            deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
+          }));
+        }
+        toast.success("Delivery slot deleted.");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete slot.");
+      } finally {
+        setActionId(null);
+      }
+      return;
+    }
+
+    // Demo mode
+    setState((curr) => ({
+      ...curr,
+      deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
+    }));
+    toast.success("Delivery slot deleted.");
+    setActionId(null);
+  }
+
+  return (
+    <div className="mt-6 border-t border-stone-200/80 pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-base font-black text-stone-900">Delivery Slots</h3>
+          <p className="text-xs text-stone-500">Configure the time windows when your store can deliver orders.</p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleOpenAdd}
+          className="rounded-xl bg-[#171914] text-white hover:bg-stone-800 font-bold"
+        >
+          <Plus className="size-4 mr-1.5" />
+          Add Delivery Slot
+        </Button>
+      </div>
+
+      {slots.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/60 p-6 text-center">
+          <Clock3 className="size-6 text-stone-400 mx-auto" />
+          <div className="mt-2 text-xs font-bold text-stone-700">No delivery slots configured</div>
+          <p className="text-xs text-stone-500 mt-0.5">Add delivery time slots so customers can schedule their orders.</p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {slots.map((slot) => (
+            <div
+              key={slot.id}
+              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${
+                slot.isActive ? "border-stone-200/90 bg-white shadow-xs" : "border-stone-200/60 bg-stone-50/70 opacity-75"
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`grid size-9 shrink-0 place-items-center rounded-xl ${
+                    slot.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"
+                  }`}
+                >
+                  <Clock3 className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-stone-900 text-sm truncate">{slot.slotName}</span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        slot.isActive
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-stone-100 text-stone-500 border border-stone-200"
+                      }`}
+                    >
+                      {slot.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-stone-500 font-medium mt-0.5">
+                    {formatTime12(slot.startTime)} – {formatTime12(slot.endTime)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => void handleToggle(slot)}
+                  disabled={actionId === slot.id}
+                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                    slot.isActive
+                      ? "bg-emerald-100/70 text-emerald-800 hover:bg-emerald-200"
+                      : "bg-stone-200 text-stone-700 hover:bg-stone-300"
+                  }`}
+                >
+                  {slot.isActive ? "Active" : "Disabled"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(slot)}
+                  className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
+                  title="Edit slot"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(slot)}
+                  disabled={actionId === slot.id}
+                  className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                  title="Delete slot"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="rounded-[26px] sm:max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-stone-900">
+              {editingSlot ? "Edit Delivery Slot" : "Add Delivery Slot"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-500">
+              Set the time window when your kitchen can deliver orders.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            {formError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 font-semibold">
+                {formError}
+              </div>
+            )}
+
+            <Field label="Slot Name" hint="e.g. Morning, Afternoon, Evening">
+              <input
+                type="text"
+                maxLength={80}
+                value={slotName}
+                onChange={(e) => {
+                  setSlotName(e.target.value);
+                  setFormError("");
+                }}
+                placeholder="e.g. Morning"
+                className={inputClass}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Start Time">
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => {
+                    setStartTime(e.target.value);
+                    setFormError("");
+                  }}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="End Time">
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => {
+                    setEndTime(e.target.value);
+                    setFormError("");
+                  }}
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <div>
+                <div className="text-xs font-bold text-stone-800">Active status</div>
+                <div className="text-[11px] text-stone-500">Enable this slot for customer checkout</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="size-4 accent-[#5ba400] rounded"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setModalOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={saving}
+                onClick={() => void handleSave()}
+                className="rounded-xl bg-[#ef3d3d] font-bold text-white hover:bg-[#d92f2f]"
+              >
+                {saving ? "Saving…" : editingSlot ? "Save Changes" : "Add Slot"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [radius, setRadius] = useState(vendor.radiusKm), [address, setAddress] = useState(vendor.address), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({ lat: vendor.latitude, lng: vendor.longitude }), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
   async function update(patch: Partial<Vendor>, message: string) { try { if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { ...(patch.openToday !== undefined ? { store_open_today: patch.openToday } : {}), ...(patch.operational ? { operational_status: patch.operational.toLowerCase() } : {}), ...(patch.delivery !== undefined ? { delivery_enabled: patch.delivery } : {}), ...(patch.pickup !== undefined ? { pickup_enabled: patch.pickup } : {}), ...(patch.openToday === true && vendor.verification === "Verified" ? { marketplace_visible: true } : {}) }); setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, ...patch } : x), audit: [audit(session, message, vendor.businessName), ...s.audit] })); toast.success(message); } catch (error) { toast.error(error instanceof Error ? error.message : "Store control could not be saved"); } }
   function detectStore() {
@@ -3875,6 +4368,7 @@ function StoreRadius({ vendor, setState, session }: { vendor: Vendor; setState: 
           <ToggleCard icon={Truck} title="Delivery" body="Your own team" checked={vendor.delivery} setChecked={(v) => update({ delivery: v }, "Delivery mode updated")} />
           <ToggleCard icon={ShoppingBag} title="Pickup" body="At your store" checked={vendor.pickup} setChecked={(v) => update({ pickup: v }, "Pickup mode updated")} />
         </div>
+        <DeliverySlotsSection vendor={vendor} state={state} setState={setState} session={session} />
       </div>
       <MapPreview lat={coords.lat} lng={coords.lng} radius={radius} label="Exact store pin" />
     </div>

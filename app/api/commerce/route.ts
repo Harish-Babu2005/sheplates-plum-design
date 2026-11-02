@@ -57,6 +57,17 @@ function resolveFulfilmentMode(vendor: { delivery_enabled?: boolean | null; pick
 
 const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+function timeToMinutes(timeStr: string): number {
+  const parts = String(timeStr || "").split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+
+function slotsOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  return timeToMinutes(startA) < timeToMinutes(endB) && timeToMinutes(startB) < timeToMinutes(endA);
+}
+
 function addDays(dateISO: string, days: number) { const date = new Date(`${dateISO}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function isFutureDate(dateISO: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return false;
@@ -171,9 +182,28 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     cart = draft.cart;
     cartItems = draft.items;
   }
+  let deliverySlots: unknown[] = [];
+  try {
+    const slotsQuery = admin.from("vendor_delivery_slots")
+      .select("id,vendor_id,slot_name,start_time,end_time,is_active,created_at,updated_at")
+      .order("start_time");
+    if (role === "vendor" && profile.vendor_id) {
+      slotsQuery.eq("vendor_id", profile.vendor_id);
+    } else if (role === "customer") {
+      slotsQuery.eq("is_active", true);
+    }
+    const slotsResult = await slotsQuery;
+    if (!slotsResult.error) {
+      deliverySlots = slotsResult.data || [];
+    }
+  } catch {
+    deliverySlots = [];
+  }
+
   return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
     thirdPartyDeliveries: deliveryRequests.data || [],
     thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
+    deliverySlots,
   };
 }
 
@@ -598,6 +628,98 @@ export async function POST(request: Request) {
       const result = await admin.from("vendor_outlets").update({ certificate_number: String(body.certificateNumber || "") || null, certificate_expiry: body.certificateExpiry ? String(body.certificateExpiry) : null, updated_at: new Date().toISOString() }).eq("id", outletId).eq("vendor_id", profile.vendor_id);
       if (result.error) throw result.error;
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "save_delivery_slot") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const slotName = String(body.slotName || "").trim();
+      if (!slotName) return NextResponse.json({ error: "Slot name is required." }, { status: 400 });
+      if (slotName.length > 80) return NextResponse.json({ error: "Slot name cannot exceed 80 characters." }, { status: 400 });
+
+      const startTime = String(body.startTime || "").trim().slice(0, 5);
+      const endTime = String(body.endTime || "").trim().slice(0, 5);
+      if (!startTime) return NextResponse.json({ error: "Start time is required." }, { status: 400 });
+      if (!endTime) return NextResponse.json({ error: "End time is required." }, { status: 400 });
+
+      if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+        return NextResponse.json({ error: "End time must be later than start time." }, { status: 400 });
+      }
+
+      const slotId = body.slotId ? String(body.slotId) : "";
+      const isActive = body.isActive !== false;
+
+      // Duplicate name check
+      const { data: existingSlots } = await admin.from("vendor_delivery_slots")
+        .select("id,slot_name,start_time,end_time,is_active")
+        .eq("vendor_id", profile.vendor_id);
+
+      const allSlots = existingSlots || [];
+      const duplicateName = allSlots.find(
+        (s) => s.id !== slotId && String(s.slot_name).trim().toLowerCase() === slotName.toLowerCase()
+      );
+      if (duplicateName) {
+        return NextResponse.json({ error: `A delivery slot named "${duplicateName.slot_name}" already exists for your store.` }, { status: 400 });
+      }
+
+      // Overlap check for active slots
+      if (isActive) {
+        const conflicting = allSlots.find(
+          (s) => s.id !== slotId && s.is_active && slotsOverlap(startTime, endTime, String(s.start_time), String(s.end_time))
+        );
+        if (conflicting) {
+          return NextResponse.json({
+            error: `This time window overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}).`,
+          }, { status: 400 });
+        }
+      }
+
+      const row = {
+        vendor_id: profile.vendor_id,
+        slot_name: slotName,
+        start_time: startTime,
+        end_time: endTime,
+        is_active: isActive,
+        updated_at: new Date().toISOString(),
+      };
+
+      const result = slotId
+        ? await admin.from("vendor_delivery_slots").update(row).eq("id", slotId).eq("vendor_id", profile.vendor_id).select("id").single()
+        : await admin.from("vendor_delivery_slots").insert(row).select("id").single();
+
+      if (result.error) throw result.error;
+      return NextResponse.json({ ok: true, id: result.data.id, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "delete_delivery_slot") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const slotId = String(body.slotId || "");
+      if (!slotId) return NextResponse.json({ error: "Slot ID required." }, { status: 400 });
+      const deleted = await admin.from("vendor_delivery_slots").delete().eq("id", slotId).eq("vendor_id", profile.vendor_id);
+      if (deleted.error) throw deleted.error;
+      return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "toggle_delivery_slot") {
+      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const slotId = String(body.slotId || "");
+      if (!slotId) return NextResponse.json({ error: "Slot ID required." }, { status: 400 });
+      const active = Boolean(body.active);
+
+      if (active) {
+        const { data: targetSlot } = await admin.from("vendor_delivery_slots").select("*").eq("id", slotId).eq("vendor_id", profile.vendor_id).maybeSingle();
+        if (!targetSlot) return NextResponse.json({ error: "Slot not found." }, { status: 404 });
+        const { data: otherSlots } = await admin.from("vendor_delivery_slots").select("*").eq("vendor_id", profile.vendor_id).eq("is_active", true).neq("id", slotId);
+        const conflicting = (otherSlots || []).find((s) => slotsOverlap(String(targetSlot.start_time), String(targetSlot.end_time), String(s.start_time), String(s.end_time)));
+        if (conflicting) {
+          return NextResponse.json({
+            error: `Cannot activate: overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}).`,
+          }, { status: 400 });
+        }
+      }
+
+      const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", profile.vendor_id);
+      if (updated.error) throw updated.error;
+      return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });

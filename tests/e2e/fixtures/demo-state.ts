@@ -60,5 +60,10 @@ export function buildDemoState() {
     vendors, products, schedules, orders, staff: [], assignments: [], requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [], transactions: [], staffAccounts: [], campaigns: [],
     merchandising: { featuredProductIds: [], recommendationPopupEnabled: true, maxFeatured: 6 }, wishlist: [], reviews: [],
     tasteProfiles: [{ customerEmail: DEMO_CUSTOMER.email, weights: { comfort_food: 0.8, spicy: 0.6, south_indian: 0.7 }, onboarded: true }], productAttributes: {}, foodDrops, foodDropClaims: [],
+    deliverySlots: [
+      { id: "slot-meena-1", vendorId: "v-meena", slotName: "Morning", startTime: "09:00", endTime: "11:00", isActive: true },
+      { id: "slot-meena-2", vendorId: "v-meena", slotName: "Afternoon", startTime: "12:00", endTime: "14:00", isActive: true },
+      { id: "slot-meena-3", vendorId: "v-meena", slotName: "Evening", startTime: "16:00", endTime: "18:00", isActive: true },
+    ],
   };
 }
