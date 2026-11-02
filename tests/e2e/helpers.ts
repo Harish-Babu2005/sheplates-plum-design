@@ -19,9 +19,9 @@ export async function loginAsCustomer(page: Page) {
   // mobile (sm:hidden / hidden sm:inline), so match either.
   await page.getByRole("button", { name: /Customer login|^Sign in$/ }).click();
   await page.getByLabel("Email").fill(DEMO.customer.email);
-  await page.getByLabel("Password").fill(DEMO.customer.password);
+  await page.locator('input[type="password"]').fill(DEMO.customer.password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => {});
+  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
 }
 
 export async function loginAsStaff(page: Page, who: "vendor" | "operations" | "admin") {
@@ -31,9 +31,9 @@ export async function loginAsStaff(page: Page, who: "vendor" | "operations" | "a
   // "Vendor / Team" on desktop, just "Vendor" on mobile.
   await page.getByRole("button", { name: /Vendor/ }).click();
   await page.getByLabel("Email").fill(DEMO[who].email);
-  await page.getByLabel("Password").fill(DEMO[who].password);
+  await page.locator('input[type="password"]').fill(DEMO[who].password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => {});
+  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
 }
 
 /** Signs out via the in-app button (does NOT clear localStorage) and signs
@@ -53,7 +53,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   // Confirm the (async) sign-out actually completed before doing anything
   // else — otherwise the next click can race a still-authenticated page that
   // hasn't torn down its dashboard yet, landing nowhere useful.
-  await page.getByText("Signed out").waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  await page.getByText("Signed out").waitFor({ state: "visible", timeout: 8000 }).catch(() => { });
   // On narrow viewports a stack of toasts accumulated during the test so far
   // (this test's own "Signed out", "Payment successful", etc.) renders full-
   // width right over the header's login buttons. Even a forced click still
@@ -79,9 +79,9 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   }
   if (!opened) throw new Error(`switchTo(${who}): login dialog never opened after 3 attempts`);
   await emailField.fill(DEMO[who].email);
-  await page.getByLabel("Password").fill(DEMO[who].password);
+  await page.locator('input[type="password"]').fill(DEMO[who].password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => {});
+  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
   // Confirm the session is fully established and rendered before reloading —
   // reloading too early can race the Supabase auth write and sign back out.
   if (who === "customer") {
@@ -95,7 +95,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   // local mock-state blob both live in storage that survives it) and matches
   // what a real user gets after any browser refresh.
   await page.reload();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => {});
+  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
 }
 
 /** Opens the staff sidebar drawer if it's currently a closed hamburger menu

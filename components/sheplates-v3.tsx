@@ -43,7 +43,7 @@ import {
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, submitLiveVendorApplication, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, submitLiveVendorApplication, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, claimLiveFoodDrop, loadLiveFoodDropClaims,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
@@ -2415,24 +2415,129 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#ef3d3d] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
 }
 
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(false);
+    if ((window as unknown as { Razorpay?: unknown }).Razorpay) return resolve(true);
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true));
+      existing.addEventListener("error", () => resolve(false));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
 function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order | null; close: () => void; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onPaid?: () => void }) {
   const [method, setMethod] = useState<"UPI" | "Card" | "Net banking">("UPI");
   const [busy, setBusy] = useState(false);
   if (!order) return null;
   const vendor = state.vendors.find((x) => x.id === order.vendorId);
+  const isLive = isLiveSupabaseMode();
+
   async function pay() {
     if (!order) return;
     setBusy(true);
+
+    if (isLive) {
+      try {
+        const loaded = await loadRazorpayScript();
+        if (!loaded || !(window as unknown as { Razorpay?: unknown }).Razorpay) {
+          throw new Error("Unable to load secure Razorpay Checkout. Please check your connection and try again.");
+        }
+
+        const rzpOrder = await createLiveRazorpayOrder(order.id);
+
+        const RazorpayConstructor = (window as unknown as { Razorpay: new (options: Record<string, unknown>) => { open: () => void; on: (event: string, handler: (resp: unknown) => void) => void } }).Razorpay;
+
+        const rzp = new RazorpayConstructor({
+          key: rzpOrder.keyId,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency || "INR",
+          name: "ShePlates",
+          description: rzpOrder.description || `Order ${rzpOrder.orderNumber}`,
+          order_id: rzpOrder.razorpayOrderId,
+          prefill: {
+            name: rzpOrder.customer?.name || "",
+            email: rzpOrder.customer?.email || order.customerEmail || "",
+          },
+          theme: {
+            color: "#5ba400",
+          },
+          handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+            try {
+              setBusy(true);
+              const result = await verifyLiveRazorpayPayment({
+                orderId: order.id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              });
+
+              const liveSnapshot = (result.snapshot || null) as { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>> } | null;
+              const transaction = recordTransaction(order, "Razorpay");
+
+              setState((s) => {
+                const base = liveSnapshot
+                  ? mergeLiveCommerce(s, liveSnapshot, { email: order.customerEmail, name: order.customerEmail, role: "customer" })
+                  : { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
+                return {
+                  ...base,
+                  transactions: [transaction, ...base.transactions],
+                  notifications: [
+                    notice(order.customerEmail, "customer", "Payment successful", `${money(order.total)} collected via Razorpay. Your scheduled deliveries are now confirmed.`),
+                    ...base.notifications,
+                  ],
+                  audit: [
+                    audit({ email: order.customerEmail, name: order.customerEmail, role: "customer" }, "Customer paid via Razorpay", `${order.id} · ${money(order.total)} (Payment ID: ${response.razorpay_payment_id})`),
+                    ...base.audit,
+                  ],
+                };
+              });
+
+              toast.success("Payment confirmed! Your delivery schedule is active.");
+              close();
+              onPaid?.();
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Payment verification failed.");
+            } finally {
+              setBusy(false);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setBusy(false);
+              toast.info("Payment cancelled.");
+            },
+          },
+        });
+
+        rzp.on("payment.failed", (resp: unknown) => {
+          setBusy(false);
+          const errDesc = (resp as { error?: { description?: string } })?.error?.description;
+          toast.error(errDesc || "Payment failed. Please try again.");
+        });
+
+        rzp.open();
+      } catch (error) {
+        setBusy(false);
+        toast.error(error instanceof Error ? error.message : "Payment could not be initiated");
+      }
+      return;
+    }
+
+    // Demo Mode Simulated Payment
     await new Promise((resolve) => setTimeout(resolve, 350));
     try {
       const transaction = recordTransaction(order, method);
-      let liveSnapshot: { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>> } | null = null;
-      if (isLiveSupabaseMode()) {
-        const result = await markLiveOrderPaid({ orderId: order.id, method });
-        liveSnapshot = (result.snapshot || null) as typeof liveSnapshot;
-      }
       setState((s) => {
-        const base = liveSnapshot ? mergeLiveCommerce(s, liveSnapshot, { email: order.customerEmail, name: order.customerEmail, role: "customer" }) : { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
+        const base = { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
         return {
           ...base,
           transactions: [transaction, ...base.transactions],
@@ -2440,15 +2545,22 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
           audit: [audit({ email: order.customerEmail, name: order.customerEmail, role: "customer" }, "Customer paid for schedule", `${order.id} · ${money(order.total)} via ${method}`), ...base.audit],
         };
       });
-      toast.success(`Payment confirmed. Your delivery schedule is active.`); close(); onPaid?.();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Payment could not be confirmed"); }
-    finally { setBusy(false); }
+      toast.success("Payment confirmed. Your delivery schedule is active.");
+      close();
+      onPaid?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Payment could not be confirmed");
+    } finally {
+      setBusy(false);
+    }
   }
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Pay for {order.id}</DialogTitle><DialogDescription>Simulated secure checkout for this environment. Confirming here records a real transaction and schedules the vendor payout — no external gateway is charged.</DialogDescription></DialogHeader>
+
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Pay for {order.id}</DialogTitle><DialogDescription>{isLive ? "Secure checkout powered by Razorpay Test Mode. All test payment methods (UPI, Cards, Net banking) are supported." : "Simulated secure checkout for this environment. Confirming here records a real transaction and schedules the vendor payout — no external gateway is charged."}</DialogDescription></DialogHeader>
     <div className="space-y-4">
       <div className="rounded-2xl bg-[#f6f8f2] p-4 text-sm"><Review label="Order" value={order.description} /><Review label="Vendor" value={vendor?.businessName || "—"} /><Review label="Delivery address" value={order.deliveryAddress || "Not provided"} /><Review label="Amount payable" value={money(order.total)} /></div>
-      <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Payment method</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`rounded-xl border p-3 text-sm font-black ${method === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>
-      <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full rounded-xl bg-[#5ba400] font-black hover:bg-[#4c8c00]"><CreditCard />{busy ? "Processing…" : `Pay ${money(order.total)}`}</Button>
+      {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Payment method</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`rounded-xl border p-3 text-sm font-black ${method === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>}
+      {isLive && <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex items-center gap-2"><CreditCard className="size-4 shrink-0 text-emerald-600" /><span>Test Mode: Complete payment securely using Razorpay standard checkout popup.</span></div>}
+      <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full rounded-xl bg-[#5ba400] font-black hover:bg-[#4c8c00]"><CreditCard />{busy ? (isLive ? "Opening Razorpay…" : "Processing…") : (isLive ? `Pay ${money(order.total)} with Razorpay` : `Pay ${money(order.total)}`)}</Button>
       <p className="text-[11px] leading-5 text-stone-400">A {PLATFORM_COMMISSION_PERCENT}% platform commission is retained; the rest is scheduled to reach the vendor {PAYOUT_CYCLE_DAYS} days after collection.</p>
     </div>
   </DialogContent></Dialog>;

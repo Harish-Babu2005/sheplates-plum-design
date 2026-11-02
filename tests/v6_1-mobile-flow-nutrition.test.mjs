@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const root = path.resolve(new URL('..', import.meta.url).pathname);
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
 const app = fs.readFileSync(path.join(root, 'components/sheplates-v3.tsx'), 'utf8');
 const entry = fs.readFileSync(path.join(root, 'components/sheplates-entry.tsx'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8');
