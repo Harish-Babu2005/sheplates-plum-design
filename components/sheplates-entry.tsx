@@ -301,14 +301,14 @@ export function ShePlatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
 
       <footer className="sp-entry-footer"><div className="mx-auto flex max-w-370 flex-col gap-5 px-5 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10"><Brand dark /><div className="flex flex-wrap gap-5 text-xs font-bold text-stone-500 sm:text-sm"><button onClick={() => setAuthAudience("team")}>Partner with ShePlates</button><span>Scheduled local commerce</span><span>Coimbatore</span></div></div></footer>
 
-      <AuthDialog audience={authAudience} close={() => setAuthAudience(null)} onLogin={onLogin} />
+      <AuthDialog audience={authAudience} close={() => setAuthAudience(null)} onLogin={onLogin} setAudience={setAuthAudience} />
       <AgentPreview open={agentOpen} close={() => setAgentOpen(false)} login={() => { setAgentOpen(false); setAuthAudience("customer"); }} />
     </div>
   );
 
 }
 
-function AuthDialog({ audience, close, onLogin }: { audience: Audience | null; close: () => void; onLogin: (session: DemoSession) => void }) {
+function AuthDialog({ audience, close, onLogin, setAudience }: { audience: Audience | null; close: () => void; onLogin: (session: DemoSession) => void; setAudience?: (audience: Audience | null) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -350,7 +350,7 @@ useEffect(() => {
     if (event.data?.type === "PASSWORD_RESET_COMPLETED") {
       const audience = event.data.audience;
 
-      setAuthAudience(audience === "team" ? "team" : "customer");
+      setAudience?.(audience === "team" ? "team" : "customer");
     }
   };
 

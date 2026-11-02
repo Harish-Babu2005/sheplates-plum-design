@@ -171,8 +171,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     cart = draft.cart;
     cartItems = draft.items;
   }
-  return {
-    orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
+  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
     thirdPartyDeliveries: deliveryRequests.data || [],
     thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
   };
@@ -347,6 +346,9 @@ export async function POST(request: Request) {
     }
 
     if (action === "mark_paid") {
+      if (process.env.NEXT_PUBLIC_DEMO_MODE === "false") {
+        return NextResponse.json({ error: "Direct payment marking is disabled in live mode. Please complete checkout via Razorpay." }, { status: 403 });
+      }
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const orderId = String(body.orderId || "");
       const { data: order } = await admin.from("orders").select("id,order_number,schedule_id,customer_id,vendor_id,customer_total,scheduled_date,scheduled_slot,fulfilment_mode,vendor_base_total,markup_total,tax_amount,delivery_fee,order_items(product_name,quantity,unit,vendor_base_price,markup_percent,customer_price),product_schedules(start_date,end_date,recurrence,weekdays)").eq("id", orderId).eq("customer_id", profile.id).maybeSingle();

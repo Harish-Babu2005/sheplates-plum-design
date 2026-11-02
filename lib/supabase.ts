@@ -741,6 +741,44 @@ export async function markLiveOrderPaid(input: { orderId: string; method: string
   return commerceRequest({ action: "mark_paid", ...input });
 }
 
+export async function createLiveRazorpayOrder(orderId: string) {
+  const token = await getAccessToken();
+  const response = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "create_order", orderId }),
+  });
+  const result = await response.json() as Record<string, unknown> & { error?: string };
+  if (!response.ok) throw new Error(result.error || "Could not create Razorpay order.");
+  return result as {
+    ok: boolean;
+    keyId: string;
+    razorpayOrderId: string;
+    amount: number;
+    currency: string;
+    orderNumber: string;
+    orderId: string;
+    customer?: { name?: string; email?: string };
+    description?: string;
+  };
+}
+
+export async function verifyLiveRazorpayPayment(payload: {
+  orderId: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) {
+  const token = await getAccessToken();
+  const response = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "verify_payment", ...payload }),
+  });
+  const result = await response.json() as Record<string, unknown> & { error?: string };
+  if (!response.ok) throw new Error(result.error || "Payment verification failed.");
+  return result;
+}
 export async function saveLiveDeliveryStaff(input: { staffId?: string; name: string; phone: string; active?: boolean }) {
   return commerceRequest({ action: "save_staff", ...input });
 }
