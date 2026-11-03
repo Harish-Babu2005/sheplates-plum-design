@@ -7,7 +7,7 @@ import type { ComponentType } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isLiveSupabaseMode, loadConnectVendorsNearby, normalizeWhatsAppNumber, trackLiveVendorWhatsAppClick, type ConnectVendor, type WhatsAppClickSource } from "@/lib/supabase";
 import { mergeMarketplaceAndConnectPins, uniqueById } from "@/lib/connect-map";
-import { BadgeCheck, List, MapPin, Search, Timer, Zap, MessageCircle, Soup, BowlFood, Fish, Carrot, Basket, Croissant, ChefHat, Drop, Cookie, Sparkles, Star } from "@/components/icons";
+import { BadgeCheck, InfoIcon as Info, List, MapPin, Search, Timer, Zap, MessageCircle, Soup, BowlFood, Fish, Carrot, Basket, Croissant, ChefHat, Drop, Cookie, Sparkles, Star } from "@/components/icons";
 import { toast } from "sonner";
 import { MARKET_GROUPS } from "@/lib/market-groups";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
@@ -18,6 +18,13 @@ import type { FoodShort, ShortsApi } from "@/lib/food-shorts";
 import type { PeopleApi } from "@/lib/people";
 import { PeopleDistanceChips, PersonRow, usePeopleQuery } from "./people";
 import { EmptyState, PhotoTile, SectionHeader, SegTabs, Stars, categoryEmoji, haversineKm, money, shortArea, useIsMobile, useTicker, vendorPhoto, vendorRating } from "./kit";
+
+/** True from 1024 px up, where the Maps tab shows the list and the map side by side (W21). */
+function useIsWide() {
+  const [wide, setWide] = useState(false);
+  useEffect(() => { const query = window.matchMedia("(min-width: 1024px)"); const update = () => setWide(query.matches); update(); query.addEventListener("change", update); return () => query.removeEventListener("change", update); }, []);
+  return wide;
+}
 
 type Coords = { latitude?: number; longitude?: number; address?: string };
 
@@ -115,7 +122,7 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
   const whatsappUrl = whatsappNumber
     ? `https://wa.me/${whatsappNumber.slice(1)}?text=${encodeURIComponent(`Hi ${vendor.vendor_name}, I found your business on ShePlates and would like to enquire.`)}`
     : null;
-  return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-[22px] border border-[#FFDDB8] bg-white p-4 shadow-sm sm:p-5">
+  return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-3xl bg-white p-4 ring-2 ring-[#FF7B00] sm:p-5">
     <div className="flex items-start gap-3">
       <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} className="size-16 shrink-0 rounded-2xl" emojiSize={28} />
       <div className="min-w-0 flex-1">
@@ -124,9 +131,11 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
         <p className="mt-1 text-xs text-stone-500">{vendor.address || vendor.locality || "Address unavailable"}</p>
       </div>
     </div>
+    <div className="mt-3 flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-[#E3F8E3] px-3 py-1 text-xs font-semibold text-[#0A7A2A]"><BadgeCheck className="size-4" />Verified by ShePlates</span>{typeof durationHours === "number" && Number.isFinite(durationHours) && <span className="rounded-full bg-[#F4F4F4] px-3 py-1 text-xs font-semibold">Open about {durationHours} hours a day</span>}</div>
     {vendor.description && <p className="mt-3 text-sm leading-6 text-stone-600">{vendor.description}</p>}
     {typeof durationHours === "number" && Number.isFinite(durationHours) && <p className="mt-2 text-xs text-stone-500">Operating duration: {durationHours} hours (schedule not specified)</p>}
-    {whatsappUrl && <button type="button" disabled={contactPending} onClick={() => onContact(vendor, source)} className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#FF7B00] px-4 py-2.5 text-sm font-black text-[#0A0A0A] transition hover:bg-[#0A0A0A] disabled:cursor-wait disabled:opacity-70"><MessageCircle className="size-4" />{contactPending ? "Opening WhatsApp…" : "Contact on WhatsApp"}</button>}
+    {whatsappUrl && <button type="button" disabled={contactPending} onClick={() => onContact(vendor, source)} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-[15px] font-bold text-[#0A0A0A] transition hover:bg-[#1fb957] disabled:cursor-wait disabled:opacity-70"><MessageCircle className="size-5" />{contactPending ? "Opening WhatsApp…" : "Contact on WhatsApp"}</button>}
+    <p className="mt-3 rounded-2xl bg-[#E6EEFE] p-3 text-xs font-medium text-[#0A44B8]">This kitchen takes orders directly on WhatsApp. These orders are arranged with the kitchen and are not paid through ShePlates.</p>
   </section>;
 }
 
@@ -144,12 +153,13 @@ function LazyMap(props: React.ComponentProps<typeof NearbyVendorsMapComponent>) 
   return <Component {...props} />;
 }
 
-export function MapsTab({ state, profile, social, shorts, people, peopleRadius, onPeopleRadius, onOpenShorts, locationConfirmed, onOpenVendor, onConfirmLocation }: {
+export function MapsTab({ state, profile, social, shorts, people, peopleRadius, onPeopleRadius, onOpenShorts, locationConfirmed, onOpenVendor, onConfirmLocation, initialTab }: {
+  initialTab?: "People";
   shorts: ShortsApi; people: PeopleApi; peopleRadius: number; onPeopleRadius: (km: number) => void; onOpenShorts: (list: FoodShort[], index: number) => void;
   state: V3State; profile: Coords; social: SocialApi; locationConfirmed: boolean;
   onOpenVendor: (id: string) => void; onConfirmLocation: () => void;
 }) {
-  const [tab, setTab] = useState<MapTab>("Nearby");
+  const [tab, setTab] = useState<MapTab>(initialTab ?? "Nearby");
   const [view, setView] = useState<"map" | "list">("map");
   const [vendorRadius, setVendorRadius] = useState(10);
   const [radiusLoaded, setRadiusLoaded] = useState(false);
@@ -159,6 +169,7 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
   const [pendingWhatsAppVendorId, setPendingWhatsAppVendorId] = useState<string | null>(null);
   const whatsappClickLocks = useRef(new Set<string>());
   const mobile = useIsMobile();
+  const wide = useIsWide();
   const onPeople = tab === "People";
   const [connectLoad, setConnectLoad] = useState<
     | { locationKey: string; status: "loading" }
@@ -365,21 +376,22 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
 
   if (!locationConfirmed) return <EmptyState emoji="📍" title="Confirm your location to see the map" body="We match vendors to your exact delivery pin, so the map only appears once it's set." action={<button type="button" onClick={onConfirmLocation} className="rounded-full bg-[#FF7B00] px-5 py-2 text-sm font-black text-[#0A0A0A]">Set my location</button>} />;
 
-  return <div className="space-y-4">
+  return <div className={wide ? "k-maps space-y-4" : "space-y-4"}>
     <div className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-3.5 py-3 shadow-sm"><Search className="size-4 text-stone-400" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={onPeople ? "Search people on the map by handle" : "Search vendors on the map"} aria-label={onPeople ? "Search people on the map" : "Search vendors on the map"} className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
     <SegTabs tabs={MAP_TABS} value={tab} onChange={(next) => { setTab(next); setSelectedId(""); }} />
     {onPeople && <div className="space-y-2">
       <PeopleDistanceChips value={peopleRadius} onChange={onPeopleRadius} />
       <div role="tablist" aria-label="Who to show" className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">{PEOPLE_FILTERS.map((f) => <button key={f} role="tab" type="button" aria-selected={f === peopleFilter} onClick={() => setPeopleFilter(f)} className={`shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-bold transition ${f === peopleFilter ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white text-stone-600 hover:border-stone-400"}`}>{f}</button>)}</div>
     </div>}
-    {view === "map" ? <div className="overflow-hidden rounded-[26px] shadow-[0_18px_50px_rgba(35,10,20,.12)]">
+    {(view === "map" || wide) && <div className="k-maps-map overflow-hidden rounded-[28px]">
       <LazyMap customerLat={profile.latitude!} customerLng={profile.longitude!} vendors={mapVendors} radiusKm={radius} onRadiusChange={setRadius} height={mobile ? 330 : 460} photoPins selectedId={selectedMapVendor?.id} onPinClick={setSelectedId}
         people={mapPeople} selectedPersonId={selectedPerson?.id} onPersonClick={setSelectedId} />
-    </div> : onPeople ? <div className="space-y-2" data-testid="people-list">{nearbyPeople.map((p) => <PersonRow key={p.id} person={p} selected={p.id === selectedPerson?.id} onSelect={() => setSelectedId(p.id)} onFollow={people.follow} onUnfollow={people.unfollow} />)}</div>
+    </div>}
+    {(view === "list" || wide) && (onPeople ? <div className="space-y-2" data-testid="people-list">{nearbyPeople.map((p) => <PersonRow key={p.id} person={p} selected={p.id === selectedPerson?.id} onSelect={() => setSelectedId(p.id)} onFollow={people.follow} onUnfollow={people.unfollow} />)}</div>
       : <div className="space-y-3">{rows.map((r) => {
         const connectVendor = connectRows.find((item) => item.vendor_id === r.vendor.id);
         return <VendorCard key={r.vendor.id} state={state} vendor={r.vendor} profile={profile} onOpen={onOpenVendor} connectVendor={connectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === r.vendor.id} contactSource="search" />;
-      })}{connectRows.filter((vendor) => !rows.some((row) => row.vendor.id === vendor.vendor_id)).map((vendor) => <ConnectVendorCard key={vendor.vendor_id} vendor={vendor} selected={vendor.vendor_id === selectedId} onSelect={() => setSelectedId(vendor.vendor_id)} />)}</div>}
+      })}{connectRows.filter((vendor) => !rows.some((row) => row.vendor.id === vendor.vendor_id)).map((vendor) => <ConnectVendorCard key={vendor.vendor_id} vendor={vendor} selected={vendor.vendor_id === selectedId} onSelect={() => setSelectedId(vendor.vendor_id)} />)}</div>)}
     {!onPeople && view === "list" && selectedConnectVendor && <ConnectVendorDetails vendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedConnectVendor.vendor_id} source="search" />}
     {!onPeople && connectLoading && <p role="status" className="text-sm font-bold text-stone-500">Loading nearby direct-contact vendors…</p>}
     {!onPeople && connectError && <p role="alert" className="text-sm font-bold text-red-600">{connectError}</p>}
@@ -388,13 +400,25 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
         : !peopleQuery.loading && <EmptyState emoji="🧭" title={peopleFilter === "Following" ? "Nobody you follow is on the map here" : `Nobody on the map within ${peopleRadius} km`} body="People appear here only when they choose to be on the map. Try a wider distance, or search a handle from Stories." />))
       : view === "map" && (selectedMarketplaceVendor ? <div className="space-y-2"><VendorCard state={state} vendor={selectedMarketplaceVendor.vendor} profile={profile} onOpen={onOpenVendor} connectVendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedMarketplaceVendor.vendor.id} contactSource={query.trim() ? "search" : "map"} />{(() => { const list = shortsByVendor.get(selectedMarketplaceVendor.vendor.id) || []; return list.length ? <button type="button" onClick={() => onOpenShorts(list, 0)} data-testid="watch-shorts" className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#FFDDB8] bg-[#FFF0E0] px-4 py-3 text-sm font-black text-[#B34D00] transition hover:bg-[#FFF0E0]">▶ Watch {list.length} Food Short{list.length === 1 ? "" : "s"} from {selectedMarketplaceVendor.vendor.businessName}</button> : null; })()}</div> : selectedConnectVendor ? <ConnectVendorDetails vendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedConnectVendor.vendor_id} source={query.trim() ? "search" : "map"} /> : connectLoading ? null : connectError ? null : <EmptyState emoji={tab === "Following" ? "💛" : tab === "Shorts" ? "🎬" : "🗺️"} title={tab === "Following" ? "You're not following any vendors yet" : tab === "Shorts" ? "No Food Shorts in this range" : "No vendors in this range"} body={tab === "Following" ? "Open a vendor and tap Follow — they'll show up here and in your Following feed." : tab === "Shorts" ? "Vendors with a Food Short that reaches you appear here. Try widening the radius with the + button." : "Try widening the radius with the + button."} />)}
     {onPeople && <p className="px-1 text-[11px] font-bold text-stone-400">Shown to the nearest half kilometre. You appear here only if you switch on “Let people nearby find me” in your profile.</p>}
-    <div className="flex justify-center"><button type="button" onClick={() => setView((v) => (v === "map" ? "list" : "map"))} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2 text-sm font-black shadow-sm transition hover:border-[#FFDDB8]">{view === "map" ? <><List className="size-4" />List ({onPeople ? nearbyPeople.length : mapVendors.length})</> : <><MapPin className="size-4" />Map</>}</button></div>
+    {!wide && <div className="flex justify-center"><button type="button" onClick={() => setView((v) => (v === "map" ? "list" : "map"))} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2 text-sm font-black shadow-sm transition hover:border-[#FFDDB8]">{view === "map" ? <><List className="size-4" />List ({onPeople ? nearbyPeople.length : mapVendors.length})</> : <><MapPin className="size-4" />Map</>}</button></div>}
   </div>;
 }
 
 /* ---------- Food Drops tab ---------- */
 
 type DropScope = "Nearby" | "Following" | "Trending" | "Across City";
+
+/** Live window banner (W17): counts down to midnight IST while Food Drops are open, or to 8 PM otherwise. */
+function DropWindowBanner() {
+  const now = useTicker();
+  const ist = new Date(now + 5.5 * 3600_000);
+  const sec = ist.getUTCHours() * 3600 + ist.getUTCMinutes() * 60 + ist.getUTCSeconds();
+  const live = sec >= 20 * 3600;
+  const remaining = live ? 86400 - sec : 20 * 3600 - sec;
+  const clock = [Math.floor(remaining / 3600), Math.floor((remaining % 3600) / 60), remaining % 60].map((n) => String(n).padStart(2, "0")).join(":");
+  return <div className="flex items-center justify-between gap-4 rounded-[28px] bg-[#0A0A0A] px-6 py-5 text-white"><div><div className="text-xs text-white/80">{live ? "Live now · closes at midnight" : "Opens at 8 PM"}</div><div className="text-[40px] font-bold leading-tight tabular-nums text-[#FF7B00]" aria-label="Time left">{clock}</div></div><span className="grid size-14 shrink-0 place-items-center rounded-full bg-[#FF7B00] text-[#0A0A0A]"><Timer className="size-7" /></span></div>;
+}
+
 const DROP_SCOPES = ["Nearby", "Following", "Trending", "Across City"] as const;
 
 function dropTag(drop: FoodDrop) {
@@ -442,13 +466,15 @@ export function FoodDropsTab({ state, profile, social, onClaim, onRefresh }: { s
     return [...live].sort((a, b) => new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime());
   }, [state.foodDrops, state.vendors, scope, social.followed, profile]);
   return <div className="space-y-4">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-2"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#FFF0E0] text-[#B34D00]"><Zap className="size-5" /></span><div><h1 className="text-xl font-black tracking-[-.02em]">Food Drops</h1><p className="text-xs font-bold text-stone-500">Surplus and limited batches from local vendors — while they last.</p></div></div>
-      <p className="rounded-2xl border border-[#FFDDB8] bg-[#F4F4F4] px-4 py-3 text-sm font-bold leading-relaxed text-[#B34D00] sm:max-w-fit">🕗 Food Drops: 8:00 PM – 12:00 AM IST | Grab your favourite deals every evening!</p>
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div><h1 className="text-[28px] font-bold leading-tight">Food Drops</h1><p className="mt-1 text-sm text-[#66666B]">Surplus and limited batches from kitchens you can reach, every evening from 8 PM to midnight.</p></div>
+      <span className="inline-flex w-max items-center gap-2 rounded-full bg-[#FFF0E0] px-3 py-1.5 text-xs font-semibold text-[#B34D00]"><span className="size-2 rounded-full bg-[#FF7B00]" />8 PM to midnight</span>
     </div>
+    <DropWindowBanner />
     <SegTabs tabs={DROP_SCOPES} value={scope} onChange={setScope} />
     {drops.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{drops.map((drop) => <DropCard key={drop.id} drop={drop} state={state} profile={profile} onClaim={onClaim} />)}</div>
       : <EmptyState emoji={scope === "Following" ? "💛" : "⚡"} title={scope === "Following" ? "No drops from vendors you follow" : "No drops here right now"} body={scope === "Following" ? "Follow vendors from their profile and their drops land here first." : "Vendors post drops when they have surplus or a limited batch. Check back soon, or try Across City."} />}
+    <div className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#7A5A00]"><Info className="mt-0.5 size-5 shrink-0" />A Food Drop can be claimed only on the evening it is created, between 8 PM and midnight IST.</div>
   </div>;
 }
 
@@ -464,24 +490,6 @@ export function SchedulesTab({
   orders: React.ReactNode;
   subscriptions: React.ReactNode;
 }) {
-  const [tab, setTab] = useState<"Orders" | "Subscriptions">(initial);
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-black tracking-[-.02em]">
-          My Schedules
-        </h1>
-      </div>
-
-      <SegTabs
-        tabs={["Orders", "Subscriptions"] as const}
-        value={tab}
-        onChange={setTab}
-        className="[&_button]:flex-1 [&_button]:rounded-xl"
-      />
-
-      {tab === "Orders" ? orders : subscriptions}
-    </div>
-  );
+  // Orders and Schedules are separate pages in the menu (W14 / W16), so each shows only its own content.
+  return <>{initial === "Orders" ? orders : subscriptions}</>;
 }

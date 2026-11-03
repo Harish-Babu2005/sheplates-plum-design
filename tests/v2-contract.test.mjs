@@ -32,7 +32,7 @@ test("ships the public marketplace and consolidated authentication entries", asy
   assert.match(entry, /Customer login/i);
   assert.match(entry, /Vendor \/ Team/i);
   assert.match(entry, /navigator\.geolocation/i);
-  assert.match(entry, /Search milk, meals, meat or groceries/i);
+  assert.match(entry, /Browse kitchens/i);
   assert.match(entry, /She Agent/i);
   assert.match(entry, /Be part of our vendor team/i);
   assert.doesNotMatch(entry, /teamDemos\.map/);

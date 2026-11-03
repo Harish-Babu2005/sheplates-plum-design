@@ -16,6 +16,8 @@ for (const who of ["vendor", "operations", "admin"] as const) {
     await page.waitForSelector(".k-app", { timeout: 30_000 });
     const mobile = (page.viewportSize()?.width ?? 1280) < 1024;
     const toggle = page.getByRole("button", { name: "Toggle navigation" });
+    if (mobile) await toggle.click();
+    await page.waitForTimeout(300);
     const names = [...new Set((await page.locator("aside.k-side nav button").allInnerTexts()).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean))];
     let i = 0;
     for (const name of names) {

@@ -21,7 +21,8 @@ const SHORT_SCOPES = ["Nearby", "Following"] as const;
 type ShortScope = (typeof SHORT_SCOPES)[number];
 type Watching = { items: (Status | MyStatus)[]; own: boolean } | null;
 
-export function StoriesTab({ state, social, shorts, people, statuses, shortsRadius, onShortsRadius, peopleRadius, onPeopleRadius, onOpenShorts, hasPin, onSetLocation, userName, onOpenVendor }: {
+export function StoriesTab({ state, social, shorts, people, statuses, shortsRadius, onShortsRadius, peopleRadius, onPeopleRadius, onOpenShorts, hasPin, onSetLocation, userName, onOpenVendor, onFindPeople }: {
+  onFindPeople?: () => void;
   state: V3State; social: SocialApi; shorts: ShortsApi; people: PeopleApi; statuses: StatusesApi; shortsRadius: number; onShortsRadius: (km: number) => void;
   peopleRadius: number; onPeopleRadius: (km: number) => void; onOpenShorts: (list: FoodShort[], index: number) => void; hasPin: boolean; onSetLocation?: () => void; userName: string; onOpenVendor: (id: string) => void;
 }) {
@@ -35,18 +36,18 @@ export function StoriesTab({ state, social, shorts, people, statuses, shortsRadi
   const list = scope === "Nearby" ? nearbyShorts : followingShorts;
   const vendorOptions = useMemo(() => state.vendors.map((v) => ({ id: v.id, name: v.businessName })), [state.vendors]);
 
-  return <div className="mx-auto max-w-2xl space-y-5">
+  return <div className="mx-auto max-w-5xl space-y-5">
     <div className="flex items-center justify-between gap-3">
-      <h1 className="text-xl font-black tracking-[-.02em]">Stories</h1>
+      <h1 className="text-[28px] font-bold leading-tight">Stories</h1>
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setFinder(true)} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black shadow-sm transition hover:border-[#FFDDB8]"><Search className="size-4" />Find people</button>
+        <button type="button" onClick={() => (onFindPeople ? onFindPeople() : setFinder(true))} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black shadow-sm transition hover:border-[#FFDDB8]"><Search className="size-4" />Find people</button>
         <button type="button" onClick={() => setComposer(true)} className="inline-flex items-center gap-1.5 rounded-full bg-[#FF7B00] px-4 py-2 text-sm font-black text-[#0A0A0A] shadow-[0_8px_20px_rgba(224,25,79,.28)]">Add status</button>
       </div>
     </div>
 
-    <StatusRail mine={statuses.mine} groups={statuses.groups} name={userName} hasPin={hasPin} onAdd={() => setComposer(true)}
-      onOpenMine={() => setWatching({ items: statuses.mine, own: true })} onOpenGroup={(i) => setWatching({ items: statuses.groups[i].items, own: false })} />
-    <p className="-mt-2 text-[11px] font-bold text-stone-400">Statuses disappear after 24 hours. Each person can watch one once.</p>
+    <div className="rounded-3xl bg-[#F4F4F4] p-4"><StatusRail mine={statuses.mine} groups={statuses.groups} name={userName} hasPin={hasPin} onAdd={() => setComposer(true)}
+      onOpenMine={() => setWatching({ items: statuses.mine, own: true })} onOpenGroup={(i) => setWatching({ items: statuses.groups[i].items, own: false })} /></div>
+    <p className="flex items-center gap-2 rounded-2xl bg-[#E6EEFE] px-4 py-2.5 text-xs font-medium text-[#0A44B8]">Statuses disappear after 24 hours. Each person can watch one once.</p>
 
     <section className="space-y-3" aria-label="Food Shorts">
       <div><h2 className="text-lg font-black tracking-[-.02em]">Food Shorts</h2><p className="mt-0.5 text-xs font-bold text-stone-500">Videos from vendors. A vendor only reaches customers inside the distance they chose.</p></div>
@@ -54,7 +55,7 @@ export function StoriesTab({ state, social, shorts, people, statuses, shortsRadi
       <SegTabs tabs={SHORT_SCOPES} value={scope} onChange={setScope} />
       {scope === "Nearby" && (hasPin ? <DistanceChips value={shortsRadius} onChange={onShortsRadius} /> : null)}
       {scope === "Nearby" && !hasPin ? <EmptyState emoji="📍" title="Set your location to see Food Shorts" body="Shorts are shown by distance, so we need your delivery pin first." action={onSetLocation ? <button type="button" onClick={onSetLocation} className="rounded-full bg-[#FF7B00] px-5 py-2 text-sm font-black text-[#0A0A0A]">Set my location</button> : undefined} />
-        : list.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" data-testid="shorts-grid">{list.map((s, i) => <ShortThumb key={s.id} short={s} onOpen={() => onOpenShorts(list, i)} />)}</div>
+        : list.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-testid="shorts-grid">{list.map((s, i) => <ShortThumb key={s.id} short={s} onOpen={() => onOpenShorts(list, i)} />)}</div>
         : scope === "Following" ? <EmptyState emoji="💛" title={social.followed.length ? "No shorts from vendors you follow" : "You are not following any vendors yet"} body={social.followed.length ? "Shorts from vendors you follow appear here when they post one that reaches you." : "Open a vendor and tap Follow to see their Food Shorts here."} />
         : <EmptyState emoji="🎬" title={`No Food Shorts within ${shortsRadius} km`} body={shortsRadius < 30 ? "Try a wider distance. New shorts from nearby vendors appear here as they are posted." : "Vendors around you haven't posted a short yet."} />}
     </section>

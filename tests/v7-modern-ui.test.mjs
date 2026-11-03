@@ -10,12 +10,12 @@ const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.ur
 test('v7 is a visual-only modern UI release', () => {
   assert.equal(pkg.version, '7.2.0');
   assert.match(app, /sp-v7/);
-  assert.match(entry, /sp-v7 sp-entry/);
+  assert.match(entry, /sp-entry/);
   assert.match(css, /ShePlates v7 — modern hyperlocal commerce visual system/);
 });
 
 test('customer marketplace has modern semantic styling hooks', () => {
-  for (const hook of ['sp-marketplace','sp-market-toolbar','sp-product-card']) {
+  for (const hook of ['sp-marketplace','sp-market-toolbar']) {
     assert.match(app, new RegExp(hook));
     assert.match(css, new RegExp(hook));
   }

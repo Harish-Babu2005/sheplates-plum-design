@@ -36,9 +36,9 @@ test('staff navigation is a sidebar on the website and a menu with bottom tabs o
 
 test('marketplace is explicitly designed for compact mobile product browsing', () => {
   assert.match(app, /sp-market-toolbar/);
-  assert.match(app, /sp-product-card/);
-  assert.match(app, /sp-product-image/);
-  assert.match(app, /grid-cols-2 gap-2\.5/);
+  assert.match(app, /k-pr\b/);
+  assert.match(app, /k-pr-img/);
+  assert.match(app, /k-search-layout/);
   assert.match(app, /sp-ai-card/);
 });
 
@@ -62,7 +62,7 @@ test('release inherits the v7 visual version', () => {
 });
 
 test('public entry stays responsive for customer and vendor access', () => {
-  assert.match(entry, /sm:hidden">Vendor/);
-  assert.match(entry, /sm:hidden">Sign in/);
-  assert.match(entry, /hide-scrollbar/);
+  assert.match(entry, /Vendor \/ Team/);
+  assert.match(entry, />Sign in</);
+  assert.match(entry, /e-tiles/);
 });

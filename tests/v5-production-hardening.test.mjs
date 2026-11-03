@@ -32,7 +32,7 @@ test('vendor delivery staff and assignment are persisted', () => {
 });
 
 test('mobile vendor access and light form contrast are explicit', () => {
-  assert.match(entry, /sm:hidden">Vendor/);
+  assert.match(entry, /Vendor \/ Team/);
   assert.match(css, /color-scheme: light/);
   assert.match(css, /max-height: calc\(100dvh - 78px\)/);
 });

@@ -53,7 +53,7 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     const grid = page.locator('[data-tour="products"]');
     await expect(grid.getByRole("heading", { name: "Chicken Curry Cut" })).toBeVisible();
     await expect(grid.getByRole("heading", { name: "Mini Meals" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Meat & Seafood", exact: true }).click(); // toggles back to all
+    await tab(page, "Home").click();
 
     await page.getByRole("button", { name: "Open Meena's Home Kitchen" }).first().click();
     const dialog = page.getByRole("dialog");
@@ -69,7 +69,7 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await page.getByRole("button", { name: "Open Meena's Home Kitchen" }).first().click();
 
     const dialog = page.getByRole("dialog");
-    const productName = (await dialog.locator(".text-sm.font-black.leading-snug").first().textContent())?.trim();
+    const productName = (await dialog.locator(".leading-snug").first().textContent())?.trim();
     const saveButton = dialog.getByRole("button", { name: "Save to wishlist" }).first();
     await expect(saveButton).toBeVisible();
     await saveButton.click();
@@ -105,12 +105,12 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(1);
   });
 
-  test("Schedules: Orders and Subscriptions live under one tab", async ({ page }) => {
+  test("Schedules and Orders are separate pages in the menu", async ({ page }) => {
     await openAsCustomer(page);
     await go(page, "Schedules");
-    await expect(page.getByRole("heading", { name: "My Schedules" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "My schedule" })).toBeVisible();
     await expect(page.getByText("Mini Meals").first()).toBeVisible();
-    await page.getByRole("tab", { name: "Orders" }).click();
+    await tab(page, "Orders").click();
     await expect(page.getByText("Orders & live tracking")).toBeVisible();
   });
 
@@ -156,7 +156,8 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await page.getByRole("tab", { name: "Following" }).click();
     await expect(page.getByText("You're not following any vendors yet")).toBeVisible();
     await page.getByRole("tab", { name: "Nearby" }).click();
-    await page.getByRole("button", { name: /^List \(\d+\)$/ }).click();
+    const listToggle = page.getByRole("button", { name: /^List \(\d+\)$/ });
+    if (await listToggle.isVisible()) await listToggle.click(); // from 1024 px the list sits beside the map
     await expect(page.getByRole("button", { name: "View", exact: true }).first()).toBeVisible();
   });
 });

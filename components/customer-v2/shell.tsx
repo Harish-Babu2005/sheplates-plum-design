@@ -2,7 +2,7 @@
 // Navigation chrome for the customer portal, built from the approved boards (W07 website, C07 phone):
 // a top bar (logo, delivery area, search, She Agent, wishlist, alerts, cart, account), a menu row on
 // desktop/tablet, a floating bottom pill on phones, and a footer with the legal and support details.
-import { Heart, Bell, ShoppingBag, MapPin, ChevronDown, Search, Sparkles, SlidersHorizontal, Home, Zap, Play, ReceiptText, UserRound, CalendarDays, ClipboardCheck, ListChecks, TicketCheck, HelpCircle, LogOut, Package, HeartPulse, MapPinned } from "@/components/icons";
+import { Heart, Bell, ShoppingBag, MapPin, ChevronDown, Search, Sparkles, SlidersHorizontal, Home, Zap, Play, ReceiptText, UserRound, CalendarDays, ClipboardCheck, ListChecks, TicketCheck, HelpCircle, LogOut, Package, HeartPulse, MapPinned, Storefront } from "@/components/icons";
 import type { ComponentType, ReactNode } from "react";
 
 type Icon = ComponentType<{ className?: string }>;
@@ -10,6 +10,7 @@ type Icon = ComponentType<{ className?: string }>;
 /** Menu row (desktop/tablet). `key` is the page name the app routes on. */
 export const CUSTOMER_MENU: { key: string; label: string; icon: Icon }[] = [
   { key: "Marketplace", label: "Home", icon: Home },
+  { key: "Search", label: "Marketplace", icon: Storefront },
   { key: "Food Drops", label: "Food Drops", icon: Zap },
   { key: "Stories", label: "Stories", icon: Play },
   { key: "Maps", label: "Maps", icon: MapPinned },
@@ -54,7 +55,7 @@ export function CustomerHeader({ active, name, email, area, unread, cartCount, a
     <div className="k-top">
       <button type="button" className="k-logo" onClick={() => onNavigate("Marketplace")} aria-label="ShePlates home"><img src="/sheplates-logo.png" alt="" />ShePlates</button>
       <button type="button" data-tour="location-mobile" onClick={onLocation} className="k-loc" aria-label={`Delivery area: ${area}`}><MapPin className="size-5 shrink-0" /><span className="k-loc-t">{area}</span><ChevronDown className="size-4 shrink-0" /></button>
-      <button type="button" className="k-search" onClick={() => onNavigate("Marketplace")} aria-label="Search the marketplace"><Search className="size-5 shrink-0" /><span className="grow">Search milk, meals, bakes, kitchens</span><SlidersHorizontal className="size-5 shrink-0" /></button>
+      <button type="button" className="k-search" onClick={() => onNavigate("Search")} aria-label="Search the marketplace"><Search className="size-5 shrink-0" /><span className="grow">Search milk, meals, bakes, kitchens</span><SlidersHorizontal className="size-5 shrink-0" /></button>
       <div className="k-actions">
         <button type="button" data-tour="agent" onClick={onAgent} className="btn sm dark k-agent" aria-label="Open She Agent"><Sparkles className="size-5" /><span>She Agent</span></button>
         <button type="button" onClick={() => onNavigate("Wishlist")} className="ibtn w k-ring k-wish" aria-label="Wishlist"><Heart className="size-5" /></button>

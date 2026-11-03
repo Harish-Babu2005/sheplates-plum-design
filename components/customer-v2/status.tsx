@@ -4,7 +4,7 @@
 // watch it once. Nothing here is a permanent gallery.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, Heart, MapPin, Plus, Trash2, Volume2, VolumeX, X } from "@/components/icons";
+import { ArrowLeft, ArrowRight, Eye, Heart, MapPin, Plus, Trash2, Volume2, VolumeX, X } from "@/components/icons";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { inspectVideo, type VideoInspection } from "@/lib/food-shorts-media";
@@ -104,8 +104,10 @@ export function StatusViewer({ items, own, onClose, onViewed, onLike, onDelete, 
     const next = !liked; setLikedHere((m) => ({ ...m, [current.id]: next }));
     try { await onLike(current.id, next); } catch (e) { setLikedHere((m) => ({ ...m, [current.id]: !next })); toast.error(e instanceof Error ? e.message : "Could not save your like"); }
   }
-  return createPortal(<div role="dialog" aria-modal="true" aria-label={own ? "Your status" : `${current.handle}'s status`} data-testid="status-viewer" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[260] grid place-items-center bg-black">
-    <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-[#0A0A0A]">
+  return createPortal(<div role="dialog" aria-modal="true" aria-label={own ? "Your status" : `${current.handle}'s status`} data-testid="status-viewer" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[260] grid place-items-center bg-[#F4F4F4] p-0 sm:p-5">
+    <button type="button" aria-label="Go back one" disabled={index === 0} onClick={() => moveTo(Math.max(0, index - 1))} className="absolute left-1/2 top-1/2 z-10 hidden size-12 -translate-x-[330px] -translate-y-1/2 place-items-center rounded-full bg-[#FF7B00] text-[#0A0A0A] disabled:opacity-40 sm:grid"><ArrowLeft className="size-6" /></button>
+    <button type="button" aria-label="Go forward one" onClick={advance} className="absolute left-1/2 top-1/2 z-10 hidden size-12 translate-x-[282px] -translate-y-1/2 place-items-center rounded-full bg-[#FF7B00] text-[#0A0A0A] sm:grid"><ArrowRight className="size-6" /></button>
+    <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-[#0A0A0A] sm:max-h-[860px] sm:rounded-[32px]">
       {current.kind === "video" && current.mediaUrl
         ? <video key={current.id} ref={video} src={current.mediaUrl} poster={current.thumbUrl} autoPlay muted={muted} playsInline onEnded={advance} onTimeUpdate={(e) => setProgress(e.currentTarget.duration ? e.currentTarget.currentTime / e.currentTarget.duration : 0)} className="h-full w-full object-cover" />
         : current.mediaUrl && failedPhotoId !== current.id ? <img key={current.id} src={current.mediaUrl} alt="Customer status photo" onError={() => setFailedPhotoId(current.id)} className="absolute inset-0 h-full w-full bg-black object-contain" />

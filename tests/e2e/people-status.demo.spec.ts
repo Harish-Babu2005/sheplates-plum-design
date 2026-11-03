@@ -212,7 +212,8 @@ test.describe("People: follow, search by handle, and who is nearby (demo data)",
     await page.getByRole("tab", { name: "Everyone" }).click();
     await page.getByLabel("Search people on the map").fill("div");
     await expect(pins).toHaveCount(1);
-    await page.getByRole("button", { name: /^List \(/ }).click();
+    const listToggle = page.getByRole("button", { name: /^List \(/ });
+    if (await listToggle.isVisible()) await listToggle.click(); // from 1024 px the list sits beside the map
     await expect(page.getByTestId("people-list").getByTestId("person-row")).toHaveAttribute("data-handle", "divya_r");
   });
 

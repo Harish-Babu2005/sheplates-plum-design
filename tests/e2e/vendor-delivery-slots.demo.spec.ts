@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { buildDemoState } from "./fixtures/demo-state";
-import { dismissTourIfOpen } from "./helpers";
+import { dismissTourIfOpen, openStaffNavIfCollapsed } from "./helpers";
 
 const SESSIONS = {
   vendor: { email: "v-meena@sheplates.demo", name: "Meena", role: "vendor", toursCompleted: ["vendor_v1"] },
@@ -24,6 +24,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
     await openAs(page, "vendor");
     await dismissTourIfOpen(page);
 
+    await openStaffNavIfCollapsed(page);
     // Navigate to "Store & radius"
     const storeRadiusBtn = page.getByRole("button", { name: "Store & radius" }).first();
     await expect(storeRadiusBtn).toBeVisible({ timeout: 15_000 });
