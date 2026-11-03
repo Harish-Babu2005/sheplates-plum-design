@@ -54,7 +54,8 @@ test("schedules that are finished do not offer Pause or Reschedule", async () =>
 });
 
 test("the vendor-error diagnostic is read-only", async () => {
-  const sql = (await read("supabase/DIAGNOSE_VENDOR_ERRORS.sql")).replace(/--.*$/gm, "").replace(/'[^']*'/g, "''");
-  assert.doesNotMatch(sql, /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke)\b/i);
-  assert.match(sql, /review_vendor_and_notify/);
+  const original = await read("supabase/DIAGNOSE_VENDOR_ERRORS.sql");
+  const code = original.replace(/--.*$/gm, "").replace(/'[^']*'/g, "''");
+  assert.doesNotMatch(code, /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke)\b/i);
+  assert.match(original, /review_vendor_and_notify/);
 });
