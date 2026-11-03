@@ -1,8 +1,7 @@
 /* ShePlates 2.0 design kit: the class vocabulary of the approved boards (.sh scope). Generated from the design gallery stylesheet. */
 :root{
-  --o:#753b50; --o-d:#602d40; --o-t:#f7edf0; --o-t2:#e8cbd5; --ot:#653046;
-  --ink:#292124; --ink2:#4c4246; --mut:#71676b; --ph:#766b70; --dis:#b9afb3;
-  --s:#faf6f4; --s2:#f0e8e7; --line:#e8dfe1; --w:#FFFFFF;
+  /* Brand, surface and text tokens come from theme-2.css (loaded after this file). Only kit-specific names live here. */
+  --ink2:var(--text-body); --s:var(--surface-soft); --s2:var(--surface-soft-2); --w:#FFFFFF;
   --red:#d63a4a; --redt:#b42332; --red-bg:#fdecef;
   --grn:#26834a; --grnt:#21683b; --grn-bg:#eaf5ec;
   --yel:#FFCA2C; --yel-bg:#FFF4CF; --yelt:#795900;
@@ -10,7 +9,7 @@
   --r-card:24px; --r-in:999px; --r-btn:999px;
 }
 .sh,.sh *{box-sizing:border-box}
-.sh{font-family:'Outfit',system-ui,sans-serif;color:var(--ink);font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;background:var(--w)}
+.sh{font-family:'Outfit',system-ui,sans-serif;color:var(--ink);font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased}
 .sh p,.sh h1,.sh h2,.sh h3,.sh h4{margin:0}
 .sh button{font-family:inherit}
 .sh table{border-collapse:separate;border-spacing:0}
@@ -47,23 +46,24 @@
 .sh .ic.s32{width:32px;height:32px}
 .sh .ic.s40{width:40px;height:40px}
 .sh .ic.s56{width:56px;height:56px}
-.sh .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:52px;padding:0 26px;border:0;border-radius:var(--r-btn);background:var(--o);color: var(--on-brand);font:700 16px 'Outfit',sans-serif;white-space:nowrap;cursor:pointer;text-decoration:none}
+.sh .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:52px;padding:0 26px;border:0;border-radius:var(--r-btn);background:var(--act);color: var(--on-brand);font:700 16px 'Outfit',sans-serif;white-space:nowrap;cursor:pointer;text-decoration:none}
 .sh .btn.sec{background:var(--s);color:var(--ink)}
 .sh .btn.out{background:var(--w);color:var(--ot);box-shadow:inset 0 0 0 2px var(--o)}
-.sh .btn.dark{background:var(--ink);color:#fff}
+.sh .btn.dark{background:var(--o);color:var(--on-brand)}
+.sh .btn.gold{background:var(--gold);color:var(--o)}
 .sh .btn.bad{background:var(--w);color:var(--redt);box-shadow:inset 0 0 0 2px #f0c3c9}
 .sh .btn.sm{height:40px;padding:0 18px;font-size:14px}
 .sh .btn.xs{height:34px;padding:0 14px;font-size:13px}
 .sh .btn.block{width:100%}
 .sh .btn.dis{background:var(--s);color:var(--ph)}
 .sh .ibtn{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:16px;background:var(--s);color:var(--ink);cursor:pointer}
-.sh .ibtn.o{background:var(--o); color: var(--on-brand); }
+.sh .ibtn.o{background:var(--act); color: var(--on-brand); }
 .sh .ibtn.out{background:var(--w);box-shadow:inset 0 0 0 1.5px var(--o)}
 .sh .ibtn.w{background:var(--w)}
 .sh .ibtn.round{border-radius:50%}
 .sh .ibtn.sm{width:36px;height:36px;border-radius:12px}
 .sh .lbl{font:600 13px 'Outfit',sans-serif;color:var(--ink2);margin-bottom:6px;display:block}
-.sh .in{display:flex;align-items:center;gap:10px;height:52px;padding:0 18px;border:0;border-radius:var(--r-in);background:var(--s);color:var(--ph);font:500 15px 'Outfit',sans-serif;width:100%}
+.sh .in{display:flex;align-items:center;gap:10px;height:52px;padding:0 18px;border:0;border-radius:var(--r-in);background:var(--s);color:var(--mut);font:500 15px 'Outfit',sans-serif;width:100%}
 .sh .in.v{color:var(--ink)}
 .sh .in.f{background:var(--o);color: var(--on-brand)}
 .sh .in.err{box-shadow:inset 0 0 0 2px var(--redt)}
@@ -82,7 +82,7 @@
 .sh .seg{display:inline-flex;background:var(--s);border-radius:999px;padding:4px;gap:2px}
 .sh .seg span{height:36px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;font:600 14px 'Outfit',sans-serif;color:var(--mut)}
 .sh .seg span.on{background:var(--o);color: var(--on-brand)}
-.sh .chip{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;background:var(--w);box-shadow:inset 0 0 0 1.5px var(--o);font:600 14px 'Outfit',sans-serif;white-space:nowrap;color:var(--ink)}
+.sh .chip{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;background:var(--s);box-shadow:inset 0 0 0 1px var(--line);font:600 14px 'Outfit',sans-serif;white-space:nowrap;color:var(--ink)}
 .sh .chip.on{background:var(--o); color: var(--on-brand); }
 .sh .chip.g{box-shadow:inset 0 0 0 1.5px var(--line);color:var(--ink2)}
 .sh .pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:999px;font:600 12px 'Outfit',sans-serif;white-space:nowrap;background:var(--s);color:var(--ink2)}
@@ -91,7 +91,7 @@
 .sh .pill.bad{background:var(--red-bg);color:var(--redt)}
 .sh .pill.info{background:var(--blu-bg);color:#285fba}
 .sh .pill.o{background:var(--o-t);color:var(--ot)}
-.sh .pill.dark{background:var(--ink);color:#fff}
+.sh .pill.dark{background:var(--o);color:var(--on-brand)}
 .sh .dot{width:9px;height:9px;border-radius:50%;background:var(--o);flex:none; color: var(--on-brand); }
 .sh .dot.ok{background:var(--grn)}
 .sh .dot.bad{background:var(--red)}
@@ -107,29 +107,29 @@
 .sh .card.s{background:var(--s)}
 .sh .card.line{box-shadow:inset 0 0 0 1.5px var(--line)}
 .sh .card.o{background:var(--o); color: var(--on-brand); }
-.sh .card.dark{background:var(--ink);color:#fff}
+.sh .card.dark{background:var(--o);color:var(--on-brand)}
 .sh .card.p0{padding:0;overflow:hidden}
-.sh .ph{display:grid;place-items:center;border-radius:20px;color:rgba(41,33,36,.55)}
-.sh .ph.a{background:#efd9e0}
-.sh .ph.b{background:#DDF1D2}
-.sh .ph.c{background:#FFF0B8}
-.sh .ph.d{background:#f8d4da}
-.sh .ph.e{background:#dde8fa}
-.sh .ph.f{background:#E7E3DC}
-.sh .ph.g{background:#EAD9F7}
+.sh .ph{display:grid;place-items:center;border-radius:20px;color:rgba(41,37,38,.55)}
+.sh .ph.a{background:var(--selected-soft)}
+.sh .ph.b{background:#E4EBDD}
+.sh .ph.c{background:#F6EBD3}
+.sh .ph.d{background:#F8E7DF}
+.sh .ph.e{background:#E3E9EF}
+.sh .ph.f{background:#EFE6DA}
+.sh .ph.g{background:#EBDDE3}
 .sh .promo{background:var(--o);border-radius:28px;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:12px;overflow:hidden; color: var(--on-brand); }
 .sh .phone{width:390px;height:844px;position:relative;overflow:hidden;background:var(--w)}
 .sh .phone .body{position:absolute;left:0;right:0;top:0;bottom:0;padding:28px 20px 112px;overflow:hidden;display:flex;flex-direction:column;gap:16px}
 .sh .phone .body.nonav{padding-bottom:28px}
-.sh .phone.s{background:var(--s)}
+.sh .phone.s{background:var(--background)}
 .sh .nav{position:absolute;left:12px;right:12px;bottom:14px;height:72px;border-radius:36px;background:var(--s);display:flex;align-items:center;justify-content:space-around;padding:0 8px;box-shadow:0 0 0 1px var(--line)}
 .sh button.chip,.sh button.pill{border:0;font-family:inherit;cursor:pointer}
-.sh .nav .it{border:0;background:transparent;cursor:pointer;height:52px;min-width:52px;border-radius:26px;display:inline-flex;align-items:center;justify-content:center;gap:8px;color:var(--ph);font:700 15px 'Outfit',sans-serif;position:relative}
+.sh .nav .it{border:0;background:transparent;cursor:pointer;height:52px;min-width:52px;border-radius:26px;display:inline-flex;align-items:center;justify-content:center;gap:8px;color:var(--mut);font:700 15px 'Outfit',sans-serif;position:relative}
 .sh .nav .it.on{background:var(--o);color: var(--on-brand);padding:0 20px}
 .sh .nav .it .cnt{position:absolute;right:2px;top:2px}
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--w);border-radius:32px 32px 0 0;padding:14px 20px 24px;display:flex;flex-direction:column;gap:14px}
 .sheet::before{content:"";width:44px;height:5px;border-radius:3px;background:var(--dis);align-self:center}
-.sh .scrim{position:absolute;inset:0;background:rgba(41,33,36,.45)}
+.sh .scrim{position:absolute;inset:0;background:rgba(41,37,38,.45)}
 .sh .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
 .sh .sectionhd{display:flex;align-items:center;justify-content:space-between}
 .sh .sectionhd a{font:600 14px 'Outfit',sans-serif;color:var(--ot);text-decoration:none}
@@ -153,7 +153,7 @@
 .sh .pin.me{background:var(--ink);color:#fff}
 .sh .pin.ppl{border-radius:50%;transform:none;background:#fff;box-shadow:0 0 0 3px var(--o)}
 .sh .pin.ppl>*{transform:none}
-.sh .app{display:flex;flex-wrap:wrap;background:var(--s);min-height:100%;align-items:stretch}
+.sh .app{display:flex;flex-wrap:wrap;background:var(--background);min-height:100%;align-items:stretch}
 .sh .side{flex:0 0 252px;background:var(--w);padding:20px 14px;display:flex;flex-direction:column;gap:6px}
 .sh .side .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 14px}
 .sh .side .brand img{width:44px;height:44px;border-radius:50%}
@@ -196,7 +196,7 @@
 .sh .note.bad{background:var(--red-bg);color:#8f1c29}
 .sh .stor{display:flex;gap:10px;overflow:hidden}
 .sh .story{width:68px;display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;font:600 12px 'Outfit',sans-serif;text-align:center}
-.sh .phone.mob{height:auto;min-height:844px;display:flex;flex-direction:column;background:var(--s);overflow:visible}
+.sh .phone.mob{height:auto;min-height:844px;display:flex;flex-direction:column;background:var(--background);overflow:visible}
 .sh .mob .mtop{display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--w);position:relative}
 .sh .mob .mtop .ttl{flex:1;min-width:0;font:700 18px/1.2 'Outfit',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sh .mob .mtop .rl{font:600 11px 'Outfit',sans-serif;color:var(--ot);background:var(--o-t);border-radius:999px;padding:4px 10px;white-space:nowrap}
@@ -234,7 +234,7 @@
 .sh .mob .mbody>*{max-width:100%}
 .sh .mob hr.grow{min-width:6px}
 .sh .mob .row.between{flex-wrap:wrap}
-.sh .web{width:1280px;min-height:760px;background:var(--s);display:flex;flex-direction:column}
+.sh .web{width:1280px;min-height:760px;background:var(--background);display:flex;flex-direction:column}
 .sh .wtop{display:flex;align-items:center;gap:18px;padding:14px 48px;background:var(--w)}
 .sh .wtop .logo{display:flex;align-items:center;gap:10px;font:700 20px 'Outfit',sans-serif;flex:none}
 .sh .wtop .logo img{width:44px;height:44px;border-radius:50%}
@@ -244,7 +244,7 @@
 .sh .wnav a{height:40px;padding:0 18px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;font:600 14px 'Outfit',sans-serif;color:var(--ink2);white-space:nowrap}
 .sh .wnav a.on{background:var(--o);color: var(--on-brand)}
 .sh .wmain{flex:1;padding:28px 48px 48px;display:flex;flex-direction:column;gap:22px;min-width:0}
-.sh .wfoot{background:var(--ink);color:#fff;padding:26px 48px;display:flex;justify-content:space-between;align-items:center;gap:24px}
+.sh .wfoot{background:var(--o);color:var(--on-brand);padding:26px 48px;display:flex;justify-content:space-between;align-items:center;gap:24px}
 .sh .wfoot a{color:#ddd4d7;font:500 13px 'Outfit',sans-serif}
 .sh .wfoot .fl{display:flex;gap:22px;flex-wrap:wrap}
 .sh .w2{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:24px;align-items:start}
@@ -426,3 +426,12 @@
 .sh .i-warning{-webkit-mask-image:url(/icons/warning.svg);mask-image:url(/icons/warning.svg)}
 .sh .i-whatsapp-logo{-webkit-mask-image:url(/icons/whatsapp-logo.svg);mask-image:url(/icons/whatsapp-logo.svg)}
 .sh .i-x{-webkit-mask-image:url(/icons/x.svg);mask-image:url(/icons/x.svg)}
+
+/* States: terracotta actions darken on hover; every focusable control shows the plum focus ring; disabled looks the same everywhere. */
+.sh .btn:hover:not(.sec):not(.out):not(.dark):not(.gold):not(.bad):not(.dis){background:var(--act-d)}
+.sh .btn.dark:hover{background:var(--o-d)}
+.sh .btn:focus-visible,.sh .ibtn:focus-visible,.sh .chip:focus-visible,.sh .pill:focus-visible,.sh a:focus-visible,.sh button:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
+.sh .btn:disabled,.sh .btn[aria-disabled="true"]{background:var(--s);color:var(--ph);box-shadow:none;cursor:not-allowed}
+
+/* Chips and pills that sit on a plum surface */
+.sh .promo .pill.dark,.sh .card.o .pill.dark,.sh .card.dark .pill.dark{background:rgba(255,255,255,.16);color:var(--on-brand)}

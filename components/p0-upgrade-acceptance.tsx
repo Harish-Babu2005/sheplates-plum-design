@@ -73,9 +73,9 @@ export function P0UpgradeAcceptance({ invitationId: initialInvitationId }: { inv
     }
   }
 
-  return <main className="grid min-h-screen place-items-center bg-[#faf6f4] p-5">
+  return <main className="grid min-h-screen place-items-center bg-[#F5EDE7] p-5">
     <section className="w-full max-w-lg rounded-3xl border border-stone-200 bg-white p-6 shadow-xl sm:p-8">
-      <p className="text-xs font-black uppercase tracking-[.15em] text-[#653046]">ShePlates vendor upgrade</p>
+      <p className="text-xs font-black uppercase tracking-[.15em] text-[#512D3A]">ShePlates vendor upgrade</p>
       <h1 className="mt-2 text-2xl font-black">Confirm account ownership</h1>
       <p className="mt-3 text-sm leading-6 text-stone-600">
         This confirmation upgrades the existing P0 vendor record to the selected subscription plan. It does not create another vendor.
@@ -84,7 +84,7 @@ export function P0UpgradeAcceptance({ invitationId: initialInvitationId }: { inv
       {message && <p role="status" className="mt-5 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{message}</p>}
       {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
       <div className="mt-6 flex flex-wrap gap-3">
-        <button type="button" onClick={() => void accept()} disabled={!ready || busy || Boolean(message)} className="rounded-xl bg-[#753b50] px-5 py-3 text-sm font-black text-white disabled:opacity-50">
+        <button type="button" onClick={() => void accept()} disabled={!ready || busy || Boolean(message)} className="rounded-xl bg-[#C65D3A] px-5 py-3 text-sm font-black text-white disabled:opacity-50">
           {busy ? "Validating invitation…" : "Confirm and upgrade"}
         </button>
         <Link href="/" className="rounded-xl border border-stone-200 px-5 py-3 text-sm font-black text-stone-700">Go to sign in</Link>

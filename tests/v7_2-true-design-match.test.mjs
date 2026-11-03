@@ -31,7 +31,7 @@ test('staff portal is light: white sidebar with a plum active pill, navigation l
   assert.match(staffShell, /k-side/);
   assert.match(staffShell, /data-tour-nav/);
   assert.match(staffCss, /\.k-side \{[^}]*background: #fff/);
-  assert.match(staffCss, /\.k-nv\.on \{ background: #753b50/);
+  assert.match(staffCss, /\.k-nv\.on \{ background: var\(--selected\)/);
 });
 
 test('glass remains limited to navigation overlays and She Agent', () => {

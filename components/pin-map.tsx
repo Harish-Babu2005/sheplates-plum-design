@@ -51,8 +51,8 @@ function OlaPin({ lat, lng, radiusKm, access, onFail, onChange }: { lat: number;
         for (const l of m.getStyle().layers || []) if (/^poi/.test(l.id) || l.id === "ola-pois" || l.id === "3d_model_data") m.setLayoutProperty(l.id, "visibility", "none");
       } catch { /* keep Ola's look */ }
       m.addSource("sp-area", { type: "geojson", data: ring(lat, lng, radiusKm) });
-      m.addLayer({ id: "sp-area-fill", type: "fill", source: "sp-area", paint: { "fill-color": "#c62653", "fill-opacity": radiusKm > 0 ? 0.08 : 0 } });
-      m.addLayer({ id: "sp-area-line", type: "line", source: "sp-area", paint: { "line-color": "#c62653", "line-width": radiusKm > 0 ? 2 : 0 } });
+      m.addLayer({ id: "sp-area-fill", type: "fill", source: "sp-area", paint: { "fill-color": "#512D3A", "fill-opacity": radiusKm > 0 ? 0.08 : 0 } });
+      m.addLayer({ id: "sp-area-line", type: "line", source: "sp-area", paint: { "line-color": "#512D3A", "line-width": radiusKm > 0 ? 2 : 0 } });
     });
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     const el = document.createElement("div"); el.className = "sp-map-icon"; el.style.width = "28px"; el.style.height = "28px"; el.innerHTML = YOU_HTML;
@@ -80,7 +80,7 @@ function StandardPin({ lat, lng, radiusKm, onChange }: { lat: number; lng: numbe
   return <div className="h-full w-full" data-map-engine="standard"><MapContainer center={[lat, lng]} zoom={zoomFor(radiusKm)} scrollWheelZoom={false} style={{ height: "100%", width: "100%" }} attributionControl={false}>
     <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" maxZoom={19} />
     <Recenter lat={lat} lng={lng} radiusKm={radiusKm} />
-    {radiusKm > 0 && <Circle center={[lat, lng]} radius={radiusKm * 1000} pathOptions={{ color: "#c62653", weight: 2, fillColor: "#c62653", fillOpacity: 0.08 }} />}
+    {radiusKm > 0 && <Circle center={[lat, lng]} radius={radiusKm * 1000} pathOptions={{ color: "#512D3A", weight: 2, fillColor: "#512D3A", fillOpacity: 0.08 }} />}
     <Marker position={[lat, lng]} icon={pinIcon} draggable={Boolean(onChange)} eventHandlers={onChange ? { dragend: (event) => { const position = event.target.getLatLng(); onChange({ lat: Number(position.lat.toFixed(6)), lng: Number(position.lng.toFixed(6)) }); } } : undefined} />
   </MapContainer></div>;
 }

@@ -1,50 +1,52 @@
 /*
- * ShePlates colour palette (reference copy).
+ * ShePlates brand tokens (reference copy).
  * The app reads these values from the :root block at the top of app/theme-2.css; keep the two in step.
- * Fonts: Outfit (400 to 800). Corners: pill buttons, 24px cards. Flat surfaces, no shadows on cards.
+ * Fonts: Outfit. Controls are pill shaped, cards use a 24px radius, surfaces are flat.
+ *
+ * Roles
+ *   Plum        identity, navigation, headings, selected states, dark panels
+ *   Terracotta  primary actions and purchase controls (never a whole dashboard)
+ *   Gold        selective highlights; never body text on a light ground
+ *   Status      success, warning, destructive and info stay their own colours
  */
 :root {
-  /* Brand (names kept from the first kit so the code did not need renaming) */
-  --o: #753b50;          /* primary plum: buttons, active tabs, highlights */
-  --o-d: #602d40;        /* plum, hover and pressed */
-  --o-t: #f7edf0;        /* plum tint: selected cards, soft badges */
-  --o-t2: #e8cbd5;       /* stronger tint: chart bars, soft fills, brand colour on dark panels */
-  --ot: #653046;         /* plum used as text on a tint */
-  --on-brand: #ffffff;   /* text and icons on a solid plum surface */
+  /* Brand identity */
+  --brand-primary: #512D3A;
+  --brand-primary-hover: #40222E;
+  --brand-secondary: #C65D3A;
+  --brand-secondary-hover: #A84B2C;
+  --brand-accent: #D9B879;
 
-  /* Text */
-  --ink: #292124;        /* headings, dark buttons */
-  --ink-2: #4c4246;      /* body text */
-  --mut: #71676b;        /* secondary text and captions */
-  --ph: #766b70;         /* placeholders */
-  --dis: #b9afb3;        /* disabled */
+  /* Surfaces */
+  --background: #FAF7F2;
+  --card: #FFFFFF;
+  --surface-soft: #F5EDE7;
+  --border: #E9DDD5;
 
-  /* Surfaces and lines */
-  --white: #ffffff;      /* cards, page background */
-  --surf: #faf6f4;       /* warm surface: inputs, table rows, app background */
-  --surf-2: #f0e8e7;     /* darker surface: pressed state, dividers */
-  --line: #e8dfe1;       /* borders and separators */
+  /* Typography */
+  --foreground: #292526;
+  --text-secondary: #665B5D;
+  --text-muted: #756B6C;
+
+  /* Interaction */
+  --action-primary: var(--brand-secondary);
+  --action-hover: var(--brand-secondary-hover);
+  --selected: var(--brand-primary);
+  --selected-soft: #F2E8EC;
+  --focus-ring: var(--brand-primary);
 
   /* Status */
-  --ok: #26834a;
-  --ok-t: #21683b;
-  --ok-bg: #eaf5ec;
-  --warn-t: #795900;
-  --warn-bg: #fff4cf;
-  --bad-t: #b42332;
-  --bad-bg: #fdecef;
-  --info: #285fba;
-  --info-bg: #edf3fd;
+  --success: #26834A;
+  --warning: #795900;
+  --destructive: #B42332;
 
-  /* Dark panels (staff sidebar, dark cards) */
-  --sidebar: #292124;
-  --sidebar-accent: #382d32;
-  --sidebar-border: #4a3b42;
+  --font-sans: "Outfit", sans-serif;
+  --radius-card: 24px;
+  --radius-control: 999px;
 
-  /* Chart series, in order */
-  --chart-1: #753b50;
-  --chart-2: #7f9a6a;    /* lightened from #526044 so it reads apart from plum */
-  --chart-3: #285fba;
-  --chart-4: #b77b48;
-  --chart-5: #8271a5;
+  /* Extra tokens used by the app (see app/theme-2.css for the full list) */
+  --surface-soft-2: #EDE2DA;
+  --selected-soft-strong: #E6D2DA;
+  --text-body: #4A4143;
+  --info: #285FBA;
 }
