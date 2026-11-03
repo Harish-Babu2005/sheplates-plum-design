@@ -38,6 +38,8 @@ export type LiveVendorRow = {
   delivery_enabled: boolean; pickup_enabled: boolean; store_open_today: boolean;
   verification_status: string; operational_status: string; marketplace_visible: boolean;
   plan_id: string | null;
+  /** Whether the vendor has accepted the Vendor Terms and Conditions (undefined where the column is not deployed). */
+  terms_accepted?: boolean;
   // Embedded via the vendors.plan_id -> vendor_plans foreign key. This client
   // has no generated Database types, so supabase-js can't confirm the FK is
   // many-to-one — it types (and may return) this as an array either way.
@@ -336,7 +338,7 @@ export async function loadConnectVendorsNearby(
 export async function loadLiveVendorWorkspace(vendorId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,vendor_plans(code,name)").eq("id", vendorId).single();
+  const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false }).limit(1);
   const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   let productRows = productResult.data as LiveMenuItemRow[] | null;
@@ -367,7 +369,7 @@ export async function loadLiveOperationsWorkspace() {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
-    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,vendor_plans(code,name)").order("created_at", { ascending: false }),
+    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
     supabase.from("vendor_documents").select("vendor_id,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
@@ -378,7 +380,7 @@ export async function loadLiveOperationsWorkspace() {
   if (!vendors.error) {
     vendorRows = (vendors.data || []) as LiveVendorRow[];
   } else if ((vendors.error.code === "42703" || vendors.error.code === "PGRST204") && /vendor_kind/i.test(vendors.error.message)) {
-    const fallback = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,vendor_plans(code,name)").order("created_at", { ascending: false });
+    const fallback = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").order("created_at", { ascending: false });
     if (fallback.error) throw fallback.error;
     vendorRows = (fallback.data || []).map((row) => ({ ...row, vendor_kind: "subscription" })) as LiveVendorRow[];
   } else {
@@ -629,14 +631,26 @@ export async function saveLiveVendorLocation(input: { vendorId: string; address:
   if (result.error) throw result.error;
 }
 
+/** A vendor accepts the Vendor Terms and Conditions. The database records the time, version and document reference. */
+export async function acceptLiveVendorTerms(vendorId: string) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendors").update({ terms_accepted: true }).eq("id", vendorId).select("id").maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error("Your vendor account could not be updated. Sign in again and retry.");
+}
+
 export async function submitLiveVendorApplication(input: {
   userId: string; businessName: string; category: string; locality: string;
   fssaiNumber: string; expiryDate: string; certificate: File; address?: string;
   latitude?: number; longitude?: number; radiusKm?: number; delivery?: boolean; pickup?: boolean;
   operatingHours?: Record<string, unknown>;
+  /** Must be true: the database refuses a submitted vendor that has not accepted the Vendor Terms. */
+  termsAccepted?: boolean;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  if (!input.termsAccepted) throw new Error("Accept the Vendor Terms and Conditions before submitting your application.");
   const safeName = input.certificate.name.replace(/[^a-zA-Z0-9._-]/g, "-");
   const objectPath = `${input.userId}/${crypto.randomUUID()}-${safeName}`;
   const upload = await supabase.storage.from("vendor-certificates").upload(objectPath, input.certificate, { upsert: false });
@@ -647,6 +661,8 @@ export async function submitLiveVendorApplication(input: {
     address: input.address ?? input.locality, latitude: input.latitude, longitude: input.longitude,
     service_radius_km: input.radiusKm ?? 5, delivery_enabled: input.delivery ?? true,
     pickup_enabled: input.pickup ?? true, store_open_today: false,
+    // The database stamps the acceptance time, version and document reference.
+    terms_accepted: true,
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) {

@@ -82,3 +82,36 @@ test("the Connect vendor form stacks every label above its field", async ({ page
   await page.waitForTimeout(600);
   await page.locator("form", { has: field }).screenshot({ path: `qa-screenshots/redesign/plum-feedback-connect-form-${test.info().project.name}.png` });
 });
+
+const VENDOR = { email: "v-meena@sheplates.demo", name: "Meena", role: "vendor", toursCompleted: ["vendor_v1"] };
+
+test("Operations cannot approve a vendor that has not accepted the Vendor Terms", async ({ page }) => {
+  await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); },
+    [(() => { const state = buildDemoState(); state.vendors[0] = { ...state.vendors[0], verification: "Submitted", termsAccepted: false } as typeof state.vendors[0]; return state; })(), { email: "operations@sheplates.demo", name: "Ops", role: "operations", toursCompleted: ["operations_v1"] }] as const);
+  await page.goto("/");
+  await page.waitForSelector(".k-app", { timeout: 30_000 });
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^Vendor verification\s*\d*$/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "has not accepted the Vendor Terms" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Ask for changes" })).toBeEnabled();
+});
+
+test("a vendor who has not accepted the terms sees the card on Verification and can accept", async ({ page }) => {
+  const state = buildDemoState();
+  state.vendors = state.vendors.map((v) => v.ownerEmail === VENDOR.email ? { ...v, termsAccepted: false } : v);
+  await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); }, [state, VENDOR] as const);
+  await page.goto("/");
+  await page.waitForSelector(".k-app", { timeout: 30_000 });
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^Verification\s*\d*$/ }).click();
+  const card = page.getByRole("region", { name: "Vendor Terms and Conditions" });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Accept terms" }).click();
+  await expect(page.getByText("Tick the box to accept").first()).toBeVisible();
+  await card.getByRole("checkbox").check();
+  await card.getByRole("button", { name: "Accept terms" }).click();
+  await expect(card).toHaveCount(0);
+});

@@ -59,3 +59,20 @@ test("the vendor-error diagnostic is read-only", async () => {
   assert.doesNotMatch(code, /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke)\b/i);
   assert.match(original, /review_vendor_and_notify/);
 });
+
+test("the vendor-terms trigger only blocks when a vendor is created or its status changes, and the app collects the acceptance", async () => {
+  const sql = await read("supabase/migrations/20261103000400_vendor_terms_trigger_scope.sql");
+  assert.equal(sql, await read("supabase/V9_16_VENDOR_TERMS_TRIGGER_SCOPE.sql"), "the editor copy matches the migration");
+  assert.match(sql, /tg_op = 'INSERT' or new\.verification_status is distinct from old\.verification_status/);
+  assert.match(sql, /new\.verification_status in \('submitted', 'under_review', 'verified'\)/);
+  assert.match(sql, /new\.terms_accepted is not true/);
+  assert.doesNotMatch(sql.replace(/--.*$/gm, ""), /\bupdate\s+public\.vendors\b/i, "no existing vendor row is changed");
+  const data = await read("lib/supabase.ts");
+  assert.match(data, /terms_accepted: true,/, "the onboarding insert sends the acceptance");
+  assert.equal((data.match(/marketplace_visible,plan_id,terms_accepted,vendor_plans/g) || []).length, 3, "every vendor loader reads terms_accepted");
+  assert.match(data, /export async function acceptLiveVendorTerms/);
+  const app = await read("components/sheplates-v3.tsx");
+  assert.match(app, /if \(!terms\) return toast\.error\("Accept the Vendor Terms and Conditions to submit"\)/);
+  assert.match(app, /disabled=\{picked\.termsAccepted === false\}/, "Operations cannot approve a vendor who has not accepted");
+  assert.match(app, /vendor\.termsAccepted === false && <section aria-label="Vendor Terms and Conditions"/);
+});
