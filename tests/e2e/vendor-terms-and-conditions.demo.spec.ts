@@ -79,7 +79,7 @@ test.describe("Vendor Onboarding Terms & Conditions Integration", () => {
 
     // Upload mock certificate
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.locator("input[type=file]").evaluate((el: HTMLInputElement) => el.click());
+    await page.locator("#fssai-file-input").evaluate((el: HTMLInputElement) => el.click());
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "fssai-cert.pdf",

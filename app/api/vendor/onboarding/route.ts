@@ -126,6 +126,35 @@ export async function POST(request: Request) {
     const expiryDate = String(body.expiryDate || "").trim();
     const certificateStoragePath = String(body.certificateStoragePath || "").trim();
 
+    // Compliance document fields
+    const panNumber = body.panNumber ? String(body.panNumber).trim().toUpperCase() : null;
+    const bankAccountNumber = body.bankAccountNumber ? String(body.bankAccountNumber).trim() : null;
+    const bankIfsc = body.bankIfsc ? String(body.bankIfsc).trim().toUpperCase() : null;
+    const businessRegNumber = body.businessRegNumber ? String(body.businessRegNumber).trim() : null;
+
+    // Optional list of additional compliance documents
+    const rawDocuments = Array.isArray(body.documents) ? (body.documents as Array<Record<string, unknown>>) : [];
+
+    // Enforce PDF-only validation for all submitted documents
+    for (const doc of rawDocuments) {
+      const fileName = String(doc.fileName || "").toLowerCase();
+      const storagePath = String(doc.storagePath || "").toLowerCase();
+      const mimeType = String(doc.mimeType || "").toLowerCase();
+
+      const isPdf =
+        mimeType === "application/pdf" ||
+        fileName.endsWith(".pdf") ||
+        storagePath.endsWith(".pdf") ||
+        !storagePath; // allow placeholder if not uploaded yet
+
+      if (!isPdf) {
+        return NextResponse.json(
+          { error: `Document "${doc.fileName || doc.documentType}" must be in PDF format (.pdf) only.` },
+          { status: 400 }
+        );
+      }
+    }
+
     if (!businessName || !category || !address || !fssaiNumber || !expiryDate) {
       return NextResponse.json({ error: "All business and certification fields are required." }, { status: 400 });
     }
@@ -155,6 +184,10 @@ export async function POST(request: Request) {
         terms_version: termsVersion,
         terms_accepted_at: serverTimestamp,
         terms_document_reference: termsDocRef,
+        ...(panNumber ? { pan_number: panNumber } : {}),
+        ...(bankAccountNumber ? { bank_account_number: bankAccountNumber } : {}),
+        ...(bankIfsc ? { bank_ifsc: bankIfsc } : {}),
+        ...(businessRegNumber ? { business_registration_number: businessRegNumber } : {}),
         ...(body.operatingHours ? { operating_hours: body.operatingHours } : {}),
       })
       .select("id")
@@ -169,13 +202,34 @@ export async function POST(request: Request) {
 
     const vendorId = vendorInsert.data.id as string;
 
-    // 3. Insert vendor document
-    if (fssaiNumber) {
+    // 3. Insert compliance documents
+    let fssaiInserted = false;
+    for (const doc of rawDocuments) {
+      const docType = String(doc.documentType || "document");
+      if (docType === "food_certificate") fssaiInserted = true;
+      await c.admin.from("vendor_documents").insert({
+        vendor_id: vendorId,
+        document_type: docType,
+        document_number: doc.documentNumber ? String(doc.documentNumber).trim() : null,
+        storage_path: String(doc.storagePath || "pending-upload"),
+        file_name: doc.fileName ? String(doc.fileName) : null,
+        file_size: typeof doc.fileSize === "number" ? doc.fileSize : null,
+        mime_type: "application/pdf",
+        expiry_date: doc.expiryDate ? String(doc.expiryDate) : null,
+        verification_status: "submitted",
+        metadata: (doc.metadata as Record<string, unknown>) || {},
+      });
+    }
+
+    // Insert FSSAI document if not already inserted from documents array
+    if (!fssaiInserted && fssaiNumber) {
       await c.admin.from("vendor_documents").insert({
         vendor_id: vendorId,
         document_type: "food_certificate",
         document_number: fssaiNumber,
         storage_path: certificateStoragePath || "pending-upload",
+        file_name: certificateStoragePath.split("/").pop() || "fssai-certificate.pdf",
+        mime_type: "application/pdf",
         expiry_date: expiryDate,
         verification_status: "submitted",
       });

@@ -341,7 +341,7 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,vendor_plans(code,name)").eq("id", vendorId).single();
-  const documentsPromise = supabase.from("vendor_documents").select("document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false }).limit(1);
+  const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   let productRows = productResult.data as LiveMenuItemRow[] | null;
   let productError = productResult.error;
@@ -355,7 +355,7 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (vendor.error) throw vendor.error;
   if (productError) throw productError;
   if (documents.error) throw documents.error;
-  return { vendor: vendor.data as LiveVendorRow, products: productRows || [], document: documents.data?.[0] || null };
+  return { vendor: vendor.data as LiveVendorRow, products: productRows || [], document: documents.data?.[0] || null, documents: documents.data || [] };
 }
 
 export async function loadLiveVendorWorkspaceForOwner(userId: string) {
@@ -374,7 +374,7 @@ export async function loadLiveOperationsWorkspace() {
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,terms_version,terms_accepted_at,terms_document_reference,vendor_plans(code,name)").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
-    supabase.from("vendor_documents").select("vendor_id,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
+    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
     supabase.from("marketing_campaigns").select("*").order("created_at", { ascending: false }).limit(100),
   ]);
@@ -633,6 +633,14 @@ export async function saveLiveVendorLocation(input: { vendorId: string; address:
   if (result.error) throw result.error;
 }
 
+export type OnboardingComplianceDocument = {
+  documentType: "food_certificate" | "pan" | "government_id" | "address_proof" | "bank_details" | "business_details" | "product_information";
+  documentNumber?: string;
+  file: File;
+  expiryDate?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export async function submitLiveVendorApplication(input: {
   userId: string; businessName: string; category: string; locality: string;
   fssaiNumber: string; expiryDate: string; certificate: File; address?: string;
@@ -641,10 +649,32 @@ export async function submitLiveVendorApplication(input: {
   termsAccepted?: boolean;
   termsVersion?: string;
   termsDocumentReference?: string;
+  panNumber?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  businessRegNumber?: string;
+  additionalDocuments?: OnboardingComplianceDocument[];
 }) {
   if (!input.termsAccepted) {
     throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
   }
+
+  // Validate PDF format on primary certificate
+  const certIsPdf = input.certificate.type === "application/pdf" || input.certificate.name.toLowerCase().endsWith(".pdf");
+  if (!certIsPdf) {
+    throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
+  }
+
+  // Validate PDF format on all additional compliance documents
+  if (input.additionalDocuments) {
+    for (const doc of input.additionalDocuments) {
+      const isPdf = doc.file.type === "application/pdf" || doc.file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
+      }
+    }
+  }
+
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const safeName = input.certificate.name.replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -661,14 +691,42 @@ export async function submitLiveVendorApplication(input: {
     terms_version: input.termsVersion || "1.0",
     terms_accepted_at: new Date().toISOString(),
     terms_document_reference: input.termsDocumentReference || "/docs/sheplates-vendor-terms-v1.0.pdf",
+    ...(input.panNumber ? { pan_number: input.panNumber } : {}),
+    ...(input.bankAccountNumber ? { bank_account_number: input.bankAccountNumber } : {}),
+    ...(input.bankIfsc ? { bank_ifsc: input.bankIfsc } : {}),
+    ...(input.businessRegNumber ? { business_registration_number: input.businessRegNumber } : {}),
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) throw vendor.error;
   const document = await supabase.from("vendor_documents").insert({
     vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber,
-    storage_path: objectPath, expiry_date: input.expiryDate, verification_status: "submitted",
+    storage_path: objectPath, file_name: input.certificate.name, file_size: input.certificate.size,
+    mime_type: "application/pdf", expiry_date: input.expiryDate, verification_status: "submitted",
   });
   if (document.error) throw document.error;
+
+  if (input.additionalDocuments?.length) {
+    for (const doc of input.additionalDocuments) {
+      const docSafeName = doc.file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const docPath = `${input.userId}/${crypto.randomUUID()}-${docSafeName}`;
+      const docUpload = await supabase.storage.from("vendor-certificates").upload(docPath, doc.file, { upsert: false });
+      if (!docUpload.error) {
+        await supabase.from("vendor_documents").insert({
+          vendor_id: vendor.data.id,
+          document_type: doc.documentType,
+          document_number: doc.documentNumber || null,
+          storage_path: docPath,
+          file_name: doc.file.name,
+          file_size: doc.file.size,
+          mime_type: "application/pdf",
+          expiry_date: doc.expiryDate || null,
+          verification_status: "submitted",
+          metadata: doc.metadata || {},
+        });
+      }
+    }
+  }
+
   const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id }).eq("id", input.userId).select("id").maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data) throw new Error("Your vendor application was saved, but your account could not be linked to it. Please contact Operations before submitting again.");

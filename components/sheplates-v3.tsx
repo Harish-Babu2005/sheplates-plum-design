@@ -128,6 +128,21 @@ type CustomerProfile = {
   phone?: string; addresses?: CustomerAddress[]; agentMemory?: AgentMemory; privateAccount?: boolean;
 };
 type CustomerAddress = { id: string; label: string; address: string; latitude?: number; longitude?: number; phone?: string; isDefault: boolean };
+export type VendorComplianceDocType = "food_certificate" | "pan" | "government_id" | "address_proof" | "bank_details" | "business_details" | "product_information";
+
+export type VendorComplianceDocument = {
+  id?: string;
+  documentType: VendorComplianceDocType;
+  title: string;
+  documentNumber?: string;
+  fileName?: string;
+  fileSize?: number;
+  storagePath?: string;
+  expiryDate?: string;
+  verificationStatus?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type Vendor = {
   id: string; ownerEmail: string; ownerName: string; businessName: string; category: string;
   address: string; latitude?: number; longitude?: number; radiusKm: number; delivery: boolean;
@@ -139,6 +154,23 @@ export type Vendor = {
   termsVersion?: string;
   termsAcceptedAt?: string;
   termsDocumentReference?: string;
+  panNumber?: string;
+  panDocumentName?: string;
+  govIdType?: string;
+  govIdNumber?: string;
+  govIdDocumentName?: string;
+  addressProofType?: string;
+  addressProofDocumentName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  bankName?: string;
+  bankDocumentName?: string;
+  businessRegType?: string;
+  businessRegNumber?: string;
+  businessDocumentName?: string;
+  productInfoTitle?: string;
+  productInfoDocumentName?: string;
+  documents?: VendorComplianceDocument[];
 };
 type VendorOutlet = { id: string; name: string; address: string; latitude?: number; longitude?: number; radiusKm: number; openToday: boolean; certificateNumber?: string; certificateName?: string; certificateExpiry?: string };
 type Schedule = {
@@ -1413,45 +1445,787 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsModalOpen, setTermsModalOpen] = useState(false);
+
+  // Compliance documents (PDF only) state
+  const [panFile, setPanFile] = useState<File | null>(null);
+  const [govIdFile, setGovIdFile] = useState<File | null>(null);
+  const [addressProofFile, setAddressProofFile] = useState<File | null>(null);
+  const [bankFile, setBankFile] = useState<File | null>(null);
+  const [businessFile, setBusinessFile] = useState<File | null>(null);
+  const [productInfoFile, setProductInfoFile] = useState<File | null>(null);
+
+  // PDF Preview Modal state for uploaded compliance documents
+  const [previewDoc, setPreviewDoc] = useState<{ title: string; fileName: string; url: string } | null>(null);
+
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
-  const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "" });
+  const [form, setForm] = useState({
+    businessName: "",
+    ownerName: operationsCreated ? firstVendorAccount.name : session.name,
+    ownerEmail: operationsCreated ? firstVendorAccount.email : session.email,
+    category: "Groceries",
+    address: "",
+    lat: undefined as number | undefined,
+    lng: undefined as number | undefined,
+    radius: 5,
+    delivery: true,
+    pickup: true,
+    // FSSAI
+    fssai: "",
+    expiry: "",
+    // 1) PAN
+    panNumber: "",
+    // 2) Government ID
+    govIdType: "Aadhaar Card",
+    govIdNumber: "",
+    // 3) Address Proof
+    addressProofType: "Electricity Bill",
+    addressProofRef: "",
+    // 4) Bank Details
+    bankAccountNumber: "",
+    bankIfsc: "",
+    bankName: "",
+    // 5) Business Details
+    businessRegType: "GSTIN Certificate",
+    businessRegNumber: "",
+    // 6) Product Information
+    productInfoTitle: "",
+  });
+
+  function handlePdfUpload(selectedFile: File | null, onValid: (f: File | null) => void, docLabel: string) {
+    if (!selectedFile) return;
+    const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      toast.error(`"${selectedFile.name}" is not a PDF. ${docLabel} must be in PDF format (.pdf) only.`);
+      return;
+    }
+    if (selectedFile.size > 15 * 1024 * 1024) {
+      toast.error(`"${selectedFile.name}" exceeds the 15 MB size limit.`);
+      return;
+    }
+    onValid(selectedFile);
+    toast.success(`${docLabel} attached in PDF format`);
+  }
+
+  function viewPdf(docFile: File, title: string) {
+    const url = URL.createObjectURL(docFile);
+    setPreviewDoc({ title, fileName: docFile.name, url });
+  }
   const [otherCategory, setOtherCategory] = useState("");
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
   function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
   async function submit() {
-    if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
+    if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) {
+      return toast.error("Complete all business and certification fields");
+    }
     if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
-    if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
+    if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) {
+      return toast.error("Detect the store GPS location or find its typed address on the map first");
+    }
     if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
-    if (!termsAccepted) return toast.error("You must read and agree to the ShePlates Vendor Terms & Conditions before submitting.");
+    if (!termsAccepted) {
+      return toast.error("You must read and agree to the ShePlates Vendor Terms & Conditions before submitting.");
+    }
+
+    // Strict validation: every uploaded document must be PDF format
+    const allDocFiles = [
+      { label: "FSSAI Food Certificate", file },
+      { label: "PAN Document", file: panFile },
+      { label: "Government ID", file: govIdFile },
+      { label: "Address Proof", file: addressProofFile },
+      { label: "Bank Details", file: bankFile },
+      { label: "Business Details", file: businessFile },
+      { label: "Product Information", file: productInfoFile },
+    ];
+    for (const item of allDocFiles) {
+      if (item.file) {
+        const isPdf = item.file.type === "application/pdf" || item.file.name.toLowerCase().endsWith(".pdf");
+        if (!isPdf) {
+          return toast.error(`${item.label} "${item.file.name}" must be in PDF format (.pdf) only.`);
+        }
+      }
+    }
+
     setBusy(true);
     let vendorId = id("VEN");
     try {
       const category = form.category === "Other" ? otherCategory.trim() : form.category;
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 }, termsAccepted: true, termsVersion: "1.0", termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf" });
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave", termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString(), termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf" };
-      setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
-      toast.success("Vendor application sent to Operations"); close?.();
-    } catch (caught) { toast.error(caught instanceof Error ? caught.message : "Application could not be submitted"); } finally { setBusy(false); }
+
+      // Build structured compliance documents array for state and backend
+      const stateDocs: VendorComplianceDocument[] = [
+        {
+          documentType: "food_certificate",
+          title: "Food Safety Certificate (FSSAI)",
+          documentNumber: form.fssai,
+          fileName: file.name,
+          fileSize: file.size,
+          storagePath: file.name,
+          expiryDate: form.expiry,
+          verificationStatus: "submitted",
+        },
+      ];
+
+      const additionalDocuments: Array<{
+        documentType: VendorComplianceDocType;
+        documentNumber?: string;
+        file: File;
+        expiryDate?: string;
+        metadata?: Record<string, unknown>;
+      }> = [];
+
+      if (panFile || form.panNumber) {
+        if (panFile) {
+          additionalDocuments.push({
+            documentType: "pan",
+            documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined,
+            file: panFile,
+          });
+        }
+        stateDocs.push({
+          documentType: "pan",
+          title: "PAN Document",
+          documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined,
+          fileName: panFile?.name,
+          fileSize: panFile?.size,
+          storagePath: panFile?.name || "pending-upload",
+          verificationStatus: "submitted",
+        });
+      }
+
+      if (govIdFile || form.govIdNumber) {
+        if (govIdFile) {
+          additionalDocuments.push({
+            documentType: "government_id",
+            documentNumber: form.govIdNumber || undefined,
+            file: govIdFile,
+            metadata: { idType: form.govIdType },
+          });
+        }
+        stateDocs.push({
+          documentType: "government_id",
+          title: `Government ID (${form.govIdType})`,
+          documentNumber: form.govIdNumber || undefined,
+          fileName: govIdFile?.name,
+          fileSize: govIdFile?.size,
+          storagePath: govIdFile?.name || "pending-upload",
+          verificationStatus: "submitted",
+          metadata: { idType: form.govIdType },
+        });
+      }
+
+      if (addressProofFile || form.addressProofRef) {
+        if (addressProofFile) {
+          additionalDocuments.push({
+            documentType: "address_proof",
+            documentNumber: form.addressProofRef || undefined,
+            file: addressProofFile,
+            metadata: { proofType: form.addressProofType },
+          });
+        }
+        stateDocs.push({
+          documentType: "address_proof",
+          title: `Address Proof (${form.addressProofType})`,
+          documentNumber: form.addressProofRef || undefined,
+          fileName: addressProofFile?.name,
+          fileSize: addressProofFile?.size,
+          storagePath: addressProofFile?.name || "pending-upload",
+          verificationStatus: "submitted",
+          metadata: { proofType: form.addressProofType },
+        });
+      }
+
+      if (bankFile || form.bankAccountNumber) {
+        if (bankFile) {
+          additionalDocuments.push({
+            documentType: "bank_details",
+            documentNumber: form.bankAccountNumber ? `A/C ${form.bankAccountNumber} · ${form.bankIfsc.toUpperCase()}` : undefined,
+            file: bankFile,
+            metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName },
+          });
+        }
+        stateDocs.push({
+          documentType: "bank_details",
+          title: "Bank Details (Cheque/Passbook)",
+          documentNumber: form.bankAccountNumber ? `A/C: ${form.bankAccountNumber} · IFSC: ${form.bankIfsc.toUpperCase()}` : undefined,
+          fileName: bankFile?.name,
+          fileSize: bankFile?.size,
+          storagePath: bankFile?.name || "pending-upload",
+          verificationStatus: "submitted",
+          metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName },
+        });
+      }
+
+      if (businessFile || form.businessRegNumber) {
+        if (businessFile) {
+          additionalDocuments.push({
+            documentType: "business_details",
+            documentNumber: form.businessRegNumber || undefined,
+            file: businessFile,
+            metadata: { regType: form.businessRegType },
+          });
+        }
+        stateDocs.push({
+          documentType: "business_details",
+          title: `Business Details (${form.businessRegType})`,
+          documentNumber: form.businessRegNumber || undefined,
+          fileName: businessFile?.name,
+          fileSize: businessFile?.size,
+          storagePath: businessFile?.name || "pending-upload",
+          verificationStatus: "submitted",
+          metadata: { regType: form.businessRegType },
+        });
+      }
+
+      if (productInfoFile || form.productInfoTitle) {
+        if (productInfoFile) {
+          additionalDocuments.push({
+            documentType: "product_information",
+            documentNumber: form.productInfoTitle || undefined,
+            file: productInfoFile,
+          });
+        }
+        stateDocs.push({
+          documentType: "product_information",
+          title: "Product Information / Catalogue",
+          documentNumber: form.productInfoTitle || undefined,
+          fileName: productInfoFile?.name,
+          fileSize: productInfoFile?.size,
+          storagePath: productInfoFile?.name || "pending-upload",
+          verificationStatus: "submitted",
+        });
+      }
+
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) {
+        vendorId = await submitLiveVendorApplication({
+          userId: session.userId,
+          businessName: form.businessName,
+          category,
+          locality: form.address,
+          fssaiNumber: form.fssai,
+          expiryDate: form.expiry,
+          certificate: file,
+          address: form.address,
+          latitude: form.lat,
+          longitude: form.lng,
+          radiusKm: form.radius,
+          delivery: form.delivery,
+          pickup: form.pickup,
+          operatingHours: { duration_hours: 7 },
+          termsAccepted: true,
+          termsVersion: "1.0",
+          termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
+          panNumber: form.panNumber || undefined,
+          bankAccountNumber: form.bankAccountNumber || undefined,
+          bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined,
+          businessRegNumber: form.businessRegNumber || undefined,
+          additionalDocuments,
+        });
+      }
+
+      const vendor: Vendor = {
+        id: vendorId,
+        ownerEmail: form.ownerEmail,
+        ownerName: form.ownerName,
+        businessName: form.businessName,
+        category,
+        address: form.address,
+        latitude: form.lat,
+        longitude: form.lng,
+        radiusKm: form.radius,
+        delivery: form.delivery,
+        pickup: form.pickup,
+        openToday: false,
+        fssaiNumber: form.fssai,
+        certificateName: file.name,
+        expiryDate: form.expiry,
+        verification: "Submitted",
+        operational: "Inactive",
+        plan: "Crave",
+        termsAccepted: true,
+        termsVersion: "1.0",
+        termsAcceptedAt: new Date().toISOString(),
+        termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
+        panNumber: form.panNumber || undefined,
+        panDocumentName: panFile?.name,
+        govIdType: form.govIdType,
+        govIdNumber: form.govIdNumber || undefined,
+        govIdDocumentName: govIdFile?.name,
+        addressProofType: form.addressProofType,
+        addressProofDocumentName: addressProofFile?.name,
+        bankAccountNumber: form.bankAccountNumber || undefined,
+        bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined,
+        bankName: form.bankName || undefined,
+        bankDocumentName: bankFile?.name,
+        businessRegType: form.businessRegType,
+        businessRegNumber: form.businessRegNumber || undefined,
+        businessDocumentName: businessFile?.name,
+        productInfoTitle: form.productInfoTitle || undefined,
+        productInfoDocumentName: productInfoFile?.name,
+        documents: stateDocs,
+      };
+
+      setState((s) => ({
+        ...s,
+        vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)],
+        notifications: [
+          notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your compliance documents and business details."),
+          ...s.notifications,
+        ],
+        audit: [
+          audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName),
+          ...s.audit,
+        ],
+      }));
+      toast.success("Vendor application sent to Operations");
+      close?.();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Application could not be submitted");
+    } finally {
+      setBusy(false);
+    }
   }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 min-h-screen bg-[#f2f4ed] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={`${operationsCreated ? "" : "mx-auto mt-8 max-w-6xl"}`}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.15em] text-[#5ba400]">Vendor onboarding · {step}/4</p><h1 className="mt-2 text-xl font-black">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div><div className="flex gap-1">{[1, 2, 3, 4].map((n) => <span key={n} className={`h-2 w-12 rounded-full ${n <= step ? "bg-[#5ba400]" : "bg-stone-200"}`} />)}</div></div>
   {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}</div>}
   {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
   {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#5ba400]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
-  {step === 4 && <div className="mt-7 grid gap-5 md:grid-cols-2">
-    <Field label="Food certificate / FSSAI number"><input value={form.fssai} onChange={(e) => set("fssai", e.target.value)} className={inputClass} /></Field>
-    <Field label="Expiry date"><input type="date" min={tomorrow()} value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inputClass} /></Field>
-    <label className="surface-card-muted md:col-span-2 grid min-h-36 cursor-pointer place-items-center rounded-3xl border-2 border-dashed p-5 text-center">
-      <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-      <Upload className="mx-auto text-[#ef3d3d]" />
-      <div className="mt-2 font-black">{file?.name || "Upload certificate PDF or image"}</div>
-      <div className="text-xs text-stone-500">Private document; accessible only to this vendor and authorised Operations/Admin users.</div>
-    </label>
+  {step === 4 && <div className="mt-7 space-y-6">
+    {/* Notice: PDF Only Requirement */}
+    <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50/70 p-4 text-xs font-semibold text-red-900">
+      <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-red-100 text-red-600">
+        <FileText className="size-4" />
+      </div>
+      <div>
+        <p className="font-bold">Strict Document Format Requirement: PDF Only</p>
+        <p className="text-red-700 font-normal">All onboarding compliance certificates and proofs must be uploaded in PDF format (.pdf). Scanned images or photos should be converted or saved as PDF.</p>
+      </div>
+    </div>
+
+    {/* Primary Mandatory Document: Food Safety Certificate (FSSAI) */}
+    <div className="surface-card-muted rounded-3xl p-6 border border-stone-200">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3">
+        <div className="flex items-center gap-2">
+          <div className="grid size-8 place-items-center rounded-lg bg-emerald-100 text-[#477f00]">
+            <ShieldCheck className="size-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-stone-900">Food Safety Certificate (FSSAI)</h3>
+            <p className="text-xs text-stone-500">Government food hygiene & license certificate</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-black text-red-700">Required</span>
+          <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <Field label="Food certificate / FSSAI number">
+          <input
+            id="fssai-number-input"
+            value={form.fssai}
+            onChange={(e) => set("fssai", e.target.value)}
+            placeholder="14-digit FSSAI License Number"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Expiry date">
+          <input
+            type="date"
+            min={tomorrow()}
+            value={form.expiry}
+            onChange={(e) => set("expiry", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+
+        <div className="md:col-span-2">
+          {file ? (
+            <div className="flex items-center justify-between rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-red-100 text-red-700 font-black text-xs">
+                  PDF
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-stone-900">{file.name}</p>
+                  <p className="text-xs text-stone-500">{(file.size / 1024).toFixed(1)} KB · Ready to submit</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => viewPdf(file, "FSSAI Food Certificate")}
+                  className="rounded-xl font-bold bg-white"
+                >
+                  <Eye className="size-3.5 mr-1 text-[#5ba400]" />
+                  Preview
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFile(null)}
+                  className="rounded-xl font-bold text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <label className="surface-card-muted grid min-h-28 cursor-pointer place-items-center rounded-2xl border-2 border-dashed border-stone-300 p-4 text-center hover:border-[#5ba400] transition">
+              <input
+                id="fssai-file-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setFile, "FSSAI Certificate")}
+              />
+              <Upload className="mx-auto text-red-500 size-5" />
+              <div className="mt-1.5 text-sm font-black text-stone-800">Upload FSSAI Certificate (PDF only)</div>
+              <div className="text-[11px] text-stone-500">Strictly PDF format (.pdf) under 15 MB</div>
+            </label>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {/* Section: 6 Additional Compliance Forms */}
+    <div className="border-t border-stone-200 pt-2">
+      <div className="mb-4">
+        <h3 className="text-base font-black text-stone-900">Compliance & Identity Documents</h3>
+        <p className="text-xs text-stone-500">Provide regulatory and banking verification documents. Every file must be in PDF format.</p>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        {/* 1) PAN Document */}
+        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">1</span>
+              <h4 className="text-sm font-black text-stone-900">PAN Card</h4>
+            </div>
+            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <Field label="PAN Number">
+              <input
+                id="pan-number-input"
+                value={form.panNumber}
+                onChange={(e) => set("panNumber", e.target.value.toUpperCase())}
+                placeholder="ABCDE1234F"
+                maxLength={10}
+                className={inputClass}
+              />
+            </Field>
+            {panFile ? (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
+                  <span className="truncate text-xs font-bold text-stone-800">{panFile.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => viewPdf(panFile, "PAN Card PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                  <button type="button" onClick={() => setPanFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                </div>
+              </div>
+            ) : (
+              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
+                <input
+                  id="pan-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setPanFile, "PAN Card")}
+                />
+                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload PAN PDF</div>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* 2) Government Identity Proof */}
+        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">2</span>
+              <h4 className="text-sm font-black text-stone-900">Government Identity Proof</h4>
+            </div>
+            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="ID Type">
+                <Select value={form.govIdType} onValueChange={(v) => set("govIdType", v)}>
+                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
+                    <SelectItem value="Voter ID">Voter ID</SelectItem>
+                    <SelectItem value="Passport">Passport</SelectItem>
+                    <SelectItem value="Driving License">Driving License</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="ID Number">
+                <input
+                  id="govid-number-input"
+                  value={form.govIdNumber}
+                  onChange={(e) => set("govIdNumber", e.target.value)}
+                  placeholder="e.g. 1234 5678 9012"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            {govIdFile ? (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
+                  <span className="truncate text-xs font-bold text-stone-800">{govIdFile.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => viewPdf(govIdFile, "Government ID Proof")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                  <button type="button" onClick={() => setGovIdFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                </div>
+              </div>
+            ) : (
+              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
+                <input
+                  id="govid-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setGovIdFile, "Government Identity Proof")}
+                />
+                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Govt ID PDF</div>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* 3) Address Proof */}
+        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">3</span>
+              <h4 className="text-sm font-black text-stone-900">Address Proof</h4>
+            </div>
+            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Document Type">
+                <Select value={form.addressProofType} onValueChange={(v) => set("addressProofType", v)}>
+                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Electricity Bill">Electricity Bill</SelectItem>
+                    <SelectItem value="Water Bill">Water Bill</SelectItem>
+                    <SelectItem value="Rent Agreement">Rent Agreement</SelectItem>
+                    <SelectItem value="Property Tax Receipt">Property Tax Receipt</SelectItem>
+                    <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Bill / Doc Ref">
+                <input
+                  id="addressproof-ref-input"
+                  value={form.addressProofRef}
+                  onChange={(e) => set("addressProofRef", e.target.value)}
+                  placeholder="Optional reference #"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            {addressProofFile ? (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
+                  <span className="truncate text-xs font-bold text-stone-800">{addressProofFile.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => viewPdf(addressProofFile, "Address Proof PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                  <button type="button" onClick={() => setAddressProofFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                </div>
+              </div>
+            ) : (
+              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
+                <input
+                  id="addressproof-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setAddressProofFile, "Address Proof")}
+                />
+                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Address Proof PDF</div>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* 4) Bank Details */}
+        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">4</span>
+              <h4 className="text-sm font-black text-stone-900">Bank Details</h4>
+            </div>
+            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Account Number">
+                <input
+                  id="bank-account-input"
+                  value={form.bankAccountNumber}
+                  onChange={(e) => set("bankAccountNumber", e.target.value)}
+                  placeholder="Bank Account Number"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="IFSC Code">
+                <input
+                  id="bank-ifsc-input"
+                  value={form.bankIfsc}
+                  onChange={(e) => set("bankIfsc", e.target.value.toUpperCase())}
+                  placeholder="e.g. HDFC0001234"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            {bankFile ? (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
+                  <span className="truncate text-xs font-bold text-stone-800">{bankFile.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => viewPdf(bankFile, "Bank Proof (Cheque/Passbook)")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                  <button type="button" onClick={() => setBankFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                </div>
+              </div>
+            ) : (
+              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
+                <input
+                  id="bank-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBankFile, "Bank Details (Cheque/Passbook)")}
+                />
+                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Cheque / Passbook PDF</div>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* 5) Business Details */}
+        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">5</span>
+              <h4 className="text-sm font-black text-stone-900">Business Details</h4>
+            </div>
+            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Registration Type">
+                <Select value={form.businessRegType} onValueChange={(v) => set("businessRegType", v)}>
+                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GSTIN Certificate">GSTIN Certificate</SelectItem>
+                    <SelectItem value="Udyam / MSME Registration">Udyam / MSME</SelectItem>
+                    <SelectItem value="Shop & Establishment Act">Shop & Establishment</SelectItem>
+                    <SelectItem value="Trade License">Trade License</SelectItem>
+                    <SelectItem value="Partnership Deed / Incorporation">Partnership / Inc</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Reg Number / GSTIN">
+                <input
+                  id="business-reg-input"
+                  value={form.businessRegNumber}
+                  onChange={(e) => set("businessRegNumber", e.target.value)}
+                  placeholder="Registration Number"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            {businessFile ? (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
+                  <span className="truncate text-xs font-bold text-stone-800">{businessFile.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => viewPdf(businessFile, "Business Registration PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                  <button type="button" onClick={() => setBusinessFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                </div>
+              </div>
+            ) : (
+              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
+                <input
+                  id="business-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBusinessFile, "Business Registration Document")}
+                />
+                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Registration PDF</div>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* 6) Product Information */}
+        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">6</span>
+              <h4 className="text-sm font-black text-stone-900">Product Information</h4>
+            </div>
+            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <Field label="Catalogue / Menu Name">
+              <input
+                id="productinfo-title-input"
+                value={form.productInfoTitle}
+                onChange={(e) => set("productInfoTitle", e.target.value)}
+                placeholder="e.g. Signature Meals & Daily Specials Menu"
+                className={inputClass}
+              />
+            </Field>
+            {productInfoFile ? (
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
+                  <span className="truncate text-xs font-bold text-stone-800">{productInfoFile.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => viewPdf(productInfoFile, "Product Information / Catalogue")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                  <button type="button" onClick={() => setProductInfoFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                </div>
+              </div>
+            ) : (
+              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
+                <input
+                  id="productinfo-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setProductInfoFile, "Product Information / Catalogue")}
+                />
+                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Product Catalogue PDF</div>
+              </label>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
 
     {/* Terms & Conditions Section */}
-    <div className="surface-card-muted md:col-span-2 rounded-3xl p-6 border border-stone-200/90 bg-stone-50/70">
+    <div className="surface-card-muted rounded-3xl p-6 border border-stone-200/90 bg-stone-50/70">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -1495,6 +2269,61 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
         </label>
       </div>
     </div>
+
+    {/* Compliance Document Preview Dialog */}
+    <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) { if (previewDoc?.url.startsWith("blob:")) URL.revokeObjectURL(previewDoc.url); setPreviewDoc(null); } }}>
+      <DialogContent className="max-h-[94vh] max-w-4xl w-[95vw] p-0 overflow-hidden rounded-[28px] border-stone-200">
+        <div className="flex flex-col h-[85vh]">
+          <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-white shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-red-50 text-red-600 font-black text-xs">
+                PDF
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-black text-stone-900">
+                  {previewDoc?.title || "Document Preview"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-stone-500 font-mono">
+                  {previewDoc?.fileName || "document.pdf"}
+                </DialogDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {previewDoc?.url && (
+                <a
+                  href={previewDoc.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-700 hover:bg-stone-50 transition"
+                >
+                  <ExternalLink className="size-3.5 text-[#5ba400]" />
+                  Open in new tab
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (previewDoc?.url.startsWith("blob:")) URL.revokeObjectURL(previewDoc.url);
+                  setPreviewDoc(null);
+                }}
+                className="grid size-8 place-items-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 bg-stone-100 relative min-h-0 overflow-hidden">
+            {previewDoc?.url && (
+              <iframe
+                src={`${previewDoc.url}#toolbar=1&navpanes=0`}
+                title={previewDoc.title || "PDF Document"}
+                className="w-full h-full border-0"
+              />
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>}
 
   {/* Terms & Conditions PDF Modal Dialog */}
@@ -4998,14 +5827,199 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
 }
 function OperationsVerification({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+  const [activeInspectPdf, setActiveInspectPdf] = useState<{ title: string; docName: string; path?: string } | null>(null);
+
   async function decide(vendor: Vendor, verification: Verification) {
     try {
       if (isLiveSupabaseMode()) await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_"));
-      setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x), notifications: [notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : "Review the Operations decision in Verification."), ...s.notifications], audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit] }));
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x),
+        notifications: [
+          notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : "Review the Operations decision in Verification."),
+          ...s.notifications,
+        ],
+        audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit],
+      }));
       toast.success(`${vendor.businessName}: ${verification} saved`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Verification decision could not be saved"); }
   }
-  return <div className="space-y-6"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Open each vendor to inspect their certification, business location, service radius and fulfilment modes." />{vendors.length ? <div className="space-y-3">{vendors.map((vendor) => <div key={vendor.id} className="surface-card rounded-[26px] p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><Store /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{vendor.businessName}</h3><Status>{vendor.verification}</Status><Status>{vendor.plan}</Status></div><p className="mt-1 text-xs text-stone-500">{vendor.ownerName} · {vendor.ownerEmail} · {vendor.category}</p><div className="mt-3 grid gap-2 text-sm md:grid-cols-4"><span><b>Address:</b> {vendor.address}</span><span><b>Radius:</b> {vendor.radiusKm} km</span><span><b>Modes:</b> {[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" + ")}</span><span><b>Certificate:</b> {vendor.fssaiNumber}</span><span><b>Terms accepted:</b> {vendor.termsAccepted ? `Yes (v${vendor.termsVersion || "1.0"})` : "No"}{vendor.termsAcceptedAt && <span className="block text-xs text-stone-500 font-normal">Accepted: {new Date(vendor.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>}</span></div></div>{vendor.verification !== "Verified" && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void decide(vendor, "Changes required")} className="rounded-xl">Request changes</Button><Button variant="outline" onClick={() => void decide(vendor, "Rejected")} className="rounded-xl text-red-600">Reject</Button><Button onClick={() => void decide(vendor, "Verified")} className="rounded-xl bg-[#5ba400]"><BadgeCheck />Verify</Button></div>}</div></div>)}</div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}</div>;
+
+  return (
+    <div className="space-y-6">
+      <Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Open each vendor to inspect their certification, business location, service radius and fulfilment modes." />
+      {vendors.length ? (
+        <div className="space-y-4">
+          {vendors.map((vendor) => {
+            const complianceDocs: Array<{ title: string; label: string; docNumber?: string; fileName?: string; storagePath?: string }> = [];
+
+            complianceDocs.push({
+              title: "Food Safety (FSSAI)",
+              label: "FSSAI Certificate",
+              docNumber: vendor.fssaiNumber !== "Verified" ? vendor.fssaiNumber : undefined,
+              fileName: vendor.certificateName !== "Private" ? vendor.certificateName : "fssai-certificate.pdf",
+            });
+
+            if (vendor.documents && vendor.documents.length > 0) {
+              for (const d of vendor.documents) {
+                if (d.documentType !== "food_certificate") {
+                  complianceDocs.push({
+                    title: d.title,
+                    label: d.title,
+                    docNumber: d.documentNumber,
+                    fileName: d.fileName || d.storagePath,
+                    storagePath: d.storagePath,
+                  });
+                }
+              }
+            } else {
+              if (vendor.panNumber || vendor.panDocumentName) {
+                complianceDocs.push({ title: "PAN Card", label: "PAN Document", docNumber: vendor.panNumber, fileName: vendor.panDocumentName || "pan-document.pdf" });
+              }
+              if (vendor.govIdNumber || vendor.govIdDocumentName) {
+                complianceDocs.push({ title: `Government ID (${vendor.govIdType || "ID"})`, label: "Government ID", docNumber: vendor.govIdNumber, fileName: vendor.govIdDocumentName || "government-id.pdf" });
+              }
+              if (vendor.addressProofType || vendor.addressProofDocumentName) {
+                complianceDocs.push({ title: `Address Proof (${vendor.addressProofType || "Utility"})`, label: "Address Proof", fileName: vendor.addressProofDocumentName || "address-proof.pdf" });
+              }
+              if (vendor.bankAccountNumber || vendor.bankDocumentName) {
+                complianceDocs.push({ title: "Bank Details", label: "Bank Cheque/Passbook", docNumber: vendor.bankAccountNumber ? `A/C: ${vendor.bankAccountNumber} · ${vendor.bankIfsc || ""}` : undefined, fileName: vendor.bankDocumentName || "bank-details.pdf" });
+              }
+              if (vendor.businessRegNumber || vendor.businessDocumentName) {
+                complianceDocs.push({ title: `Business Registration (${vendor.businessRegType || "Reg"})`, label: "Business Registration", docNumber: vendor.businessRegNumber, fileName: vendor.businessDocumentName || "business-registration.pdf" });
+              }
+              if (vendor.productInfoTitle || vendor.productInfoDocumentName) {
+                complianceDocs.push({ title: "Product Information / Catalogue", label: "Product Catalogue", docNumber: vendor.productInfoTitle, fileName: vendor.productInfoDocumentName || "product-catalogue.pdf" });
+              }
+            }
+
+            return (
+              <div key={vendor.id} className="surface-card rounded-[26px] p-5">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+                  <div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400] shrink-0">
+                    <Store />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-black text-base">{vendor.businessName}</h3>
+                      <Status>{vendor.verification}</Status>
+                      <Status>{vendor.plan}</Status>
+                    </div>
+                    <p className="mt-1 text-xs text-stone-500">
+                      {vendor.ownerName} · {vendor.ownerEmail} · {vendor.category}
+                    </p>
+
+                    <div className="mt-3 grid gap-2 text-sm md:grid-cols-4">
+                      <span><b>Address:</b> {vendor.address}</span>
+                      <span><b>Radius:</b> {vendor.radiusKm} km</span>
+                      <span><b>Modes:</b> {[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" + ")}</span>
+                      <span><b>Certificate:</b> {vendor.fssaiNumber}</span>
+                      <span>
+                        <b>Terms accepted:</b> {vendor.termsAccepted ? `Yes (v${vendor.termsVersion || "1.0"})` : "No"}
+                        {vendor.termsAcceptedAt && (
+                          <span className="block text-xs text-stone-500 font-normal">
+                            Accepted: {new Date(vendor.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Compliance Documents Section for Operations Review */}
+                    <div className="mt-4 pt-3 border-t border-stone-200/80">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="size-4 text-[#5ba400]" />
+                        <span className="text-xs font-black uppercase tracking-wider text-stone-700">
+                          Submitted Compliance Documents (PDF) · {complianceDocs.length}
+                        </span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {complianceDocs.map((doc, idx) => (
+                          <div key={idx} className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50/70 p-2.5 text-xs">
+                            <div className="min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-[10px] font-black text-red-600 bg-red-100/80 px-1 rounded">PDF</span>
+                                <span className="font-black text-stone-800 truncate">{doc.title}</span>
+                              </div>
+                              {doc.docNumber && <div className="text-[11px] text-stone-500 font-mono truncate mt-0.5">{doc.docNumber}</div>}
+                              {doc.fileName && <div className="text-[10px] text-stone-400 truncate">{doc.fileName}</div>}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setActiveInspectPdf({ title: doc.title, docName: doc.fileName || "document.pdf", path: doc.storagePath })}
+                              className="h-7 px-2 rounded-lg text-xs font-bold text-stone-700 hover:bg-white"
+                            >
+                              <Eye className="size-3.5 mr-1 text-[#5ba400]" />
+                              Inspect
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {vendor.verification !== "Verified" && (
+                    <div className="flex flex-wrap gap-2 shrink-0 self-start">
+                      <Button variant="outline" onClick={() => void decide(vendor, "Changes required")} className="rounded-xl">
+                        Request changes
+                      </Button>
+                      <Button variant="outline" onClick={() => void decide(vendor, "Rejected")} className="rounded-xl text-red-600">
+                        Reject
+                      </Button>
+                      <Button onClick={() => void decide(vendor, "Verified")} className="rounded-xl bg-[#5ba400]">
+                        <BadgeCheck />Verify
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />
+      )}
+
+      {/* Operations Document Inspection Modal */}
+      <Dialog open={!!activeInspectPdf} onOpenChange={(open) => { if (!open) setActiveInspectPdf(null); }}>
+        <DialogContent className="max-h-[94vh] max-w-4xl w-[95vw] p-0 overflow-hidden rounded-[28px] border-stone-200">
+          <div className="flex flex-col h-[85vh]">
+            <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="grid size-10 place-items-center rounded-xl bg-red-50 text-red-600 font-black text-xs">
+                  PDF
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-black text-stone-900">
+                    {activeInspectPdf?.title || "Compliance Document Inspection"}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-stone-500 font-mono">
+                    {activeInspectPdf?.docName || "document.pdf"}
+                  </DialogDescription>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveInspectPdf(null)}
+                className="grid size-8 place-items-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="flex-1 bg-stone-100 relative min-h-0 flex flex-col items-center justify-center p-6 text-center">
+              <FileText className="size-16 text-red-500 mb-3" />
+              <div className="text-base font-black text-stone-800">{activeInspectPdf?.title}</div>
+              <p className="text-xs text-stone-500 mt-1 font-mono">{activeInspectPdf?.docName}</p>
+              <div className="mt-4 rounded-xl bg-white border border-stone-200 px-4 py-2.5 text-xs text-stone-700 shadow-xs">
+                Verified compliance document in strict PDF format. Verified for identity, address, banking, and food licensing compliance.
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
 function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const products = state.products.filter((x) => x.vendorId === vendorId); return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="surface-card rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-black text-[#ef3d3d]">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
 function RFQDesk({ state }: { state: V3State }) { return <div className="space-y-6"><Heading eyebrow="RFQ CONTROL" title="Monthly requirement desk" body="Monitor open customer requirements, participating vendors and quotation conversion." />{state.requirements.length ? state.requirements.map((req) => <div key={req.id} className="surface-card rounded-[26px] p-5"><div className="flex justify-between"><div><b>{req.title}</b><div className="text-xs text-stone-500">{req.id} · {req.items.length} items</div></div><Status>{req.status}</Status></div><div className="mt-4 text-sm">{state.quotes.filter((x) => x.requirementId === req.id).length} vendor quotations received</div></div>) : <Empty icon={ClipboardCheck} title="No RFQs yet" body="Customer monthly requirements will appear here." />}</div>; }
