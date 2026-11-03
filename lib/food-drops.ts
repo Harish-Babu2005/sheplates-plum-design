@@ -1,9 +1,9 @@
 // Food Drops — vendor-created, time-limited offers on an existing product.
 // Pure, deterministic helpers only: no AI, no randomness. The actual
 // overselling guard lives in the database (see
-// supabase/V9_12_PLANS_AND_DAILY_FOOD_DROPS.sql's claim_food_drop()), not here — this module
-// only formats and derives display state from whatever quantity/timestamps
-// the server already returned.
+// supabase/V9_12_PLANS_AND_DAILY_FOOD_DROPS.sql's claim_food_drop()), called
+// during checkout after an item has been added to the normal customer cart.
+// This module only formats and derives display state from server data.
 
 export type FoodDrop = {
   id: string;

@@ -733,7 +733,7 @@ export async function createLiveScheduledCheckout(input: {
   return commerceRequest({ action: "create_schedule", ...input });
 }
 
-export async function syncLiveCart(input: { items: Array<{ productId: string; quantity: number }>; createdBy?: "customer" | "she_agent" }) {
+export async function syncLiveCart(input: { items: Array<{ productId: string; quantity: number; foodDropId?: string }>; createdBy?: "customer" | "she_agent" }) {
   return commerceRequest({ action: "sync_cart", items: input.items, createdBy: input.createdBy || "customer" });
 }
 

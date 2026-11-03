@@ -120,7 +120,7 @@ async function draftCartForCustomer(admin: AdminClient, customerId: string) {
   const cart = await admin.from("commerce_carts").select("id,status,created_by,created_at,updated_at").eq("customer_id", customerId).eq("status", "draft").order("updated_at", { ascending: false }).limit(1).maybeSingle();
   if (cart.error) throw cart.error;
   if (!cart.data) return { cart: null, items: [] as Array<Record<string, unknown>> };
-  const items = await admin.from("commerce_cart_items").select("id,cart_id,menu_item_id,vendor_id,quantity,unit,unit_price,created_at").eq("cart_id", cart.data.id).order("created_at", { ascending: true });
+  const items = await admin.from("commerce_cart_items").select("id,cart_id,menu_item_id,vendor_id,quantity,unit,unit_price,food_drop_id,created_at").eq("cart_id", cart.data.id).order("created_at", { ascending: true });
   if (items.error) throw items.error;
   return { cart: cart.data as Record<string, unknown>, items: (items.data || []) as Array<Record<string, unknown>> };
 }
@@ -239,15 +239,43 @@ export async function POST(request: Request) {
     if (action === "sync_cart") {
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const requested = Array.isArray(body.items) ? body.items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+      const boundedRequested = requested.slice(0, 100);
       const allowed = await serviceableProductsForCustomer(admin, profile.id);
-      const normalized: Array<{ productId: string; vendorId: string; quantity: number; unit: string; unitPrice: number }> = [];
-      for (const item of requested.slice(0, 100)) {
+      const requestedDrops = [...new Set(boundedRequested.map((item) => String(item.foodDropId || "")).filter(Boolean))];
+      const dropQuery = requestedDrops.length
+        ? await admin.from("food_drops").select("id,product_id,vendor_id,title,drop_price,remaining_quantity,starts_at,ends_at,status").in("id", requestedDrops)
+        : { data: [], error: null };
+      if (dropQuery.error) throw dropQuery.error;
+      const dropMap = new Map((dropQuery.data || []).map((drop) => [String(drop.id), drop as Record<string, unknown>]));
+      const normalized: Array<{ productId: string; vendorId: string; quantity: number; unit: string; unitPrice: number; foodDropId?: string }> = [];
+      for (const item of boundedRequested) {
         const productId = String(item.productId || item.menuItemId || "");
         const row = allowed.get(productId);
-        if (!row) continue;
         const quantity = Math.max(0.001, Number(item.quantity || 1));
+        const foodDropId = String(item.foodDropId || "");
+        if (!Number.isFinite(quantity) || quantity <= 0) continue;
+        if (foodDropId) {
+          const drop = dropMap.get(foodDropId);
+          const now = Date.now();
+          if (!drop || String(drop.product_id) !== productId
+            || drop.status !== "active" || now < new Date(String(drop.starts_at)).getTime()
+            || now >= new Date(String(drop.ends_at)).getTime() || Number(drop.remaining_quantity) < quantity
+            || !Number.isInteger(quantity)) {
+            return NextResponse.json({ error: "This Food Drop is no longer available." }, { status: 409 });
+          }
+          const productResult = row
+            ? { data: row, error: null }
+            : await admin.from("vendor_menu_items").select("id,vendor_id,unit,active").eq("id", productId).maybeSingle();
+          if (productResult.error) throw productResult.error;
+          if (!productResult.data || productResult.data.active === false || String(productResult.data.vendor_id) !== String(drop.vendor_id)) {
+            return NextResponse.json({ error: "The product in this Food Drop is no longer available." }, { status: 409 });
+          }
+          normalized.push({ productId, vendorId: String(drop.vendor_id), quantity, unit: String(productResult.data.unit || "pack"), unitPrice: Number(drop.drop_price), foodDropId });
+          continue;
+        }
+        if (!row) continue;
         const stock = Number(row.stock_quantity || 0);
-        if (!Number.isFinite(quantity) || quantity <= 0 || stock <= 0) continue;
+        if (stock <= 0) continue;
         normalized.push({ productId, vendorId: String(row.vendor_id), quantity: Math.min(quantity, stock), unit: String(row.unit || "pack"), unitPrice: Math.max(0, Number(row.customer_price || 0)) });
       }
       const draft = await draftCartForCustomer(admin, profile.id);
@@ -260,7 +288,7 @@ export async function POST(request: Request) {
       const removed = await admin.from("commerce_cart_items").delete().eq("cart_id", cartId);
       if (removed.error) throw removed.error;
       if (normalized.length) {
-        const added = await admin.from("commerce_cart_items").insert(normalized.map((item) => ({ cart_id: cartId, menu_item_id: item.productId, vendor_id: item.vendorId, quantity: item.quantity, unit: item.unit, unit_price: item.unitPrice })));
+        const added = await admin.from("commerce_cart_items").insert(normalized.map((item) => ({ cart_id: cartId, menu_item_id: item.productId, vendor_id: item.vendorId, quantity: item.quantity, unit: item.unit, unit_price: item.unitPrice, food_drop_id: item.foodDropId || null })));
         if (added.error) throw added.error;
       }
       await admin.from("commerce_carts").update({ updated_at: new Date().toISOString(), created_by: String(body.createdBy || "customer") === "she_agent" ? "she_agent" : "customer" }).eq("id", cartId);
@@ -284,31 +312,67 @@ export async function POST(request: Request) {
       const products = await admin.from("vendor_menu_items").select("id,vendor_id,name,unit,vendor_base_price,active,stock_quantity").in("id", productIds);
       if (products.error) throw products.error;
       const productMap = new Map((products.data || []).map((item) => [String(item.id), item]));
+      const dropIds = [...new Set(draft.items.map((item) => String(item.food_drop_id || "")).filter(Boolean))];
+      const drops = dropIds.length
+        ? await admin.from("food_drops").select("id,product_id,vendor_id,title,drop_price,original_price,remaining_quantity,starts_at,ends_at,status").in("id", dropIds)
+        : { data: [], error: null };
+      if (drops.error) throw drops.error;
+      const dropMap = new Map((drops.data || []).map((drop) => [String(drop.id), drop]));
       const grouped = new Map<string, Array<Record<string, unknown>>>();
       for (const item of draft.items) {
         const product = productMap.get(String(item.menu_item_id));
-        if (!product || !product.active || Number(product.stock_quantity || 0) <= 0) continue;
+        const foodDropId = String(item.food_drop_id || "");
+        const drop = foodDropId ? dropMap.get(foodDropId) : undefined;
+        if (!product || !product.active) continue;
+        if (foodDropId) {
+          const now = Date.now();
+          if (!drop || String(drop.product_id) !== String(product.id) || String(drop.vendor_id) !== String(product.vendor_id)
+            || drop.status !== "active" || now < new Date(String(drop.starts_at)).getTime()
+            || now >= new Date(String(drop.ends_at)).getTime() || Number(drop.remaining_quantity) < Number(item.quantity)
+            || !Number.isInteger(Number(item.quantity))) {
+            return NextResponse.json({ error: "A Food Drop in your cart is no longer available." }, { status: 409 });
+          }
+        } else if (Number(product.stock_quantity || 0) <= 0) continue;
         const list = grouped.get(String(product.vendor_id)) || [];
-        list.push({ ...item, product });
+        list.push({ ...item, product, drop });
         grouped.set(String(product.vendor_id), list);
       }
       if (!grouped.size) return NextResponse.json({ error: "The items in your cart are no longer available." }, { status: 409 });
-      const scheduledDate = String(body.scheduledDate || addDays(new Date().toISOString().slice(0,10), 1));
-      if (!isFutureDate(scheduledDate)) return NextResponse.json({ error: "Choose a delivery date after today." }, { status: 400 });
+      const containsFoodDrop = draft.items.some((item) => Boolean(item.food_drop_id));
+      const scheduledDate = String(body.scheduledDate || (containsFoodDrop ? new Date().toISOString().slice(0, 10) : addDays(new Date().toISOString().slice(0, 10), 1)));
+      const isAllowedDate = containsFoodDrop
+        ? (/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate) && scheduledDate >= new Date().toISOString().slice(0, 10))
+        : isFutureDate(scheduledDate);
+      if (!isAllowedDate) return NextResponse.json({ error: containsFoodDrop ? "Choose today or a future delivery date." : "Choose a delivery date after today." }, { status: 400 });
       const scheduledSlot = String(body.slot || "07:00–08:00 AM");
+      const vendorFulfilments = new Map<string, string>();
+      for (const vendorId of grouped.keys()) {
+        const vendor = await admin.from("vendors").select("delivery_enabled,pickup_enabled").eq("id", vendorId).maybeSingle();
+        const mode = resolveFulfilmentMode(vendor.data, requestedMode);
+        if (!mode) return NextResponse.json({ error: "This vendor does not currently support delivery or pickup." }, { status: 409 });
+        vendorFulfilments.set(vendorId, mode);
+      }
+      const foodDropItems = [...grouped.values()].flat().filter((item) => Boolean(item.food_drop_id));
+      if (foodDropItems.length) {
+        const claims = await ctx.caller.rpc("claim_food_drops", {
+          p_drop_ids: foodDropItems.map((item) => String(item.food_drop_id)),
+          p_quantities: foodDropItems.map((item) => Number(item.quantity)),
+        });
+        if (claims.error) return NextResponse.json({ error: claims.error.message || "Food Drops could not be reserved." }, { status: 409 });
+      }
       const orderIds: string[] = [];
       for (const [vendorId, items] of grouped.entries()) {
-        const vendor = await admin.from("vendors").select("delivery_enabled,pickup_enabled").eq("id", vendorId).maybeSingle();
-        const fulfilmentMode = resolveFulfilmentMode(vendor.data, requestedMode);
-        if (!fulfilmentMode) return NextResponse.json({ error: "This vendor does not currently support delivery or pickup." }, { status: 409 });
+        const fulfilmentMode = vendorFulfilments.get(vendorId);
+        if (!fulfilmentMode) return NextResponse.json({ error: "This vendor's fulfilment settings could not be loaded." }, { status: 409 });
         let vendorBaseTotal = 0; let customerTotal = 0;
         const orderItems = items.map((item) => {
           const product = item.product as Record<string, unknown>;
+          const drop = item.drop as Record<string, unknown> | undefined;
           const quantity = Math.max(0.001, Number(item.quantity || 1));
           const base = Math.max(0, Number(product.vendor_base_price || 0));
-          const price = Math.max(0, Number(item.unit_price || base));
+          const price = drop ? Math.max(0, Number(drop.drop_price)) : Math.max(0, Number(item.unit_price ?? base));
           vendorBaseTotal += base * quantity; customerTotal += price * quantity;
-          return { product_name: String(product.name || "Product"), quantity, unit: String(item.unit || product.unit || "pack"), vendor_base_price: base, markup_percent: base > 0 ? Math.max(0, ((price / base) - 1) * 100) : 0, customer_price: price };
+          return { product_name: drop ? `${String(drop.title)} — ${String(product.name || "Product")}` : String(product.name || "Product"), quantity, unit: String(item.unit || product.unit || "pack"), vendor_base_price: base, markup_percent: base > 0 ? Math.max(0, ((price / base) - 1) * 100) : 0, customer_price: price };
         });
         const inserted = await admin.from("orders").insert({ order_number: orderNumber(), customer_id: profile.id, vendor_id: vendorId, vendor_base_total: vendorBaseTotal, markup_total: Math.max(0, customerTotal - vendorBaseTotal), tax_amount: 0, delivery_fee: 0, customer_total: customerTotal, delivery_address: deliveryAddress, fulfilment_mode: fulfilmentMode, scheduled_date: scheduledDate, scheduled_slot: scheduledSlot, status: "awarded" }).select("id,order_number").single();
         if (inserted.error) throw inserted.error;
@@ -388,8 +452,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "mark_paid") {
-      if (process.env.NEXT_PUBLIC_DEMO_MODE === "false") {
-        return NextResponse.json({ error: "Direct payment marking is disabled in live mode. Please complete checkout via Razorpay." }, { status: 403 });
+      if (process.env.NEXT_PUBLIC_DEMO_MODE === "false" && Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)) {
+        return NextResponse.json({ error: "Direct payment marking is disabled when Razorpay is active. Please complete checkout via Razorpay." }, { status: 403 });
       }
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const orderId = String(body.orderId || "");
