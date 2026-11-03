@@ -2,6 +2,7 @@
 // People: find customers by handle, see who is around you, follow and unfollow. Also the switch that puts
 // you on the map (off by default) and the followers / following lists.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Check, MapPin, Search, UserCheck, UserPlus, X } from "@/components/icons";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -29,7 +30,7 @@ export function PersonRow({ person, onFollow, onUnfollow, selected, onSelect, hi
         else toast.success(`Following @${person.handle}`);
       }
     }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Could not update"); } finally { setBusy(false); }
+    catch (e) { toast.error(errorMessage(e, "Could not update")); } finally { setBusy(false); }
   }
   return <div data-testid="person-row" data-handle={person.handle} className={`flex items-center gap-3 rounded-2xl border bg-white p-3 shadow-sm ${selected ? "border-[#753b50]" : "border-stone-200/70"}`}>
     <button type="button" onClick={onSelect} disabled={!onSelect} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`@${person.handle}`}>
@@ -46,7 +47,7 @@ export function FollowRequestsPanel({ people }: { people: PeopleApi }) {
   const [busy, setBusy] = useState("");
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible") void people.refreshRequests().catch((error) => toast.error(error instanceof Error ? error.message : "Follow requests could not be loaded"));
+      if (document.visibilityState === "visible") void people.refreshRequests().catch((error) => toast.error(errorMessage(error, "Follow requests could not be loaded")));
     };
     refresh();
     const interval = window.setInterval(refresh, 30_000);
@@ -64,7 +65,7 @@ export function FollowRequestsPanel({ people }: { people: PeopleApi }) {
       await people.resolveRequest(id, accept);
       toast.success(accept ? "Follow request approved" : "Follow request declined");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Follow request could not be updated");
+      toast.error(errorMessage(error, "Follow request could not be updated"));
     } finally { setBusy(""); }
   }
   if (!people.requests.length) return null;
@@ -86,7 +87,7 @@ export function usePeopleQuery(run: () => Promise<Person[]>, deps: unknown[], en
   useEffect(() => { runRef.current = run; }, [run]);
   const reload = useCallback(() => {
     const mine = ++ticket.current; setLoading(true); setError("");
-    runRef.current().then((r) => { if (mine === ticket.current) setRows(r); }).catch((e) => { if (mine === ticket.current) { setRows([]); setError(e instanceof Error ? e.message : "Could not load people"); } }).finally(() => { if (mine === ticket.current) setLoading(false); });
+    runRef.current().then((r) => { if (mine === ticket.current) setRows(r); }).catch((e) => { if (mine === ticket.current) { setRows([]); setError(errorMessage(e, "Could not load people")); } }).finally(() => { if (mine === ticket.current) setLoading(false); });
   }, []);
   useEffect(() => {
     if (!enabled) { ticket.current++; return; }
@@ -126,7 +127,7 @@ export function DiscoverCard({ people, onSetLocation }: { people: PeopleApi; onS
   async function toggle(next: boolean) {
     setBusy(true);
     try { await people.setDiscoverable(next); toast.success(next ? "You are on the map for people nearby" : "You are no longer on the map"); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Could not update"); } finally { setBusy(false); }
+    catch (e) { toast.error(errorMessage(e, "Could not update")); } finally { setBusy(false); }
   }
   return <section className="rounded-[22px] border border-stone-200/70 bg-white p-4 shadow-sm" aria-label="People nearby">
     <div className="flex items-start justify-between gap-3">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { getAccessToken, normalizeWhatsAppNumber, uploadLiveCertificate } from "@/lib/supabase";
 import { P0VendorLocationPicker } from "@/components/p0-vendor-location-picker";
 
@@ -72,7 +73,7 @@ const PERMISSION_LABELS: Array<{ key: Permission; label: string }> = [
   { key: "can_upload", label: "Upload certificates" },
 ];
 
-const inputClass = "mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#753b50]";
+const inputClass = "mt-1 block w-full min-w-0 font-normal rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#753b50]";
 
 async function p0Request<T>(action: string, body?: Record<string, unknown> | FormData, method = "POST"): Promise<T> {
   const token = await getAccessToken();
@@ -128,7 +129,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setOperationsUsers(result.operationsUsers || []);
       setPermissionDrafts(Object.fromEntries((result.operationsUsers || []).map((user) => [user.id, user.permissions])));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "P0 vendor records could not be loaded.");
+      setError(errorMessage(caught, "P0 vendor records could not be loaded."));
     } finally {
       setLoading(false);
     }
@@ -209,7 +210,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       });
       await reload();
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "P0 vendor could not be created.";
+      const message = errorMessage(caught, "P0 vendor could not be created.");
       setError(createdVendorId
         ? `P0 vendor ${createdVendorId} was created, but a follow-up step failed: ${message}. Do not create it again; use its listing below to retry the certificate upload.`
         : message);
@@ -230,7 +231,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setNotice(decision === "verified" ? "P0 vendor approved." : "P0 vendor rejected.");
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "P0 review could not be saved.");
+      setError(errorMessage(caught, "P0 review could not be saved."));
     } finally {
       setBusy(false);
     }
@@ -246,7 +247,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setNotice("P0 vendor deactivated and hidden. Existing data and analytics were retained.");
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "P0 vendor could not be cancelled.");
+      setError(errorMessage(caught, "P0 vendor could not be cancelled."));
     } finally {
       setBusy(false);
     }
@@ -262,7 +263,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setNotice("P0 vendor reactivated. A prior upgrade invitation was not restored.");
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "P0 vendor could not be reactivated.");
+      setError(errorMessage(caught, "P0 vendor could not be reactivated."));
     } finally {
       setBusy(false);
     }
@@ -289,7 +290,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       }
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Upgrade invitation could not be sent.");
+      setError(errorMessage(caught, "Upgrade invitation could not be sent."));
     } finally {
       setBusy(false);
     }
@@ -311,7 +312,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setNotice("Certificate uploaded for P0 review.");
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Certificate upload failed.");
+      setError(errorMessage(caught, "Certificate upload failed."));
     } finally {
       setBusy(false);
     }
@@ -326,7 +327,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setNotice("P0 permissions updated and audited.");
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "P0 permissions could not be updated.");
+      setError(errorMessage(caught, "P0 permissions could not be updated."));
     } finally {
       setBusy(false);
     }
@@ -427,18 +428,18 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     {hasPermission("can_create") && <form onSubmit={(event) => void createVendor(event)} className="surface-card h-fit rounded-3xl p-5 xl:order-2">
       <h2 className="text-lg font-semibold">Add a Connect vendor</h2>
       <p className="mt-1 text-xs text-stone-500">Creates one unowned vendor record; it starts pending, inactive and hidden. Coordinates and WhatsApp are required for later discovery.</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-        <label className="text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Category<input required value={form.category} onChange={(event) => updateForm("category", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
-        <label className="text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => {
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+        <label className="grid content-start text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Category<input required value={form.category} onChange={(event) => updateForm("category", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => {
           updateForm("locality", event.target.value);
           updateForm("latitude", "");
           updateForm("longitude", "");
         }} className={inputClass} /></label>
-        <label className="text-xs font-bold sm:col-span-2">Address<textarea value={form.address} onChange={(event) => {
+        <label className="grid content-start text-xs font-bold md:col-span-2">Address<textarea value={form.address} onChange={(event) => {
           updateForm("address", event.target.value);
           updateForm("latitude", "");
           updateForm("longitude", "");
@@ -456,18 +457,18 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
             setNotice(`Vendor pin saved: ${place.address}`);
           }}
         />
-        <label className="text-xs font-bold">Latitude<input required type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateForm("latitude", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Longitude<input required type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateForm("longitude", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Service radius (km)<input required type="number" step="0.5" min="0.5" max="100" value={form.radius} onChange={(event) => updateForm("radius", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Operating duration (hours/day)<input required type="number" min="1" max="24" value={form.durationHours} onChange={(event) => updateForm("durationHours", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Shop image (optional)<input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setShopImage(event.target.files?.[0] || null)} className={inputClass} /><span className="mt-1 block font-normal text-stone-500">PNG, JPG or WebP · max 10 MB{shopImage ? ` · ${shopImage.name}` : ""}</span></label>
-        <label className="text-xs font-bold sm:col-span-2">Description<textarea value={form.description} onChange={(event) => updateForm("description", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Latitude<input required type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateForm("latitude", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Longitude<input required type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateForm("longitude", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Service radius (km)<input required type="number" step="0.5" min="0.5" max="100" value={form.radius} onChange={(event) => updateForm("radius", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Operating duration (hours/day)<input required type="number" min="1" max="24" value={form.durationHours} onChange={(event) => updateForm("durationHours", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Shop image (optional)<input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setShopImage(event.target.files?.[0] || null)} className={inputClass} /><span className="mt-1 block font-normal text-stone-500">PNG, JPG or WebP · max 10 MB{shopImage ? ` · ${shopImage.name}` : ""}</span></label>
+        <label className="grid content-start text-xs font-bold md:col-span-2">Description<textarea value={form.description} onChange={(event) => updateForm("description", event.target.value)} className={inputClass} /></label>
       </div>
       <label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.fssaiRequired} onChange={(event) => updateForm("fssaiRequired", event.target.checked)} />FSSAI certificate is required for this business</label>
       {form.fssaiRequired && <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <label className="text-xs font-bold">FSSAI number<input required value={form.fssaiNumber} onChange={(event) => updateForm("fssaiNumber", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">FSSAI number<input required value={form.fssaiNumber} onChange={(event) => updateForm("fssaiNumber", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
+        <label className="grid content-start text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
       </div>}
       <button disabled={busy} className="mt-4 h-12 w-full rounded-full bg-[#753b50] px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
     </form>}

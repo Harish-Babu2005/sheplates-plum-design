@@ -39,7 +39,7 @@ test("cart does not expose unpaid-order removal", async () => {
 test("lets customers choose an exact future date for cart orders and schedules", async () => {
   const route = await readFile(path.join(root, "app/api/commerce/route.ts"), "utf8");
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
-  assert.match(ui, /aria-label="Order delivery date" type="date" min=\{tomorrow\(\)\} value=\{deliveryDate\}/);
+  assert.match(ui, /aria-label="Order delivery date" type="date" min=\{tomorrow\(\)\} max=\{latestOrderDate\(\)\} value=\{deliveryDate\}/);
   assert.match(ui, /scheduledDate: deliveryDate/);
   assert.match(route, /const scheduledDate = String\(body\.scheduledDate/);
   assert.match(ui, /aria-label=\{recurrence === "Once" \? "Delivery date" : "First delivery date"\}/);

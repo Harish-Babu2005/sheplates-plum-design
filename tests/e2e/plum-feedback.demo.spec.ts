@@ -1,0 +1,84 @@
+import { expect, test, type Page } from "@playwright/test";
+import { buildDemoState } from "./fixtures/demo-state";
+import { dismissTourIfOpen } from "./helpers";
+
+const SESSIONS = {
+  customer: { email: "customer@sheplates.demo", name: "Raj", role: "customer", toursCompleted: ["customer_v1"] },
+  admin: { email: "admin@sheplates.demo", name: "Admin", role: "admin", toursCompleted: ["admin_v1"] },
+};
+
+async function openAs(page: Page, who: keyof typeof SESSIONS | null, tweak?: (state: ReturnType<typeof buildDemoState>) => void) {
+  const state = buildDemoState();
+  tweak?.(state);
+  await page.addInitScript(([s, u]) => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("sheplates-v3-state", JSON.stringify(s));
+    if (u) localStorage.setItem("sheplates-v3-session", JSON.stringify(u));
+  }, [state, who ? SESSIONS[who] : null] as const);
+  await page.goto("/");
+}
+
+/** WCAG contrast ratio between a button's text colour and the colour painted behind it. */
+async function contrast(page: Page, locator: ReturnType<Page["locator"]>) {
+  return locator.evaluate((el) => {
+    const parse = (c: string) => (c.match(/[\d.]+/g) || []).map(Number);
+    const lum = ([r, g, b]: number[]) => { const f = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const text = parse(getComputedStyle(el).color);
+    let node: Element | null = el;
+    let bg = [255, 255, 255];
+    while (node) { const c = parse(getComputedStyle(node).backgroundColor); if (c.length >= 3 && (c[3] ?? 1) > 0.5) { bg = c; break; } node = node.parentElement; }
+    const [a, b] = [lum(text), lum(bg)].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  });
+}
+
+test("landing page secondary buttons are readable", async ({ page }) => {
+  await openAs(page, null);
+  for (const name of ["Sign in", "I already have an account", "Try She Agent"]) {
+    const button = page.getByRole("button", { name }).first();
+    await expect(button).toBeVisible();
+    expect(await contrast(page, button), `${name} contrast`).toBeGreaterThan(4.5);
+  }
+});
+
+test("customer date pickers stop 15 days from today and Plan buttons are readable", async ({ page }) => {
+  await openAs(page, "customer", (state) => {
+    state.cart = [{ id: "cart-1", customerEmail: "customer@sheplates.demo", productId: "p-1", quantity: 1 }] as unknown as typeof state.cart;
+  });
+  await dismissTourIfOpen(page);
+  const plan = page.getByRole("button", { name: "Plan", exact: true }).first();
+  if (await plan.count()) expect(await contrast(page, plan), "Plan contrast").toBeGreaterThan(4.5);
+  await page.getByRole("button", { name: /^Cart/ }).first().click();
+  const date = page.getByLabel("Order delivery date");
+  await expect(date).toBeVisible();
+  const [min, max] = await Promise.all([date.getAttribute("min"), date.getAttribute("max")]);
+  const days = (iso: string) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${new Date().toLocaleDateString("en-CA")}T00:00:00Z`)) / 86_400_000);
+  expect(days(min!)).toBe(1);
+  expect(days(max!)).toBe(15);
+});
+
+test("the floating agent button is hidden on the She Agent page", async ({ page }) => {
+  await openAs(page, "customer");
+  await dismissTourIfOpen(page);
+  await expect(page.locator("[data-tour='agent-desktop']")).toHaveCount(1);
+  await page.getByRole("button", { name: "Open She Agent" }).first().click();
+  await expect(page.getByRole("heading", { name: "She Agent" })).toBeVisible();
+  await expect(page.locator("[data-tour='agent-desktop']")).toHaveCount(0);
+});
+
+test("the Connect vendor form stacks every label above its field", async ({ page }) => {
+  await openAs(page, "admin");
+  await page.waitForSelector(".k-app", { timeout: 30_000 });
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^P0 Connect vendors\s*\d*$/ }).click();
+  const field = page.locator("label", { hasText: "Business name" }).first();
+  await expect(field).toBeVisible();
+  const [label, input] = await Promise.all([field.boundingBox(), field.locator("input").boundingBox()]);
+  expect(input!.y).toBeGreaterThan(label!.y + 8);
+  expect(input!.width).toBeGreaterThan(160);
+  await field.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(600);
+  await page.locator("form", { has: field }).screenshot({ path: `qa-screenshots/redesign/plum-feedback-connect-form-${test.info().project.name}.png` });
+});

@@ -2,6 +2,7 @@
 // Super Admin: create, edit, schedule and run live campaigns. A campaign that is Active and inside its
 // dates appears on every matching customer's Marketplace home; views and taps are counted here.
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Check, Eye, Megaphone, MousePointerClick, Pencil, Pause, Play, Plus, Trash2 } from "@/components/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -59,10 +60,10 @@ export function CampaignManager({ campaigns, categories, vendors, products, crea
     if (problem) return toast.error(problem);
     setSaving(true);
     try { await onSave(toCampaign(form, status)); toast.success(goLive ? "Campaign is live for matching customers" : "Campaign saved"); setForm(null); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "The campaign could not be saved"); }
+    catch (error) { toast.error(errorMessage(error, "The campaign could not be saved")); }
     finally { setSaving(false); }
   }
-  const run = async (fn: () => Promise<void>, ok: string) => { try { await fn(); toast.success(ok); } catch (error) { toast.error(error instanceof Error ? error.message : "That did not work"); } };
+  const run = async (fn: () => Promise<void>, ok: string) => { try { await fn(); toast.success(ok); } catch (error) { toast.error(errorMessage(error, "That did not work")); } };
 
   return <section className="surface-card overflow-hidden rounded-[28px]" aria-label="Campaign control" data-testid="campaign-manager">
     <div className="flex flex-wrap items-center justify-between gap-3 p-5 pb-3"><div><h3 className="font-black">Campaign control</h3><p className="text-xs text-stone-500">A campaign reaches customers only while it is <b>Live now</b>: Active, inside its dates and matching the audience. <span data-testid="live-count">{liveNow} live now</span>.</p></div>

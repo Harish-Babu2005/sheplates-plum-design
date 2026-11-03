@@ -1,6 +1,7 @@
 "use client";
 // Stories monitor (O14): reported customer statuses and vendor Food Shorts in one place for Operations and Super Admin.
 import { useCallback, useEffect, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { toast } from "sonner";
 import { isLiveSupabaseMode } from "@/lib/supabase";
 import { Play, Eye, X } from "@/components/icons";
@@ -33,7 +34,7 @@ export function StoriesMonitor() {
     try {
       const [sum, list, clips] = await Promise.all([loadMonitorSummary(), loadMonitorStatuses(filter), loadMonitorShorts()]);
       setSummary(sum); setStatuses(list); setShorts(clips);
-    } catch (e) { setError(e instanceof Error ? e.message : "The Stories monitor could not be loaded"); }
+    } catch (e) { setError(errorMessage(e, "The Stories monitor could not be loaded")); }
     finally { setLoading(false); }
   }, [live, filter]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -42,16 +43,16 @@ export function StoriesMonitor() {
     if (!removing) return;
     setBusy(true);
     try { await removeMonitorStatus(removing.id, reason); toast.success("Status removed. The author was told why."); setRemoving(null); setReason(""); await refresh(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "The status could not be removed"); }
+    catch (e) { toast.error(errorMessage(e, "The status could not be removed")); }
     finally { setBusy(false); }
   }
   async function keep(item: MonitorStatus) {
     try { await keepMonitorStatus(item.id); toast.success("Kept. The reports were cleared."); await refresh(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Could not update the status"); }
+    catch (e) { toast.error(errorMessage(e, "Could not update the status")); }
   }
   async function setShort(item: MonitorShort, status: "active" | "hidden" | "removed") {
     try { await setMonitorShortStatus(item.id, status); toast.success(status === "active" ? "Food Short is visible again" : status === "hidden" ? "Food Short hidden" : "Food Short removed"); await refresh(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Could not update the Food Short"); }
+    catch (e) { toast.error(errorMessage(e, "Could not update the Food Short")); }
   }
 
   const cards = summary ? [["Live statuses", summary.liveStatuses, "expire within 24 h"], ["Food Shorts live", summary.foodShortsLive, ""], ["Reported", summary.reported, summary.reported ? "Review now" : "Nothing to review"], ["Removed this week", summary.removedThisWeek, ""]] as const : [];

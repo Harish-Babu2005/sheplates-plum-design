@@ -649,7 +649,11 @@ export async function submitLiveVendorApplication(input: {
     pickup_enabled: input.pickup ?? true, store_open_today: false,
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
-  if (vendor.error) throw vendor.error;
+  if (vendor.error) {
+    // Do not leave the uploaded certificate behind when the application itself was refused.
+    await supabase.storage.from("vendor-certificates").remove([objectPath]);
+    throw vendor.error;
+  }
   const document = await supabase.from("vendor_documents").insert({
     vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber,
     storage_path: objectPath, expiry_date: input.expiryDate, verification_status: "submitted",

@@ -2,6 +2,7 @@
 // Public social profile + account hub (Profile tab), and the public vendor
 // profile that opens from vendor cards across the app.
 import { useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import type * as React from "react";
 import Image from "next/image";
 import { BadgeCheck, CalendarDays, ChevronRight, ClipboardCheck, Heart, HelpCircle, ListChecks, LogOut, Package, ShoppingCart, TicketCheck, UserRound, Zap, FileText, MapPin } from "@/components/icons";
@@ -24,7 +25,7 @@ function EditProfileDialog({ open, onClose, social, name }: { open: boolean; onC
   async function save() {
     setBusy(true);
     try { await social.saveProfile({ handle, bio }); toast.success("Profile updated"); onClose(); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Profile could not be saved"); } finally { setBusy(false); }
+    catch (error) { toast.error(errorMessage(error, "Profile could not be saved")); } finally { setBusy(false); }
   }
   return <Dialog open={open} onOpenChange={(v) => !v && onClose()}><DialogContent className="rounded-[28px] sm:max-w-md">
     <DialogHeader><DialogTitle className="text-lg font-black">Edit profile</DialogTitle><DialogDescription>Only your name, handle and bio are public. Diet, allergies and addresses never appear here.</DialogDescription></DialogHeader>
@@ -46,7 +47,7 @@ export function ProfileTab({ session, state, setState, social, people, statuses,
       await people.setPrivateAccount(privateAccount);
       setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, privateAccount } : item) }));
       toast.success(privateAccount ? "Private account enabled" : "Public account enabled");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Account privacy could not be updated"); }
+    } catch (error) { toast.error(errorMessage(error, "Account privacy could not be updated")); }
     finally { setPrivacyBusy(false); }
   }
   const myReviews = state.reviews.filter((r) => r.customerEmail === session.email);
@@ -139,7 +140,7 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><DialogTitle asChild><h2 className="flex items-center gap-1.5 text-xl font-black leading-tight tracking-[-.02em]">{vendor.businessName}{vendor.verification === "Verified" && <BadgeCheck className="size-5 text-sky-500" aria-label="Verified" />}</h2></DialogTitle>
         <div className="mt-0.5 text-sm font-bold text-stone-500">{vendor.category} · {shortArea(vendor.address)}{distance !== null ? ` · ${distance.toFixed(1)} km` : ""}</div>
         <div className="mt-1 flex items-center gap-1.5 text-sm font-black">{rating ? <><Stars value={rating.average} /><span>{rating.average.toFixed(1)}</span><span className="font-bold text-stone-400">({rating.count} reviews)</span></> : <span className="text-stone-400">No reviews yet</span>}</div></div>
-        <button type="button" aria-pressed={following} onClick={() => void social.toggleFollow(vendor.id).then(() => { if (!following) onFollowed?.(vendor); toast.success(following ? `Unfollowed ${vendor.businessName}` : `Following ${vendor.businessName}`); }).catch((e) => toast.error(e instanceof Error ? e.message : "Could not update follow"))} className={`h-11 rounded-full px-7 text-sm font-black transition ${following ? "border border-stone-300 bg-white text-stone-700" : "bg-[#753b50] text-white shadow-[0_10px_24px_rgba(224,25,79,.3)]"}`}>{following ? "Following" : "Follow"}</button></div>
+        <button type="button" aria-pressed={following} onClick={() => void social.toggleFollow(vendor.id).then(() => { if (!following) onFollowed?.(vendor); toast.success(following ? `Unfollowed ${vendor.businessName}` : `Following ${vendor.businessName}`); }).catch((e) => toast.error(errorMessage(e, "Could not update follow")))} className={`h-11 rounded-full px-7 text-sm font-black transition ${following ? "border border-stone-300 bg-white text-stone-700" : "bg-[#753b50] text-white shadow-[0_10px_24px_rgba(224,25,79,.3)]"}`}>{following ? "Following" : "Follow"}</button></div>
       <div className="mt-3 flex flex-wrap gap-2">{vendor.verification === "Verified" && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">FSSAI Verified</span>}{vendor.category === "Home food" && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">Home Food</span>}{vendor.delivery && <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-stone-600">Delivery</span>}{vendor.pickup && <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-stone-600">Pickup</span>}<span className={`rounded-full px-3 py-1 text-xs font-black ${vendor.openToday ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{vendor.openToday ? "Open now" : "Closed today"}</span></div>
       <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]"><div className="min-w-0">
       <SegTabs tabs={(shorts.length ? VENDOR_TABS : VENDOR_TABS.filter((t) => t !== "Shorts")) as readonly VendorTabKey[]} value={tab} onChange={setTab} className="mt-4" />

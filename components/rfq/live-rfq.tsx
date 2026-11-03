@@ -3,6 +3,7 @@
 // "Quote opportunities", and operations' RFQ desk. Demo mode keeps the original local screens.
 // Every rule (who is invited, who may quote, who may accept) is enforced by the database.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { BadgeCheck, Check, ClipboardCheck, RefreshCcw, Upload, WalletCards } from "@/components/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ function useLoader<T>(load: () => Promise<T>, pollMs = 15_000) {
   const [data, setData] = useState<T | null>(null); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const loadRef = useRef(load);
   useEffect(() => { loadRef.current = load; }, [load]);
-  const run = useCallback(async () => { setBusy(true); try { setData(await loadRef.current()); setError(""); } catch (e) { setError(e instanceof Error ? e.message : "Could not load"); } finally { setBusy(false); } }, []);
+  const run = useCallback(async () => { setBusy(true); try { setData(await loadRef.current()); setError(""); } catch (e) { setError(errorMessage(e, "Could not load")); } finally { setBusy(false); } }, []);
   useEffect(() => {
     const initial = window.setTimeout(() => void run(), 0);
     const interval = window.setInterval(() => void run(), pollMs);
@@ -44,7 +45,7 @@ export function LiveCustomerRfqs() {
       }
       toast.success(`${uploaded} document${uploaded === 1 ? "" : "s"} attached to your requirement.`);
     } catch (e) {
-      toast.error(uploaded ? `${uploaded} document${uploaded === 1 ? "" : "s"} uploaded. ${e instanceof Error ? e.message : "The next document could not be uploaded."}` : e instanceof Error ? e.message : "The document could not be uploaded");
+      toast.error(uploaded ? `${uploaded} document${uploaded === 1 ? "" : "s"} uploaded. ${errorMessage(e, "The next document could not be uploaded.")}` : errorMessage(e, "The document could not be uploaded"));
     } finally {
       setUploading("");
       await reload();
@@ -53,7 +54,7 @@ export function LiveCustomerRfqs() {
   async function accept(quoteId: string) {
     setAccepting(quoteId);
     try { const order = await acceptQuote(quoteId); toast.success(`Quotation accepted. Order ${order.orderNumber} created for ${money(order.total)}`); setConfirm(""); await reload(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "The quotation could not be accepted"); await reload(); }
+    catch (e) { toast.error(errorMessage(e, "The quotation could not be accepted")); await reload(); }
     finally { setAccepting(""); }
   }
   return <div className="space-y-6">
@@ -110,7 +111,7 @@ function QuoteForm({ rfq, onSent }: { rfq: VendorRfq; onSent: () => void }) {
     try {
       await submitQuote(rfq.id, rfq.items.map((i) => ({ requirementItemId: i.id, available: !off[i.id], unitPrice: off[i.id] ? 0 : Number(price[i.id] || 0) })), Number(fee || 0));
       toast.success(prior ? "Quotation updated" : "Quotation sent to the customer"); onSent();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "The quotation could not be sent"); } finally { setBusy(false); }
+    } catch (e) { toast.error(errorMessage(e, "The quotation could not be sent")); } finally { setBusy(false); }
   }
   return <div className="mt-4 space-y-3">
     <div className="overflow-x-auto rounded-2xl border border-stone-200"><table className="w-full min-w-120 text-sm"><thead className="bg-stone-50 text-left text-xs font-black uppercase tracking-wider text-stone-500"><tr><th className="p-3">Item</th><th className="p-3">Quantity</th><th className="p-3">Your price per unit</th><th className="p-3">Cannot supply</th></tr></thead>

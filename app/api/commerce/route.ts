@@ -86,6 +86,9 @@ function isFutureDate(dateISO: string) {
   const parsed = new Date(`${dateISO}T00:00:00.000Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === dateISO && dateISO > new Date().toISOString().slice(0, 10);
 }
+/** Customers can plan from tomorrow up to 15 days ahead. */
+const ORDER_WINDOW_DAYS = 15;
+function withinOrderWindow(dateISO: string) { return dateISO <= addDays(new Date().toISOString().slice(0, 10), ORDER_WINDOW_DAYS); }
 function scheduleDates(schedule: { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null }) {
   const start = String(schedule.start_date);
   const mode = String(schedule.recurrence || "once");
@@ -295,6 +298,7 @@ export async function POST(request: Request) {
       if (!grouped.size) return NextResponse.json({ error: "The items in your cart are no longer available." }, { status: 409 });
       const scheduledDate = String(body.scheduledDate || addDays(new Date().toISOString().slice(0,10), 1));
       if (!isFutureDate(scheduledDate)) return NextResponse.json({ error: "Choose a delivery date after today." }, { status: 400 });
+      if (!withinOrderWindow(scheduledDate)) return NextResponse.json({ error: `Choose a delivery date within the next ${ORDER_WINDOW_DAYS} days.` }, { status: 400 });
       const scheduledSlot = String(body.slot || "07:00–08:00 AM");
       const orderIds: string[] = [];
       for (const [vendorId, items] of grouped.entries()) {
@@ -350,6 +354,7 @@ export async function POST(request: Request) {
       const startDate = String(body.startDate || "");
       const endDate = body.endDate ? String(body.endDate) : "";
       if (!isFutureDate(startDate)) return NextResponse.json({ error: "Choose a first delivery date after today." }, { status: 400 });
+      if (!withinOrderWindow(startDate)) return NextResponse.json({ error: `The first delivery can be at most ${ORDER_WINDOW_DAYS} days from today.` }, { status: 400 });
       if (endDate && (!isFutureDate(endDate) || endDate < startDate)) return NextResponse.json({ error: "Choose an end date on or after the first delivery date." }, { status: 400 });
       const scheduleInsert = await admin.from("product_schedules").insert({
         customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
@@ -577,6 +582,8 @@ export async function POST(request: Request) {
       const orderId = String(body.orderId || "");
       const { data: order } = await admin.from("orders").select("id,customer_id,vendor_id,order_number").eq("id", orderId).eq("customer_id", profile.id).maybeSingle();
       if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+      const newDate = String(body.date || "");
+      if (!isFutureDate(newDate) || !withinOrderWindow(newDate)) return NextResponse.json({ error: `Choose a date from tomorrow up to ${ORDER_WINDOW_DAYS} days ahead.` }, { status: 400 });
       const updated = await admin.from("orders").update({ scheduled_date: String(body.date || ""), scheduled_slot: String(body.slot || ""), updated_at: new Date().toISOString() }).eq("id", orderId);
       if (updated.error) throw updated.error;
       const { data: vendor } = await admin.from("vendors").select("owner_id").eq("id", order.vendor_id).maybeSingle();
@@ -680,7 +687,7 @@ export async function POST(request: Request) {
         );
         if (conflicting) {
           return NextResponse.json({
-            error: `This time window overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}).`,
+            error: `This time window overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}). Edit or switch off that slot first.`,
           }, { status: 400 });
         }
       }
@@ -724,7 +731,7 @@ export async function POST(request: Request) {
         const conflicting = (otherSlots || []).find((s) => slotsOverlap(String(targetSlot.start_time), String(targetSlot.end_time), String(s.start_time), String(s.end_time)));
         if (conflicting) {
           return NextResponse.json({
-            error: `Cannot activate: overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}).`,
+            error: `Cannot activate: overlaps with active slot "${conflicting.slot_name}" (${String(conflicting.start_time).slice(0, 5)} - ${String(conflicting.end_time).slice(0, 5)}). Edit or switch off that slot first.`,
           }, { status: 400 });
         }
       }

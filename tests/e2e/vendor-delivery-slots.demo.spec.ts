@@ -117,7 +117,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
   test("Customer checkout displays vendor's configured active delivery slots", async ({ page }) => {
     // Seed cart with Mini Meals (p-1) from vendor v-meena
     await openAs(page, "customer", (state) => {
-      state.cart = [{ id: "cart-1", customerEmail: "customer@sheplates.demo", productId: "p-1", quantity: 1 }];
+      state.cart = [{ id: "cart-1", customerEmail: "customer@sheplates.demo", productId: "p-1", quantity: 1 }] as unknown as typeof state.cart;
     });
     await dismissTourIfOpen(page);
 

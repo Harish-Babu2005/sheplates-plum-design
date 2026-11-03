@@ -2,6 +2,7 @@
 // Vendor portal: create and manage Food Shorts (video up to 30 seconds). The vendor picks how
 // far the short reaches; customers inside that distance see it (enforced by the database).
 import { useEffect, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import Image from "next/image";
 import { Clapperboard, Eye, EyeOff, Heart, MapPin, Trash2, Upload, Video } from "@/components/icons";
 import { toast } from "sonner";
@@ -34,7 +35,7 @@ export function VendorShortsManager({ vendor, products, shorts }: { vendor: Mana
       const inspected = await inspectVideo(next);
       setFile(next); setInfo(inspected);
       setPreviewUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(next); });
-    } catch (e) { setError(e instanceof Error ? e.message : "That video could not be used"); }
+    } catch (e) { setError(errorMessage(e, "That video could not be used")); }
     finally { setChecking(false); if (fileInput.current) fileInput.current.value = ""; }
   }
   function reset() { setFile(null); setInfo(null); setPreviewUrl(""); setTitle(""); setCaption(""); setProductId(""); setShopLink(""); setError(""); }
@@ -45,10 +46,10 @@ export function VendorShortsManager({ vendor, products, shorts }: { vendor: Mana
       await shorts.publish({ title, caption, file, thumbDataUrl: info.thumbDataUrl, durationS: info.durationS, reachKm, productId: productId || null, shopLink });
       toast.success(`Food Short published. Customers within ${reachKm} km can watch it`);
       reset();
-    } catch (e) { setError(e instanceof Error ? e.message : "The short could not be published"); }
+    } catch (e) { setError(errorMessage(e, "The short could not be published")); }
     finally { setBusy(false); }
   }
-  const act = (fn: () => Promise<void>, ok: string) => void fn().then(() => toast.success(ok)).catch((e) => toast.error(e instanceof Error ? e.message : "Something went wrong"));
+  const act = (fn: () => Promise<void>, ok: string) => void fn().then(() => toast.success(ok)).catch((e) => toast.error(errorMessage(e, "Something went wrong")));
 
   return <div className="space-y-6">
     <div className="sp-page-heading flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

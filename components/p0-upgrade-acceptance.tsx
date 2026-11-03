@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import Link from "next/link";
 import { getAccessToken, getSupabaseBrowserClient } from "@/lib/supabase";
 
@@ -66,7 +67,7 @@ export function P0UpgradeAcceptance({ invitationId: initialInvitationId }: { inv
         setError("The vendor upgrade completed, but the portal session could not be prepared. Sign out and sign in again to continue.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The upgrade could not be completed.");
+      setError(errorMessage(caught, "The upgrade could not be completed."));
     } finally {
       setBusy(false);
     }

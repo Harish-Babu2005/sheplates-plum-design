@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { createPortal } from "react-dom";
 import type * as React from "react";
 import {
@@ -411,6 +412,9 @@ function id(prefix: string) { return `${prefix}-${Date.now().toString(36).toUppe
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
+/** Orders and schedules can be planned from tomorrow up to 15 days ahead (the database enforces the same window). */
+const ORDER_WINDOW_DAYS = 15;
+function latestOrderDate() { return addDaysISO(todayISO(), ORDER_WINDOW_DAYS); }
 function money(value: number) { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value); }
 function finalPrice(product: Product, state: V3State) { return Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100; }
 function vendorFor(state: V3State, session: DemoSession) { return state.vendors.find((v) => v.ownerEmail === session.email); }
@@ -651,8 +655,14 @@ quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: Str
   }));
   const syncedCart: CartItem[] = session.role === "customer" ? (snapshot.cartItems || []).map((row) => ({ id: String(row.id), customerEmail: session.email, productId: String(row.menu_item_id), quantity: Math.max(0.001, Number(row.quantity || 1)) })) : [];
   const cart = session.role === "customer" ? [...current.cart.filter((item) => item.customerEmail !== session.email), ...syncedCart] : current.cart;
+  const deliverySlots: VendorDeliverySlot[] = snapshot.deliverySlots ? snapshot.deliverySlots.map((row) => ({
+    id: String(row.id), vendorId: String(row.vendor_id), slotName: String(row.slot_name || "Slot"),
+    startTime: String(row.start_time || "").slice(0, 5), endTime: String(row.end_time || "").slice(0, 5),
+    isActive: row.is_active !== false,
+    createdAt: row.created_at ? String(row.created_at) : undefined, updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  })) : current.deliverySlots || [];
   return {
-    ...current, orders, schedules: mergedSchedules, staff, assignments, thirdPartyDeliveries, cart,
+    ...current, orders, schedules: mergedSchedules, staff, assignments, thirdPartyDeliveries, cart, deliverySlots,
     thirdPartyDeliveryAvailable: snapshot.thirdPartyDeliveryAvailable === true,
   };
 }
@@ -1022,7 +1032,7 @@ export function ShePlatesV3() {
       if (!cancelled) setState((current) => mergeLiveCommerce(current, commerce, syncSession));
       window.clearTimeout(syncTimeout);
       if (!cancelled) setLiveSync("ready");
-    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled) { setLiveSync("error"); setLiveSyncError(error instanceof Error ? error.message : "Your latest account data could not be loaded"); } });
+    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
@@ -1068,7 +1078,7 @@ export function ShePlatesV3() {
       }));
       toast.success(`Added ${quantity} × ${drop.title} — settle at pickup/delivery with the vendor`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "This drop could not be claimed");
+      toast.error(errorMessage(error, "This drop could not be claimed"));
       void refreshDrops(); // the server decided (sold out / ended) — resync instead of trusting local stock
     }
   }
@@ -1122,7 +1132,7 @@ export function ShePlatesV3() {
             : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
         };
       })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
-      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save your like"))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(e instanceof Error ? e.message : "Could not record this view"); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
+      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} close={() => setPlanProduct(null)} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
     </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
       banner={<>
@@ -1130,9 +1140,9 @@ export function ShePlatesV3() {
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
 
-    <button data-tour="agent-desktop" onClick={() => (role === "customer" ? setActive("She Agent") : setAgentOpen(true))} className={`${role === "customer" ? "sp-desktop-agent-launcher" : "sp-staff-agent-launcher"} sp-agent-launcher group fixed bottom-5 right-4 z-30 grid size-16 place-items-center rounded-full border border-white/70 bg-white/92 p-2 shadow-[0_22px_70px_rgba(25, 19, 21,.24)] backdrop-blur-xl transition hover:shadow-[0_28px_90px_rgba(25, 19, 21,.30)] sm:right-6`} aria-label="Open She Agent">
+    {!(role === "customer" && active === "She Agent") && <button data-tour="agent-desktop" onClick={() => (role === "customer" ? setActive("She Agent") : setAgentOpen(true))} className={`${role === "customer" ? "sp-desktop-agent-launcher" : "sp-staff-agent-launcher"} sp-agent-launcher group fixed bottom-5 right-4 z-30 grid size-16 place-items-center rounded-full border border-white/70 bg-white/92 p-2 shadow-[0_22px_70px_rgba(25, 19, 21,.24)] backdrop-blur-xl transition hover:shadow-[0_28px_90px_rgba(25, 19, 21,.30)] sm:right-6`} aria-label="Open She Agent">
       <span className="sp-agent-orb relative grid size-12 place-items-center rounded-full text-white"><Activity className="size-5" /></span>
-    </button>
+    </button>}
     <NotificationDrawerV4 open={notificationsOpen} setOpen={setNotificationsOpen} session={session} state={state} setState={setState} people={people} />
     <SheAgent open={agentOpen} setOpen={setAgentOpen} session={session} state={state} setState={setState} navigate={setActive} />
     {tourOpen === "customer" && <ProductTour steps={CUSTOMER_TOUR_STEPS} onClose={finishTour} />}
@@ -1289,7 +1299,7 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
   const [privateAccount, setPrivateAccount] = useState(session.privateAccount ?? false);
   const roundPoint = (point: { lat: number; lng: number }) => ({ lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) });
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); const request = ++pinLookup.current; setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = roundPoint({ lat: position.coords.latitude, lng: position.coords.longitude }); setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); } toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { if (request === pinLookup.current) toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); const request = ++pinLookup.current; setMapBusy(true); try { const place = await findLocation({ address }); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); toast.success("Address pinned on the map"); } } catch (error) { if (request === pinLookup.current) toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
+  async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); const request = ++pinLookup.current; setMapBusy(true); try { const place = await findLocation({ address }); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); toast.success("Address pinned on the map"); } } catch (error) { if (request === pinLookup.current) toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
   function movePin(point: { lat: number; lng: number }) {
     const next = roundPoint(point);
     setCoords(next);
@@ -1341,7 +1351,7 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
         }],
       });
       toast.success("Your food profile and exact service pin are ready");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Profile could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Profile could not be saved")); }
   }
   return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#753b50]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#753b50]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
   {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
@@ -1361,7 +1371,7 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState("");
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
+  async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
   function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
   async function submit() {
     if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
@@ -1380,11 +1390,11 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
       if (operationsCreated && invite) {
         if (isLiveSupabaseMode()) {
           try { const token = await getAccessToken(); if (!token) throw new Error("Sign in again to send invitations"); await inviteVendorByEmail({ email: inviteEmail.trim(), name: form.ownerName, businessName: form.businessName }, token); toast.success(`Invitation email sent to ${inviteEmail.trim()}`); }
-          catch (caught) { toast.error(caught instanceof Error ? caught.message : "The invitation email could not be sent"); }
+          catch (caught) { toast.error(errorMessage(caught, "The invitation email could not be sent")); }
         } else toast.info("Invitation emails are sent only on the live site. Nothing was emailed in this demo.");
       }
       close?.();
-    } catch (caught) { toast.error(caught instanceof Error ? caught.message : "Application could not be submitted"); } finally { setBusy(false); }
+    } catch (caught) { toast.error(errorMessage(caught, "Application could not be submitted")); } finally { setBusy(false); }
   }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#faf6f4] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="k-stepper-wrap"><p className="sr-only">Vendor onboarding · {step}/4</p><ol className="k-stepper" aria-label="Onboarding steps">{["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => { const n = index + 1; const done = n < step; return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>; })}</ol><h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div>
   {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#faf6f4] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#71676b]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
@@ -1436,7 +1446,7 @@ async function addProductToCart(state: V3State, setState: React.Dispatch<React.S
     }
     toast.success(`${product.name} added to cart`);
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "Cart could not be saved");
+    toast.error(errorMessage(error, "Cart could not be saved"));
     if (isLiveSupabaseMode()) { try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch {} }
   }
 }
@@ -1546,12 +1556,12 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       setDiagnostics(live.diagnostics);
       setState((current) => ({ ...current, products, vendors: [...vendorMap.values()], markups: {}, merchandising: live.merchandising || current.merchandising, merchandisingError: live.merchandisingError || null }));
       if (showSuccess) toast.success(products.length ? `${products.length} serviceable product pack(s) refreshed` : "Marketplace checked; see the eligibility explanation below");
-    } catch (error) { setCatalogueError(error instanceof Error ? error.message : "Marketplace could not be refreshed"); }
+    } catch (error) { setCatalogueError(errorMessage(error, "Marketplace could not be refreshed")); }
     finally { setRefreshing(false); }
   }
   function detectLocation() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setDraftCoords(point); setDraftAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still shown.` : "The exact GPS pin is shown; add street details."); } finally { setLocating(false); } }, (error) => { setLocating(false); toast.error(error.code === 1 ? "Allow precise location for localhost in Chrome, then try again" : "GPS could not get a fresh position. Search your complete address instead."); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function findTypedLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first"); setMapBusy(true); try { const place = await findLocation({ address: draftAddress }); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address located on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Address was not found"); } finally { setMapBusy(false); } }
-  async function saveLocation() { if (!Number.isFinite(draftCoords.lat) || !Number.isFinite(draftCoords.lng)) return toast.error("Detect GPS or find the typed address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address: draftAddress, latitude: draftCoords.lat!, longitude: draftCoords.lng! }); setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, address: draftAddress, latitude: draftCoords.lat, longitude: draftCoords.lng } : item) })); setLocationOpen(false); toast.success("Delivery location and service pin updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Location could not be saved"); } }
+  async function findTypedLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first"); setMapBusy(true); try { const place = await findLocation({ address: draftAddress }); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address located on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
+  async function saveLocation() { if (!Number.isFinite(draftCoords.lat) || !Number.isFinite(draftCoords.lng)) return toast.error("Detect GPS or find the typed address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address: draftAddress, latitude: draftCoords.lat!, longitude: draftCoords.lng! }); setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, address: draftAddress, latitude: draftCoords.lat, longitude: draftCoords.lng } : item) })); setLocationOpen(false); toast.success("Delivery location and service pin updated"); } catch (error) { toast.error(errorMessage(error, "Location could not be saved")); } }
   function addToCart(product: Product) { return addProductToCart(state, setState, session, product); }
   function openProduct(product: Product) {
     recordTasteSignal(state, setState, session, product, "view");
@@ -1704,7 +1714,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     {view === "search" ? <div className="k-search-layout">
       <aside className={`k-filters sh${filtersOpen ? " open" : ""}`} aria-label="Filters"><div className="k-filters-head"><h2>Filters</h2><button type="button" className="k-filters-x" onClick={() => setFiltersOpen(false)} aria-label="Close filters"><X className="size-5" /></button></div>
       <div className="grid gap-3">
-        <Field label="Planning from"><input type="date" min={tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field>
+        <Field label="Planning from"><input type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field>
         <Field label="Planning period"><Select value={String(periodDays)} onValueChange={(value) => setPeriodDays(Number(value))}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">This date</SelectItem><SelectItem value="7">Next 7 days</SelectItem><SelectItem value="14">Next 14 days</SelectItem><SelectItem value="30">Next 30 days</SelectItem></SelectContent></Select></Field>
         <Field label="Max budget"><input type="number" min="0" value={maxPrice || ""} onChange={(e) => setMaxPrice(Number(e.target.value))} placeholder="Any ₹" className={inputClass} /></Field>
         <Field label="Max calories / pack"><input type="number" min="0" value={maxCalories || ""} onChange={(e) => setMaxCalories(Number(e.target.value))} placeholder="Any kcal" className={inputClass} /></Field>
@@ -1776,6 +1786,7 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
 
   async function save() {
     if (!startDate || startDate < tomorrow()) return toast.error("Choose tomorrow or a future date");
+    if (startDate > latestOrderDate()) return toast.error(`The first delivery can be at most ${ORDER_WINDOW_DAYS} days from today`);
     if (endDate && endDate < startDate) return toast.error("End date must be after the start date");
     if (recurrence === "Custom" && !days.length) return toast.error("Choose at least one weekday");
     if (!occurrences) return toast.error("This schedule has no delivery dates. Adjust the dates or repeat pattern.");
@@ -1793,10 +1804,10 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
       setState((s) => ({ ...s, schedules: [schedule, ...s.schedules.filter((x) => x.id !== schedule.id)], orders: [order, ...s.orders.filter((x) => x.id !== order.id)], notifications: [notice(session.email, "customer", "Schedule ready for payment", `${scheduledProduct.name} has ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}. Complete payment to activate it.`), ...s.notifications], audit: [audit(session, "Created product schedule", `${scheduledProduct.name} · ${recurrence} · ${occurrences} deliveries`), ...s.audit] }));
       showDeviceNotification("Schedule ready for payment", `${scheduledProduct.name} · ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}`);
       toast.success("Schedule saved. Complete payment to activate it."); close(); onCreated?.();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Schedule could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Schedule could not be saved")); }
   }
 
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="bg-[#f7edf0] p-6 text-[#292124]"><DialogHeader><DialogTitle className="flex items-center gap-3 text-2xl font-bold"><span className="grid size-12 place-items-center rounded-2xl bg-[#753b50]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-[#4c4246]">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[.8fr_1.2fr]">    <div className="space-y-6 p-6 lg:order-2"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#753b50] bg-[#f7edf0] text-[#292124]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#753b50] bg-[#753b50] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#faf6f4] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#faf6f4] p-6 lg:order-1"><div className="rounded-3xl bg-white p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#753b50] font-black hover:bg-[#602d40]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
+return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="bg-[#f7edf0] p-6 text-[#292124]"><DialogHeader><DialogTitle className="flex items-center gap-3 text-2xl font-bold"><span className="grid size-12 place-items-center rounded-2xl bg-[#753b50]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-[#4c4246]">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[.8fr_1.2fr]">    <div className="space-y-6 p-6 lg:order-2"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#753b50] bg-[#f7edf0] text-[#292124]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#753b50] bg-[#753b50] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#faf6f4] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#faf6f4] p-6 lg:order-1"><div className="rounded-3xl bg-white p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#753b50] font-black hover:bg-[#602d40]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -1813,7 +1824,7 @@ function WishlistView({ session, state, setState }: { session: DemoSession; stat
         if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
       }
       toast.success(`${product.name} added to cart`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Cart could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Cart could not be saved")); }
   }
   return <div className="space-y-6"><Heading eyebrow="SAVED FOR LATER" title="Your wishlist" body="Products you've liked while browsing the marketplace, all in one place." />
     {items.length ? <div className="k-plist">{items.map((item) => {
@@ -1876,7 +1887,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       const saved = await syncLiveCart({ items: nextOwn.map((item) => ({ productId: item.productId, quantity: item.quantity })), createdBy });
       if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Cart could not be saved");
+      toast.error(errorMessage(error, "Cart could not be saved"));
       try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch {}
       throw error;
     } finally { setSavingCart(false); }
@@ -1896,6 +1907,10 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
     if (!items.length || savingCart) return;
     if (!deliveryDate || deliveryDate < tomorrow()) {
       toast.error("Choose a delivery date from tomorrow onward.");
+      return;
+    }
+    if (deliveryDate > latestOrderDate()) {
+      toast.error(`Choose a delivery date within the next ${ORDER_WINDOW_DAYS} days.`);
       return;
     }
     const address = deliveryAddress.trim();
@@ -1934,7 +1949,7 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
         if (createdOrders.length === 1) setPaying(createdOrders[0]);
         toast.success(createdOrders.length > 1 ? `${createdOrders.length} vendor checkouts are ready for payment.` : "Checkout is ready for payment.");
         setAddressDialogOpen(false);
-      } catch (error) { toast.error(error instanceof Error ? error.message : "Checkout could not be created"); }
+      } catch (error) { toast.error(errorMessage(error, "Checkout could not be created")); }
       finally { setSavingCart(false); }
       return;
     }
@@ -1965,8 +1980,8 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
             <button type="button" aria-label={`Remove ${product.name}`} disabled={savingCart} onClick={() => void removeItem(item)} className="grid size-9 place-items-center rounded-full hover:bg-[#fdecef] hover:text-[#b42332]"><X className="size-4" /></button>
           </div>; })}</div>
         </section>
-        <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Delivery date</h3><p className="mt-1 text-sm text-[#71676b]">Plan ahead: pick any day from tomorrow</p>
-          <label className="mt-3 block max-w-sm text-sm font-semibold text-[#4c4246]">Delivery date<input aria-label="Order delivery date" type="date" min={tomorrow()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2`} /></label></section>
+        <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Delivery date</h3><p className="mt-1 text-sm text-[#71676b]">Plan ahead: pick any day from tomorrow, up to 15 days away</p>
+          <label className="mt-3 block max-w-sm text-sm font-semibold text-[#4c4246]">Delivery date<input aria-label="Order delivery date" type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2`} /></label></section>
       </div>
       <aside className="surface-card h-fit rounded-3xl p-5 lg:sticky lg:top-40"><h3 className="text-lg font-semibold">Order summary</h3>
         <div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span className="text-[#4c4246]">Products</span><b>{items.length}</b></div><div className="flex justify-between"><span className="text-[#4c4246]">Items</span><b>{items.reduce((sum, item) => sum + item.quantity, 0)}</b></div></div>
@@ -2072,7 +2087,7 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
     <div className="surface-card rounded-[28px] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-[#653046]">Next 7 days</div><div className="mt-1 text-sm text-stone-500">Tap a date to see confirmed paid deliveries.</div></div>{paidDeliveries.length > 0 && <Status>{paidDeliveries.filter((order) => order.date >= todayISO()).length} upcoming</Status>}</div><div className="grid grid-cols-7 gap-1.5 sm:gap-2">{Array.from({ length: 7 }, (_, index) => addDaysISO(todayISO(), index)).map((date) => { const dayOrders = ordersByDate.get(date) || []; const d = new Date(`${date}T12:00:00`); return <button key={date} type="button" onClick={() => setSelectedDate(date)} aria-pressed={selectedDate === date} className={`sp-calendar-day relative rounded-2xl px-1 py-3 text-center transition ${selectedDate === date ? "bg-[#753b50] text-white" : "bg-white hover:bg-[#f7edf0]"}`}><span className="block text-xs font-medium">{d.toLocaleDateString("en-IN", { weekday: "short" })}</span><span className="block text-xl font-bold tabular-nums">{d.getDate()}</span>{dayOrders.length > 0 ? <span className={`mx-auto mt-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${selectedDate === date ? "bg-[#292124] text-white" : "bg-[#753b50] text-white"}`}>{dayOrders.length}</span> : <span className="mt-1 block h-5" />}</button>; })}</div>
       {selectedOrders.length > 0 ? <div className="mt-4 rounded-[22px] bg-[#faf6f4] p-4"><b>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><div className="mt-3 space-y-2">{selectedOrders.map((order) => <button key={order.id} onClick={() => navigate("Orders")} className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left"><div className="grid size-10 place-items-center rounded-xl bg-[#f7edf0] text-[#653046]"><Package className="size-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-black">{order.description}</div><div className="text-xs text-stone-500">{order.slot} · {order.mode}</div></div><Status>{order.status}</Status></button>)}</div></div> : <div className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">No confirmed delivery on this date.</div>}
     </div>
-    {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((schedule) => { const product = schedule.productId ? state.products.find((x) => x.id === schedule.productId) : undefined; const scheduleOrders = groupedOrders.get(schedule.id) || []; const status = schedule.status || "Active"; const upcoming = scheduleOrders.filter((order) => order.date >= todayISO()).map((order) => order.date); const persisted = state.schedules.some((item) => item.id === schedule.id); const displayName = product?.name || scheduleOrders[0]?.description || "Scheduled product"; return <div key={schedule.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ background: product ? categoryVisual(product.category).bg : "#eff6e6" }}>{product ? <ProductGlyph category={product.category} /> : <Package className="size-6 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="font-black">{displayName}</div><div className="mt-1 text-xs text-stone-500">{schedule.recurrence}{schedule.recurrence === "Custom" && schedule.weekdays.length ? ` · ${schedule.weekdays.join(", ")}` : ""} · {schedule.timeSlot}</div></div><Status>{status}</Status></div><div className="mt-4 grid grid-cols-2 gap-2 rounded-[20px] bg-[#faf6f4] p-3 text-xs"><div><span className="text-stone-400">Paid deliveries</span><div className="mt-1 font-black">{scheduleOrders.length || schedule.estimatedOccurrences}</div></div><div><span className="text-stone-400">Next delivery</span><div className="mt-1 font-black">{upcoming[0] || schedule.nextDeliveryAt || "Completed"}</div></div></div><div className="mt-3 rounded-2xl bg-[#f7edf0] p-3 text-xs text-[#292124]"><CalendarDays className="mr-2 inline size-4" />{upcoming.length ? `Upcoming: ${upcoming.slice(0, 5).join(", ")}${upcoming.length > 5 ? ` +${upcoming.length - 5} more` : ""}` : "No future paid deliveries remain."}</div><div className="mt-2 rounded-2xl bg-[#faf6f4] p-3 text-xs text-stone-500"><MessageSquareText className="mr-2 inline size-4" />Reminder is prepared for one hour before each delivery.</div>{persisted ? <div className="mt-4 flex flex-wrap gap-2">{status === "Paused" ? <Button size="sm" onClick={() => change(schedule, "resume")} className="bg-[#753b50]"><Play />Resume</Button> : <Button size="sm" variant="outline" disabled={status === "Cancelled"} onClick={() => change(schedule, "pause")}><Pause />Pause</Button>}<Button size="sm" variant="outline" disabled={status === "Cancelled"} onClick={() => setRescheduling(schedule)}><CalendarDays />Reschedule</Button></div> : <div className="mt-4 text-xs font-bold text-stone-400">Schedule definition is syncing; the confirmed delivery dates above are already active.</div>}</div>; })}</div> : <Empty icon={CalendarDays} title="No active paid schedules" body={pendingOrders.length ? "You have a schedule waiting in Cart for payment." : "Schedule a product, complete payment, and every confirmed delivery date will appear here."} action={pendingOrders.length ? <Button onClick={() => navigate("Cart")} className="rounded-xl bg-[#753b50]"><CreditCard />Go to checkout</Button> : <Button onClick={() => navigate("Marketplace")} variant="outline" className="rounded-xl"><ShoppingBag />Explore marketplace</Button>} />}
+    {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((schedule) => { const product = schedule.productId ? state.products.find((x) => x.id === schedule.productId) : undefined; const scheduleOrders = groupedOrders.get(schedule.id) || []; const status = schedule.status || "Active"; const upcoming = scheduleOrders.filter((order) => order.date >= todayISO()).map((order) => order.date); const persisted = state.schedules.some((item) => item.id === schedule.id); const finished = status === "Cancelled" || status === "Completed" || (!upcoming.length && status !== "Paused"); const displayName = product?.name || scheduleOrders[0]?.description || "Scheduled product"; return <div key={schedule.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ background: product ? categoryVisual(product.category).bg : "#eff6e6" }}>{product ? <ProductGlyph category={product.category} /> : <Package className="size-6 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="font-black">{displayName}</div><div className="mt-1 text-xs text-stone-500">{schedule.recurrence}{schedule.recurrence === "Custom" && schedule.weekdays.length ? ` · ${schedule.weekdays.join(", ")}` : ""} · {schedule.timeSlot}</div></div><Status>{status}</Status></div><div className="mt-4 grid grid-cols-2 gap-2 rounded-[20px] bg-[#faf6f4] p-3 text-xs"><div><span className="text-stone-400">Paid deliveries</span><div className="mt-1 font-black">{scheduleOrders.length || schedule.estimatedOccurrences}</div></div><div><span className="text-stone-400">Next delivery</span><div className="mt-1 font-black">{upcoming[0] || schedule.nextDeliveryAt || "Completed"}</div></div></div><div className="mt-3 rounded-2xl bg-[#f7edf0] p-3 text-xs text-[#292124]"><CalendarDays className="mr-2 inline size-4" />{upcoming.length ? `Upcoming: ${upcoming.slice(0, 5).join(", ")}${upcoming.length > 5 ? ` +${upcoming.length - 5} more` : ""}` : "No future paid deliveries remain."}</div><div className="mt-2 rounded-2xl bg-[#faf6f4] p-3 text-xs text-stone-500"><MessageSquareText className="mr-2 inline size-4" />Reminder is prepared for one hour before each delivery.</div>{persisted && !finished ? <div className="mt-4 flex flex-wrap gap-2">{status === "Paused" ? <Button size="sm" onClick={() => change(schedule, "resume")} className="bg-[#753b50]"><Play />Resume</Button> : <Button size="sm" variant="outline" onClick={() => change(schedule, "pause")}><Pause />Pause</Button>}<Button size="sm" variant="outline" onClick={() => setRescheduling(schedule)}><CalendarDays />Reschedule</Button></div> : <div className="mt-4 text-xs font-bold text-stone-400">Schedule definition is syncing; the confirmed delivery dates above are already active.</div>}</div>; })}</div> : <Empty icon={CalendarDays} title="No active paid schedules" body={pendingOrders.length ? "You have a schedule waiting in Cart for payment." : "Schedule a product, complete payment, and every confirmed delivery date will appear here."} action={pendingOrders.length ? <Button onClick={() => navigate("Cart")} className="rounded-xl bg-[#753b50]"><CreditCard />Go to checkout</Button> : <Button onClick={() => navigate("Marketplace")} variant="outline" className="rounded-xl"><ShoppingBag />Explore marketplace</Button>} />}
     <RescheduleDialog schedule={rescheduling} close={() => setRescheduling(null)} session={session} setState={setState} />
   </div>;
 }
@@ -2087,6 +2102,7 @@ function RescheduleDialog({ schedule, close, session, setState }: { schedule: Sc
   function save() {
     if (!schedule) return;
     if (!startDate || startDate < tomorrow()) return toast.error("Choose tomorrow or a later date");
+    if (startDate > latestOrderDate()) return toast.error(`The first delivery can be at most ${ORDER_WINDOW_DAYS} days from today`);
     if (recurrence === "Custom" && !days.length) return toast.error("Choose at least one delivery day");
     setState((s) => ({
       ...s,
@@ -2098,7 +2114,7 @@ function RescheduleDialog({ schedule, close, session, setState }: { schedule: Sc
   }
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-xl"><DialogHeader><DialogTitle className="text-lg font-black">Reschedule delivery</DialogTitle><DialogDescription>Pick the new date, repeat pattern and delivery days. The preview below shows every date this will actually fall on.</DialogDescription></DialogHeader>
     <div className="space-y-5">
-      <Field label="New start date"><input type="date" min={tomorrow()} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputClass} /></Field>
+      <Field label="New start date"><input type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputClass} /></Field>
       <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#753b50] bg-[#f7edf0] text-[#292124]" : ""}`}>{item}</button>)}</div></div>
       {recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#753b50] bg-[#753b50] text-white" : ""}`}>{day}</button>)}</div></div>}
       <Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>
@@ -2127,7 +2143,7 @@ function RequirementsV4({ session, state, setState }: { session: DemoSession; st
         const result = await publishRequirement({ title, locality: shortArea(profile.address), latitude: profile.latitude!, longitude: profile.longitude!, deliveryDate, closingDate, items: valid.map((x) => ({ name: x.name, quantity: x.quantity, unit: x.unit, brand: x.brand })) });
         toast.success(result.invited ? `RFQ sent to ${result.invited} Crown vendor${result.invited === 1 ? "" : "s"} near you. Track replies under My quotations` : "RFQ saved. No Crown vendor covers your address yet");
         setItems([{ id: id("ITM"), name: "", quantity: 1, unit: "kg", brand: "Any" }]); setSourceFileName("");
-      } catch (error) { toast.error(error instanceof Error ? error.message : "The RFQ could not be published"); }
+      } catch (error) { toast.error(errorMessage(error, "The RFQ could not be published")); }
       return;
     } const eligible = state.vendors.filter((v) => v.verification === "Verified" && v.operational === "Active" && v.plan === "Crown" && (!profile || distanceKm(profile.latitude, profile.longitude, v.latitude, v.longitude) === null || distanceKm(profile.latitude, profile.longitude, v.latitude, v.longitude)! <= v.radiusKm)); const requirement: Requirement = { id: id("RFQ"), customerEmail: session.email, title, deliveryDate, closingDate, sourceFileName, items: valid, status: "Quoting", invitedVendorIds: eligible.map((x) => x.id) }; setState((s) => ({ ...s, requirements: [requirement, ...s.requirements], notifications: [notice(session.email, "customer", "RFQ published", `${eligible.length} serviceable Crown vendor(s) were invited. Quotes close ${closingDate}.`), ...eligible.map((v) => notice(v.ownerEmail, "vendor", "New local RFQ", `${title} closes ${closingDate}.`)), ...s.notifications] })); toast.success("RFQ sent to eligible local vendors"); }
   return <div className="space-y-6"><Heading eyebrow="MONTHLY RFQ" title="Upload or build your monthly list" body="She Agent structures CSV/TXT lists, you review them, set the quote closing date, then eligible local Crown vendors are invited." /><label className="grid min-h-28 cursor-pointer place-items-center rounded-[28px] border-2 border-dashed border-[#e8cbd5] bg-[#FFF8F0] p-5 text-center"><input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /><Upload className="size-8 text-[#753b50]" /><b>{sourceFileName || "Upload monthly list (CSV, TXT or TSV)"}</b><span className="text-xs text-stone-500">Example: Rice, 5 kg, preferred brand</span></label><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]"><div className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between gap-3"><h3 className="text-lg font-semibold">Your list · {items.length} item{items.length === 1 ? "" : "s"}</h3><Button variant="outline" onClick={() => setItems((x) => [...x, { id: id("ITM"), name: "", quantity: 1, unit: "pack", brand: "Any" }])}><Plus />Add row</Button></div><div className="mt-4 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#faf6f4] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg","g","litre","ml","piece","pack","dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div></div><aside className="surface-card h-fit space-y-3 rounded-3xl p-5"><h3 className="text-lg font-semibold">Send for quotes</h3><div className="grid gap-3"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Quotes close on"><input type="date" min={tomorrow()} value={closingDate} onChange={(e) => setClosingDate(e.target.value)} className={inputClass} /></Field><Field label="Delivery needed on"><input type="date" min={closingDate || tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]">Only vendors on the Crown plan whose service radius covers your address are invited.</div><Button onClick={submit} className="h-12 w-full"><Send />Publish RFQ</Button></aside></div></div>;
@@ -2316,7 +2332,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
       setState((s) => ({ ...s, customers: s.customers.map((x) => (x.email === session.email ? next : x)) }));
       toast.success("Profile and default address saved");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Profile could not be saved");
+      toast.error(errorMessage(error, "Profile could not be saved"));
     } finally {
       setSaving(false);
     }
@@ -2346,7 +2362,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
       }));
       toast.success("She Agent memory cleared");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Memory could not be cleared");
+      toast.error(errorMessage(error, "Memory could not be cleared"));
     } finally {
       setClearingMemory(false);
     }
@@ -2607,7 +2623,7 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
       setState((s) => ({ ...s, foodDrops: [drop, ...s.foodDrops] }));
       toast.success(dropDisplayStatus(drop) === "live" ? "Food Drop is live" : "Food Drop scheduled for 8:00 PM");
       dismiss();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Drop could not be created"); }
+    } catch (error) { toast.error(errorMessage(error, "Drop could not be created")); }
     finally { setBusy(false); }
   }
 
@@ -2658,7 +2674,7 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
       await cancelLiveFoodDrop(drop.id);
       setState((s) => ({ ...s, foodDrops: s.foodDrops.map((d) => d.id === drop.id ? { ...d, status: "cancelled" as const } : d) }));
       toast.success("Drop ended");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Drop could not be ended"); }
+    } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
   }
 
   if (!["Thrive", "Crown"].includes(vendor.plan)) return <div className="space-y-6"><Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Daily evening offers on your own products." /><Empty icon={Zap} title="Food Drops are on the Thrive and Crown plans" body={`Your store is on the ${vendor.plan} plan. Ask Operations to move you to Thrive or Crown to publish Food Drops.`} /></div>;
@@ -2714,7 +2730,7 @@ function VendorArea({ active, session, state, setState, shorts }: { active: stri
   const byDay = days.map((d) => ({ ...d, total: orders.filter((x) => x.date === d.key && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0) }));
   const maxDay = Math.max(1, ...byDay.map((d) => d.total));
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
-  async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(error instanceof Error ? error.message : "The order could not be accepted"); } }
+  async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
   const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need the Thrive or Crown plan.", Crave: "Food Drops need the Thrive or Crown plan. Quotation requests are on Crown.", Thrive: "Food Drops are on. Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops and customer quotation requests are both on." };
   return <div className="space-y-5">
     <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#b42332]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#795900]"}`}>{vendor.verification}</span></div>} />
@@ -3504,7 +3520,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const totalValue = baseOrders.reduce((sum, item) => sum + item.total, 0);
 
   const DELIVERY_STATUSES: Order["status"][] = ["Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed", "Delivered"];
-  async function update(order: Order, status: Order["status"]) { try { if (DELIVERY_STATUSES.includes(status) && order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Delivery actions are only allowed on or after the delivery date.`); return; } if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, status); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x) })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Order status could not be saved"); } }
+  async function update(order: Order, status: Order["status"]) { try { if (DELIVERY_STATUSES.includes(status) && order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Delivery actions are only allowed on or after the delivery date.`); return; } if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, status); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x) })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } catch (error) { toast.error(errorMessage(error, "Order status could not be saved")); } }
   async function acceptThirdPartyRequest(order: Order) {
     setDeliveryActionId(order.id);
     try {
@@ -3517,7 +3533,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       }));
       toast.success("Request accepted. The customer can now issue a secure handover code.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The delivery request could not be accepted");
+      toast.error(errorMessage(error, "The delivery request could not be accepted"));
     } finally { setDeliveryActionId(null); }
   }
   async function issueThirdPartyCode(order: Order) {
@@ -3532,7 +3548,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
           : request),
       }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "A handover code could not be issued");
+      toast.error(errorMessage(error, "A handover code could not be issued"));
     } finally { setDeliveryActionId(null); }
   }
   async function verifyThirdPartyCode(order: Order) { if (order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Handover verification is only allowed on or after the delivery date.`); return; }
@@ -3551,7 +3567,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       }));
       toast.success("Handover verified. Order marked delivered.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The handover code could not be verified");
+      toast.error(errorMessage(error, "The handover code could not be verified"));
     } finally { setDeliveryActionId(null); }
   }
   async function refreshCommerce() {
@@ -3559,12 +3575,12 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       const snapshot = await loadLiveCommerceSnapshot();
       setState((current) => mergeLiveCommerce(current, snapshot, session));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Orders could not be refreshed");
+      toast.error(errorMessage(error, "Orders could not be refreshed"));
     }
   }
   function cancel(order: Order) { const fee = cancellationCharge(order); if (!confirm(`Cancellation charge: ${money(fee)} based on the current fulfilment stage. Send to Operations for final review?`)) return; const reason = prompt("Cancellation reason"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested", cancellationFee: fee } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: `Review with estimated charge ${money(fee)}`, confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation review", `${order.id}: proposed charge ${money(fee)}.`), ...s.notifications] })); }
   function locate(order: Order) { navigator.geolocation?.getCurrentPosition((position) => { setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, trackingLatitude: position.coords.latitude, trackingLongitude: position.coords.longitude } : x), notifications: [notice(order.customerEmail, "customer", "Live location updated", `${order.id} location was refreshed by the vendor.`), ...s.notifications] })); toast.success("Live delivery position updated"); }, () => toast.error("Allow location access on the delivery device"), { enableHighAccuracy: true, maximumAge: 0 }); }
-  async function assign(order: Order, staffId: string) { try { if (isLiveSupabaseMode()) await assignLiveDeliveryStaff(order.id, staffId === "unassigned" ? undefined : staffId); const nextAssignments = staffId === "unassigned" ? state.assignments.filter((x) => x.orderId !== order.id) : [{ id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }, ...state.assignments.filter((x) => x.orderId !== order.id)]; setState((s) => ({ ...s, assignments: nextAssignments, notifications: staffId === "unassigned" ? s.notifications : [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name || "Your delivery person"} will handle ${order.id}.`), ...s.notifications] })); toast.success(staffId === "unassigned" ? "Delivery assignment cleared" : "Delivery person assigned"); } catch (error) { toast.error(error instanceof Error ? error.message : "Delivery assignment could not be saved"); } }
+  async function assign(order: Order, staffId: string) { try { if (isLiveSupabaseMode()) await assignLiveDeliveryStaff(order.id, staffId === "unassigned" ? undefined : staffId); const nextAssignments = staffId === "unassigned" ? state.assignments.filter((x) => x.orderId !== order.id) : [{ id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }, ...state.assignments.filter((x) => x.orderId !== order.id)]; setState((s) => ({ ...s, assignments: nextAssignments, notifications: staffId === "unassigned" ? s.notifications : [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name || "Your delivery person"} will handle ${order.id}.`), ...s.notifications] })); toast.success(staffId === "unassigned" ? "Delivery assignment cleared" : "Delivery person assigned"); } catch (error) { toast.error(errorMessage(error, "Delivery assignment could not be saved")); } }
 
   const customerSchedules = scope === "customer" ? state.schedules.filter((item) => item.customerEmail === session.email && (item.status || "Active") === "Active").length : 0;
   const customerOpenRequirements = scope === "customer" ? state.requirements.filter((item) => item.customerEmail === session.email && item.status !== "Awarded").length : 0;
@@ -3670,7 +3686,7 @@ function RateOrderDialog({ order, close, state, setState, session }: { order: Or
 function OrderRescheduleDialog({ order, close, state, setState }: { order: Order | null; close: () => void; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const [date, setDate] = useState(tomorrow());
   const [slot, setSlot] = useState("06:00–07:00 AM");
-  const maxDate = addDaysISO(todayISO(), 15);
+  const maxDate = latestOrderDate();
   const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => s.vendorId === order.vendorId && s.isActive) : [];
   const rescheduleSlotOptions: string[] = vendorActiveSlots.length > 0
     ? vendorActiveSlots.map((s) => formatSlotLabel(s))
@@ -3681,7 +3697,7 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
     if (!order) return;
     if (!date || date < tomorrow()) return toast.error("Choose tomorrow or a later date");
     if (date > maxDate) return toast.error("Orders can only be rescheduled within the next 15 days");
-    try { if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, slot); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot } : x) })); toast.success(`Order moved to ${date}`); close(); } catch (error) { toast.error(error instanceof Error ? error.message : "Order could not be rescheduled"); }
+    try { if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, slot); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot } : x) })); toast.success(`Order moved to ${date}`); close(); } catch (error) { toast.error(errorMessage(error, "Order could not be rescheduled")); }
   }
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#753b50] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
 }
@@ -3776,7 +3792,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
               toast.success("Payment confirmed! Your delivery schedule is active.");
               setPlaced(true);
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Payment verification failed.");
+              toast.error(errorMessage(err, "Payment verification failed."));
             } finally {
               setBusy(false);
             }
@@ -3798,7 +3814,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
         rzp.open();
       } catch (error) {
         setBusy(false);
-        toast.error(error instanceof Error ? error.message : "Payment could not be initiated");
+        toast.error(errorMessage(error, "Payment could not be initiated"));
       }
       return;
     }
@@ -3819,7 +3835,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
       toast.success("Payment confirmed. Your delivery schedule is active.");
       setPlaced(true);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Payment could not be confirmed");
+      toast.error(errorMessage(error, "Payment could not be confirmed"));
     } finally {
       setBusy(false);
     }
@@ -3979,7 +3995,7 @@ export function validateDeliverySlot({
     if (conflicting) {
       return {
         valid: false,
-        error: `This time window overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`,
+        error: `This time window overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}). Edit or switch off that slot first.`,
       };
     }
   }
@@ -4079,8 +4095,8 @@ function DeliverySlotsSection({
         toast.success(editingSlot ? "Delivery slot updated." : "Delivery slot added.");
         setModalOpen(false);
       } catch (err) {
-        setFormError(err instanceof Error ? err.message : "Failed to save delivery slot.");
-        toast.error(err instanceof Error ? err.message : "Delivery slot could not be saved.");
+        setFormError(errorMessage(err, "Failed to save delivery slot."));
+        toast.error(errorMessage(err, "Delivery slot could not be saved."));
       } finally {
         setSaving(false);
       }
@@ -4126,7 +4142,7 @@ function DeliverySlotsSection({
         }
         toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to update slot status.");
+        toast.error(errorMessage(err, "Failed to update slot status."));
       } finally {
         setActionId(null);
       }
@@ -4158,7 +4174,7 @@ function DeliverySlotsSection({
         }
         toast.success("Delivery slot deleted.");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to delete slot.");
+        toast.error(errorMessage(err, "Failed to delete slot."));
       } finally {
         setActionId(null);
       }
@@ -4368,7 +4384,7 @@ function DeliverySlotsSection({
 
 function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [radius, setRadius] = useState(vendor.radiusKm), [address, setAddress] = useState(vendor.address), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({ lat: vendor.latitude, lng: vendor.longitude }), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
-  async function update(patch: Partial<Vendor>, message: string) { try { if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { ...(patch.openToday !== undefined ? { store_open_today: patch.openToday } : {}), ...(patch.operational ? { operational_status: patch.operational.toLowerCase() } : {}), ...(patch.delivery !== undefined ? { delivery_enabled: patch.delivery } : {}), ...(patch.pickup !== undefined ? { pickup_enabled: patch.pickup } : {}), ...(patch.openToday === true && vendor.verification === "Verified" ? { marketplace_visible: true } : {}) }); setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, ...patch } : x), audit: [audit(session, message, vendor.businessName), ...s.audit] })); toast.success(message); } catch (error) { toast.error(error instanceof Error ? error.message : "Store control could not be saved"); } }
+  async function update(patch: Partial<Vendor>, message: string) { try { if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { ...(patch.openToday !== undefined ? { store_open_today: patch.openToday } : {}), ...(patch.operational ? { operational_status: patch.operational.toLowerCase() } : {}), ...(patch.delivery !== undefined ? { delivery_enabled: patch.delivery } : {}), ...(patch.pickup !== undefined ? { pickup_enabled: patch.pickup } : {}), ...(patch.openToday === true && vendor.verification === "Verified" ? { marketplace_visible: true } : {}) }); setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, ...patch } : x), audit: [audit(session, message, vendor.businessName), ...s.audit] })); toast.success(message); } catch (error) { toast.error(errorMessage(error, "Store control could not be saved")); } }
   function detectStore() {
     if (!navigator.geolocation) return toast.error("Location detection is not supported in this browser.");
     if (!window.isSecureContext) return toast.error("Location requires HTTPS or localhost. Open the app on a secure page and try again.");
@@ -4400,8 +4416,8 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
       }
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
-  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first"); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(error instanceof Error ? error.message : "Store address was not found"); } finally { setMapBusy(false); } }
-  async function saveStorePin() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Store location could not be saved"); } }
+  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first"); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
+  async function saveStorePin() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
@@ -4482,7 +4498,7 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
       }));
       toast.success(`Plan upgraded to ${newPlan}!`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Plan upgrade could not be saved");
+      toast.error(errorMessage(error, "Plan upgrade could not be saved"));
     } finally {
       setUpgradingTo(null);
     }
@@ -4497,7 +4513,7 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
       const nextStatus: Verification = resubmit ? "Submitted" : vendor.verification;
       setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, fssaiNumber: certificate.trim(), certificateName: fileName || x.certificateName, expiryDate: expiry, verification: nextStatus, operational: resubmit ? "Inactive" : x.operational } : x), audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit] }));
       setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Verification details could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil />{editing ? "Close editor" : "Edit details"}</Button>} />
     <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#f7edf0] text-[#653046]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
@@ -4612,7 +4628,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   }
   async function generateImage(row: BulkCatalogDraft) {
     setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: true } : item));
-    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ productName: row.name, category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(error instanceof Error ? error.message : "Image creation failed"); }
+    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ productName: row.name, category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
   }
   async function publishAll() {
     const valid = rows.filter((row) => row.name.trim() && row.price > 0 && row.stock > 0);
@@ -4632,7 +4648,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
       }
       setState((current) => ({ ...current, products: [...created, ...current.products.filter((item) => !created.some((next) => next.id === item.id))], audit: [audit(session, "Bulk catalogue approved", `${created.length} item(s) published by human approval`), ...current.audit] }));
       toast.success(`${created.length} item(s) published`); setRows([]); close();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Catalogue could not be published"); }
+    } catch (error) { toast.error(errorMessage(error, "Catalogue could not be published")); }
     finally { setBusy(false); }
   }
   return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload CSV or TXT. The list is structured into draft products. Review every row, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
@@ -4702,7 +4718,7 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
       }
     } catch (error) {
       setNutritionConfidence(undefined);
-      setNutritionNote(error instanceof Error ? error.message : "Nutrition could not be estimated reliably.");
+      setNutritionNote(errorMessage(error, "Nutrition could not be estimated reliably."));
       toast.info("Nutrition is pending. You can still publish this product.");
     } finally { setBusy(false); }
   }
@@ -4723,7 +4739,7 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
       if (!response.ok) throw new Error(json.error || "Image enhancement failed");
       setImageUrl(json.imageDataUrl || json.imageUrl || imageUrl);
       toast.success("Marketplace image is ready. Review it before publishing.");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Image enhancement failed"); }
+    } catch (error) { toast.error(errorMessage(error, "Image enhancement failed")); }
     finally { setImageBusy(false); }
   }
 
@@ -4761,7 +4777,7 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
         toast.info("Product published. Operations has been flagged to review nutrition.");
       } else toast.success("Product pack saved");
       close();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Product could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Product could not be saved")); }
     finally { setBusy(false); }
   }
 
@@ -4795,16 +4811,16 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
       if (editing) setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === editing.id ? { ...x, id: staffId, name, phone } : x), audit: [audit(session, "Updated delivery staff", `${name} · ${phone}`), ...s.audit] }));
       else { const person: Staff = { id: staffId, vendorId: vendor.id, name, phone, active: true }; setState((s) => ({ ...s, staff: [person, ...s.staff], audit: [audit(session, "Added delivery staff", `${name} · ${phone}`), ...s.audit] })); }
       toast.success(editing ? "Delivery person updated" : "Delivery person added"); setName(""); setPhone(""); setEditing(null);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Delivery person could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Delivery person could not be saved")); }
   }
   async function remove(person: Staff) {
     if (!confirm(`Delete ${person.name} from the delivery team? Existing completed-order history is retained.`)) return;
     try { if (isLiveSupabaseMode()) await deleteLiveDeliveryStaff(person.id); setState((s) => ({ ...s, staff: s.staff.filter((x) => x.id !== person.id), assignments: s.assignments.filter((x) => x.staffId !== person.id), audit: [audit(session, "Deleted delivery staff", `${person.name} · ${person.phone}`), ...s.audit] })); toast.success("Delivery person deleted"); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Delivery person could not be deleted"); }
+    catch (error) { toast.error(errorMessage(error, "Delivery person could not be deleted")); }
   }
   return <div className="space-y-6"><Heading eyebrow="DELIVERY ACCOUNTABILITY" title="Your delivery team" body="Add, edit or remove delivery people. Active staff can be assigned to upcoming delivery orders." />
     <div className="surface-card rounded-[28px] p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Staff name" className={inputClass} /><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" className={inputClass} /><Button onClick={savePerson} className="h-11 rounded-xl bg-[#753b50]">{editing ? <Pencil /> : <Plus />}{editing ? "Save changes" : "Add staff"}</Button></div>{editing && <button onClick={() => { setEditing(null); setName(""); setPhone(""); }} className="mt-3 text-xs font-black text-stone-500">Cancel editing</button>}</div>
-    {people.length ? <div className="grid gap-3 md:grid-cols-2">{people.map((person) => <div key={person.id} className="surface-card flex items-center gap-3 rounded-[22px] p-4"><div className="grid size-11 place-items-center rounded-full bg-[#f7edf0] font-black text-[#653046]">{person.name[0]}</div><div className="min-w-0 flex-1"><b className="block truncate">{person.name}</b><div className="text-xs text-stone-500">{person.phone}</div></div><button onClick={() => { setEditing(person); setName(person.name); setPhone(person.phone); }} className="grid size-9 place-items-center rounded-xl hover:bg-stone-100" title="Edit"><Pencil className="size-4" /></button><button onClick={() => remove(person)} className="grid size-9 place-items-center rounded-xl text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="size-4" /></button><Switch checked={person.active} onCheckedChange={(value) => { void (async () => { try { if (isLiveSupabaseMode()) await saveLiveDeliveryStaff({ staffId: person.id, name: person.name, phone: person.phone, active: value }); setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === person.id ? { ...x, active: value } : x) })); } catch (error) { toast.error(error instanceof Error ? error.message : "Staff status could not be changed"); } })(); }} /></div>)}</div> : <Empty icon={Truck} title="No delivery staff" body="Add the first delivery person above." />}
+    {people.length ? <div className="grid gap-3 md:grid-cols-2">{people.map((person) => <div key={person.id} className="surface-card flex items-center gap-3 rounded-[22px] p-4"><div className="grid size-11 place-items-center rounded-full bg-[#f7edf0] font-black text-[#653046]">{person.name[0]}</div><div className="min-w-0 flex-1"><b className="block truncate">{person.name}</b><div className="text-xs text-stone-500">{person.phone}</div></div><button onClick={() => { setEditing(person); setName(person.name); setPhone(person.phone); }} className="grid size-9 place-items-center rounded-xl hover:bg-stone-100" title="Edit"><Pencil className="size-4" /></button><button onClick={() => remove(person)} className="grid size-9 place-items-center rounded-xl text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="size-4" /></button><Switch checked={person.active} onCheckedChange={(value) => { void (async () => { try { if (isLiveSupabaseMode()) await saveLiveDeliveryStaff({ staffId: person.id, name: person.name, phone: person.phone, active: value }); setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === person.id ? { ...x, active: value } : x) })); } catch (error) { toast.error(errorMessage(error, "Staff status could not be changed")); } })(); }} /></div>)}</div> : <Empty icon={Truck} title="No delivery staff" body="Add the first delivery person above." />}
     <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Today&apos;s assignments</h3>
       {(() => { const rows = state.orders.filter((o) => o.vendorId === vendor.id && o.payment === "Paid" && !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery").slice(0, 8); return rows.length ? <div className="mt-3 space-y-2">{rows.map((o) => { const a = state.assignments.find((x) => x.orderId === o.id); const who = state.staff.find((m) => m.id === a?.staffId); return <div key={o.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-[#faf6f4] px-4 py-3 text-sm sm:grid-cols-[1.1fr_1fr_1.2fr_1fr_auto]"><b className="truncate">{o.id}</b><span>{o.slot}</span><span className="truncate text-[#4c4246]">{o.deliveryAddress || "Address on order"}</span><span className={who ? "font-medium" : "text-[#71676b]"}>{who?.name || "Not assigned"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${who ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]"}`}>{who ? o.status : "Assign in Orders"}</span></div>; })}</div> : <p className="mt-3 rounded-2xl bg-[#faf6f4] p-4 text-sm text-[#71676b]">No open deliveries to assign right now.</p>; })()}
     </section>
@@ -4890,7 +4906,7 @@ function OperationsVendorRadius({ vendor, session, setState }: { vendor: Vendor;
       }));
       toast.success(`${vendor.businessName} service radius updated`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Vendor service radius could not be saved");
+      toast.error(errorMessage(error, "Vendor service radius could not be saved"));
     }
   }
   const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
@@ -4919,7 +4935,7 @@ function OperationsVerification({ session, state, setState }: { session: DemoSes
       if (isLiveSupabaseMode()) { await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_")); if (note.trim()) await sendVendorNote(vendor.id, note.trim()); }
       setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x), notifications: [notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : note.trim() ? `Note from Operations: ${note.trim()}` : "Review the Operations decision in Verification."), ...s.notifications], audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit] }));
       toast.success(`${vendor.businessName}: ${verification} saved`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Verification decision could not be saved"); }
+    } catch (error) { toast.error(errorMessage(error, "Verification decision could not be saved")); }
   }
   const [tab, setTab] = useState<"Submitted" | "Under review" | "Changes required" | "All">("All");
   const [pickedId, setPickedId] = useState("");
@@ -5090,7 +5106,7 @@ function HomepageCampaigns({ session, state, setState }: { session: DemoSession;
     // with no explanation).
     if (isLiveSupabaseMode()) {
       try { await saveLiveMarketplaceHome(next); }
-      catch (error) { toast.error(error instanceof Error ? error.message : "Marketplace settings could not be saved"); return; }
+      catch (error) { toast.error(errorMessage(error, "Marketplace settings could not be saved")); return; }
     }
     setState((current) => ({ ...current, merchandising: next, merchandisingError: null, audit: [audit(session, "Updated customer marketplace merchandising", `${next.featuredProductIds.length} featured products · AI popup ${next.recommendationPopupEnabled ? "on" : "off"}`), ...current.audit] }));
     toast.success(isLiveSupabaseMode() ? "Marketplace home settings saved" : "Marketplace home settings saved locally");
@@ -5114,7 +5130,7 @@ function HomepageCampaigns({ session, state, setState }: { session: DemoSession;
         const topCategory = [...state.products].sort((a,b) => b.stock - a.stock)[0]?.category || "Groceries";
         setSuggestions([{ name: `${topCategory} discovery`, audience: `Customers who have not purchased ${topCategory} recently`, offer: "Personalised discovery bundle or limited introductory offer", rationale: "Uses non-sensitive commerce behaviour only and gives customers a relevant reason to explore an available category.", channel: "In-app + WhatsApp opt-in" }]);
       }
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Campaign suggestions could not be generated"); }
+    } catch (error) { toast.error(errorMessage(error, "Campaign suggestions could not be generated")); }
     finally { setBusy(false); }
   }
   /** Save a campaign: to the database first in live mode (so a failure is never shown as saved), then to local data. */
@@ -5200,7 +5216,7 @@ function CreateUserDialog({ open, close, session, setState, live }: { open: bool
       setState((s) => ({ ...s, staffAccounts: [account, ...s.staffAccounts], audit: [audit(session, "Created team user", `${account.name} · ${account.email} · ${role}`), ...s.audit] }));
       setIssuedPassword({ email: account.email, password });
       toast.success(`${account.email} created as ${role}`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "User could not be created"); }
+    } catch (error) { toast.error(errorMessage(error, "User could not be created")); }
     finally { setBusy(false); }
   }
   function reset() { setName(""); setEmail(""); setRole("operations"); setIssuedPassword(null); setShowPassword(true); close(); }
@@ -5254,7 +5270,7 @@ function AuditLog({ items }: { items: Audit[] }) {
   const [auditQuery, setAuditQuery] = useState("");
   const [dbTrail, setDbTrail] = useState<TrailEvent[]>([]);
   const [trailError, setTrailError] = useState("");
-  useEffect(() => { if (!isLiveSupabaseMode()) return; let alive = true; loadAuditTrail().then((rows) => { if (alive) setDbTrail(rows); }).catch((e) => { if (alive) setTrailError(e instanceof Error ? e.message : "The audit trail could not be loaded"); }); return () => { alive = false; }; }, []);
+  useEffect(() => { if (!isLiveSupabaseMode()) return; let alive = true; loadAuditTrail().then((rows) => { if (alive) setDbTrail(rows); }).catch((e) => { if (alive) setTrailError(errorMessage(e, "The audit trail could not be loaded")); }); return () => { alive = false; }; }, []);
   const allItems = [...dbTrail, ...items];
   const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
   const shown = allItems.filter((item) => (kind === "All" || kindOf(item) === kind) && (!auditQuery.trim() || `${item.actor} ${item.action} ${item.detail}`.toLowerCase().includes(auditQuery.trim().toLowerCase())));
@@ -5308,7 +5324,7 @@ function NotificationDrawerV4({ page = false, open, setOpen, session, state, set
   const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
   const [busyRequest, setBusyRequest] = useState("");
   async function enable() { if (!("Notification" in window)) return toast.error("Notifications are unavailable in this browser"); const permission = await Notification.requestPermission(); if (permission === "granted") { new Notification("ShePlates notifications enabled", { body: "Verification, quote, schedule and tracking updates can reach this device.", icon: "/sheplates-logo.png" }); toast.success("Device notifications enabled"); } }
-  async function markAll() { try { if (isLiveSupabaseMode()) await markLiveNotificationsRead(); setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) })); } catch (error) { toast.error(error instanceof Error ? error.message : "Notifications could not be updated"); } }
+  async function markAll() { try { if (isLiveSupabaseMode()) await markLiveNotificationsRead(); setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) })); } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); } }
   async function respondToFollowRequest(item: Notification, accept: boolean) {
     if (!item.entityId) return;
     setBusyRequest(item.id);
@@ -5317,7 +5333,7 @@ function NotificationDrawerV4({ page = false, open, setOpen, session, state, set
       setState((current) => ({ ...current, notifications: current.notifications.map((notification) => notification.id === item.id ? { ...notification, read: true } : notification) }));
       toast.success(accept ? "Follow request approved" : "Follow request declined");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Follow request could not be updated");
+      toast.error(errorMessage(error, "Follow request could not be updated"));
     } finally { setBusyRequest(""); }
   }
   if (page) return <div className="mx-auto max-w-3xl space-y-4"><div className="flex items-end justify-between gap-3"><div><h1 className="text-[28px] font-bold leading-tight">Notifications</h1><p className="mt-1 text-sm text-[#71676b]">Private updates for {session.email}.</p></div></div><div className="space-y-3"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#653046]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#753b50]/30 bg-[#f7edf0]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div>{session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people.requests.some((request) => request.id === item.entityId) && <div className="mt-3 flex gap-2"><Button type="button" size="sm" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, true)} className="rounded-full bg-[#753b50] font-black text-white">Accept</Button><Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, false)} className="rounded-full font-black">Decline</Button></div>}</div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}</div></div></div>;
@@ -5390,11 +5406,11 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   async function addProduct(productId: string, announce = true) {
     const product = state.products.find((item) => item.id === productId); if (!product) return;
     try { await syncAgentCart([productId], [], announce ? `${product.name} added to your basket` : undefined); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Cart could not be saved"); }
+    catch (error) { toast.error(errorMessage(error, "Cart could not be saved")); }
   }
   async function addSuggestedBasket(productIds: string[]) {
     try { await syncAgentCart(productIds, [], `${productIds.length} suggested item${productIds.length === 1 ? "" : "s"} added to your basket`); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Basket could not be saved"); }
+    catch (error) { toast.error(errorMessage(error, "Basket could not be saved")); }
   }
 
   async function submitQualityComplaint(orderId: string, complaintText: string, fileName: string, imageDataUrl: string) {
@@ -5405,7 +5421,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
     setState((current) => withAgentMemory({ ...current, cancellations: [cancellation, ...current.cancellations], tickets: [ticket, ...current.tickets], notifications: [notice("operations@sheplates.demo", "operations", "Quality complaint needs review", `${cancellation.id} for ${orderId} · She Agent suggests ${money(recommendedRefundAmount)}.`), ...current.notifications], audit: [audit(session, "Quality complaint submitted", `${orderId} · photo attached (${fileName})`), ...current.audit] }, session.email, { lastComplaintAt: now() }));
     setMessages((x) => [...x, { role: "agent", text: `I've reviewed the photo for ${orderId}. ${aiDecision} I sent the evidence and a ${money(recommendedRefundAmount)} refund recommendation to Operations for final approval.` }]);
   }
-  async function handlePhotoSelected(file: File) { if (!awaitingPhoto) return; const { orderId, complaintText } = awaitingPhoto; setAwaitingPhoto(null); setMessages((x) => [...x, { role: "user", text: `📷 Attached: ${file.name}` }]); setBusy(true); try { const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("The photo could not be read. Please try again.")); reader.readAsDataURL(file); }); await submitQualityComplaint(orderId, complaintText, file.name, dataUrl); } catch (error) { setMessages((x) => [...x, { role: "agent", text: error instanceof Error ? error.message : "The photo could not be processed. Please try again." }]); } finally { setBusy(false); } }
+  async function handlePhotoSelected(file: File) { if (!awaitingPhoto) return; const { orderId, complaintText } = awaitingPhoto; setAwaitingPhoto(null); setMessages((x) => [...x, { role: "user", text: `📷 Attached: ${file.name}` }]); setBusy(true); try { const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("The photo could not be read. Please try again.")); reader.readAsDataURL(file); }); await submitQualityComplaint(orderId, complaintText, file.name, dataUrl); } catch (error) { setMessages((x) => [...x, { role: "agent", text: errorMessage(error, "The photo could not be processed. Please try again.") }]); } finally { setBusy(false); } }
 
   async function send(prefill?: string) {
     const text = (prefill ?? message).trim();
@@ -5511,10 +5527,10 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
       setBusy(false);
       if (basketProducts.length || removeIds.size) {
         try { await syncAgentCart(basketProducts.map((product) => product.id), [...removeIds]); }
-        catch (error) { toast.error(error instanceof Error ? error.message : "Your basket could not be saved. Please try again"); }
+        catch (error) { toast.error(errorMessage(error, "Your basket could not be saved. Please try again")); }
       }
     } catch (error) {
-      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: error instanceof Error ? error.message : "She Agent is temporarily unavailable. Please try again shortly." }]);
+      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.") }]);
     } finally {
       setBusy(false);
     }

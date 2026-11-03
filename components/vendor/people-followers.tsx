@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { toast } from "sonner";
 import { loadVendorFollowers, type VendorFollower } from "@/lib/social";
 import type { Vendor } from "@/components/sheplates-v3";
@@ -17,7 +18,7 @@ export function VendorPeopleFollowers({ vendor }: { vendor: Vendor }) {
         const result = await loadVendorFollowers(vendor.id);
         if (active) setFollowers(result);
       } catch (error) {
-        if (active) toast.error(error instanceof Error ? error.message : "Customer followers could not be loaded");
+        if (active) toast.error(errorMessage(error, "Customer followers could not be loaded"));
       } finally {
         if (active) setLoading(false);
       }

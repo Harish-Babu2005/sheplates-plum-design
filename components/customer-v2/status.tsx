@@ -3,6 +3,7 @@
 // A status is a photo or a video of up to 30 seconds. It disappears after 24 hours, and each person can
 // watch it once. Nothing here is a permanent gallery.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, Eye, Heart, MapPin, Plus, Trash2, Volume2, VolumeX, X } from "@/components/icons";
 import { toast } from "sonner";
@@ -103,7 +104,7 @@ export function StatusViewer({ items, own, onClose, onViewed, onLike, onDelete, 
   const likeCount = (current as Status).likeCount + (likedHere[current.id] !== undefined && likedHere[current.id] !== (current as Status).liked ? (likedHere[current.id] ? 1 : -1) : 0);
   async function toggleLike() {
     const next = !liked; setLikedHere((m) => ({ ...m, [current.id]: next }));
-    try { await onLike(current.id, next); } catch (e) { setLikedHere((m) => ({ ...m, [current.id]: !next })); toast.error(e instanceof Error ? e.message : "Could not save your like"); }
+    try { await onLike(current.id, next); } catch (e) { setLikedHere((m) => ({ ...m, [current.id]: !next })); toast.error(errorMessage(e, "Could not save your like")); }
   }
   return createPortal(<div role="dialog" aria-modal="true" aria-label={own ? "Your status" : `${current.handle}'s status`} data-testid="status-viewer" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[260] grid place-items-center bg-[#faf6f4] p-0 sm:p-5">
     <button type="button" aria-label="Go back one" disabled={index === 0} onClick={() => moveTo(Math.max(0, index - 1))} className="absolute left-1/2 top-1/2 z-10 hidden size-12 -translate-x-[330px] -translate-y-1/2 place-items-center rounded-full bg-[#753b50] text-white disabled:opacity-40 sm:grid"><ArrowLeft className="size-6" /></button>
@@ -128,9 +129,9 @@ export function StatusViewer({ items, own, onClose, onViewed, onLike, onDelete, 
         {own ? <div className="flex items-center gap-3 text-sm font-black">
             <button type="button" onClick={async () => setSeenBy(await (loadViewers?.(current.id) ?? Promise.resolve([])))} className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 backdrop-blur" data-testid="status-views"><Eye className="size-4" />{(current as MyStatus).viewCount} view{(current as MyStatus).viewCount === 1 ? "" : "s"}</button>
             <span className="inline-flex items-center gap-1.5" data-testid="status-own-likes"><Heart className="size-4" />{(current as MyStatus).likeCount}</span>
-            {onDelete && <button type="button" aria-label="Delete this status" onClick={async () => { try { await onDelete(current.id); toast.success("Status deleted"); if (count <= 1) onClose(); else setIndex((i) => Math.max(0, i - 1)); } catch (e) { toast.error(e instanceof Error ? e.message : "Could not delete"); } }} className="ml-auto grid size-10 place-items-center rounded-full bg-white/20 backdrop-blur"><Trash2 className="size-4" /></button>}
+            {onDelete && <button type="button" aria-label="Delete this status" onClick={async () => { try { await onDelete(current.id); toast.success("Status deleted"); if (count <= 1) onClose(); else setIndex((i) => Math.max(0, i - 1)); } catch (e) { toast.error(errorMessage(e, "Could not delete")); } }} className="ml-auto grid size-10 place-items-center rounded-full bg-white/20 backdrop-blur"><Trash2 className="size-4" /></button>}
           </div>
-          : <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-[11px] font-bold text-white/70">Seen once, then gone for you{onReport && <button type="button" aria-label="Report this status" onClick={async () => { const reason = window.prompt("Why are you reporting this status? (optional)") ; if (reason === null) return; try { await onReport(current.id, reason); toast.success("Thanks. Our team will review it."); } catch (e) { toast.error(e instanceof Error ? e.message : "Could not send the report"); } }} className="rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-black backdrop-blur">Report</button>}</span>
+          : <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-[11px] font-bold text-white/70">Seen once, then gone for you{onReport && <button type="button" aria-label="Report this status" onClick={async () => { const reason = window.prompt("Why are you reporting this status? (optional)") ; if (reason === null) return; try { await onReport(current.id, reason); toast.success("Thanks. Our team will review it."); } catch (e) { toast.error(errorMessage(e, "Could not send the report")); } }} className="rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-black backdrop-blur">Report</button>}</span>
               <button type="button" aria-label={liked ? "Unlike" : "Like"} onClick={() => void toggleLike()} className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-2 text-sm font-black backdrop-blur"><Heart className={`size-5 ${liked ? "fill-[#753b50] text-[#753b50]" : ""}`} /><span data-testid="status-likes">{likeCount}</span></button></div>}
         {seenBy && <div className="mt-3 max-h-40 overflow-y-auto rounded-2xl bg-black/55 p-3 text-xs backdrop-blur" data-testid="status-seen-by">{seenBy.length ? seenBy.map((v) => <div key={v.handle} className="flex justify-between py-1"><span className="font-black">@{v.handle}</span><span className="text-white/70">{v.liked ? "♥ " : ""}seen</span></div>) : <span className="text-white/70">Nobody has watched this yet.</span>}</div>}
       </div>
@@ -157,13 +158,13 @@ export function StatusComposer({ open, onClose, onPost, vendors }: {
       if (next.type.startsWith("video/")) { const inspected = await inspectVideo(next); setInfo(inspected); }
       else if (!next.type.startsWith("image/")) throw new Error("Choose a photo or a video");
       setFile(next); setPreview((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(next); });
-    } catch (e) { setError(e instanceof Error ? e.message : "That file could not be used"); } finally { setChecking(false); }
+    } catch (e) { setError(errorMessage(e, "That file could not be used")); } finally { setChecking(false); }
   }
   async function submit() {
     if (!file) return;
     setBusy(true); setError("");
     try { await onPost({ kind: isVideo ? "video" : "photo", file, thumbDataUrl: info?.thumbDataUrl, durationS: info?.durationS, caption, vendorId: vendorId || null }); toast.success("Status posted. It disappears in 24 hours"); onClose(); }
-    catch (e) { setError(e instanceof Error ? e.message : "The status could not be posted"); } finally { setBusy(false); }
+    catch (e) { setError(errorMessage(e, "The status could not be posted")); } finally { setBusy(false); }
   }
   return <Dialog open={open} onOpenChange={(v) => !v && onClose()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-md">
     <DialogHeader><DialogTitle className="text-lg font-black">Add to your status</DialogTitle><DialogDescription>A photo, or a video of up to 30 seconds. It disappears after 24 hours and each person can watch it once.</DialogDescription></DialogHeader>
