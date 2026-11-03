@@ -61,7 +61,7 @@ export function StoriesTab({ state, social, shorts, people, statuses, shortsRadi
     </section>
 
     {composer && <StatusComposer open onClose={() => setComposer(false)} vendors={vendorOptions} onPost={statuses.post} />}
-    {watching && <StatusViewer items={watching.items} own={watching.own} onClose={() => setWatching(null)} onViewed={statuses.markViewed} onLike={statuses.toggleLike} loadViewers={statuses.viewers} onOpenVendor={onOpenVendor}
+    {watching && <StatusViewer items={watching.items} own={watching.own} onClose={() => setWatching(null)} onViewed={statuses.markViewed} onLike={statuses.toggleLike} onReport={statuses.report} loadViewers={statuses.viewers} onOpenVendor={onOpenVendor}
       onDelete={watching.own ? async (id) => { await statuses.remove(id); setWatching((w) => (w ? { ...w, items: w.items.filter((i) => i.id !== id) } : w)); } : undefined} />}
     <Dialog open={finder} onOpenChange={setFinder}><DialogContent className="max-h-[88vh] overflow-y-auto rounded-[28px] sm:max-w-md">
       <DialogHeader><DialogTitle className="text-lg font-black">Find people</DialogTitle><DialogDescription>Follow customers to see their statuses first.</DialogDescription></DialogHeader>

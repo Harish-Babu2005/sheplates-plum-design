@@ -115,6 +115,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
   const [certificateInputs, setCertificateInputs] = useState<Record<string, { number: string; expiry: string; file: File | null }>>({});
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, Permissions>>({});
   const [claimLink, setClaimLink] = useState("");
+  const [p0Tab, setP0Tab] = useState<"All" | "Pending approval" | "Live" | "Cancelled">("All");
 
   const reload = useCallback(async () => {
     setError("");
@@ -333,21 +334,100 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
 
   const hasPermission = (permission: Permission) => isAdmin || permissions[permission];
 
-  return <div className="space-y-6">
+  const livePlanless = vendors.filter((v) => v.verification_status === "verified" && !v.p0_cancelled_at);
+  const waiting = vendors.filter((v) => ["submitted", "under_review", "changes_required"].includes(v.verification_status) && !v.p0_cancelled_at);
+  const cancelledList = vendors.filter((v) => Boolean(v.p0_cancelled_at));
+  const pendingInvites = invitations.filter((i) => i.status === "pending");
+  const tabs = [["All", vendors], ["Pending approval", waiting], ["Live", livePlanless], ["Cancelled", cancelledList]] as const;
+  const shownVendors = (tabs.find(([name]) => name === p0Tab) || tabs[0])[1];
+  return <div className="space-y-5">
     <header>
-      <p className="text-xs font-black uppercase tracking-[.15em] text-[#B34D00]">P0 Connect · staff-managed</p>
-      <h1 className="mt-1 text-2xl font-black">Connect vendors</h1>
-      <p className="mt-2 text-sm text-stone-600">P0 is independent of the Taster, Crave, Thrive and Crown plans. Vendors remain hidden until approval and can be upgraded without creating a second vendor record.</p>
+      <h1 className="text-[28px] font-bold leading-tight">P0 Connect vendors</h1>
+      <p className="mt-1 text-sm text-[#66666B]">{isAdmin ? "Decide which Operations team members can create, approve, cancel and upgrade directory vendors." : "Directory listings you manage for vendors who connect with customers on WhatsApp. They have no login."} P0 is independent of the Taster, Crave, Thrive and Crown plans.</p>
     </header>
+    <div className="grid gap-4 sm:grid-cols-3"><div className="surface-card rounded-3xl p-5"><div className="text-[13px] text-[#66666B]">Connect vendors live</div><div className="mt-1 text-[28px] font-bold">{livePlanless.length}</div></div><div className="surface-card rounded-3xl p-5"><div className="text-[13px] text-[#66666B]">Waiting for approval</div><div className="mt-1 text-[28px] font-bold">{waiting.length}</div></div><div className="surface-card rounded-3xl p-5"><div className="text-[13px] text-[#66666B]">Upgrade invitations</div><div className="mt-1 text-[28px] font-bold">{pendingInvites.length}</div></div></div>
 
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
     {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{notice}</p>}
     {claimLink && <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Authenticated ownership confirmation link</b><div className="mt-2 break-all">{claimLink}</div><button type="button" className="mt-2 font-black underline" onClick={() => void navigator.clipboard.writeText(claimLink)}>Copy claim link</button></div>}
 
-    {hasPermission("can_create") && <form onSubmit={(event) => void createVendor(event)} className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-black">Create a P0 Connect listing</h2>
+    {isAdmin && <section className="surface-card rounded-3xl p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Operations permissions</h2><span className="text-xs text-[#66666B]">Every change is recorded in the audit log</span></div>
+      <p className="mt-3 rounded-2xl bg-[#E6EEFE] p-3 text-xs font-medium text-[#0A44B8]">The person who creates a Connect vendor can never approve it. Approval needs a different team member with the Review right. Operations users have no P0 permissions until you assign them.</p>
+      <div className="mt-4 space-y-4">
+        {operationsUsers.map((user) => <div key={user.id} className="rounded-[18px] bg-[#F4F4F4] p-4">
+          <div className="font-semibold">{user.full_name || "Operations user"}</div>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {PERMISSION_LABELS.map(({ key, label }) => <label key={key} className="flex items-center gap-1.5 text-xs font-semibold">
+              <input type="checkbox" checked={permissionDrafts[user.id]?.[key] || false} onChange={(event) => setPermissionDrafts((current) => ({
+                ...current,
+                [user.id]: { ...(current[user.id] || EMPTY_PERMISSIONS), [key]: event.target.checked },
+              }))} />
+              {label}
+            </label>)}
+          </div>
+          <button type="button" onClick={() => void savePermissions(user.id)} disabled={busy} className="mt-3 rounded-full bg-[#FF7B00] px-4 py-2 text-xs font-bold text-[#0A0A0A] disabled:opacity-50">Save permissions</button>
+        </div>)}
+      </div>
+    </section>}
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+    <section className="space-y-3 xl:order-1">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="P0 status">{tabs.map(([name, list]) => <button key={name} type="button" role="tab" aria-selected={p0Tab === name} onClick={() => setP0Tab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${p0Tab === name ? "bg-[#FF7B00] text-[#0A0A0A]" : "bg-white text-[#404040]"}`}>{name} · {list.length}</button>)}</div>
+      {loading ? <p role="status" className="text-sm text-stone-500">Loading P0 vendor records…</p>
+        : shownVendors.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-300 p-6 text-sm text-stone-500">No P0 vendors have been created.</p>
+          : shownVendors.map((vendor) => {
+            const document = latestDocuments.get(vendor.id);
+            const invitation = latestInvitations.get(vendor.id);
+            const certificateValid = Boolean(document?.document_number && document.expiry_date && document.expiry_date >= new Date().toISOString().slice(0, 10));
+            const cancelled = Boolean(vendor.p0_cancelled_at);
+            const approvalPending = ["submitted", "under_review", "changes_required"].includes(vendor.verification_status);
+            const upgradeValue = upgrade[vendor.id] || { email: "", planCode: "crave" };
+            const certificateValue = certificateInputs[vendor.id] || { number: "", expiry: "", file: null };
+            return <article key={vendor.id} className="surface-card rounded-3xl p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold">{vendor.name}</h3>
+                  <p className="text-xs text-stone-500">{vendor.category} · {vendor.locality} · {vendor.service_radius_km} km</p>
+                  <p className="mt-1 text-xs text-stone-500">ID {vendor.id} · {vendor.latitude}, {vendor.longitude}</p>
+                  <p className="mt-1 text-xs text-stone-500">Contact: {vendor.p0_contact_name} · {vendor.p0_contact_phone} · WhatsApp {vendor.whatsapp_number}</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${cancelled ? "bg-[#FFE9E9] text-[#C20000]" : vendor.verification_status === "verified" ? "bg-[#E3F8E3] text-[#0A7A2A]" : "bg-[#FFF4CF] text-[#7A5A00]"}`}>{cancelled ? "Cancelled" : `${vendor.verification_status} · ${vendor.operational_status}`}</span>
+              </div>
+              {vendor.p0_fssai_required && <p className={`mt-3 text-xs font-semibold ${certificateValid ? "text-[#0A7A2A]" : "text-[#7A5A00]"}`}>
+                FSSAI {certificateValid ? `on file · expires ${document?.expiry_date}` : "required · certificate not current"}
+              </p>}
+              {invitation && <p className="mt-2 text-xs text-stone-600">Upgrade invite: {invitation.invited_email} · {invitation.status} · expires {new Date(invitation.expires_at).toLocaleDateString()}</p>}
+
+              {vendor.p0_fssai_required && !certificateValid && hasPermission("can_upload") && !cancelled && <div className="mt-4 grid gap-2 rounded-xl bg-[#FFF4CF] p-3 sm:grid-cols-4">
+                <input aria-label="FSSAI number" placeholder="FSSAI number" value={certificateValue.number} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, number: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
+                <input aria-label="Certificate expiry" type="date" value={certificateValue.expiry} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, expiry: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
+                <input aria-label="Certificate file" type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, file: event.target.files?.[0] || null } }))} className="min-w-0 rounded-lg border border-amber-200 px-3 py-2 text-xs" />
+                <button type="button" onClick={() => void uploadCertificate(vendor.id)} disabled={busy} className="rounded-full bg-[#FF7B00] px-4 py-2 text-xs font-bold text-[#0A0A0A] disabled:opacity-50">Upload certificate</button>
+              </div>}
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {approvalPending && !cancelled && hasPermission("can_review") && <>
+                  <button type="button" onClick={() => void review(vendor.id, "verified")} disabled={busy} className="rounded-full bg-[#FF7B00] px-4 py-2 text-xs font-bold text-[#0A0A0A] disabled:opacity-50">Approve</button>
+                  <button type="button" onClick={() => void review(vendor.id, "rejected")} disabled={busy} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50">Reject</button>
+                </>}
+                {cancelled && hasPermission("can_reactivate") && <button type="button" onClick={() => void reactivate(vendor)} disabled={busy} className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-800 disabled:opacity-50">Reactivate</button>}
+                {!cancelled && vendor.operational_status === "active" && hasPermission("can_cancel") && <button type="button" onClick={() => void cancel(vendor)} disabled={busy} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50">Cancel</button>}
+              </div>
+
+              {!cancelled && vendor.operational_status === "active" && hasPermission("can_upgrade") && <div className="mt-4 grid gap-2 border-t border-stone-100 pt-4 sm:grid-cols-[1fr_180px_auto]">
+                <input type="email" placeholder="Vendor account email" value={upgradeValue.email} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, email: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm" />
+                <select aria-label="Subscription plan" value={upgradeValue.planCode} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, planCode: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">
+                  <option value="taster">Taster · ₹499</option><option value="crave">Crave · ₹699</option><option value="thrive">Thrive · ₹799</option><option value="crown">Crown · ₹999</option>
+                </select>
+                <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#FF7B00] px-4 py-2 text-xs font-black text-[#0A0A0A] disabled:opacity-50">Invite / claim</button>
+              </div>}
+            </article>;
+          })}
+    </section>
+    {hasPermission("can_create") && <form onSubmit={(event) => void createVendor(event)} className="surface-card h-fit rounded-3xl p-5 xl:order-2">
+      <h2 className="text-lg font-semibold">Add a Connect vendor</h2>
       <p className="mt-1 text-xs text-stone-500">Creates one unowned vendor record; it starts pending, inactive and hidden. Coordinates and WhatsApp are required for later discovery.</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
         <label className="text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Category<input required value={form.category} onChange={(event) => updateForm("category", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
@@ -389,81 +469,8 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
         <label className="text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
       </div>}
-      <button disabled={busy} className="mt-4 rounded-xl bg-[#FF7B00] px-5 py-3 text-sm font-black text-[#0A0A0A] disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
+      <button disabled={busy} className="mt-4 h-12 w-full rounded-full bg-[#FF7B00] px-5 text-sm font-bold text-[#0A0A0A] disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
     </form>}
-
-    {isAdmin && <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-black">Operations permissions</h2>
-      <p className="mt-1 text-xs text-stone-500">Operations users have no P0 permissions until Super Admin assigns them individually.</p>
-      <div className="mt-4 space-y-4">
-        {operationsUsers.map((user) => <div key={user.id} className="rounded-2xl border border-stone-100 p-4">
-          <div className="font-bold">{user.full_name || "Operations user"}</div>
-          <div className="mt-3 flex flex-wrap gap-3">
-            {PERMISSION_LABELS.map(({ key, label }) => <label key={key} className="flex items-center gap-1.5 text-xs font-semibold">
-              <input type="checkbox" checked={permissionDrafts[user.id]?.[key] || false} onChange={(event) => setPermissionDrafts((current) => ({
-                ...current,
-                [user.id]: { ...(current[user.id] || EMPTY_PERMISSIONS), [key]: event.target.checked },
-              }))} />
-              {label}
-            </label>)}
-          </div>
-          <button type="button" onClick={() => void savePermissions(user.id)} disabled={busy} className="mt-3 rounded-lg border border-stone-200 px-3 py-2 text-xs font-black disabled:opacity-50">Save permissions</button>
-        </div>)}
-      </div>
-    </section>}
-
-    <section className="space-y-3">
-      <h2 className="text-lg font-black">P0 records</h2>
-      {loading ? <p role="status" className="text-sm text-stone-500">Loading P0 vendor records…</p>
-        : vendors.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-300 p-6 text-sm text-stone-500">No P0 vendors have been created.</p>
-          : vendors.map((vendor) => {
-            const document = latestDocuments.get(vendor.id);
-            const invitation = latestInvitations.get(vendor.id);
-            const certificateValid = Boolean(document?.document_number && document.expiry_date && document.expiry_date >= new Date().toISOString().slice(0, 10));
-            const cancelled = Boolean(vendor.p0_cancelled_at);
-            const approvalPending = ["submitted", "under_review", "changes_required"].includes(vendor.verification_status);
-            const upgradeValue = upgrade[vendor.id] || { email: "", planCode: "crave" };
-            const certificateValue = certificateInputs[vendor.id] || { number: "", expiry: "", file: null };
-            return <article key={vendor.id} className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="text-lg font-black">{vendor.name}</h3>
-                  <p className="text-xs text-stone-500">{vendor.category} · {vendor.locality} · {vendor.service_radius_km} km</p>
-                  <p className="mt-1 text-xs text-stone-500">ID {vendor.id} · {vendor.latitude}, {vendor.longitude}</p>
-                  <p className="mt-1 text-xs text-stone-500">Contact: {vendor.p0_contact_name} · {vendor.p0_contact_phone} · WhatsApp {vendor.whatsapp_number}</p>
-                </div>
-                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold">{cancelled ? "Cancelled" : `${vendor.verification_status} · ${vendor.operational_status}`}</span>
-              </div>
-              {vendor.p0_fssai_required && <p className={`mt-3 text-xs font-semibold ${certificateValid ? "text-emerald-700" : "text-amber-700"}`}>
-                FSSAI {certificateValid ? `on file · expires ${document?.expiry_date}` : "required · certificate not current"}
-              </p>}
-              {invitation && <p className="mt-2 text-xs text-stone-600">Upgrade invite: {invitation.invited_email} · {invitation.status} · expires {new Date(invitation.expires_at).toLocaleDateString()}</p>}
-
-              {vendor.p0_fssai_required && !certificateValid && hasPermission("can_upload") && !cancelled && <div className="mt-4 grid gap-2 rounded-xl bg-amber-50 p-3 sm:grid-cols-4">
-                <input aria-label="FSSAI number" placeholder="FSSAI number" value={certificateValue.number} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, number: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
-                <input aria-label="Certificate expiry" type="date" value={certificateValue.expiry} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, expiry: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
-                <input aria-label="Certificate file" type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, file: event.target.files?.[0] || null } }))} className="min-w-0 rounded-lg border border-amber-200 px-3 py-2 text-xs" />
-                <button type="button" onClick={() => void uploadCertificate(vendor.id)} disabled={busy} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-black text-white disabled:opacity-50">Upload certificate</button>
-              </div>}
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {approvalPending && !cancelled && hasPermission("can_review") && <>
-                  <button type="button" onClick={() => void review(vendor.id, "verified")} disabled={busy} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:opacity-50">Approve</button>
-                  <button type="button" onClick={() => void review(vendor.id, "rejected")} disabled={busy} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50">Reject</button>
-                </>}
-                {cancelled && hasPermission("can_reactivate") && <button type="button" onClick={() => void reactivate(vendor)} disabled={busy} className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-800 disabled:opacity-50">Reactivate</button>}
-                {!cancelled && vendor.operational_status === "active" && hasPermission("can_cancel") && <button type="button" onClick={() => void cancel(vendor)} disabled={busy} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50">Cancel</button>}
-              </div>
-
-              {!cancelled && vendor.operational_status === "active" && hasPermission("can_upgrade") && <div className="mt-4 grid gap-2 border-t border-stone-100 pt-4 sm:grid-cols-[1fr_180px_auto]">
-                <input type="email" placeholder="Vendor account email" value={upgradeValue.email} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, email: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm" />
-                <select aria-label="Subscription plan" value={upgradeValue.planCode} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, planCode: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">
-                  <option value="taster">Taster · ₹499</option><option value="crave">Crave · ₹699</option><option value="thrive">Thrive · ₹799</option><option value="crown">Crown · ₹999</option>
-                </select>
-                <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#FF7B00] px-4 py-2 text-xs font-black text-[#0A0A0A] disabled:opacity-50">Invite / claim</button>
-              </div>}
-            </article>;
-          })}
-    </section>
+    </div>
   </div>;
 }
