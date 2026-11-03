@@ -4,46 +4,47 @@
  * Fonts: Outfit (400 to 800). Corners: pill buttons, 24px cards. Flat surfaces, no shadows on cards.
  */
 :root {
-  /* Brand */
-  --o: #ff7b00;          /* primary orange: buttons, active tabs, highlights */
-  --o-d: #e86f00;        /* orange, hover and pressed */
-  --o-t: #fff0e0;        /* orange tint: selected cards, soft badges */
-  --o-t2: #ffddb8;       /* stronger orange tint: chart bars, soft fills */
-  --ot: #b34d00;         /* orange used as text on a tint */
+  /* Brand (names kept from the first kit so the code did not need renaming) */
+  --o: #753b50;          /* primary plum: buttons, active tabs, highlights */
+  --o-d: #602d40;        /* plum, hover and pressed */
+  --o-t: #f7edf0;        /* plum tint: selected cards, soft badges */
+  --o-t2: #e8cbd5;       /* stronger tint: chart bars, soft fills, brand colour on dark panels */
+  --ot: #653046;         /* plum used as text on a tint */
+  --on-brand: #ffffff;   /* text and icons on a solid plum surface */
 
   /* Text */
-  --ink: #0a0a0a;        /* headings, text on orange, dark buttons */
-  --ink-2: #404040;      /* body text */
-  --mut: #66666b;        /* secondary text and captions */
-  --ph: #70707a;         /* placeholders */
-  --dis: #b6b6b7;        /* disabled */
+  --ink: #292124;        /* headings, dark buttons */
+  --ink-2: #4c4246;      /* body text */
+  --mut: #71676b;        /* secondary text and captions */
+  --ph: #766b70;         /* placeholders */
+  --dis: #b9afb3;        /* disabled */
 
   /* Surfaces and lines */
   --white: #ffffff;      /* cards, page background */
-  --surf: #f4f4f4;       /* grey surface: inputs, table rows, app background */
-  --surf-2: #eaeaec;     /* darker grey: pressed grey, dividers inside grey */
-  --line: #e7e7ea;       /* borders and separators */
+  --surf: #faf6f4;       /* warm surface: inputs, table rows, app background */
+  --surf-2: #f0e8e7;     /* darker surface: pressed state, dividers */
+  --line: #e8dfe1;       /* borders and separators */
 
   /* Status */
-  --ok: #03cf03;         /* success accent */
-  --ok-t: #0a7a2a;       /* success text */
-  --ok-bg: #e3f8e3;      /* success badge background */
-  --warn-t: #7a5a00;     /* warning text */
-  --warn-bg: #fff4cf;    /* warning background */
-  --bad-t: #c20000;      /* error and destructive */
-  --bad-bg: #ffe9e9;     /* error background */
-  --info: #035bf3;       /* information, links */
-  --info-bg: #e6eefe;    /* information background */
+  --ok: #26834a;
+  --ok-t: #21683b;
+  --ok-bg: #eaf5ec;
+  --warn-t: #795900;
+  --warn-bg: #fff4cf;
+  --bad-t: #b42332;
+  --bad-bg: #fdecef;
+  --info: #285fba;
+  --info-bg: #edf3fd;
 
   /* Dark panels (staff sidebar, dark cards) */
-  --sidebar: #0a0a0a;
-  --sidebar-accent: #1c1c1e;
-  --sidebar-border: #262628;
+  --sidebar: #292124;
+  --sidebar-accent: #382d32;
+  --sidebar-border: #4a3b42;
 
   /* Chart series, in order */
-  --chart-1: #ff7b00;
-  --chart-2: #0a0a0a;
-  --chart-3: #035bf3;
-  --chart-4: #03cf03;
-  --chart-5: #ffca2c;
+  --chart-1: #753b50;
+  --chart-2: #7f9a6a;    /* lightened from #526044 so it reads apart from plum */
+  --chart-3: #285fba;
+  --chart-4: #b77b48;
+  --chart-5: #8271a5;
 }

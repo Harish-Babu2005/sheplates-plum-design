@@ -25,13 +25,13 @@ test('public entry uses the approved light editorial visual system', () => {
   assert.match(css, /\.sp-entry-plan-card/);
 });
 
-test('staff portal is light: white sidebar with an orange active pill, navigation logic unchanged', () => {
+test('staff portal is light: white sidebar with a plum active pill, navigation logic unchanged', () => {
   const staffShell = fs.readFileSync(new URL('../components/staff/shell.tsx', import.meta.url), 'utf8');
   const staffCss = fs.readFileSync(new URL('../app/staff-kit.css', import.meta.url), 'utf8');
   assert.match(staffShell, /k-side/);
   assert.match(staffShell, /data-tour-nav/);
   assert.match(staffCss, /\.k-side \{[^}]*background: #fff/);
-  assert.match(staffCss, /\.k-nv\.on \{ background: #ff7b00/);
+  assert.match(staffCss, /\.k-nv\.on \{ background: #753b50/);
 });
 
 test('glass remains limited to navigation overlays and She Agent', () => {

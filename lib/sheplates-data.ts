@@ -94,5 +94,5 @@ export const initialFulfilments: Fulfilment[] = [
 ];
 
 export const tomorrowDemand = [
-  {name:"Milk",value:186,color:"#4f9cf9"},{name:"Meals",value:124,color:"#e94b3c"},{name:"Vegetables",value:78,color:"#14966f"},{name:"Meat",value:52,color:"#9b59b6"},{name:"Groceries",value:31,color:"#f3a712"}
+  {name:"Milk",value:186,color:"#4f9cf9"},{name:"Meals",value:124,color:"#753b50"},{name:"Vegetables",value:78,color:"#14966f"},{name:"Meat",value:52,color:"#9b59b6"},{name:"Groceries",value:31,color:"#f3a712"}
 ];

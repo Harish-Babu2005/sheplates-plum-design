@@ -31,7 +31,7 @@ test('staff navigation is a sidebar on the website and a menu with bottom tabs o
   assert.match(shell, /Toggle navigation/);
   assert.match(shell, /k-scrim/);
   assert.match(shell, /Quick tabs/);
-  assert.match(css, /\.k-nv\.on \{ background: #ff7b00/);
+  assert.match(css, /\.k-nv\.on \{ background: #753b50/);
 });
 
 test('marketplace is explicitly designed for compact mobile product browsing', () => {

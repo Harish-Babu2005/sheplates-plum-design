@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { categories } from "@/lib/sheplates-data";
 import type { Product, Vendor, V3State } from "@/components/sheplates-v3";
 
-export const BRAND = "#e0194f";
+export const BRAND = "#753b50";
 
 export const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 export const priceOf = (product: Product, state: V3State) => Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100;
@@ -46,13 +46,13 @@ export function vendorPhoto(state: V3State, vendor: Vendor) {
 
 export function SegTabs<T extends string>({ tabs, value, onChange, className = "" }: { tabs: readonly T[]; value: T; onChange: (next: T) => void; className?: string }) {
   return <div role="tablist" className={`flex gap-2 overflow-x-auto pb-1 hide-scrollbar ${className}`}>
-    {tabs.map((tab) => <button key={tab} role="tab" aria-selected={tab === value} type="button" onClick={() => onChange(tab)} className={`shrink-0 rounded-full border px-3 py-2 text-[13px] font-bold transition sm:px-4 sm:text-sm ${tab === value ? "border-[#FF7B00] bg-[#FF7B00] text-[#0A0A0A] shadow-[0_8px_20px_rgba(224,25,79,.25)]" : "border-stone-200 bg-white text-stone-600 hover:border-[#FFDDB8]"}`}>{tab}</button>)}
+    {tabs.map((tab) => <button key={tab} role="tab" aria-selected={tab === value} type="button" onClick={() => onChange(tab)} className={`shrink-0 rounded-full border px-3 py-2 text-[13px] font-bold transition sm:px-4 sm:text-sm ${tab === value ? "border-[#753b50] bg-[#753b50] text-white shadow-[0_8px_20px_rgba(224,25,79,.25)]" : "border-stone-200 bg-white text-stone-600 hover:border-[#e8cbd5]"}`}>{tab}</button>)}
   </div>;
 }
 
 export function Avatar({ name, size = 40, ring = false }: { name: string; size?: number; ring?: boolean }) {
   const initials = name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "?";
-  return <span className={`grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#FF7B00] to-[#FF7B00] font-black text-white ${ring ? "ring-[3px] ring-[#FF7B00] ring-offset-2" : ""}`} style={{ width: size, height: size, fontSize: size * 0.36 }}>{initials}</span>;
+  return <span className={`grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#753b50] to-[#753b50] font-black text-white ${ring ? "ring-[3px] ring-[#753b50] ring-offset-2" : ""}`} style={{ width: size, height: size, fontSize: size * 0.36 }}>{initials}</span>;
 }
 
 /** A photo when there is one, otherwise a warm tinted tile with the category emoji —
@@ -65,7 +65,7 @@ export function PhotoTile({ imageUrl, category, className = "", emojiSize = 44, 
 }
 
 export function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
-  return <div className="flex items-end justify-between gap-3"><h2 className="text-lg font-black tracking-[-.02em]">{title}</h2>{action && <button type="button" onClick={onAction} className="text-sm font-black text-[#B34D00]">{action}</button>}</div>;
+  return <div className="flex items-end justify-between gap-3"><h2 className="text-lg font-black tracking-[-.02em]">{title}</h2>{action && <button type="button" onClick={onAction} className="text-sm font-black text-[#653046]">{action}</button>}</div>;
 }
 
 export function EmptyState({ emoji, title, body, action }: { emoji: string; title: string; body: string; action?: React.ReactNode }) {

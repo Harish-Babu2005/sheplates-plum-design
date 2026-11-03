@@ -66,14 +66,14 @@ export function photoPinHtml(vendor: MapVendor, selected: boolean, zoom = 13) {
   const size = selected ? base + 10 : base;
   const fill = vendor.photoUrl ? `background:url('${vendor.photoUrl.replace(/'/g, "%27")}') center/cover` : "background:linear-gradient(135deg,#fff1f5,#ffd9e4)";
   const inner = vendor.photoUrl ? "" : `<span style="font-size:${Math.round(size * 0.46)}px;line-height:1">${vendor.emoji || "🍽️"}</span>`;
-  const shortsBadge = vendor.shortCount ? `<span style="position:absolute;right:-6px;bottom:-4px;min-width:22px;height:20px;padding:0 5px;border-radius:9999px;background:#e0194f;color:#fff;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:2px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25)">&#9654;${vendor.shortCount > 1 ? vendor.shortCount : ""}</span>` : "";
-  const badge = vendor.kind === "trial" ? `<span style="position:absolute;right:-2px;top:-2px;width:18px;height:18px;border-radius:9999px;background:#e0194f;color:#fff;font-size:10px;display:grid;place-items:center;border:2px solid #fff">🍴</span>` : "";
-  return { html: `<span class="sp-map-photo-pin" style="position:relative;display:grid;place-items:center;width:${size}px;height:${size}px;border-radius:9999px;border:3px solid ${selected ? "#e0194f" : "#fff"};box-shadow:0 6px 18px rgba(30,10,18,.28);${fill};transition:all .15s" data-shorts="${vendor.shortCount || 0}">${inner}${badge}${shortsBadge}</span>`, size: size };
+  const shortsBadge = vendor.shortCount ? `<span style="position:absolute;right:-6px;bottom:-4px;min-width:22px;height:20px;padding:0 5px;border-radius:9999px;background:#753b50;color:#fff;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:2px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25)">&#9654;${vendor.shortCount > 1 ? vendor.shortCount : ""}</span>` : "";
+  const badge = vendor.kind === "trial" ? `<span style="position:absolute;right:-2px;top:-2px;width:18px;height:18px;border-radius:9999px;background:#753b50;color:#fff;font-size:10px;display:grid;place-items:center;border:2px solid #fff">🍴</span>` : "";
+  return { html: `<span class="sp-map-photo-pin" style="position:relative;display:grid;place-items:center;width:${size}px;height:${size}px;border-radius:9999px;border:3px solid ${selected ? "#753b50" : "#fff"};box-shadow:0 6px 18px rgba(30,10,18,.28);${fill};transition:all .15s" data-shorts="${vendor.shortCount || 0}">${inner}${badge}${shortsBadge}</span>`, size: size };
 }
 /** A person's pin: a round avatar with their initial. Crimson ring when you follow them, a dot when they have a status. */
 export function personPinHtml(person: MapPerson, selected: boolean) {
   const size = selected ? 46 : 38;
-  const ring = selected ? "#e0194f" : person.following ? "#e0194f" : "#a8a29e";
+  const ring = selected ? "#753b50" : person.following ? "#753b50" : "#a8a29e";
   const dot = person.hasStatus ? `<span style="position:absolute;right:-2px;top:-2px;width:14px;height:14px;border-radius:9999px;background:#22c55e;border:2px solid #fff"></span>` : "";
   const initial = (person.handle[0] || "?").toUpperCase().replace(/[<>&"']/g, "");
   return { html: `<span class="sp-map-person-pin" data-person="${person.id.replace(/[^a-zA-Z0-9_.@-]/g, "")}" style="position:relative;display:grid;place-items:center;width:${size}px;height:${size}px;border-radius:9999px;border:3px solid ${ring};background:linear-gradient(135deg,#fff1f5,#ffd0de);color:#c4123f;font:900 ${Math.round(size * 0.42)}px/1 system-ui;box-shadow:0 6px 18px rgba(30,10,18,.28)">${initial}${dot}</span>`, size: size };

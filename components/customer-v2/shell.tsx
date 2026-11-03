@@ -94,7 +94,7 @@ export function CustomerBottomNav({ active, onNavigate, onAgent }: { active: str
 
 export function CustomerFooter(): ReactNode {
   return <footer className="sh k-foot">
-    <div className="row g8"><img src="/sheplates-logo.png" alt="" style={{ width: 40, height: 40, borderRadius: "50%" }} /><div><b>ShePlates</b><div className="s" style={{ color: "#B6B6B7" }}>Home meals, made simple</div></div></div>
+    <div className="row g8"><img src="/sheplates-logo.png" alt="" style={{ width: 40, height: 40, borderRadius: "50%" }} /><div><b>ShePlates</b><div className="s" style={{ color: "#b9afb3" }}>Home meals, made simple</div></div></div>
     <div className="fl">
       <span>Terms and Conditions</span>
       <span>Privacy Policy</span>
