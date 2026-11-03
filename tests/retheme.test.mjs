@@ -105,3 +105,22 @@ test("the focus ring is a solid token colour and the manifest and meta colour ma
   assert.equal(manifest.background_color, "#FAF7F2");
   assert.match(await read("app/layout.tsx"), /themeColor: "#512D3A"/);
 });
+
+test("phone dialogs stay on screen even after the production CSS minifier merges transform and translate", async () => {
+  const css = await read("app/globals.css");
+  // The minifier folds `transform: none` + `translate: none` into one transform and drops `translate`, so the Tailwind
+  // centring variables must be zeroed as well. Both phone rules (bottom sheets and the sign-in dialog) need it.
+  const blocks = css.match(/translate: none !important;[^}]*}/g) || [];
+  assert.equal(blocks.length, 2, "the two phone dialog rules");
+  for (const block of blocks) {
+    assert.match(block, /--tw-translate-x: 0px !important/);
+    assert.match(block, /--tw-translate-y: 0px !important/);
+  }
+});
+
+test("the sign-in panel text and the landing header are built for phone widths", async () => {
+  const shell = await read("app/shell-kit.css");
+  assert.match(shell, /\.sp-auth-dialog \.sp-auth-hero \[data-slot="dialog-title"\][^}]*color: var\(--on-brand\) !important/);
+  assert.match(shell, /@media \(max-width: 520px\) \{\s*\.e-head \{ gap: 8px; padding: 10px 12px; \}\s*\.e-logo \{ font-size: 0;/);
+  assert.match(shell, /@media \(max-width: 380px\)/);
+});

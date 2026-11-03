@@ -63,3 +63,23 @@ test("status colours stay distinct from the brand", async ({ page }) => {
   const css = await page.evaluate(() => { const s = getComputedStyle(document.documentElement); return ["--color-emerald-600", "--color-amber-700", "--color-red-600", "--color-sky-700", "--success", "--warning", "--destructive"].map((k) => s.getPropertyValue(k).trim().toLowerCase()); });
   expect(css).toEqual(["#21683b", "#795900", "#b42332", "#285fba", "#26834a", "#795900", "#b42332"]);
 });
+
+for (const width of [320, 360, 390]) {
+  test(`landing and sign-in fit a ${width}px phone`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await open(page, null);
+    await page.waitForTimeout(1200);
+    const head = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, rights: Array.from(document.querySelector(".e-head")!.children).map((c) => Math.round(c.getBoundingClientRect().right)) }));
+    expect(head.sw, "page scrolls sideways").toBeLessThanOrEqual(head.iw);
+    for (const right of head.rights) expect(right, "header item runs off the screen").toBeLessThanOrEqual(head.iw);
+    await page.locator(".e-hero").getByRole("button", { name: "I already have an account" }).first().click();
+    await page.waitForSelector("[data-slot='dialog-content']");
+    await page.waitForTimeout(600);
+    const dialog = await page.evaluate(() => { const d = document.querySelector("[data-slot='dialog-content']")!; const r = d.getBoundingClientRect(); const t = d.querySelector("[data-slot='dialog-title']")!; return { l: r.left, r: r.right, t: r.top, b: r.bottom, vw: innerWidth, vh: innerHeight, title: getComputedStyle(t).color }; });
+    expect(dialog.l).toBeGreaterThanOrEqual(0);
+    expect(dialog.r).toBeLessThanOrEqual(dialog.vw);
+    expect(dialog.t).toBeGreaterThanOrEqual(0);
+    expect(dialog.b).toBeLessThanOrEqual(dialog.vh + 1);
+    expect(dialog.title, "heading is readable on the plum panel").toBe("rgb(255, 255, 255)");
+  });
+}
