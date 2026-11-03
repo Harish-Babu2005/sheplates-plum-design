@@ -52,3 +52,9 @@ test("schedules that are finished do not offer Pause or Reschedule", async () =>
   assert.match(app, /const finished = status === "Cancelled" \|\| status === "Completed"/);
   assert.match(app, /\{persisted && !finished \?/);
 });
+
+test("the vendor-error diagnostic is read-only", async () => {
+  const sql = (await read("supabase/DIAGNOSE_VENDOR_ERRORS.sql")).replace(/--.*$/gm, "").replace(/'[^']*'/g, "''");
+  assert.doesNotMatch(sql, /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke)\b/i);
+  assert.match(sql, /review_vendor_and_notify/);
+});
