@@ -1,0 +1,49 @@
+/*
+ * ShePlates colour palette (reference copy).
+ * The app reads these values from the :root block at the top of app/theme-2.css; keep the two in step.
+ * Fonts: Outfit (400 to 800). Corners: pill buttons, 24px cards. Flat surfaces, no shadows on cards.
+ */
+:root {
+  /* Brand */
+  --o: #ff7b00;          /* primary orange: buttons, active tabs, highlights */
+  --o-d: #e86f00;        /* orange, hover and pressed */
+  --o-t: #fff0e0;        /* orange tint: selected cards, soft badges */
+  --o-t2: #ffddb8;       /* stronger orange tint: chart bars, soft fills */
+  --ot: #b34d00;         /* orange used as text on a tint */
+
+  /* Text */
+  --ink: #0a0a0a;        /* headings, text on orange, dark buttons */
+  --ink-2: #404040;      /* body text */
+  --mut: #66666b;        /* secondary text and captions */
+  --ph: #70707a;         /* placeholders */
+  --dis: #b6b6b7;        /* disabled */
+
+  /* Surfaces and lines */
+  --white: #ffffff;      /* cards, page background */
+  --surf: #f4f4f4;       /* grey surface: inputs, table rows, app background */
+  --surf-2: #eaeaec;     /* darker grey: pressed grey, dividers inside grey */
+  --line: #e7e7ea;       /* borders and separators */
+
+  /* Status */
+  --ok: #03cf03;         /* success accent */
+  --ok-t: #0a7a2a;       /* success text */
+  --ok-bg: #e3f8e3;      /* success badge background */
+  --warn-t: #7a5a00;     /* warning text */
+  --warn-bg: #fff4cf;    /* warning background */
+  --bad-t: #c20000;      /* error and destructive */
+  --bad-bg: #ffe9e9;     /* error background */
+  --info: #035bf3;       /* information, links */
+  --info-bg: #e6eefe;    /* information background */
+
+  /* Dark panels (staff sidebar, dark cards) */
+  --sidebar: #0a0a0a;
+  --sidebar-accent: #1c1c1e;
+  --sidebar-border: #262628;
+
+  /* Chart series, in order */
+  --chart-1: #ff7b00;
+  --chart-2: #0a0a0a;
+  --chart-3: #035bf3;
+  --chart-4: #03cf03;
+  --chart-5: #ffca2c;
+}
