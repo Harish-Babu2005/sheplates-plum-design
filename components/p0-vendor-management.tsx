@@ -3,6 +3,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAccessToken, normalizeWhatsAppNumber, uploadLiveCertificate } from "@/lib/supabase";
 import { P0VendorLocationPicker } from "@/components/p0-vendor-location-picker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+export const VENDOR_ONBOARDING_CATEGORIES = [
+  "Milk & dairy",
+  "Home food",
+  "Caterer",
+  "Meat & fish",
+  "Vegetables",
+  "Groceries",
+  "Eggs",
+  "Bakery",
+  "Snacks",
+  "Rice & staples",
+  "Other",
+] as const;
 
 type Permission = "can_create" | "can_review" | "can_cancel" | "can_reactivate" | "can_upgrade" | "can_upload";
 type Permissions = Record<Permission, boolean>;
@@ -109,6 +130,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     fssaiNumber: "", expiryDate: "",
   });
   const [certificate, setCertificate] = useState<File | null>(null);
+  const [otherCategory, setOtherCategory] = useState("");
   const [shopImage, setShopImage] = useState<File | null>(null);
   const shopImageInput = useRef<HTMLInputElement>(null);
   const [upgrade, setUpgrade] = useState<Record<string, { email: string; planCode: string }>>({});
@@ -174,7 +196,9 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       const request = new FormData();
       request.append("action", "create");
       request.append("name", form.name);
-      request.append("category", form.category);
+      const effectiveCategory = form.category === "Other" ? otherCategory.trim() : form.category.trim();
+      if (!effectiveCategory) return setError("Please select or enter a business category.");
+      request.append("category", effectiveCategory);
       request.append("description", form.description);
       request.append("locality", form.locality);
       request.append("address", form.address);
@@ -201,6 +225,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setCertificate(null);
       setShopImage(null);
       if (shopImageInput.current) shopImageInput.current.value = "";
+      setOtherCategory("");
       setForm({
         name: "", category: "", description: "", locality: "", address: "",
         latitude: "", longitude: "", radius: "5", contactName: "", contactPhone: "",
@@ -349,7 +374,36 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       <p className="mt-1 text-xs text-stone-500">Creates one unowned vendor record; it starts pending, inactive and hidden. Coordinates and WhatsApp are required for later discovery.</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Category<input required value={form.category} onChange={(event) => updateForm("category", event.target.value)} className={inputClass} /></label>
+        <div className="flex flex-col text-xs font-bold">
+          <span>Category</span>
+          <Select value={form.category} onValueChange={(value) => updateForm("category", value)}>
+            <SelectTrigger
+              aria-label="Category"
+              className="mt-1 h-[42px] w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900 outline-none focus:border-[#5ba400]"
+            >
+              <SelectValue placeholder="Select a category" />
+            </SelectTrigger>
+            <SelectContent>
+              {VENDOR_ONBOARDING_CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {form.category === "Other" && (
+          <label className="text-xs font-bold sm:col-span-2">
+            Your category
+            <input
+              required
+              value={otherCategory}
+              onChange={(event) => setOtherCategory(event.target.value)}
+              className={inputClass}
+              placeholder="Enter your business category"
+            />
+          </label>
+        )}
         <label className="text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
         <label className="text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
