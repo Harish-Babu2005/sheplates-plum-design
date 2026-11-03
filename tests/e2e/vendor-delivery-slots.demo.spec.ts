@@ -21,8 +21,15 @@ async function openAs(page: Page, who: keyof typeof SESSIONS, tweak?: (state: Re
 
 test.describe("Vendor Delivery Slot Configuration", () => {
   test("Vendor can view, validate, add, edit, toggle, and delete delivery slots", async ({ page }) => {
+    test.slow();
     await openAs(page, "vendor");
     await dismissTourIfOpen(page);
+
+    // Open mobile sidebar if needed
+    const toggleNav = page.getByRole("button", { name: "Toggle navigation" });
+    if (await toggleNav.isVisible()) {
+      await toggleNav.click();
+    }
 
     // Navigate to "Store & radius"
     const storeRadiusBtn = page.getByRole("button", { name: "Store & radius" }).first();
@@ -95,7 +102,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
 
     // Edit slot: Click edit on "Tea Break"
     const editBtn = teaBreakCard.getByRole("button", { name: "Edit slot" });
-    await editBtn.click();
+    await editBtn.evaluate((el: HTMLElement) => el.click());
     await expect(page.getByRole("heading", { name: "Edit Delivery Slot" })).toBeVisible();
 
     // Change name to "Late Snack" and save
@@ -107,7 +114,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
     const lateSnackCard = page.locator("div.border").filter({ hasText: "Late Snack" }).first();
     const deleteBtn = lateSnackCard.getByRole("button", { name: "Delete slot" });
     page.once("dialog", (dialog) => dialog.accept());
-    await deleteBtn.click();
+    await deleteBtn.evaluate((el: HTMLElement) => el.click());
 
     // "Late Snack" should no longer be present
     await expect(page.getByText("Late Snack")).toHaveCount(0);

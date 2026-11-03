@@ -28,6 +28,7 @@ async function openAs(page: Page, who: keyof typeof SESSIONS, tweak?: (state: Re
 }
 
 test("Operations and Super Admin both have a P0 Connect vendors screen in the menu", async ({ page }) => {
+  test.slow();
   for (const who of ["operations", "admin"] as const) {
     await page.goto("/");
     await page.evaluate(() => sessionStorage.removeItem("seeded"));

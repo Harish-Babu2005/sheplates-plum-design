@@ -14,7 +14,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -135,6 +135,10 @@ export type Vendor = {
   verification: Verification; operational: "Inactive" | "Active" | "Paused"; plan: "Taster" | "Crave" | "Thrive" | "Crown";
   logoUrl?: string; bannerUrl?: string; outlets?: VendorOutlet[];
   vendorKind?: "subscription" | "p0_connect";
+  termsAccepted?: boolean;
+  termsVersion?: string;
+  termsAcceptedAt?: string;
+  termsDocumentReference?: string;
 };
 type VendorOutlet = { id: string; name: string; address: string; latitude?: number; longitude?: number; radiusKm: number; openToday: boolean; certificateNumber?: string; certificateName?: string; certificateExpiry?: string };
 type Schedule = {
@@ -409,7 +413,7 @@ function localDateISO(date = new Date()) { const shifted = new Date(date.getTime
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
 function money(value: number) { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value); }
 function finalPrice(product: Product, state: V3State) { return Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100; }
-function vendorFor(state: V3State, session: DemoSession) { return state.vendors.find((v) => v.ownerEmail === session.email); }
+function vendorFor(state: V3State, session: DemoSession) { return state.vendors.find((v) => (session.vendorId && (v.id === session.vendorId || String(v.id).toLowerCase() === String(session.vendorId).toLowerCase())) || (session.email && v.ownerEmail && v.ownerEmail.toLowerCase() === session.email.toLowerCase())); }
 function notificationBelongsToSession(item: Notification, session: DemoSession) {
   return item.recipientRole === session.role && item.recipient.toLowerCase() === session.email.toLowerCase();
 }
@@ -470,6 +474,7 @@ function repairSavedState(raw: V3State): V3State {
     // Discard those ambiguous entries instead of risking cross-role disclosure.
     notifications: (raw.notifications || []).filter((item) => Boolean(item.recipientRole)),
     cart: raw.cart || [],
+    deliverySlots: raw.deliverySlots || [],
     thirdPartyDeliveries: raw.thirdPartyDeliveries || [],
     thirdPartyDeliveryAvailable: raw.thirdPartyDeliveryAvailable || false,
     wishlist: raw.wishlist || [],
@@ -547,6 +552,10 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     vendorKind: row.vendor_kind || "subscription",
     fssaiNumber: String(document?.document_number || "Submitted"),
     certificateName: String(document?.storage_path || "Private certificate"), expiryDate: String(document?.expiry_date || "—"),
+    termsAccepted: row.terms_accepted === true,
+    termsVersion: row.terms_version || undefined,
+    termsAcceptedAt: row.terms_accepted_at || undefined,
+    termsDocumentReference: row.terms_document_reference || undefined,
   };
 }
 function productFromLive(row: LiveMenuItemRow): Product {
@@ -647,9 +656,20 @@ quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: Str
   }));
   const syncedCart: CartItem[] = session.role === "customer" ? (snapshot.cartItems || []).map((row) => ({ id: String(row.id), customerEmail: session.email, productId: String(row.menu_item_id), quantity: Math.max(0.001, Number(row.quantity || 1)) })) : [];
   const cart = session.role === "customer" ? [...current.cart.filter((item) => item.customerEmail !== session.email), ...syncedCart] : current.cart;
+  const liveDeliverySlots: VendorDeliverySlot[] = (snapshot.deliverySlots || []).map((row) => ({
+    id: String(row.id),
+    vendorId: String(row.vendor_id),
+    slotName: String(row.slot_name),
+    startTime: String(row.start_time).slice(0, 5),
+    endTime: String(row.end_time).slice(0, 5),
+    isActive: row.is_active !== false,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  }));
   return {
     ...current, orders, schedules: mergedSchedules, staff, assignments, thirdPartyDeliveries, cart,
     thirdPartyDeliveryAvailable: snapshot.thirdPartyDeliveryAvailable === true,
+    deliverySlots: snapshot.deliverySlots !== undefined ? liveDeliverySlots : (current.deliverySlots || []),
   };
 }
 async function findLocation(params: { lat?: number; lng?: number; address?: string }) {
@@ -1391,6 +1411,8 @@ function OrderDetail({ label, value }: { label: string; value: React.ReactNode }
 
 function VendorOnboarding({ session, setState, onLogout, operationsCreated = false, close }: { session: DemoSession; setState: React.Dispatch<React.SetStateAction<V3State>>; onLogout?: () => void; operationsCreated?: boolean; close?: () => void }) {
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsModalOpen, setTermsModalOpen] = useState(false);
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
   const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "" });
   const [otherCategory, setOtherCategory] = useState("");
@@ -1403,12 +1425,13 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
     if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
     if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
     if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
+    if (!termsAccepted) return toast.error("You must read and agree to the ShePlates Vendor Terms & Conditions before submitting.");
     setBusy(true);
     let vendorId = id("VEN");
     try {
       const category = form.category === "Other" ? otherCategory.trim() : form.category;
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 } });
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave" };
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 }, termsAccepted: true, termsVersion: "1.0", termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf" });
+      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave", termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString(), termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf" };
       setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
       toast.success("Vendor application sent to Operations"); close?.();
     } catch (caught) { toast.error(caught instanceof Error ? caught.message : "Application could not be submitted"); } finally { setBusy(false); }
@@ -1417,8 +1440,143 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}</div>}
   {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
   {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#5ba400]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
-  {step === 4 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Food certificate / FSSAI number"><input value={form.fssai} onChange={(e) => set("fssai", e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={tomorrow()} value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inputClass} /></Field><label className="surface-card-muted md:col-span-2 grid min-h-36 cursor-pointer place-items-center rounded-3xl border-2 border-dashed p-5 text-center"><input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /><Upload className="mx-auto text-[#ef3d3d]" /><div className="mt-2 font-black">{file?.name || "Upload certificate PDF or image"}</div><div className="text-xs text-stone-500">Private document; accessible only to this vendor and authorised Operations/Admin users.</div></label></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy} className="rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
+  {step === 4 && <div className="mt-7 grid gap-5 md:grid-cols-2">
+    <Field label="Food certificate / FSSAI number"><input value={form.fssai} onChange={(e) => set("fssai", e.target.value)} className={inputClass} /></Field>
+    <Field label="Expiry date"><input type="date" min={tomorrow()} value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inputClass} /></Field>
+    <label className="surface-card-muted md:col-span-2 grid min-h-36 cursor-pointer place-items-center rounded-3xl border-2 border-dashed p-5 text-center">
+      <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+      <Upload className="mx-auto text-[#ef3d3d]" />
+      <div className="mt-2 font-black">{file?.name || "Upload certificate PDF or image"}</div>
+      <div className="text-xs text-stone-500">Private document; accessible only to this vendor and authorised Operations/Admin users.</div>
+    </label>
+
+    {/* Terms & Conditions Section */}
+    <div className="surface-card-muted md:col-span-2 rounded-3xl p-6 border border-stone-200/90 bg-stone-50/70">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-black text-stone-900">Terms & Conditions</h3>
+            <span className="rounded-full bg-stone-200/80 px-2 py-0.5 text-[10px] font-bold text-stone-700">Version 1.0</span>
+          </div>
+          <p className="mt-1 text-xs text-stone-500">
+            Review the ShePlates Vendor Terms & Conditions before completing onboarding.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setTermsModalOpen(true)}
+          className="rounded-xl border-stone-300 font-bold shrink-0 bg-white hover:bg-stone-50"
+        >
+          <FileText className="size-4 mr-1.5 text-[#5ba400]" />
+          View Terms & Conditions
+        </Button>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-stone-200 flex items-start gap-3">
+        <input
+          type="checkbox"
+          id="vendor-terms-checkbox"
+          checked={termsAccepted}
+          onChange={(e) => setTermsAccepted(e.target.checked)}
+          className="mt-1 size-4 rounded border-stone-300 text-[#5ba400] focus:ring-[#5ba400] cursor-pointer"
+        />
+        <label htmlFor="vendor-terms-checkbox" className="text-xs sm:text-sm text-stone-800 font-medium cursor-pointer select-none leading-relaxed">
+          I have read and agree to the{" "}
+          <button
+            type="button"
+            onClick={() => setTermsModalOpen(true)}
+            className="font-bold text-[#477f00] underline hover:text-[#386500]"
+          >
+            ShePlates Vendor Terms & Conditions
+          </button>
+          .
+        </label>
+      </div>
+    </div>
+  </div>}
+
+  {/* Terms & Conditions PDF Modal Dialog */}
+  <Dialog open={termsModalOpen} onOpenChange={setTermsModalOpen}>
+    <DialogContent className="max-h-[94vh] max-w-4xl w-[95vw] p-0 overflow-hidden rounded-[28px] border-stone-200">
+      <div className="flex flex-col h-[85vh]">
+        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-xl bg-[#eff7e5] text-[#5ba400]">
+              <FileText className="size-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-black text-stone-900">
+                ShePlates Vendor Terms & Conditions
+              </DialogTitle>
+              <DialogDescription className="text-xs text-stone-500">
+                Version 1.0 · Effective Date: 7 October 2026
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href="/docs/sheplates-vendor-terms-v1.0.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-700 hover:bg-stone-50 transition"
+            >
+              <ExternalLink className="size-3.5 text-[#5ba400]" />
+              Open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={() => setTermsModalOpen(false)}
+              className="grid size-8 place-items-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 bg-stone-100 relative min-h-0 overflow-hidden">
+          <iframe
+            src="/docs/sheplates-vendor-terms-v1.0.pdf#toolbar=1&navpanes=0"
+            title="ShePlates Vendor Terms & Conditions"
+            className="w-full h-full border-0"
+          />
+        </div>
+
+        <div className="flex items-center justify-between border-t border-stone-200 px-6 py-3.5 bg-white shrink-0">
+          <div className="text-xs text-stone-500">
+            Document: <span className="font-mono text-[11px]">sheplates-vendor-terms-v1.0.pdf</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setTermsModalOpen(false)}
+              className="rounded-xl font-bold"
+            >
+              Close
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setTermsAccepted(true);
+                setTermsModalOpen(false);
+                toast.success("Terms & Conditions accepted");
+              }}
+              className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00] text-white font-bold"
+            >
+              <Check className="size-4 mr-1.5" />
+              Accept & Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    </DialogContent>
+  </Dialog>
+
+  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f] disabled:opacity-50 disabled:cursor-not-allowed"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
 }
 
 /** The map libraries need the browser, so the small location map is loaded only there. */
@@ -1788,16 +1946,17 @@ const [deliveryInstructions, setDeliveryInstructions] = useState("");
   useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence("Once"); setDays([]); setStartDate(initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
   const scheduledProduct = product;
   const vendor = state.vendors.find((v) => v.id === scheduledProduct.vendorId)!;
-  const activeProductVendorSlots = (state.deliverySlots || []).filter((s) => s.vendorId === scheduledProduct.vendorId && s.isActive);
+  const activeProductVendorSlots = (state.deliverySlots || []).filter((s) => String(s.vendorId).toLowerCase() === String(scheduledProduct.vendorId).toLowerCase() && s.isActive);
   const scheduleSlotOptions: string[] = activeProductVendorSlots.length > 0
     ? activeProductVendorSlots.map((s) => formatSlotLabel(s))
     : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
+  const effectiveSlot = (slot && scheduleSlotOptions.includes(slot)) ? slot : (scheduleSlotOptions[0] || "");
 const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party delivery"];  const effectiveEnd = endDate || (recurrence === "Once" ? startDate : addDaysISO(startDate || tomorrow(), 29));
   const startMs = new Date(`${startDate || tomorrow()}T12:00:00`).getTime();
   const endMs = new Date(`${effectiveEnd}T12:00:00`).getTime();
   const rangeLength = Math.max(1, Math.min(366, Math.floor((endMs - startMs) / 86400000) + 1));
   const rangeDates = Array.from({ length: rangeLength }, (_, index) => addDaysISO(startDate || tomorrow(), index));
-  const previewSchedule: Schedule = { id: "preview", customerEmail: session.email, productId: product.id, vendorId: product.vendorId, startDate: startDate || tomorrow(), endDate: effectiveEnd, recurrence, weekdays: days, timeSlot: slot, quantity, unit: product.baseUnit, mode, estimatedOccurrences: 0, status: "Active" };
+  const previewSchedule: Schedule = { id: "preview", customerEmail: session.email, productId: product.id, vendorId: product.vendorId, startDate: startDate || tomorrow(), endDate: effectiveEnd, recurrence, weekdays: days, timeSlot: effectiveSlot, quantity, unit: product.baseUnit, mode, estimatedOccurrences: 0, status: "Active" };
   const deliveryDates = occurrenceDatesInRange(previewSchedule, rangeDates);
   const occurrences = deliveryDates.length;
   const perDelivery = finalPrice(scheduledProduct, state) * quantity;
@@ -1817,17 +1976,17 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
     try {
       let scheduleId = id("SCH"); let orderId = id("ORD");
       if (isLiveSupabaseMode()) {
-const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: deliveryInstructions.trim(), customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
+const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: deliveryInstructions.trim(), customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
-      const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot, mode, status: "Scheduled", payment: "Pending" };
+      const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot: effectiveSlot, mode, status: "Scheduled", payment: "Pending" };
       setState((s) => ({ ...s, schedules: [schedule, ...s.schedules.filter((x) => x.id !== schedule.id)], orders: [order, ...s.orders.filter((x) => x.id !== order.id)], notifications: [notice(session.email, "customer", "Schedule ready for payment", `${scheduledProduct.name} has ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}. Complete payment to activate it.`), ...s.notifications], audit: [audit(session, "Created product schedule", `${scheduledProduct.name} · ${recurrence} · ${occurrences} deliveries`), ...s.audit] }));
       showDeviceNotification("Schedule ready for payment", `${scheduledProduct.name} · ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}`);
       toast.success("Schedule saved. Complete payment to activate it."); close(); onCreated?.();
     } catch (error) { toast.error(error instanceof Error ? error.message : "Schedule could not be saved"); }
   }
 
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
+return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -1894,12 +2053,13 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const [useNewAddress, setUseNewAddress] = useState(false);
   const [checkoutMode, setCheckoutMode] = useState<DeliveryMode>("Vendor delivery");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
-  const cartVendorIds = [...new Set(items.map((it) => state.products.find((p) => p.id === it.productId)?.vendorId).filter(Boolean))];
-  const activeCartVendorSlots = (state.deliverySlots || []).filter((s) => cartVendorIds.includes(s.vendorId) && s.isActive);
+  const cartVendorIds = [...new Set(items.map((it) => state.products.find((p) => p.id === it.productId)?.vendorId).filter(Boolean).map((v) => String(v).toLowerCase()))];
+  const activeCartVendorSlots = (state.deliverySlots || []).filter((s) => cartVendorIds.includes(String(s.vendorId).toLowerCase()) && s.isActive);
   const cartSlotOptions: string[] = activeCartVendorSlots.length > 0
     ? activeCartVendorSlots.map((s) => formatSlotLabel(s))
     : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
   const [selectedSlot, setSelectedSlot] = useState(cartSlotOptions[0] || "07:00–08:00 AM");
+  const effectiveSelectedSlot = (selectedSlot && cartSlotOptions.includes(selectedSlot)) ? selectedSlot : (cartSlotOptions[0] || "");
   const total = items.reduce((sum, item) => { const product = state.products.find((x) => x.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
 
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
@@ -1954,7 +2114,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       try {
         // Sync first so carts created on another device / older build are reconciled before checkout.
         await syncLiveCart({ items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })) });
-const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]);
+const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : effectiveSelectedSlot;
         if (checkoutMode !== "Self pickup" && !effectiveSlot) {
           toast.error("Please select a delivery time slot.");
           return;
@@ -1974,7 +2134,7 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]), deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
+const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : effectiveSelectedSlot, deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
     setAddressDialogOpen(false);
     setPaying(order);
   }
@@ -2009,7 +2169,7 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
           {isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}
           {checkoutMode !== "Self pickup" && (
             <Field label="Delivery time window">
-              <Select value={selectedSlot || cartSlotOptions[0]} onValueChange={setSelectedSlot}>
+              <Select value={effectiveSelectedSlot} onValueChange={setSelectedSlot}>
                 <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {cartSlotOptions.map((s) => (
@@ -3627,19 +3787,20 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
   const [date, setDate] = useState(tomorrow());
   const [slot, setSlot] = useState("06:00–07:00 AM");
   const maxDate = addDaysISO(todayISO(), 15);
-  const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => s.vendorId === order.vendorId && s.isActive) : [];
+  const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => String(s.vendorId).toLowerCase() === String(order.vendorId).toLowerCase() && s.isActive) : [];
   const rescheduleSlotOptions: string[] = vendorActiveSlots.length > 0
     ? vendorActiveSlots.map((s) => formatSlotLabel(s))
     : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
+  const effectiveSlot = (slot && rescheduleSlotOptions.includes(slot)) ? slot : (rescheduleSlotOptions[0] || "");
   useEffect(() => { if (order) queueMicrotask(() => { setDate(order.date < tomorrow() || order.date > maxDate ? tomorrow() : order.date); setSlot(order.slot); }); }, [order, maxDate]);
   if (!order) return null;
   async function save() {
     if (!order) return;
     if (!date || date < tomorrow()) return toast.error("Choose tomorrow or a later date");
     if (date > maxDate) return toast.error("Orders can only be rescheduled within the next 15 days");
-    try { if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, slot); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot } : x) })); toast.success(`Order moved to ${date}`); close(); } catch (error) { toast.error(error instanceof Error ? error.message : "Order could not be rescheduled"); }
+    try { if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, effectiveSlot); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot: effectiveSlot } : x) })); toast.success(`Order moved to ${date}`); close(); } catch (error) { toast.error(error instanceof Error ? error.message : "Order could not be rescheduled"); }
   }
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#ef3d3d] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{rescheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#ef3d3d] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
 }
 
 function loadRazorpayScript(): Promise<boolean> {
@@ -3949,7 +4110,21 @@ function DeliverySlotsSection({
   setState: React.Dispatch<React.SetStateAction<V3State>>;
   session: DemoSession;
 }) {
-  const slots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+  const slots = (state.deliverySlots || []).filter((s) => String(s.vendorId).toLowerCase() === String(vendor.id).toLowerCase());
+  useEffect(() => {
+    if (!isLiveSupabaseMode()) return;
+    let cancelled = false;
+    loadLiveCommerceSnapshot()
+      .then((snapshot) => {
+        if (!cancelled && snapshot) {
+          setState((curr) => mergeLiveCommerce(curr, snapshot, session));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session, setState]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<VendorDeliverySlot | null>(null);
   const [slotName, setSlotName] = useState("");
@@ -4453,7 +4628,7 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil />{editing ? "Close editor" : "Edit details"}</Button>} />
     <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#5ba400]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /></div>}
+      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#5ba400]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /></div>}
     </div>
     <div className="surface-card rounded-[28px] p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -4830,7 +5005,7 @@ function OperationsVerification({ session, state, setState }: { session: DemoSes
       toast.success(`${vendor.businessName}: ${verification} saved`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Verification decision could not be saved"); }
   }
-  return <div className="space-y-6"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Open each vendor to inspect their certification, business location, service radius and fulfilment modes." />{vendors.length ? <div className="space-y-3">{vendors.map((vendor) => <div key={vendor.id} className="surface-card rounded-[26px] p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><Store /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{vendor.businessName}</h3><Status>{vendor.verification}</Status><Status>{vendor.plan}</Status></div><p className="mt-1 text-xs text-stone-500">{vendor.ownerName} · {vendor.ownerEmail} · {vendor.category}</p><div className="mt-3 grid gap-2 text-sm md:grid-cols-4"><span><b>Address:</b> {vendor.address}</span><span><b>Radius:</b> {vendor.radiusKm} km</span><span><b>Modes:</b> {[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" + ")}</span><span><b>Certificate:</b> {vendor.fssaiNumber}</span></div></div>{vendor.verification !== "Verified" && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void decide(vendor, "Changes required")} className="rounded-xl">Request changes</Button><Button variant="outline" onClick={() => void decide(vendor, "Rejected")} className="rounded-xl text-red-600">Reject</Button><Button onClick={() => void decide(vendor, "Verified")} className="rounded-xl bg-[#5ba400]"><BadgeCheck />Verify</Button></div>}</div></div>)}</div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}</div>;
+  return <div className="space-y-6"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Open each vendor to inspect their certification, business location, service radius and fulfilment modes." />{vendors.length ? <div className="space-y-3">{vendors.map((vendor) => <div key={vendor.id} className="surface-card rounded-[26px] p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><Store /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{vendor.businessName}</h3><Status>{vendor.verification}</Status><Status>{vendor.plan}</Status></div><p className="mt-1 text-xs text-stone-500">{vendor.ownerName} · {vendor.ownerEmail} · {vendor.category}</p><div className="mt-3 grid gap-2 text-sm md:grid-cols-4"><span><b>Address:</b> {vendor.address}</span><span><b>Radius:</b> {vendor.radiusKm} km</span><span><b>Modes:</b> {[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" + ")}</span><span><b>Certificate:</b> {vendor.fssaiNumber}</span><span><b>Terms accepted:</b> {vendor.termsAccepted ? `Yes (v${vendor.termsVersion || "1.0"})` : "No"}{vendor.termsAcceptedAt && <span className="block text-xs text-stone-500 font-normal">Accepted: {new Date(vendor.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>}</span></div></div>{vendor.verification !== "Verified" && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void decide(vendor, "Changes required")} className="rounded-xl">Request changes</Button><Button variant="outline" onClick={() => void decide(vendor, "Rejected")} className="rounded-xl text-red-600">Reject</Button><Button onClick={() => void decide(vendor, "Verified")} className="rounded-xl bg-[#5ba400]"><BadgeCheck />Verify</Button></div>}</div></div>)}</div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}</div>;
 }
 function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const products = state.products.filter((x) => x.vendorId === vendorId); return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="surface-card rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-black text-[#ef3d3d]">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
 function RFQDesk({ state }: { state: V3State }) { return <div className="space-y-6"><Heading eyebrow="RFQ CONTROL" title="Monthly requirement desk" body="Monitor open customer requirements, participating vendors and quotation conversion." />{state.requirements.length ? state.requirements.map((req) => <div key={req.id} className="surface-card rounded-[26px] p-5"><div className="flex justify-between"><div><b>{req.title}</b><div className="text-xs text-stone-500">{req.id} · {req.items.length} items</div></div><Status>{req.status}</Status></div><div className="mt-4 text-sm">{state.quotes.filter((x) => x.requirementId === req.id).length} vendor quotations received</div></div>) : <Empty icon={ClipboardCheck} title="No RFQs yet" body="Customer monthly requirements will appear here." />}</div>; }

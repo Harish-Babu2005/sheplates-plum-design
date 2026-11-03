@@ -38,7 +38,12 @@ async function identity(request: Request) {
   if (!authData.user) return null;
   const { data: profile } = await c.caller.from("profiles").select("id,full_name,role,vendor_id").eq("id", authData.user.id).maybeSingle();
   if (!profile) return null;
-  return { ...c, user: authData.user, profile: profile as { id: string; full_name: string; role: Role; vendor_id: string | null } };
+  let vendorId = (profile as { vendor_id?: string | null }).vendor_id || null;
+  if (!vendorId && (profile as { role?: string }).role === "vendor") {
+    const { data: ownedVendor } = await c.admin.from("vendors").select("id").eq("owner_id", authData.user.id).maybeSingle();
+    if (ownedVendor?.id) vendorId = ownedVendor.id;
+  }
+  return { ...c, user: authData.user, profile: { ...profile, vendor_id: vendorId } as { id: string; full_name: string; role: Role; vendor_id: string | null } };
 }
 
 function orderNumber() {
@@ -132,7 +137,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   const orderQuery = admin.from("orders").select("id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)").order("scheduled_date", { ascending: true }).limit(500);
   if (role === "customer") orderQuery.eq("customer_id", profile.id);
   if (role === "vendor") {
-    if (!profile.vendor_id) return { orders: [], schedules: [], staff: [], assignments: [] };
+    if (!profile.vendor_id) return { orders: [], schedules: [], staff: [], assignments: [], deliverySlots: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: true };
     orderQuery.eq("vendor_id", profile.vendor_id);
   }
   const schedulesQuery = admin.from("product_schedules").select("id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at").order("start_date", { ascending: true }).limit(500);
@@ -154,7 +159,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (deliveryRequests.error && !deliveryMigrationMissing) throw deliveryRequests.error;
 
   let staff: unknown[] = [];
-  let assignments: Array<{ delivery_staff_id?: unknown; [key: string]: unknown }> = [];
+  let assignments: Array<{ delivery_staff_id?: unknown;[key: string]: unknown }> = [];
   if (role === "vendor" && profile.vendor_id) {
     const [staffResult, assignmentResult] = await Promise.all([
       admin.from("vendor_delivery_staff").select("id,vendor_id,full_name,phone,active,created_at,updated_at").eq("vendor_id", profile.vendor_id).order("created_at"),
@@ -212,7 +217,8 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     deliverySlots = [];
   }
 
-  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
+  return {
+    orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
     thirdPartyDeliveries: deliveryRequests.data || [],
     thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
     deliverySlots,
@@ -293,7 +299,7 @@ export async function POST(request: Request) {
         grouped.set(String(product.vendor_id), list);
       }
       if (!grouped.size) return NextResponse.json({ error: "The items in your cart are no longer available." }, { status: 409 });
-      const scheduledDate = String(body.scheduledDate || addDays(new Date().toISOString().slice(0,10), 1));
+      const scheduledDate = String(body.scheduledDate || addDays(new Date().toISOString().slice(0, 10), 1));
       if (!isFutureDate(scheduledDate)) return NextResponse.json({ error: "Choose a delivery date after today." }, { status: 400 });
       const scheduledSlot = String(body.slot || "07:00–08:00 AM");
       const orderIds: string[] = [];
@@ -643,7 +649,21 @@ export async function POST(request: Request) {
     }
 
     if (action === "save_delivery_slot") {
-      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      let targetVendorId = profile.vendor_id;
+      if (!targetVendorId && profile.role === "vendor") {
+        if (body.vendorId) {
+          const { data: v } = await admin.from("vendors").select("id").eq("id", String(body.vendorId)).eq("owner_id", ctx.user.id).maybeSingle();
+          if (v) targetVendorId = v.id;
+        }
+        if (!targetVendorId) {
+          const { data: v } = await admin.from("vendors").select("id").eq("owner_id", ctx.user.id).maybeSingle();
+          if (v) targetVendorId = v.id;
+        }
+      } else if (profile.role === "operations" || profile.role === "admin") {
+        targetVendorId = String(body.vendorId || "");
+      }
+      if (!targetVendorId) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      profile.vendor_id = targetVendorId;
       const slotName = String(body.slotName || "").trim();
       if (!slotName) return NextResponse.json({ error: "Slot name is required." }, { status: 400 });
       if (slotName.length > 80) return NextResponse.json({ error: "Slot name cannot exceed 80 characters." }, { status: 400 });
@@ -663,7 +683,7 @@ export async function POST(request: Request) {
       // Duplicate name check
       const { data: existingSlots } = await admin.from("vendor_delivery_slots")
         .select("id,slot_name,start_time,end_time,is_active")
-        .eq("vendor_id", profile.vendor_id);
+        .eq("vendor_id", targetVendorId);
 
       const allSlots = existingSlots || [];
       const duplicateName = allSlots.find(
@@ -686,7 +706,7 @@ export async function POST(request: Request) {
       }
 
       const row = {
-        vendor_id: profile.vendor_id,
+        vendor_id: targetVendorId,
         slot_name: slotName,
         start_time: startTime,
         end_time: endTime,
@@ -695,7 +715,7 @@ export async function POST(request: Request) {
       };
 
       const result = slotId
-        ? await admin.from("vendor_delivery_slots").update(row).eq("id", slotId).eq("vendor_id", profile.vendor_id).select("id").single()
+        ? await admin.from("vendor_delivery_slots").update(row).eq("id", slotId).eq("vendor_id", targetVendorId).select("id").single()
         : await admin.from("vendor_delivery_slots").insert(row).select("id").single();
 
       if (result.error) throw result.error;
@@ -703,24 +723,50 @@ export async function POST(request: Request) {
     }
 
     if (action === "delete_delivery_slot") {
-      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      let targetVendorId = profile.vendor_id;
       const slotId = String(body.slotId || "");
       if (!slotId) return NextResponse.json({ error: "Slot ID required." }, { status: 400 });
-      const deleted = await admin.from("vendor_delivery_slots").delete().eq("id", slotId).eq("vendor_id", profile.vendor_id);
+      if (!targetVendorId) {
+        const { data: slot } = await admin.from("vendor_delivery_slots").select("vendor_id").eq("id", slotId).maybeSingle();
+        if (slot) {
+          if (profile.role === "operations" || profile.role === "admin") {
+            targetVendorId = slot.vendor_id;
+          } else {
+            const { data: v } = await admin.from("vendors").select("id").eq("id", slot.vendor_id).eq("owner_id", ctx.user.id).maybeSingle();
+            if (v) targetVendorId = v.id;
+          }
+        }
+      }
+      if (!targetVendorId) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      profile.vendor_id = targetVendorId;
+      const deleted = await admin.from("vendor_delivery_slots").delete().eq("id", slotId).eq("vendor_id", targetVendorId);
       if (deleted.error) throw deleted.error;
       return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
     }
 
     if (action === "toggle_delivery_slot") {
-      if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      let targetVendorId = profile.vendor_id;
       const slotId = String(body.slotId || "");
       if (!slotId) return NextResponse.json({ error: "Slot ID required." }, { status: 400 });
+      if (!targetVendorId) {
+        const { data: slot } = await admin.from("vendor_delivery_slots").select("vendor_id").eq("id", slotId).maybeSingle();
+        if (slot) {
+          if (profile.role === "operations" || profile.role === "admin") {
+            targetVendorId = slot.vendor_id;
+          } else {
+            const { data: v } = await admin.from("vendors").select("id").eq("id", slot.vendor_id).eq("owner_id", ctx.user.id).maybeSingle();
+            if (v) targetVendorId = v.id;
+          }
+        }
+      }
+      if (!targetVendorId) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      profile.vendor_id = targetVendorId;
       const active = Boolean(body.active);
 
       if (active) {
-        const { data: targetSlot } = await admin.from("vendor_delivery_slots").select("*").eq("id", slotId).eq("vendor_id", profile.vendor_id).maybeSingle();
+        const { data: targetSlot } = await admin.from("vendor_delivery_slots").select("*").eq("id", slotId).eq("vendor_id", targetVendorId).maybeSingle();
         if (!targetSlot) return NextResponse.json({ error: "Slot not found." }, { status: 404 });
-        const { data: otherSlots } = await admin.from("vendor_delivery_slots").select("*").eq("vendor_id", profile.vendor_id).eq("is_active", true).neq("id", slotId);
+        const { data: otherSlots } = await admin.from("vendor_delivery_slots").select("*").eq("vendor_id", targetVendorId).eq("is_active", true).neq("id", slotId);
         const conflicting = (otherSlots || []).find((s) => slotsOverlap(String(targetSlot.start_time), String(targetSlot.end_time), String(s.start_time), String(s.end_time)));
         if (conflicting) {
           return NextResponse.json({
@@ -729,7 +775,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", profile.vendor_id);
+      const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", targetVendorId);
       if (updated.error) throw updated.error;
       return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
     }

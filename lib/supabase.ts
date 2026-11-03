@@ -38,6 +38,10 @@ export type LiveVendorRow = {
   delivery_enabled: boolean; pickup_enabled: boolean; store_open_today: boolean;
   verification_status: string; operational_status: string; marketplace_visible: boolean;
   plan_id: string | null;
+  terms_accepted?: boolean;
+  terms_version?: string | null;
+  terms_accepted_at?: string | null;
+  terms_document_reference?: string | null;
   // Embedded via the vendors.plan_id -> vendor_plans foreign key. This client
   // has no generated Database types, so supabase-js can't confirm the FK is
   // many-to-one — it types (and may return) this as an array either way.
@@ -367,7 +371,7 @@ export async function loadLiveOperationsWorkspace() {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
-    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,vendor_plans(code,name)").order("created_at", { ascending: false }),
+    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,terms_version,terms_accepted_at,terms_document_reference,vendor_plans(code,name)").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
     supabase.from("vendor_documents").select("vendor_id,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
@@ -634,7 +638,13 @@ export async function submitLiveVendorApplication(input: {
   fssaiNumber: string; expiryDate: string; certificate: File; address?: string;
   latitude?: number; longitude?: number; radiusKm?: number; delivery?: boolean; pickup?: boolean;
   operatingHours?: Record<string, unknown>;
+  termsAccepted?: boolean;
+  termsVersion?: string;
+  termsDocumentReference?: string;
 }) {
+  if (!input.termsAccepted) {
+    throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
+  }
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const safeName = input.certificate.name.replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -647,6 +657,10 @@ export async function submitLiveVendorApplication(input: {
     address: input.address ?? input.locality, latitude: input.latitude, longitude: input.longitude,
     service_radius_km: input.radiusKm ?? 5, delivery_enabled: input.delivery ?? true,
     pickup_enabled: input.pickup ?? true, store_open_today: false,
+    terms_accepted: true,
+    terms_version: input.termsVersion || "1.0",
+    terms_accepted_at: new Date().toISOString(),
+    terms_document_reference: input.termsDocumentReference || "/docs/sheplates-vendor-terms-v1.0.pdf",
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) throw vendor.error;
@@ -659,6 +673,26 @@ export async function submitLiveVendorApplication(input: {
   if (profile.error) throw profile.error;
   if (!profile.data) throw new Error("Your vendor application was saved, but your account could not be linked to it. Please contact Operations before submitting again.");
   return vendor.data.id as string;
+}
+
+export async function acceptLiveVendorTerms(vendorId: string, version = "1.0") {
+  const token = await getAccessToken();
+  const response = await fetch("/api/vendor/onboarding", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      action: "accept_terms",
+      vendorId,
+      termsVersion: version,
+      documentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
+    }),
+  });
+  const result = await response.json() as Record<string, unknown> & { error?: string };
+  if (!response.ok) throw new Error(result.error || "Failed to accept Terms & Conditions.");
+  return result;
 }
 
 /**
@@ -708,6 +742,7 @@ export type LiveCommerceSnapshot = {
   thirdPartyDeliveryAvailable: boolean;
   cart?: Record<string, unknown> | null;
   cartItems?: Array<Record<string, unknown>>;
+  deliverySlots?: Array<Record<string, unknown>>;
 };
 
 async function commerceRequest(body?: Record<string, unknown>) {
