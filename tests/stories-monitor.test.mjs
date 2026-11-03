@@ -38,3 +38,19 @@ test("the monitor page, the report button and the menus are wired", async () => 
   assert.equal((app.match(/<StoriesMonitor \/>/g) || []).length, 2, "both Operations and Super Admin open it");
   assert.match(viewer, /Report this status/);
 });
+
+test("V9_14 SQL is staff-only and the app wires the three audit and note features", async () => {
+  const { readFileSync } = await import("node:fs");
+  const sql = readFileSync(new URL("../supabase/V9_14_AUDIT_VIEWS_AND_VENDOR_NOTES.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/20261103000200_audit_views_and_vendor_notes.sql", import.meta.url), "utf8");
+  assert.equal(sql, migration);
+  assert.match(sql, /not in \('operations', 'admin'\)/);
+  for (const fn of ["log_customer_data_view", "audit_trail", "send_vendor_note"]) assert.match(sql, new RegExp(`function public\\.${fn}`));
+  const app = readFileSync(new URL("../components/sheplates-v3.tsx", import.meta.url), "utf8");
+  assert.match(app, /logCustomerView\(email, "Users"\)/);
+  assert.match(app, /Note to the vendor/);
+  assert.match(app, /Send the vendor an invitation email/);
+  const route = readFileSync(new URL("../app/api/admin/invite-vendor/route.ts", import.meta.url), "utf8");
+  assert.match(route, /operations/);
+  assert.match(route, /inviteUserByEmail/);
+});
