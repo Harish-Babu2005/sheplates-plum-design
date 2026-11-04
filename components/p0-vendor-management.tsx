@@ -4,6 +4,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { getAccessToken, normalizeWhatsAppNumber, uploadLiveCertificate } from "@/lib/supabase";
 import { P0VendorLocationPicker } from "@/components/p0-vendor-location-picker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+export const VENDOR_ONBOARDING_CATEGORIES = [
+  "Milk & dairy",
+  "Home food",
+  "Caterer",
+  "Meat & fish",
+  "Vegetables",
+  "Groceries",
+  "Eggs",
+  "Bakery",
+  "Snacks",
+  "Rice & staples",
+  "Other",
+] as const;
 
 type Permission = "can_create" | "can_review" | "can_cancel" | "can_reactivate" | "can_upgrade" | "can_upload";
 type Permissions = Record<Permission, boolean>;
@@ -110,6 +131,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     fssaiNumber: "", expiryDate: "",
   });
   const [certificate, setCertificate] = useState<File | null>(null);
+  const [otherCategory, setOtherCategory] = useState("");
   const [shopImage, setShopImage] = useState<File | null>(null);
   const shopImageInput = useRef<HTMLInputElement>(null);
   const [upgrade, setUpgrade] = useState<Record<string, { email: string; planCode: string }>>({});
@@ -176,7 +198,9 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       const request = new FormData();
       request.append("action", "create");
       request.append("name", form.name);
-      request.append("category", form.category);
+      const effectiveCategory = form.category === "Other" ? otherCategory.trim() : form.category.trim();
+      if (!effectiveCategory) return setError("Please select or enter a business category.");
+      request.append("category", effectiveCategory);
       request.append("description", form.description);
       request.append("locality", form.locality);
       request.append("address", form.address);
@@ -203,6 +227,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setCertificate(null);
       setShopImage(null);
       if (shopImageInput.current) shopImageInput.current.value = "";
+      setOtherCategory("");
       setForm({
         name: "", category: "", description: "", locality: "", address: "",
         latitude: "", longitude: "", radius: "5", contactName: "", contactPhone: "",
@@ -355,6 +380,86 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     {isAdmin && <section className="surface-card rounded-3xl p-5">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Operations permissions</h2><span className="text-xs text-[#665B5D]">Every change is recorded in the audit log</span></div>
       <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">The person who creates a Connect vendor can never approve it. Approval needs a different team member with the Review right. Operations users have no P0 permissions until you assign them.</p>
+    {hasPermission("can_create") && <form onSubmit={(event) => void createVendor(event)} className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-black">Create a P0 Connect listing</h2>
+      <p className="mt-1 text-xs text-stone-500">Creates one unowned vendor record; it starts pending, inactive and hidden. Coordinates and WhatsApp are required for later discovery.</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
+        <div className="flex flex-col text-xs font-bold">
+          <span>Category</span>
+          <Select value={form.category} onValueChange={(value) => updateForm("category", value)}>
+            <SelectTrigger
+              aria-label="Category"
+              className="mt-1 h-[42px] w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900 outline-none focus:border-[#5ba400]"
+            >
+              <SelectValue placeholder="Select a category" />
+            </SelectTrigger>
+            <SelectContent>
+              {VENDOR_ONBOARDING_CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {form.category === "Other" && (
+          <label className="text-xs font-bold sm:col-span-2">
+            Your category
+            <input
+              required
+              value={otherCategory}
+              onChange={(event) => setOtherCategory(event.target.value)}
+              className={inputClass}
+              placeholder="Enter your business category"
+            />
+          </label>
+        )}
+        <label className="text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
+        <label className="text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => {
+          updateForm("locality", event.target.value);
+          updateForm("latitude", "");
+          updateForm("longitude", "");
+        }} className={inputClass} /></label>
+        <label className="text-xs font-bold sm:col-span-2">Address<textarea value={form.address} onChange={(event) => {
+          updateForm("address", event.target.value);
+          updateForm("latitude", "");
+          updateForm("longitude", "");
+        }} className={inputClass} /></label>
+        <P0VendorLocationPicker
+          address={form.address}
+          locality={form.locality}
+          latitude={form.latitude}
+          longitude={form.longitude}
+          radiusKm={form.radius}
+          onSave={(place) => {
+            updateForm("address", place.address);
+            updateForm("latitude", String(place.latitude));
+            updateForm("longitude", String(place.longitude));
+            setNotice(`Vendor pin saved: ${place.address}`);
+          }}
+        />
+        <label className="text-xs font-bold">Latitude<input required type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateForm("latitude", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Longitude<input required type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateForm("longitude", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Service radius (km)<input required type="number" step="0.5" min="0.5" max="100" value={form.radius} onChange={(event) => updateForm("radius", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Operating duration (hours/day)<input required type="number" min="1" max="24" value={form.durationHours} onChange={(event) => updateForm("durationHours", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Shop image (optional)<input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setShopImage(event.target.files?.[0] || null)} className={inputClass} /><span className="mt-1 block font-normal text-stone-500">PNG, JPG or WebP · max 10 MB{shopImage ? ` · ${shopImage.name}` : ""}</span></label>
+        <label className="text-xs font-bold sm:col-span-2">Description<textarea value={form.description} onChange={(event) => updateForm("description", event.target.value)} className={inputClass} /></label>
+      </div>
+      <label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.fssaiRequired} onChange={(event) => updateForm("fssaiRequired", event.target.checked)} />FSSAI certificate is required for this business</label>
+      {form.fssaiRequired && <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <label className="text-xs font-bold">FSSAI number<input required value={form.fssaiNumber} onChange={(event) => updateForm("fssaiNumber", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
+        <label className="text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
+      </div>}
+      <button disabled={busy} className="mt-4 rounded-xl bg-[#5ba400] px-5 py-3 text-sm font-black text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
+    </form>}
+
+    {isAdmin && <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-black">Operations permissions</h2>
+      <p className="mt-1 text-xs text-stone-500">Operations users have no P0 permissions until Super Admin assigns them individually.</p>
       <div className="mt-4 space-y-4">
         {operationsUsers.map((user) => <div key={user.id} className="rounded-[18px] bg-[#F5EDE7] p-4">
           <div className="font-semibold">{user.full_name || "Operations user"}</div>

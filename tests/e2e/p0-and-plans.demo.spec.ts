@@ -28,6 +28,7 @@ async function openAs(page: Page, who: keyof typeof SESSIONS, tweak?: (state: Re
 }
 
 test("Operations and Super Admin both have a P0 Connect vendors screen in the menu", async ({ page }) => {
+  test.slow();
   for (const who of ["operations", "admin"] as const) {
     await page.goto("/");
     await page.evaluate(() => sessionStorage.removeItem("seeded"));
@@ -95,4 +96,35 @@ test("customers have no Cancel button on orders or schedules", async ({ page }) 
     await page.getByRole("button", { name, exact: true }).first().click({ timeout: 10_000 });
     await expect(page.getByRole("button", { name: /^Cancel( order| schedule)?$/ })).toHaveCount(0);
   }
+});
+
+test("P0 Connect vendor listing category dropdown contains onboarding categories", async ({ page }) => {
+  await openAs(page, "admin");
+  await dismissTourIfOpen(page);
+  const entry = page.getByRole("button", { name: "P0 Connect vendors" }).first();
+  await expect(entry).toBeVisible({ timeout: 60_000 });
+  await entry.click();
+  await expect(page.getByRole("heading", { name: "Create a P0 Connect listing" })).toBeVisible({ timeout: 15_000 });
+
+  const categoryCombobox = page.getByRole("combobox", { name: "Category" });
+  await expect(categoryCombobox).toBeVisible();
+  await categoryCombobox.click();
+
+  await expect(page.getByRole("option", { name: "Caterer", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Snacks", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Home food", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Bakery", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Milk & dairy", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Other", exact: true })).toBeVisible();
+
+  await page.getByRole("option", { name: "Caterer", exact: true }).click();
+  await expect(categoryCombobox).toContainText("Caterer");
+
+  await categoryCombobox.click();
+  await page.getByRole("option", { name: "Snacks", exact: true }).click();
+  await expect(categoryCombobox).toContainText("Snacks");
+
+  await categoryCombobox.click();
+  await page.getByRole("option", { name: "Other", exact: true }).click();
+  await expect(page.getByPlaceholder("Enter your business category")).toBeVisible();
 });

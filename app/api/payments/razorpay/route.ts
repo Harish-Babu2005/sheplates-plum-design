@@ -288,6 +288,13 @@ export async function POST(request: Request) {
 
         for (const item of items) {
           const qty = Math.max(0.001, Number(item.quantity || 1));
+          if (item.customer_price != null && Number(item.customer_price) > 0) {
+            const base = Number(item.vendor_base_price ?? 0);
+            const unitPrice = Number(item.customer_price);
+            calculatedBaseTotal += base * qty;
+            calculatedCustomerTotal += unitPrice * qty;
+            continue;
+          }
           // Look up current product and markup
           const { data: prod } = await admin
             .from("vendor_menu_items")
