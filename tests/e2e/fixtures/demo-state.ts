@@ -57,7 +57,7 @@ export function buildDemoState() {
   ];
   return {
     customers: [{ email: DEMO_CUSTOMER.email, address: "RS Puram, Coimbatore, Coimbatore North, Tamil Nadu, 641002, India", latitude: 11.0392, longitude: 76.9778, householdSize: 3, diet: "No preference", allergies: [], goals: [], dislikes: "", onboardingComplete: true, phone: "", agentMemory: {} }],
-    vendors, products, schedules, orders, staff: [], assignments: [], requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [], transactions: [], staffAccounts: [], campaigns: [],
+    vendors, products, schedules, orders, staff: [], assignments: [], requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [] as { id: string; customerEmail: string; productId: string; quantity: number }[], tickets: [], transactions: [], staffAccounts: [], campaigns: [],
     merchandising: { featuredProductIds: [], recommendationPopupEnabled: true, maxFeatured: 6 }, wishlist: [], reviews: [],
     tasteProfiles: [{ customerEmail: DEMO_CUSTOMER.email, weights: { comfort_food: 0.8, spicy: 0.6, south_indian: 0.7 }, onboarded: true }], productAttributes: {}, foodDrops, foodDropClaims: [],
     deliverySlots: [

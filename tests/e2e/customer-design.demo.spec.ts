@@ -86,7 +86,7 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
   test("Food Drops: live cards with countdowns; Following scope fills once a vendor is followed", async ({ page }) => {
     await openAsCustomer(page);
     await go(page, "Food Drops");
-    await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(4);
+    await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(4);
     await expect(page.getByText("Slightly blemished").first()).toBeVisible();
     await expect(page.getByText(/Closes in/i).first()).toBeVisible();
 
@@ -103,7 +103,7 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await go(page, "Food Drops");
     await page.getByRole("tab", { name: "Following" }).click();
     await expect(page.getByRole("heading", { name: "Fresh Croissants (Surplus)" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(1);
   });
 
   test("Schedules and Orders are separate pages in the menu", async ({ page }) => {

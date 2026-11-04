@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     if (saved.error) return NextResponse.json({ error: "The file uploaded but its certificate record could not be saved. Retry with a new upload." }, { status: 500 });
   }
   else {
-    const { data: doc } = await admin.from("vendor_documents").select("id").eq("vendor_id", vendorId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: doc } = await admin.from("vendor_documents").select("id").eq("vendor_id", vendorId).in("document_type", ["food_certificate", "fssai"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (doc?.id) await admin.from("vendor_documents").update({ storage_path: path, updated_at: new Date().toISOString() }).eq("id", doc.id);
   }
   return NextResponse.json({ path, fileName: file.name });

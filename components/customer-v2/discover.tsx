@@ -446,7 +446,7 @@ function DropCard({ drop, state, profile, onClaim }: { drop: FoodDrop; state: V3
       <p className="mt-0.5 text-xs font-bold text-stone-500">{vendor?.businessName || "Local vendor"}{distance !== null ? ` · ${distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}` : ""}</p>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div><div className="flex items-baseline gap-2"><span className="text-xl font-black">{money(drop.dropPrice)}</span><span className="text-xs font-bold text-stone-400 line-through">{money(drop.originalPrice)}</span></div><div className="mt-0.5 text-xs font-bold text-stone-500">{left} pack{left === 1 ? "" : "s"} left</div></div>
-        <button type="button" disabled={busy || left <= 0 || status !== "live"} onClick={async () => { setBusy(true); try { await onClaim(drop, 1); } finally { setBusy(false); } }} className="rounded-full bg-[#155F65] px-6 py-2.5 text-sm font-black text-white shadow-none transition hover:bg-[#155F65] disabled:opacity-50">{busy ? "Adding…" : status === "live" ? "Add +" : "Available at 8 PM"}</button>
+        <button type="button" disabled={busy || left <= 0 || status !== "live"} onClick={async () => { setBusy(true); try { await onClaim(drop, 1); } finally { setBusy(false); } }} className="rounded-full bg-[#155F65] px-6 py-2.5 text-sm font-black text-white shadow-none transition hover:bg-[#0F4A4F] disabled:opacity-50">{busy ? "Adding…" : status === "live" ? "Add to cart" : "Available at 8 PM"}</button>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
     </div>

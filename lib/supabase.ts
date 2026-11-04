@@ -40,8 +40,10 @@ export type LiveVendorRow = {
   delivery_enabled: boolean; pickup_enabled: boolean; store_open_today: boolean;
   verification_status: string; operational_status: string; marketplace_visible: boolean;
   plan_id: string | null;
-  /** Whether the vendor has accepted the Vendor Terms and Conditions (undefined where the column is not deployed). */
   terms_accepted?: boolean;
+  terms_version?: string | null;
+  terms_accepted_at?: string | null;
+  terms_document_reference?: string | null;
   // Embedded via the vendors.plan_id -> vendor_plans foreign key. This client
   // has no generated Database types, so supabase-js can't confirm the FK is
   // many-to-one — it types (and may return) this as an array either way.
@@ -359,7 +361,7 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
-  const documentsPromise = supabase.from("vendor_documents").select("document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false }).limit(1);
+  const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   let productRows = productResult.data as LiveMenuItemRow[] | null;
   let productError = productResult.error;
@@ -375,7 +377,9 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (documents.error) throw documents.error;
   const ownRows = productRows || [];
   await attachFoodTypes(supabase, ownRows, (row) => row.id);
-  return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: documents.data?.[0] || null };
+  // The certificate is the vendor's FSSAI document; newer rows can be PAN, bank and so on.
+  const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
+  return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
 }
 
 export async function loadLiveVendorWorkspaceForOwner(userId: string) {
@@ -391,10 +395,10 @@ export async function loadLiveOperationsWorkspace() {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
-    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").order("created_at", { ascending: false }),
+    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
-    supabase.from("vendor_documents").select("vendor_id,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
+    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
     supabase.from("marketing_campaigns").select("*").order("created_at", { ascending: false }).limit(100),
   ]);
@@ -730,14 +734,16 @@ export async function saveLiveVendorLocation(input: { vendorId: string; address:
   if (result.error) throw result.error;
 }
 
-/** A vendor accepts the Vendor Terms and Conditions. The database records the time, version and document reference. */
-export async function acceptLiveVendorTerms(vendorId: string) {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const result = await supabase.from("vendors").update({ terms_accepted: true }).eq("id", vendorId).select("id").maybeSingle();
-  if (result.error) throw result.error;
-  if (!result.data) throw new Error("Your vendor account could not be updated. Sign in again and retry.");
-}
+
+export type OnboardingComplianceDocument = {
+  documentType: "food_certificate" | "pan" | "government_id" | "address_proof" | "bank_details" | "business_details" | "product_information";
+  documentNumber?: string;
+  file: File;
+  expiryDate?: string;
+  metadata?: Record<string, unknown>;
+};
+
+const isPdfUpload = (file: Pick<File, "name" | "type">) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 
 export async function submitLiveVendorApplication(input: {
   userId: string; businessName: string; category: string; locality: string;
@@ -746,14 +752,37 @@ export async function submitLiveVendorApplication(input: {
   operatingHours?: Record<string, unknown>;
   /** Must be true: the database refuses a submitted vendor that has not accepted the Vendor Terms. */
   termsAccepted?: boolean;
+  termsVersion?: string;
+  termsDocumentReference?: string;
+  /** Optional compliance documents (PAN, ID, address, bank, business, products). Their numbers stay with the document, which only the vendor and Operations can read. */
+  additionalDocuments?: OnboardingComplianceDocument[];
 }) {
+  if (!input.termsAccepted) throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
+  if (!isPdfUpload(input.certificate)) throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
+  for (const doc of input.additionalDocuments ?? []) {
+    if (!isPdfUpload(doc.file)) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
+  }
+
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  if (!input.termsAccepted) throw new Error("Accept the Vendor Terms and Conditions before submitting your application.");
-  const safeName = input.certificate.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-  const objectPath = `${input.userId}/${crypto.randomUUID()}-${safeName}`;
-  const upload = await supabase.storage.from("vendor-certificates").upload(objectPath, input.certificate, { upsert: false });
-  if (upload.error) throw upload.error;
+
+  // Upload every file first. If any upload fails, nothing is left half-saved: the files already uploaded are removed.
+  const uploaded: string[] = [];
+  const store = async (file: File) => {
+    const path = `${input.userId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+    const result = await supabase.storage.from("vendor-certificates").upload(path, file, { upsert: false, contentType: "application/pdf" });
+    if (result.error) throw new Error(`"${file.name}" could not be uploaded: ${result.error.message}`);
+    uploaded.push(path);
+    return path;
+  };
+  const discard = async () => { if (uploaded.length) await supabase.storage.from("vendor-certificates").remove(uploaded); };
+  let objectPath = "";
+  const extraPaths: string[] = [];
+  try {
+    objectPath = await store(input.certificate);
+    for (const doc of input.additionalDocuments ?? []) extraPaths.push(await store(doc.file));
+  } catch (error) { await discard(); throw error; }
+
   const vendor = await supabase.from("vendors").insert({
     owner_id: input.userId, name: input.businessName, category: input.category,
     locality: input.locality, verification_status: "submitted", operational_status: "inactive",
@@ -765,27 +794,49 @@ export async function submitLiveVendorApplication(input: {
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) {
-    // Do not leave the uploaded certificate behind when the application itself was refused.
-    await supabase.storage.from("vendor-certificates").remove([objectPath]);
+    // Do not leave the uploaded files behind when the application itself was refused.
+    await discard();
     throw vendor.error;
   }
-  const document = await supabase.from("vendor_documents").insert({
-    vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber,
-    storage_path: objectPath, expiry_date: input.expiryDate, verification_status: "submitted",
-  });
-  if (document.error) throw document.error;
+
+  const rows = [
+    { vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber, storage_path: objectPath, file_name: input.certificate.name, file_size: input.certificate.size, mime_type: "application/pdf", expiry_date: input.expiryDate, verification_status: "submitted", metadata: {} },
+    ...(input.additionalDocuments ?? []).map((doc, index) => ({
+      vendor_id: vendor.data.id, document_type: doc.documentType, document_number: doc.documentNumber || null, storage_path: extraPaths[index],
+      file_name: doc.file.name, file_size: doc.file.size, mime_type: "application/pdf", expiry_date: doc.expiryDate || null, verification_status: "submitted", metadata: doc.metadata || {},
+    })),
+  ];
+  let documents = await supabase.from("vendor_documents").insert(rows);
+  // A database that has not had the V9_20 update yet has no file detail columns: save the documents without them.
+  if (documents.error && /file_name|file_size|mime_type|metadata/i.test(documents.error.message || "")) {
+    documents = await supabase.from("vendor_documents").insert(rows.map(({ vendor_id, document_type, document_number, storage_path, expiry_date, verification_status }) => ({ vendor_id, document_type, document_number, storage_path, expiry_date, verification_status })));
+  }
+  if (documents.error) throw documents.error;
+
   const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id }).eq("id", input.userId).select("id").maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data) throw new Error("Your vendor application was saved, but your account could not be linked to it. Please contact Operations before submitting again.");
   return vendor.data.id as string;
 }
 
-/**
- * Super-Admin-only: create a real, confirmed account with a role-scoped
- * profile (Operations or Super Admin) via the service-role-backed API route. The route
- * itself re-verifies the caller is an admin before touching Auth — this client call is
- * a convenience wrapper, not the security boundary.
- */
+/** A vendor accepts the Vendor Terms and Conditions. The database records the time, version and document reference. */
+export async function acceptLiveVendorTerms(vendorId: string) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendors").update({ terms_accepted: true }).eq("id", vendorId).select("id").maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error("Your vendor account could not be updated. Sign in again and retry.");
+}
+
+/** A short-lived private link to a document a vendor uploaded. Only the vendor and Operations / Super Admin are allowed to ask for one. */
+export async function signedVendorDocumentUrl(storagePath: string, seconds = 600): Promise<string> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const signed = await supabase.storage.from("vendor-certificates").createSignedUrl(storagePath, seconds);
+  if (signed.error || !signed.data?.signedUrl) throw new Error(signed.error?.message || "The document could not be opened.");
+  return signed.data.signedUrl;
+}
+
 export async function createStaffUser(input: { name: string; email: string; role: "operations" | "admin" }) {
   const token = await getAccessToken();
   const response = await fetch("/api/admin/create-user", {
@@ -827,6 +878,7 @@ export type LiveCommerceSnapshot = {
   thirdPartyDeliveryAvailable: boolean;
   cart?: Record<string, unknown> | null;
   cartItems?: Array<Record<string, unknown>>;
+  deliverySlots?: Array<Record<string, unknown>>;
 };
 
 async function commerceRequest(body?: Record<string, unknown>) {
@@ -852,7 +904,7 @@ export async function createLiveScheduledCheckout(input: {
   return commerceRequest({ action: "create_schedule", ...input });
 }
 
-export async function syncLiveCart(input: { items: Array<{ productId: string; quantity: number }>; createdBy?: "customer" | "she_agent" }) {
+export async function syncLiveCart(input: { items: Array<{ productId: string; quantity: number; foodDropId?: string }>; createdBy?: "customer" | "she_agent" }) {
   return commerceRequest({ action: "sync_cart", items: input.items, createdBy: input.createdBy || "customer" });
 }
 
