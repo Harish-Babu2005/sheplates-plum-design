@@ -37,9 +37,9 @@ export function StoriesTab({ state, social, shorts, people, statuses, shortsRadi
   const vendorOptions = useMemo(() => state.vendors.map((v) => ({ id: v.id, name: v.businessName })), [state.vendors]);
 
   return <div className="mx-auto max-w-5xl space-y-5">
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-[28px] font-bold leading-tight">Stories</h1>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
         <button type="button" onClick={() => (onFindPeople ? onFindPeople() : setFinder(true))} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-black shadow-sm transition hover:border-[#E6D2DA]"><Search className="size-4" />Find people</button>
         <button type="button" onClick={() => setComposer(true)} className="inline-flex items-center gap-1.5 rounded-full bg-[#C65D3A] px-4 py-2 text-sm font-black text-white shadow-none">Add status</button>
       </div>

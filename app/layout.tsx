@@ -4,6 +4,7 @@ import "./theme-2.css";
 import "./design-kit.css";
 import "./shell-kit.css";
 import "./staff-kit.css";
+import { TableLabels } from "@/components/table-labels";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">{children}<TableLabels /></body>
     </html>
   );
 }

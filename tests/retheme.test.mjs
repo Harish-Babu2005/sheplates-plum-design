@@ -124,3 +124,15 @@ test("the sign-in panel text and the landing header are built for phone widths",
   assert.match(shell, /@media \(max-width: 520px\) \{\s*\.e-head \{ gap: 8px; padding: 10px 12px; \}\s*\.e-logo \{ font-size: 0;/);
   assert.match(shell, /@media \(max-width: 380px\)/);
 });
+
+test("phone layouts: tables turn into labelled cards, stat tiles pair up and dark panels are plum", async () => {
+  const staff = await read("app/staff-kit.css");
+  assert.match(staff, /@media \(max-width: 640px\) \{[\s\S]*\[data-slot="table-row"\] \{ display: grid;/);
+  assert.match(staff, /content: attr\(data-label\)/);
+  assert.match(staff, /\.grid:has\(> \.sp-metric-card\) \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(await read("app/theme-2.css"), /html \.sp-v7 \.surface-dark,[^}]*background: var\(--brand-primary\) !important/);
+  const labels = await read("components/table-labels.tsx");
+  assert.match(labels, /setAttribute\("data-label"/);
+  assert.doesNotMatch(labels, /fetch\(|localStorage|supabase/i, "the helper is presentational only");
+  assert.match(await read("app/layout.tsx"), /<TableLabels \/>/);
+});

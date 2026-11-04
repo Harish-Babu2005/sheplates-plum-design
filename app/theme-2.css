@@ -247,6 +247,16 @@ html.theme-customer .sp-agent-preview .surface-dark {
   box-shadow: none;
   color: #ffffff;
 }
+/* Older rules (.sp-v7 .surface-dark) are more specific than the selectors above, so every dark panel is restated here. */
+html .sp-v7 .surface-dark,
+html.theme-customer .sp-v7 .surface-dark,
+html .sp-entry .surface-dark,
+html .sp-agent-panel .surface-dark {
+  border: 0;
+  background: var(--brand-primary) !important;
+  box-shadow: none;
+  color: #ffffff;
+}
 html .soft-chip,
 html.theme-customer .soft-chip {
   border: 0;

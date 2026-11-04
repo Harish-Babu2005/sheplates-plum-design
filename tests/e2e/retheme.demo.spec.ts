@@ -83,3 +83,18 @@ for (const width of [320, 360, 390]) {
     expect(dialog.title, "heading is readable on the plum panel").toBe("rgb(255, 255, 255)");
   });
 }
+
+test("staff tables become readable cards on a phone and nothing is clipped", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "admin");
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^Vendors\s*\d*$/ }).click();
+  await page.waitForTimeout(800);
+  const row = page.locator("[data-slot='table-body'] [data-slot='table-row']").first();
+  await expect(row).toBeVisible();
+  expect(await row.evaluate((el) => getComputedStyle(el).display), "rows are cards").toBe("grid");
+  const cells = await row.locator("> *").evaluateAll((els) => els.map((el) => ({ right: Math.round(el.getBoundingClientRect().right), label: el.getAttribute("data-label") })));
+  for (const cell of cells) expect(cell.right, "cell runs off the screen").toBeLessThanOrEqual(390);
+  expect(cells.slice(1).every((c) => !!c.label), "every value has its column heading").toBe(true);
+});
