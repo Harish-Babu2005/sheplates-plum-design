@@ -1430,6 +1430,7 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [panFile, setPanFile] = useState<File | null>(null), [govIdFile, setGovIdFile] = useState<File | null>(null), [addressProofFile, setAddressProofFile] = useState<File | null>(null);
   const [bankFile, setBankFile] = useState<File | null>(null), [businessFile, setBusinessFile] = useState<File | null>(null), [productInfoFile, setProductInfoFile] = useState<File | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ title: string; fileName: string; url: string } | null>(null);
+  const [selectedComplianceDoc, setSelectedComplianceDoc] = useState<string>("pan");
   const [otherCategory, setOtherCategory] = useState(""), [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState("");
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
   const [form, setForm] = useState({
@@ -1736,336 +1737,574 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
       </div>
     </div>
 
-    {/* Section: 6 Additional Compliance Forms */}
+    {/* Section: Compliance Documents with Dropdown Selector */}
     <div className="border-t border-stone-200 pt-2">
-      <div className="mb-4">
-        <h3 className="text-base font-black text-stone-900">Compliance & Identity Documents</h3>
-        <p className="text-xs text-stone-500">Provide regulatory and banking verification documents. Every file must be in PDF format.</p>
-      </div>
-
-      <div className="grid gap-5 md:grid-cols-2">
-        {/* 1) PAN Document */}
-        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
+      <div className="surface-card-muted rounded-3xl p-6 border border-stone-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+          <div>
             <div className="flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">1</span>
-              <h4 className="text-sm font-black text-stone-900">PAN Card</h4>
-            </div>
-            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            <Field label="PAN Number">
-              <input
-                id="pan-number-input"
-                value={form.panNumber}
-                onChange={(e) => set("panNumber", e.target.value.toUpperCase())}
-                placeholder="ABCDE1234F"
-                maxLength={10}
-                className={inputClass}
-              />
-            </Field>
-            {panFile ? (
-              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
-                  <span className="truncate text-xs font-bold text-stone-800">{panFile.name}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => viewPdf(panFile, "PAN Card PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                  <button type="button" onClick={() => setPanFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                </div>
+              <div className="grid size-8 place-items-center rounded-lg bg-orange-100 text-[#C65D3A]">
+                <FileText className="size-4" />
               </div>
-            ) : (
-              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
-                <input
-                  id="pan-file-input"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setPanFile, "PAN Card")}
-                />
-                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload PAN PDF</div>
-              </label>
-            )}
+              <div>
+                <h3 className="text-base font-black text-stone-900">Compliance & Identity Documents</h3>
+                <p className="text-xs text-stone-500">Select a document from the dropdown below to fill details and upload its PDF.</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="rounded-full bg-stone-200/90 px-3 py-1 text-xs font-bold text-stone-700">
+              {[panFile, govIdFile, addressProofFile, bankFile, businessFile, productInfoFile].filter(Boolean).length} of 6 Uploaded
+            </span>
           </div>
         </div>
 
-        {/* 2) Government Identity Proof */}
-        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">2</span>
-              <h4 className="text-sm font-black text-stone-900">Government Identity Proof</h4>
-            </div>
-            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="ID Type">
-                <Select value={form.govIdType} onValueChange={(v) => set("govIdType", v)}>
-                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
-                    <SelectItem value="Voter ID">Voter ID</SelectItem>
-                    <SelectItem value="Passport">Passport</SelectItem>
-                    <SelectItem value="Driving License">Driving License</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="ID Number">
-                <input
-                  id="govid-number-input"
-                  value={form.govIdNumber}
-                  onChange={(e) => set("govIdNumber", e.target.value)}
-                  placeholder="e.g. 1234 5678 9012"
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-            {govIdFile ? (
-              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
-                  <span className="truncate text-xs font-bold text-stone-800">{govIdFile.name}</span>
+        {/* Dropdown Document Selector */}
+        <div className="mt-5">
+          <label className="block text-xs font-black uppercase tracking-wider text-stone-700 mb-2">
+            Select Document to Upload
+          </label>
+          <Select value={selectedComplianceDoc} onValueChange={(v) => setSelectedComplianceDoc(v)}>
+            <SelectTrigger id="compliance-doc-select" className="h-12 w-full rounded-2xl bg-white border-stone-300 font-bold text-sm shadow-xs">
+              <SelectValue placeholder="Choose document..." />
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-stone-200 shadow-xl">
+              <SelectItem value="pan" className="py-2.5 font-bold">
+                <div className="flex items-center justify-between w-full gap-4">
+                  <span>📄 1. PAN Card</span>
+                  {panFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => viewPdf(govIdFile, "Government ID Proof")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                  <button type="button" onClick={() => setGovIdFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+              </SelectItem>
+              <SelectItem value="government_id" className="py-2.5 font-bold">
+                <div className="flex items-center justify-between w-full gap-4">
+                  <span>🪪 2. Government Identity Proof</span>
+                  {govIdFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
                 </div>
-              </div>
-            ) : (
-              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
-                <input
-                  id="govid-file-input"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setGovIdFile, "Government Identity Proof")}
-                />
-                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Govt ID PDF</div>
-              </label>
-            )}
-          </div>
+              </SelectItem>
+              <SelectItem value="address_proof" className="py-2.5 font-bold">
+                <div className="flex items-center justify-between w-full gap-4">
+                  <span>🏠 3. Address Proof</span>
+                  {addressProofFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
+                </div>
+              </SelectItem>
+              <SelectItem value="bank_details" className="py-2.5 font-bold">
+                <div className="flex items-center justify-between w-full gap-4">
+                  <span>🏦 4. Bank Details (Cheque / Passbook)</span>
+                  {bankFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
+                </div>
+              </SelectItem>
+              <SelectItem value="business_details" className="py-2.5 font-bold">
+                <div className="flex items-center justify-between w-full gap-4">
+                  <span>🏢 5. Business Details (GSTIN / MSME)</span>
+                  {businessFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
+                </div>
+              </SelectItem>
+              <SelectItem value="product_information" className="py-2.5 font-bold">
+                <div className="flex items-center justify-between w-full gap-4">
+                  <span>📋 6. Product Information / Catalogue</span>
+                  {productInfoFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* 3) Address Proof */}
-        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">3</span>
-              <h4 className="text-sm font-black text-stone-900">Address Proof</h4>
-            </div>
-            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Document Type">
-                <Select value={form.addressProofType} onValueChange={(v) => set("addressProofType", v)}>
-                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Electricity Bill">Electricity Bill</SelectItem>
-                    <SelectItem value="Water Bill">Water Bill</SelectItem>
-                    <SelectItem value="Rent Agreement">Rent Agreement</SelectItem>
-                    <SelectItem value="Property Tax Receipt">Property Tax Receipt</SelectItem>
-                    <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Bill / Doc Ref">
-                <input
-                  id="addressproof-ref-input"
-                  value={form.addressProofRef}
-                  onChange={(e) => set("addressProofRef", e.target.value)}
-                  placeholder="Optional reference #"
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-            {addressProofFile ? (
-              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
-                  <span className="truncate text-xs font-bold text-stone-800">{addressProofFile.name}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => viewPdf(addressProofFile, "Address Proof PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                  <button type="button" onClick={() => setAddressProofFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                </div>
-              </div>
-            ) : (
-              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
-                <input
-                  id="addressproof-file-input"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setAddressProofFile, "Address Proof")}
-                />
-                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Address Proof PDF</div>
-              </label>
-            )}
-          </div>
+        {/* Quick-switch document pills */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {[
+            { id: "pan", label: "1. PAN Card", file: panFile },
+            { id: "government_id", label: "2. Govt ID", file: govIdFile },
+            { id: "address_proof", label: "3. Address Proof", file: addressProofFile },
+            { id: "bank_details", label: "4. Bank Details", file: bankFile },
+            { id: "business_details", label: "5. Business Reg", file: businessFile },
+            { id: "product_information", label: "6. Product Info", file: productInfoFile },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelectedComplianceDoc(item.id)}
+              className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                selectedComplianceDoc === item.id
+                  ? "bg-[#512D3A] text-white shadow-xs"
+                  : item.file
+                  ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+                  : "bg-white text-stone-600 border border-stone-200 hover:bg-stone-50"
+              }`}
+            >
+              {item.file ? <Check className="size-3 text-emerald-600" /> : <span className="size-1.5 rounded-full bg-stone-300" />}
+              <span>{item.label}</span>
+              {item.file && <span className="text-[10px] font-black opacity-80">✓</span>}
+            </button>
+          ))}
         </div>
 
-        {/* 4) Bank Details */}
-        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">4</span>
-              <h4 className="text-sm font-black text-stone-900">Bank Details</h4>
-            </div>
-            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Account Number">
-                <input
-                  id="bank-account-input"
-                  value={form.bankAccountNumber}
-                  onChange={(e) => set("bankAccountNumber", e.target.value)}
-                  placeholder="Bank Account Number"
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="IFSC Code">
-                <input
-                  id="bank-ifsc-input"
-                  value={form.bankIfsc}
-                  onChange={(e) => set("bankIfsc", e.target.value.toUpperCase())}
-                  placeholder="e.g. HDFC0001234"
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-            {bankFile ? (
-              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
-                  <span className="truncate text-xs font-bold text-stone-800">{bankFile.name}</span>
+        {/* Active Document Card */}
+        <div className="mt-5 rounded-2xl border border-stone-200 bg-white p-5 shadow-xs">
+          {/* 1) PAN Document */}
+          {selectedComplianceDoc === "pan" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">1</span>
+                  <div>
+                    <h4 className="text-sm font-black text-stone-900">PAN Card</h4>
+                    <p className="text-xs text-stone-500">Permanent Account Number card of proprietor or business</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => viewPdf(bankFile, "Bank Proof (Cheque/Passbook)")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                  <button type="button" onClick={() => setBankFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                </div>
+                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
               </div>
-            ) : (
-              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
-                <input
-                  id="bank-file-input"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBankFile, "Bank Details (Cheque/Passbook)")}
-                />
-                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Cheque / Passbook PDF</div>
-              </label>
-            )}
-          </div>
+              <div className="space-y-3">
+                <Field label="PAN Number">
+                  <input
+                    id="pan-number-input"
+                    value={form.panNumber}
+                    onChange={(e) => set("panNumber", e.target.value.toUpperCase())}
+                    placeholder="ABCDE1234F"
+                    maxLength={10}
+                    className={inputClass}
+                  />
+                </Field>
+                {panFile ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
+                      <span className="truncate text-xs font-bold text-stone-800">{panFile.name}</span>
+                      <span className="text-[10px] text-stone-500 font-mono">({(panFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => viewPdf(panFile, "PAN Card PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                      <button type="button" onClick={() => setPanFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
+                    <input
+                      id="pan-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setPanFile, "PAN Card")}
+                    />
+                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload PAN PDF</div>
+                  </label>
+                )}
+              </div>
+              <div className="pt-2 flex justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("government_id")} className="rounded-xl font-bold text-xs">
+                  Next: Government ID <ArrowRight className="size-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 2) Government Identity Proof */}
+          {selectedComplianceDoc === "government_id" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">2</span>
+                  <div>
+                    <h4 className="text-sm font-black text-stone-900">Government Identity Proof</h4>
+                    <p className="text-xs text-stone-500">Official government issued identity card</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="ID Type">
+                    <Select value={form.govIdType} onValueChange={(v) => set("govIdType", v)}>
+                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
+                        <SelectItem value="Voter ID">Voter ID</SelectItem>
+                        <SelectItem value="Passport">Passport</SelectItem>
+                        <SelectItem value="Driving License">Driving License</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="ID Number">
+                    <input
+                      id="govid-number-input"
+                      value={form.govIdNumber}
+                      onChange={(e) => set("govIdNumber", e.target.value)}
+                      placeholder="e.g. 1234 5678 9012"
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+                {govIdFile ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
+                      <span className="truncate text-xs font-bold text-stone-800">{govIdFile.name}</span>
+                      <span className="text-[10px] text-stone-500 font-mono">({(govIdFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => viewPdf(govIdFile, "Government ID Proof")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                      <button type="button" onClick={() => setGovIdFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
+                    <input
+                      id="govid-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setGovIdFile, "Government Identity Proof")}
+                    />
+                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Govt ID PDF</div>
+                  </label>
+                )}
+              </div>
+              <div className="pt-2 flex justify-between">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("pan")} className="rounded-xl font-bold text-xs">
+                  <ArrowLeft className="size-3.5 mr-1" /> Previous
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("address_proof")} className="rounded-xl font-bold text-xs">
+                  Next: Address Proof <ArrowRight className="size-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 3) Address Proof */}
+          {selectedComplianceDoc === "address_proof" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">3</span>
+                  <div>
+                    <h4 className="text-sm font-black text-stone-900">Address Proof</h4>
+                    <p className="text-xs text-stone-500">Utility bill, rent agreement or property tax receipt</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Document Type">
+                    <Select value={form.addressProofType} onValueChange={(v) => set("addressProofType", v)}>
+                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Electricity Bill">Electricity Bill</SelectItem>
+                        <SelectItem value="Water Bill">Water Bill</SelectItem>
+                        <SelectItem value="Rent Agreement">Rent Agreement</SelectItem>
+                        <SelectItem value="Property Tax Receipt">Property Tax Receipt</SelectItem>
+                        <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Bill / Doc Ref">
+                    <input
+                      id="addressproof-ref-input"
+                      value={form.addressProofRef}
+                      onChange={(e) => set("addressProofRef", e.target.value)}
+                      placeholder="Optional reference #"
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+                {addressProofFile ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
+                      <span className="truncate text-xs font-bold text-stone-800">{addressProofFile.name}</span>
+                      <span className="text-[10px] text-stone-500 font-mono">({(addressProofFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => viewPdf(addressProofFile, "Address Proof PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                      <button type="button" onClick={() => setAddressProofFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
+                    <input
+                      id="addressproof-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setAddressProofFile, "Address Proof")}
+                    />
+                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Address Proof PDF</div>
+                  </label>
+                )}
+              </div>
+              <div className="pt-2 flex justify-between">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("government_id")} className="rounded-xl font-bold text-xs">
+                  <ArrowLeft className="size-3.5 mr-1" /> Previous
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("bank_details")} className="rounded-xl font-bold text-xs">
+                  Next: Bank Details <ArrowRight className="size-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 4) Bank Details */}
+          {selectedComplianceDoc === "bank_details" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">4</span>
+                  <div>
+                    <h4 className="text-sm font-black text-stone-900">Bank Details</h4>
+                    <p className="text-xs text-stone-500">Bank account and cancelled cheque / passbook for payouts</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Account Number">
+                    <input
+                      id="bank-account-input"
+                      value={form.bankAccountNumber}
+                      onChange={(e) => set("bankAccountNumber", e.target.value)}
+                      placeholder="Bank Account Number"
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="IFSC Code">
+                    <input
+                      id="bank-ifsc-input"
+                      value={form.bankIfsc}
+                      onChange={(e) => set("bankIfsc", e.target.value.toUpperCase())}
+                      placeholder="e.g. HDFC0001234"
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+                {bankFile ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
+                      <span className="truncate text-xs font-bold text-stone-800">{bankFile.name}</span>
+                      <span className="text-[10px] text-stone-500 font-mono">({(bankFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => viewPdf(bankFile, "Bank Proof (Cheque/Passbook)")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                      <button type="button" onClick={() => setBankFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
+                    <input
+                      id="bank-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBankFile, "Bank Details (Cheque/Passbook)")}
+                    />
+                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Cheque / Passbook PDF</div>
+                  </label>
+                )}
+              </div>
+              <div className="pt-2 flex justify-between">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("address_proof")} className="rounded-xl font-bold text-xs">
+                  <ArrowLeft className="size-3.5 mr-1" /> Previous
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("business_details")} className="rounded-xl font-bold text-xs">
+                  Next: Business Reg <ArrowRight className="size-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 5) Business Details */}
+          {selectedComplianceDoc === "business_details" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">5</span>
+                  <div>
+                    <h4 className="text-sm font-black text-stone-900">Business Details</h4>
+                    <p className="text-xs text-stone-500">GST certificate, MSME Udyam, Shop & Establishment, or trade license</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Registration Type">
+                    <Select value={form.businessRegType} onValueChange={(v) => set("businessRegType", v)}>
+                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="GSTIN Certificate">GSTIN Certificate</SelectItem>
+                        <SelectItem value="Udyam / MSME Registration">Udyam / MSME</SelectItem>
+                        <SelectItem value="Shop & Establishment Act">Shop & Establishment</SelectItem>
+                        <SelectItem value="Trade License">Trade License</SelectItem>
+                        <SelectItem value="Partnership Deed / Incorporation">Partnership / Inc</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Reg Number / GSTIN">
+                    <input
+                      id="business-reg-input"
+                      value={form.businessRegNumber}
+                      onChange={(e) => set("businessRegNumber", e.target.value)}
+                      placeholder="Registration Number"
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+                {businessFile ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
+                      <span className="truncate text-xs font-bold text-stone-800">{businessFile.name}</span>
+                      <span className="text-[10px] text-stone-500 font-mono">({(businessFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => viewPdf(businessFile, "Business Registration PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                      <button type="button" onClick={() => setBusinessFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
+                    <input
+                      id="business-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBusinessFile, "Business Registration Document")}
+                    />
+                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Registration PDF</div>
+                  </label>
+                )}
+              </div>
+              <div className="pt-2 flex justify-between">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("bank_details")} className="rounded-xl font-bold text-xs">
+                  <ArrowLeft className="size-3.5 mr-1" /> Previous
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("product_information")} className="rounded-xl font-bold text-xs">
+                  Next: Product Info <ArrowRight className="size-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 6) Product Information */}
+          {selectedComplianceDoc === "product_information" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">6</span>
+                  <div>
+                    <h4 className="text-sm font-black text-stone-900">Product Information</h4>
+                    <p className="text-xs text-stone-500">Menu catalogue, product descriptions or pricing sheet</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
+              </div>
+              <div className="space-y-3">
+                <Field label="Catalogue / Menu Name">
+                  <input
+                    id="productinfo-title-input"
+                    value={form.productInfoTitle}
+                    onChange={(e) => set("productInfoTitle", e.target.value)}
+                    placeholder="e.g. Signature Meals & Daily Specials Menu"
+                    className={inputClass}
+                  />
+                </Field>
+                {productInfoFile ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
+                      <span className="truncate text-xs font-bold text-stone-800">{productInfoFile.name}</span>
+                      <span className="text-[10px] text-stone-500 font-mono">({(productInfoFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => viewPdf(productInfoFile, "Product Information / Catalogue")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
+                      <button type="button" onClick={() => setProductInfoFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
+                    <input
+                      id="productinfo-file-input"
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setProductInfoFile, "Product Information / Catalogue")}
+                    />
+                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Product Catalogue PDF</div>
+                  </label>
+                )}
+              </div>
+              <div className="pt-2 flex justify-start">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("business_details")} className="rounded-xl font-bold text-xs">
+                  <ArrowLeft className="size-3.5 mr-1" /> Previous
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* 5) Business Details */}
-        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">5</span>
-              <h4 className="text-sm font-black text-stone-900">Business Details</h4>
+        {/* Uploaded Documents Summary Tray */}
+        {[
+          { id: "pan", title: "PAN Card", file: panFile, remove: () => setPanFile(null) },
+          { id: "government_id", title: `Govt ID (${form.govIdType})`, file: govIdFile, remove: () => setGovIdFile(null) },
+          { id: "address_proof", title: `Address Proof (${form.addressProofType})`, file: addressProofFile, remove: () => setAddressProofFile(null) },
+          { id: "bank_details", title: "Bank Details (Cheque/Passbook)", file: bankFile, remove: () => setBankFile(null) },
+          { id: "business_details", title: `Business Reg (${form.businessRegType})`, file: businessFile, remove: () => setBusinessFile(null) },
+          { id: "product_information", title: "Product Catalogue / Menu", file: productInfoFile, remove: () => setProductInfoFile(null) },
+        ].filter((item) => item.file !== null).length > 0 && (
+          <div className="mt-5 pt-4 border-t border-stone-200">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-black uppercase tracking-wider text-stone-700">
+                Uploaded Compliance Documents ({[panFile, govIdFile, addressProofFile, bankFile, businessFile, productInfoFile].filter(Boolean).length}/6)
+              </span>
             </div>
-            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Registration Type">
-                <Select value={form.businessRegType} onValueChange={(v) => set("businessRegType", v)}>
-                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GSTIN Certificate">GSTIN Certificate</SelectItem>
-                    <SelectItem value="Udyam / MSME Registration">Udyam / MSME</SelectItem>
-                    <SelectItem value="Shop & Establishment Act">Shop & Establishment</SelectItem>
-                    <SelectItem value="Trade License">Trade License</SelectItem>
-                    <SelectItem value="Partnership Deed / Incorporation">Partnership / Inc</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Reg Number / GSTIN">
-                <input
-                  id="business-reg-input"
-                  value={form.businessRegNumber}
-                  onChange={(e) => set("businessRegNumber", e.target.value)}
-                  placeholder="Registration Number"
-                  className={inputClass}
-                />
-              </Field>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                { id: "pan", title: "PAN Card", file: panFile, remove: () => setPanFile(null) },
+                { id: "government_id", title: `Govt ID (${form.govIdType})`, file: govIdFile, remove: () => setGovIdFile(null) },
+                { id: "address_proof", title: `Address Proof (${form.addressProofType})`, file: addressProofFile, remove: () => setAddressProofFile(null) },
+                { id: "bank_details", title: "Bank Details", file: bankFile, remove: () => setBankFile(null) },
+                { id: "business_details", title: `Business Reg (${form.businessRegType})`, file: businessFile, remove: () => setBusinessFile(null) },
+                { id: "product_information", title: "Product Catalogue", file: productInfoFile, remove: () => setProductInfoFile(null) },
+              ].filter((item) => item.file !== null).map((item) => (
+                <div key={item.id} className="flex items-center justify-between rounded-xl border border-emerald-200 bg-white p-2.5 text-xs shadow-xs">
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] font-black text-red-600 bg-red-50 px-1 rounded">PDF</span>
+                      <span className="font-bold text-stone-800 truncate">{item.title}</span>
+                    </div>
+                    <div className="text-[11px] text-stone-500 truncate mt-0.5">{item.file!.name}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => viewPdf(item.file!, item.title)}
+                      className="p-1 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+                      title="Preview PDF"
+                    >
+                      <Eye className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedComplianceDoc(item.id)}
+                      className="p-1 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+                      title="Edit"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={item.remove}
+                      className="p-1 rounded-lg text-red-600 hover:text-red-800 hover:bg-red-50"
+                      title="Remove"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-            {businessFile ? (
-              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
-                  <span className="truncate text-xs font-bold text-stone-800">{businessFile.name}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => viewPdf(businessFile, "Business Registration PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                  <button type="button" onClick={() => setBusinessFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                </div>
-              </div>
-            ) : (
-              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
-                <input
-                  id="business-file-input"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBusinessFile, "Business Registration Document")}
-                />
-                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Registration PDF</div>
-              </label>
-            )}
           </div>
-        </div>
-
-        {/* 6) Product Information */}
-        <div className="surface-card-muted rounded-3xl p-5 border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">6</span>
-              <h4 className="text-sm font-black text-stone-900">Product Information</h4>
-            </div>
-            <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            <Field label="Catalogue / Menu Name">
-              <input
-                id="productinfo-title-input"
-                value={form.productInfoTitle}
-                onChange={(e) => set("productInfoTitle", e.target.value)}
-                placeholder="e.g. Signature Meals & Daily Specials Menu"
-                className={inputClass}
-              />
-            </Field>
-            {productInfoFile ? (
-              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">PDF</span>
-                  <span className="truncate text-xs font-bold text-stone-800">{productInfoFile.name}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => viewPdf(productInfoFile, "Product Information / Catalogue")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                  <button type="button" onClick={() => setProductInfoFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                </div>
-              </div>
-            ) : (
-              <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-white p-3 text-center hover:border-[#5ba400]">
-                <input
-                  id="productinfo-file-input"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setProductInfoFile, "Product Information / Catalogue")}
-                />
-                <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Product Catalogue PDF</div>
-              </label>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
 
