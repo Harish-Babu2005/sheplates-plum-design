@@ -457,6 +457,41 @@ export async function uploadLiveProductImage(vendorId: string, dataUrl: string) 
   return result.publicUrl;
 }
 
+/** Asks the server to draw a sample picture for a product with no photo. Send productId to attach it, or name and category to preview. */
+export async function generateLiveProductImage(input: { productId?: string; name?: string; category?: string; force?: boolean }): Promise<string> {
+  const token = await getAccessToken();
+  const response = await fetch("/api/product-image-generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(input),
+  });
+  const json = await response.json() as { imageUrl?: string; error?: string };
+  if (!response.ok || !json.imageUrl) throw new Error(json.error || "The image could not be created.");
+  return json.imageUrl;
+}
+
+/** Super Admin: how many products still have no picture. */
+export async function loadProductImageGap(): Promise<{ products: number; kinds: number }> {
+  const token = await getAccessToken();
+  const response = await fetch("/api/admin/backfill-product-images", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const json = await response.json() as { products?: number; kinds?: number; error?: string };
+  if (!response.ok) throw new Error(json.error || "Could not count products without a picture.");
+  return { products: json.products ?? 0, kinds: json.kinds ?? 0 };
+}
+
+/** Super Admin: draw pictures for a few product types at a time. */
+export async function runProductImageBackfill(limit = 2): Promise<{ generated: number; reused: number; failed: number; remainingProducts: number; remainingKinds: number; message: string }> {
+  const token = await getAccessToken();
+  const response = await fetch("/api/admin/backfill-product-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ limit }),
+  });
+  const json = await response.json() as { generated?: number; reused?: number; failed?: number; remainingProducts?: number; remainingKinds?: number; message?: string; error?: string };
+  if (!response.ok) throw new Error(json.error || "The images could not be created.");
+  return { generated: json.generated ?? 0, reused: json.reused ?? 0, failed: json.failed ?? 0, remainingProducts: json.remainingProducts ?? 0, remainingKinds: json.remainingKinds ?? 0, message: json.message ?? "" };
+}
+
 export async function saveLiveVendorProduct(input: {
   vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;

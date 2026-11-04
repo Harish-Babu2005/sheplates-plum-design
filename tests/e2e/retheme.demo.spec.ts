@@ -29,23 +29,23 @@ for (const who of ["customer", "vendor", "operations", "admin"] as const) {
       await open(page, who);
       const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth, bg: getComputedStyle(document.body).backgroundColor }));
       expect(m.scroll, "page scrolls sideways").toBeLessThanOrEqual(m.inner + 1);
-      expect(m.bg).toBe("rgb(250, 247, 242)");
+      expect(m.bg).toBe("rgb(246, 248, 248)");
     });
   }
 }
 
-test("brand roles: actions are terracotta, navigation and selection are plum, dark panels are plum", async ({ page }) => {
+test("brand roles: actions, navigation and dark panels are teal, the accent is fresh green", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "customer");
   const colour = (selector: string, prop: "backgroundColor" | "color") => page.locator(selector).first().evaluate((el, p) => getComputedStyle(el as HTMLElement)[p as "color"], prop);
-  expect(await colour(".k-actions .ibtn.o", "backgroundColor"), "cart button").toBe("rgb(198, 93, 58)");
-  expect(await colour(".k-menurow button.on", "backgroundColor"), "active navigation").toBe("rgb(81, 45, 58)");
-  expect(await colour(".k-head .k-agent", "backgroundColor"), "She Agent button").toBe("rgb(81, 45, 58)");
-  expect(await colour(".promo", "backgroundColor"), "Food Drops banner").toBe("rgb(81, 45, 58)");
-  expect(await colour(".promo .btn.gold", "backgroundColor"), "banner highlight is gold").toBe("rgb(217, 184, 121)");
+  expect(await colour(".k-actions .ibtn.o", "backgroundColor"), "cart button").toBe("rgb(12, 116, 120)");
+  expect(await colour(".k-menurow button.on", "backgroundColor"), "active navigation").toBe("rgb(12, 116, 120)");
+  expect(await colour(".k-head .k-agent", "backgroundColor"), "She Agent button").toBe("rgb(12, 116, 120)");
+  expect(await colour(".promo", "backgroundColor"), "Food Drops banner").toBe("rgb(12, 116, 120)");
+  expect(await colour(".promo .btn.accent", "backgroundColor"), "banner highlight is fresh green").toBe("rgb(61, 190, 116)");
 });
 
-test("keyboard focus is a visible solid plum ring on buttons and links", async ({ page }) => {
+test("keyboard focus is a visible solid teal ring on buttons and links", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "customer");
   const rings = new Set<string>();
@@ -55,7 +55,7 @@ test("keyboard focus is a visible solid plum ring on buttons and links", async (
   }
   rings.delete("none");
   expect(rings.size, "something took focus").toBeGreaterThan(0);
-  for (const ring of rings) expect(ring, "focus ring").toMatch(/^solid 3px rgb\(81, 45, 58\)$/);
+  for (const ring of rings) expect(ring, "focus ring").toMatch(/^solid 3px rgb\(12, 116, 120\)$/);
 });
 
 test("status colours stay distinct from the brand", async ({ page }) => {
@@ -80,7 +80,7 @@ for (const width of [320, 360, 390]) {
     expect(dialog.r).toBeLessThanOrEqual(dialog.vw);
     expect(dialog.t).toBeGreaterThanOrEqual(0);
     expect(dialog.b).toBeLessThanOrEqual(dialog.vh + 1);
-    expect(dialog.title, "heading is readable on the plum panel").toBe("rgb(255, 255, 255)");
+    expect(dialog.title, "heading is readable on the teal panel").toBe("rgb(255, 255, 255)");
   });
 }
 

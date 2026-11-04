@@ -1,4 +1,4 @@
-/* Staff portals from the approved boards: white sidebar with a plum active pill on the ivory page; phone top bar, tabs and menu. */
+/* Staff portals from the approved boards: white sidebar with a teal active pill on the light-grey page; phone top bar, tabs and menu. */
 .k-app { display: flex; min-height: 100dvh; background: var(--background); font-family: "Outfit", sans-serif; }
 .k-side { flex: 0 0 252px; width: 252px; position: sticky; top: 0; align-self: flex-start; height: 100dvh; background: #fff; padding: 20px 14px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
 .k-brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px; }
@@ -30,7 +30,7 @@
   .k-main > * { min-width: 0; max-width: 100%; }
   .k-main .grid:not([class*="grid-cols"]) { grid-template-columns: minmax(0, 1fr); }
   .k-main .grid > *, .k-main .flex > * { min-width: 0; }
-  .k-scrim { display: block; position: fixed; inset: 0; z-index: 44; border: 0; background: rgba(41, 37, 38, 0.5); }
+  .k-scrim { display: block; position: fixed; inset: 0; z-index: 44; border: 0; background: rgba(15, 27, 29, 0.5); }
   .k-side { position: fixed; z-index: 45; top: 0; left: 0; bottom: 0; height: 100dvh; width: min(86vw, 320px); transform: translateX(-100%); visibility: hidden; transition: transform 0.2s ease, visibility 0.2s; }
   .menu-open .k-side { transform: none; visibility: visible; }
   .k-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; z-index: 43; left: 0; right: 0; bottom: 0; background: #fff; padding: 8px 6px max(10px, env(safe-area-inset-bottom)); box-shadow: 0 -1px 0 var(--border); }
@@ -45,8 +45,8 @@
 html .sp-v7 .k-main .surface-card,
 html .sp-v7 .k-main [data-slot="card"],
 html .sp-v7 .k-main [data-slot="table-container"],
-html .sp-v7 .k-main [class*="bg-[#F5EDE7]"][class*="rounded-3xl"],
-html .sp-v7 .k-main [class*="bg-[#F5EDE7]"][class*="rounded-[28px]"] { background: var(--card) !important; box-shadow: inset 0 0 0 1px var(--border); }
+html .sp-v7 .k-main [class*="bg-[#EEF2F2]"][class*="rounded-3xl"],
+html .sp-v7 .k-main [class*="bg-[#EEF2F2]"][class*="rounded-[28px]"] { background: var(--card) !important; box-shadow: inset 0 0 0 1px var(--border); }
 html .sp-v7 .k-main .surface-card-muted { background: var(--surface-soft) !important; }
 html .sp-v7 .k-main [data-slot="table-header"] { background: var(--surface-soft); }
 html .sp-v7 .k-main [data-slot="table-row"]:hover { background: var(--selected-soft); }
