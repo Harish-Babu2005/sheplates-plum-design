@@ -385,8 +385,11 @@ function withoutFastParams(payload: Record<string, unknown>) {
   return rest;
 }
 
+/** One model call may take this long (including reading its stream). A hung provider then fails with a clear error instead of leaving the chat on "Working on the best options". */
+const MODEL_CALL_TIMEOUT_MS = Number(process.env.AGENT_MODEL_TIMEOUT_MS || 75000);
+
 async function postResponses(apiKey: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${apiBase()}/responses`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const response = await fetch(`${apiBase()}/responses`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS) });
   const raw = await response.text();
   let data: OpenAIResponse = {};
   try { data = JSON.parse(raw) as OpenAIResponse; } catch { /* handled below */ }
@@ -423,7 +426,7 @@ export function extractPartialReply(partial: string): string {
 /** Same request, but read as a stream: text deltas are reported as they arrive and the finished response object
  * is returned exactly as the non-streaming call would have returned it. */
 async function postResponsesStream(apiKey: string, payload: Record<string, unknown>, onText: (textSoFar: string) => void) {
-  const response = await fetch(`${apiBase()}/responses`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify({ ...payload, stream: true }) });
+  const response = await fetch(`${apiBase()}/responses`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify({ ...payload, stream: true }), signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS) });
   if (!response.ok || !response.body) {
     const raw = await response.text();
     let data: OpenAIResponse = {};

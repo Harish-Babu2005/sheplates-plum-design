@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { ProductImageBackfill } from "@/components/admin/product-image-backfill";
 import { FoodTypeMark } from "@/components/food-type-mark";
 import { FOOD_TYPES, normalizeFoodType, type FoodType } from "@/lib/food-type";
+import { fetchWithDeadline } from "@/lib/fetch-deadline";
+import { CATALOGUE_TEMPLATE_CSV, MAX_IMPORT_ROWS, matchCategory, readCatalogueText, rowProblems, type CatalogueDraftRow } from "@/lib/catalogue-import";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -47,7 +49,7 @@ import {
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, claimLiveFoodDrop, loadLiveFoodDropClaims,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
@@ -57,7 +59,7 @@ import {
   type TasteWeights, type TasteSignal,
 } from "@/lib/taste-match";
 import {
-  dropDisplayStatus, discountPercent, claimedPercent, formatCountdown, foodDropSchedule,
+  dropDisplayStatus, discountPercent, claimedPercent, formatCountdown, foodDropSchedule, nextFoodDropWindow,
   type FoodDrop, type FoodDropClaim,
 } from "@/lib/food-drops";
 import { useSocial } from "@/lib/social";
@@ -725,7 +727,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const visibleSuggestions = trimmed.length >= 3 && trimmed !== dismissed ? suggestions : [];
   if (!visibleSuggestions.length) return null;
   return (
-    <div className="relative z-10 -mt-2 space-y-1 rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-lg backdrop-blur">
+    <div className="relative z-10 -mt-2 min-w-0 max-w-full space-y-1 overflow-hidden rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-lg backdrop-blur">
       {visibleSuggestions.map((item, index) => {
         const [primary, ...rest] = item.address.split(",");
         return (
@@ -2642,10 +2644,14 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
     if (!product) return toast.error("Choose a product");
     if (!title.trim()) return toast.error("Enter a title");
     if (!dropPrice || dropPrice <= 0 || dropPrice >= originalPrice) return toast.error("Drop price must be positive and below the current price");
-    if (!quantity || quantity <= 0) return toast.error("Enter how many units are available");
+    if (!Number.isInteger(quantity) || quantity <= 0) return toast.error("Enter a whole number of units available");
     setBusy(true);
     try {
-      const drop = await createLiveFoodDrop({ vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity });
+      const dropWindow = nextFoodDropWindow();
+      // In the live app the database creates it (and decides whether the plan allows it); the demo keeps it on this device.
+      const drop: FoodDrop = isLiveSupabaseMode()
+        ? await createLiveFoodDrop({ vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity })
+        : { id: id("DROP"), vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity, remainingQuantity: quantity, startsAt: dropWindow.startsAt.toISOString(), endsAt: dropWindow.endsAt.toISOString(), status: "active" };
       setState((s) => ({ ...s, foodDrops: [drop, ...s.foodDrops] }));
       toast.success(dropDisplayStatus(drop) === "live" ? "Food Drop is live" : "Food Drop scheduled for 8:00 PM");
       dismiss();
@@ -2697,7 +2703,7 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
   async function cancel(drop: FoodDrop) {
     if (!confirm(`End "${drop.title}" now? Customers will no longer be able to claim it.`)) return;
     try {
-      await cancelLiveFoodDrop(drop.id);
+      if (isLiveSupabaseMode()) await cancelLiveFoodDrop(drop.id);
       setState((s) => ({ ...s, foodDrops: s.foodDrops.map((d) => d.id === drop.id ? { ...d, status: "cancelled" as const } : d) }));
       toast.success("Drop ended");
     } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
@@ -2799,11 +2805,12 @@ function VendorAIInsights({ vendor, state, session }: { vendor: Vendor; state: V
     try {
       const token = await getAccessToken();
       const context = { vendor: { id: vendor.id, name: vendor.businessName, openToday: vendor.openToday, radiusKm: vendor.radiusKm, verification: vendor.verification }, products: products.map((item) => ({ id: item.id, name: item.name, stock: item.stock, active: item.active, price: item.vendorPrice })), orders: orders.map((item) => ({ id: item.id, date: item.date, status: item.status, mode: item.mode, total: item.total })), quoteOpportunities: quoteOpportunities.length };
-      const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "business_insights", role: "vendor", message: "Review my store and tell me what to prioritise today", context }) });
-      const json = await response.json() as { result?: { summary?: string; recommendedAction?: string; insights?: { wentWell?: string[]; needsAttention?: string[]; recovery?: string[] } } };
-      if (!json.result) return toast.error("She Agent could not analyse your store right now");
+      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "business_insights", role: "vendor", message: "Review my store and tell me what to prioritise today", context }) }, 60000);
+      const json = await response.json() as { warning?: string; result?: { summary?: string; recommendedAction?: string; insights?: { wentWell?: string[]; needsAttention?: string[]; recovery?: string[] } } };
+      if (!response.ok || !json.result) return toast.error("She Agent could not analyse your store right now");
       setInsight({ summary: json.result.summary || "Store analysis ready.", recommendedAction: json.result.recommendedAction || "Review the highest-priority operational signal.", wentWell: json.result.insights?.wentWell, needsAttention: json.result.insights?.needsAttention, recovery: json.result.insights?.recovery });
-    } catch { toast.error("She Agent is unavailable right now"); }
+      if (json.warning) toast.info(json.warning);
+    } catch (error) { toast.error(errorMessage(error, "She Agent is unavailable right now")); }
     finally { setBusy(false); }
   }
   return <div className="space-y-6"><Heading eyebrow="VENDOR AI" title="Store intelligence" body="She Agent analyses only your store workspace: your catalogue, stock, upcoming orders and delivery capacity. It cannot inspect another vendor's information or make payments, pricing or verification decisions for you." action={<Button onClick={() => void askAI()} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "Ask She Agent"}</Button>} />
@@ -3942,11 +3949,11 @@ function AIInsights({ role, state }: { role: "operations" | "admin"; state: V3St
     setLoadingNarrative(true);
     try {
       const token = await getAccessToken();
-      const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "business_insights", role, message: "Summarise current business health", context: health.snapshot }) });
+      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "business_insights", role, message: "Summarise current business health", context: health.snapshot })  }, 60000);
       const json = await response.json();
       if (json?.result) setNarrative({ summary: json.result.summary, recommendedAction: json.result.recommendedAction });
       else toast.error("She Agent could not generate a narrative right now");
-    } catch { toast.error("She Agent is unavailable right now"); }
+    } catch (error) { toast.error(errorMessage(error, "She Agent is unavailable right now")); }
     finally { setLoadingNarrative(false); }
   }
   return <div className="space-y-6"><Heading eyebrow="AI-ASSISTED ANALYTICS" title={role === "admin" ? "Executive intelligence" : "Operational intelligence"} body="Explainable risk signals from authorised platform data. She Agent recommends; humans approve verification, price, refunds and access changes." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Fulfilments at risk" value={String(fulfilmentRisk)} icon={AlertTriangle} note="Due tomorrow without preparation" /><Metric label="Low-stock products" value={String(lowStock)} icon={Package} /><Metric label="Unassigned deliveries" value={String(unassigned)} icon={Truck} /><Metric label="Open support tickets" value={String(overdueTickets)} icon={TicketCheck} /></div><div className="grid gap-4 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Recommended attention</h3><div className="mt-4 space-y-3"><Review label="Vendor verification backlog" value={String(state.vendors.filter((x) => ["Submitted","Under review"].includes(x.verification)).length)} /><Review label="RFQs without quotes" value={String(state.requirements.filter((x) => !state.quotes.some((q) => q.requirementId === x.id)).length)} /><Review label="Cancellation reviews" value={String(state.cancellations.filter((x) => x.status === "Awaiting operations").length)} /><Review label="Closed stores" value={String(state.vendors.filter((x) => x.verification === "Verified" && !x.openToday).length)} /></div></div><div className="surface-dark rounded-[28px] p-6 text-white"><Sparkles className="text-[#D9F5E7]" /><h3 className="mt-3 text-xl font-black">{role === "admin" ? "Ask She Agent for a deeper narrative" : "Ask She Agent to explain a signal"}</h3><p className="mt-2 text-sm leading-6 text-white/60">{role === "admin" ? "Analyse vendor concentration, plan adoption, GMV, audit anomalies, role access and policy impact across the platform." : "Prioritise delayed fulfilments, certificate expiry, delivery coverage, RFQ response and support queues."}</p>{role === "admin" && <Button onClick={() => void askSheAgent()} disabled={loadingNarrative} className="mt-4 rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Activity />{loadingNarrative ? "Thinking…" : "Generate narrative"}</Button>}{narrative && <div className="mt-4 rounded-xl bg-white/10 p-4 text-sm leading-6"><p>{narrative.summary}</p><p className="mt-2 font-black text-[#D9F5E7]">{narrative.recommendedAction}</p></div>}</div></div>
@@ -4446,24 +4453,26 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
   async function saveStorePin() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
-    <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="surface-card space-y-4 rounded-3xl p-6 lg:order-2">
-        <div data-tour="store-open"><ToggleCard icon={Store} title={vendor.openToday ? "Open today" : "Closed today"} body={vendor.verification === "Verified" ? "Customers inside your saved radius can see active in-stock items while open." : "Verification is still required before customers can see items."} checked={vendor.openToday} setChecked={(value) => update({ openToday: value, operational: value && vendor.verification === "Verified" ? "Active" : value ? "Inactive" : "Paused" }, value ? "Store opened for today" : "Store closed for today")} /></div>
+    <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
+      <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
         <Field label="Full store address"><Textarea value={address} onChange={(event) => setAddress(event.target.value)} className="min-h-24 rounded-xl" /></Field>
         <LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} />
         <div className="flex flex-wrap gap-2">
           <Button onClick={detectStore} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use actual store GPS"}</Button>
           <Button onClick={findStore} disabled={mapBusy} variant="outline" className="rounded-xl"><Search />{mapBusy ? "Searching…" : "Find typed address"}</Button>
         </div>
+        <div className="min-w-0" data-testid="store-map"><MapPreview lat={coords.lat} lng={coords.lng} radius={radius} label="Exact store pin" onPinChange={(point) => setCoords({ lat: point.lat, lng: point.lng })} /></div>
         <Field label={`Supply radius · ${radius} km`} hint="This is measured from the exact store pin shown on the map."><Slider value={[radius]} min={1} max={30} step={1} onValueChange={(v) => setRadius(v[0])} /></Field>
         <Button onClick={saveStorePin} className="w-full rounded-xl bg-[#155F65]"><Check />Save store pin & radius</Button>
+      </div>
+      <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6">
+        <div data-tour="store-open"><ToggleCard icon={Store} title={vendor.openToday ? "Open today" : "Closed today"} body={vendor.verification === "Verified" ? "Customers inside your saved radius can see active in-stock items while open." : "Verification is still required before customers can see items."} checked={vendor.openToday} setChecked={(value) => update({ openToday: value, operational: value && vendor.verification === "Verified" ? "Active" : value ? "Inactive" : "Paused" }, value ? "Store opened for today" : "Store closed for today")} /></div>
         <div className="grid grid-cols-2 gap-3">
           <ToggleCard icon={Truck} title="Delivery" body="Your own team" checked={vendor.delivery} setChecked={(v) => update({ delivery: v }, "Delivery mode updated")} />
           <ToggleCard icon={ShoppingBag} title="Pickup" body="At your store" checked={vendor.pickup} setChecked={(v) => update({ pickup: v }, "Pickup mode updated")} />
         </div>
         <DeliverySlotsSection vendor={vendor} state={state} setState={setState} session={session} />
       </div>
-      <div className="min-w-0 lg:order-1"><MapPreview lat={coords.lat} lng={coords.lng} radius={radius} label="Exact store pin" /></div>
     </div>
   </div>;
 }
@@ -4660,64 +4669,140 @@ function FoodTypeSelect({ product, setState }: { product: Product; setState: Rea
 
 function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [open, setOpen] = useState(false); const [bulkOpen, setBulkOpen] = useState(false); const items = state.products.filter((x) => x.vendorId === vendor.id);
+  const [toDelete, setToDelete] = useState<Product | null>(null); const [deleting, setDeleting] = useState(false);
+  async function setActive(product: Product, value: boolean) {
+    setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: value } : x) }));
+    try { if (isLiveSupabaseMode()) await setLiveProductActive(product.id, value); }
+    catch (error) { setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: !value } : x) })); toast.error(errorMessage(error, "The change could not be saved")); }
+  }
+  async function confirmDelete() {
+    if (!toDelete) return;
+    const product = toDelete; setDeleting(true);
+    try {
+      const result = isLiveSupabaseMode() ? await deleteLiveVendorProduct(product.id) : { deleted: true, removedFromBaskets: 0 };
+      if (result.deleted) {
+        setState((s) => ({ ...s, products: s.products.filter((x) => x.id !== product.id), cart: s.cart.filter((x) => x.productId !== product.id), audit: [audit(session, "Deleted catalogue product", `${product.name} (${product.baseUnit})`), ...s.audit] }));
+        toast.success(result.removedFromBaskets ? `${product.name} deleted and removed from ${result.removedFromBaskets} customer basket${result.removedFromBaskets === 1 ? "" : "s"}` : `${product.name} deleted`);
+      } else {
+        setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: false } : x) }));
+        toast.info(`${product.name} is in a customer's basket, so it was taken off sale instead. Ask the Super Admin to run the V9_19 database update to delete it fully.`);
+      }
+      setToDelete(null);
+    } catch (error) { toast.error(errorMessage(error, "The product could not be deleted")); }
+    finally { setDeleting(false); }
+  }
   const unsetFoodType = items.filter((item) => !item.foodType).length;
   const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
-  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2"><Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: value } : x) }))} /></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<ProductDialog open={open} close={() => setOpen(false)} vendor={vendor} setState={setState} session={session} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
+  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2"><Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Delete</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><ProductDialog open={open} close={() => setOpen(false)} vendor={vendor} setState={setState} session={session} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
 }
 
 
-type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; imageUrl?: string; generating?: boolean };
-const bulkCatalogGridClass = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)_minmax(0,.7fr)_minmax(0,.55fr)_minmax(0,.55fr)_6rem]";
+type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; imageUrl?: string; generating?: boolean; error?: string };
+const bulkCatalogGridClass = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.85fr)_minmax(0,.7fr)_minmax(0,.5fr)_minmax(0,.5fr)_minmax(0,.8fr)_6rem]";
+const BULK_FILE_LIMIT = 2 * 1024 * 1024;
 function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { open: boolean; close: () => void; vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [rows, setRows] = useState<BulkCatalogDraft[]>([]);
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [note, setNote] = useState("");
+  const defaultCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
+  const patch = (rowId: string, change: Partial<BulkCatalogDraft>) => setRows((current) => current.map((item) => item.id === rowId ? { ...item, ...change, error: undefined } : item));
+  const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType });
+
+  async function fileToText(file: File): Promise<string> {
+    if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
+      const XLSX = await import("xlsx");
+      const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = book.Sheets[book.SheetNames[0]];
+      if (!sheet) return "";
+      return XLSX.utils.sheet_to_csv(sheet);
+    }
+    return file.text();
+  }
+
   async function readList(file?: File) {
     if (!file) return;
-    const text = await file.text();
-    const fallback = parseRequirementText(text).map((item) => ({ id: id("BULK"), name: item.name, category: vendor.category in unitsByCategory ? vendor.category : "Groceries", pack: `${item.quantity || 1} ${item.unit || "pack"}`, price: 0, stock: 1 }));
+    if (file.size > BULK_FILE_LIMIT) return toast.error("That file is larger than 2 MB. Split the list into smaller files.");
+    setReading(true); setNote("");
     try {
-      const token = await getAccessToken();
-      const response = await fetch("/api/catalogue-import", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ text, defaultCategory: vendor.category }) });
-      const json = await response.json() as { items?: Array<{ name: string; category: string; pack: string; price: number; stock: number }>; error?: string };
-      const items = response.ok && json.items?.length ? json.items.map((item) => ({ id: id("BULK"), name: item.name, category: item.category in unitsByCategory ? item.category : (vendor.category in unitsByCategory ? vendor.category : "Groceries"), pack: item.pack || "1 pack", price: Number(item.price || 0), stock: Math.max(1, Number(item.stock || 1)) })) : fallback;
-      setRows(items); toast.success(`${items.length} item(s) prepared. Review every row before publishing.`);
-    } catch { setRows(fallback); toast.info(`${fallback.length} item(s) extracted for manual review.`); }
+      const text = await fileToText(file);
+      const reading = readCatalogueText(text, { categories: categoryNames, defaultCategory });
+      if (!reading.rows.length) return toast.error("No products were found in that file. Use a header row like Name, Category, Pack, Price, Stock, or download the template.");
+      let list = reading.rows;
+      // A list that has no header and no prices is just names; the smart reader may tidy it. Anything it cannot do falls back to what we read.
+      if (!reading.structured) {
+        try {
+          const token = await getAccessToken();
+          const controller = new AbortController(); const timer = window.setTimeout(() => controller.abort(), 20000);
+          const response = await fetch("/api/catalogue-import", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ text: text.slice(0, 30000), defaultCategory }) }).finally(() => window.clearTimeout(timer));
+          const json = await response.json() as { items?: Array<{ name: string; category: string; pack: string; price: number; stock: number }>; error?: string };
+          if (response.ok && json.items?.length) list = json.items.map((item) => { const draft = { name: String(item.name || "").trim(), category: matchCategory(item.category, categoryNames, defaultCategory), pack: item.pack || "1 pack", price: Number(item.price || 0), stock: Math.max(1, Number(item.stock || 1)) }; return { ...draft, problems: rowProblems(draft) } as CatalogueDraftRow; }).filter((item) => item.name);
+        } catch { /* keep the rows read directly from the file */ }
+      }
+      setRows(list.map(toDraft));
+      const missing = list.filter((item) => item.problems.length).length;
+      setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
+      toast.success(`${list.length} item(s) prepared. Review every row before publishing.`);
+    } catch (error) { toast.error(errorMessage(error, "That file could not be read. Try saving it as CSV.")); }
+    finally { setReading(false); }
+  }
+  function downloadTemplate() {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([CATALOGUE_TEMPLATE_CSV], { type: "text/csv" }));
+    link.download = "sheplates-product-list-template.csv";
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
   async function generateImage(row: BulkCatalogDraft) {
     setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: true } : item));
     try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ productName: row.name, category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
   }
   async function publishAll() {
-    const valid = rows.filter((row) => row.name.trim() && row.price > 0 && row.stock > 0);
+    const valid = rows.filter((row) => rowProblems(row).length === 0);
     if (!valid.length) return toast.error("Add a price and stock for at least one item");
     setBusy(true);
-    try {
-      const created: Product[] = [];
-      for (const row of valid) {
+    const created: Product[] = [];
+    const failed = new Map<string, string>();
+    for (const row of valid) {
+      try {
         const options = unitsByCategory[row.category] || unitsByCategory.Groceries; const spec = options[0];
         const nutrition: Nutrition = { calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 };
         const nutritionNote = "Bulk-imported product published without verified nutrition. Operations review requested.";
         let imageUrl = row.imageUrl;
         if (imageUrl?.startsWith("data:") && isLiveSupabaseMode()) imageUrl = await uploadLiveProductImage(vendor.id, imageUrl);
-        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name, category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
+        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
         if (isLiveSupabaseMode()) { try { await notifyLiveNutritionReview({ productId, productName: row.name, reason: nutritionNote }); } catch (error) { console.error("Bulk nutrition review notification", error); } }
-        created.push({ id: productId, vendorId: vendor.id, name: row.name, category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, nutritionStatus: "Pending review", nutritionNote });
-      }
+        created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, nutritionStatus: "Pending review", nutritionNote });
+      } catch (error) { failed.set(row.id, errorMessage(error, "This item could not be saved")); }
+    }
+    if (created.length) {
       if (isLiveSupabaseMode()) void drawSampleImages(created.filter((item) => !item.imageUrl).map((item) => item.id).slice(0, 10), setState);
       setState((current) => ({ ...current, products: [...created, ...current.products.filter((item) => !created.some((next) => next.id === item.id))], audit: [audit(session, "Bulk catalogue approved", `${created.length} item(s) published by human approval`), ...current.audit] }));
-      toast.success(`${created.length} item(s) published`); setRows([]); close();
-    } catch (error) { toast.error(errorMessage(error, "Catalogue could not be published")); }
-    finally { setBusy(false); }
+    }
+    setBusy(false);
+    if (!failed.size) { toast.success(`${created.length} item(s) published`); setRows([]); setNote(""); close(); return; }
+    // Keep only what still needs attention, each with the reason it failed.
+    const publishedIds = new Set(valid.filter((row) => !failed.has(row.id)).map((row) => row.id));
+    setRows((current) => current.filter((row) => !publishedIds.has(row.id)).map((row) => failed.has(row.id) ? { ...row, error: failed.get(row.id) } : row));
+    toast.error(created.length ? `${created.length} published. ${failed.size} could not be saved; see the rows marked in red.` : `Nothing was published: ${[...failed.values()][0]}`);
   }
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload CSV or TXT. The list is structured into draft products. Review every row, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
-    <label className="surface-card flex cursor-pointer items-center justify-center rounded-3xl border-dashed p-7 text-sm font-black"><input type="file" className="hidden" accept=".csv,.txt,.tsv" onChange={(e) => void readList(e.target.files?.[0])} /><FileUp className="mr-2" />Upload product list</label>
+  const incomplete = rows.filter((row) => rowProblems(row).length > 0).length;
+  const readyCount = rows.length - incomplete;
+  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-6xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload a CSV, Excel (.xlsx) or text file. Each line becomes a draft product. Review every row, set the food type, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
+    <div className="flex flex-wrap items-center gap-2"><label className="surface-card flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl border-dashed p-6 text-sm font-black"><input type="file" data-testid="bulk-file" className="sr-only" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,text/csv,text/plain" onChange={(e) => { const input = e.target; const file = input.files?.[0]; void readList(file).finally(() => { input.value = ""; }); }} /><FileUp className="mr-2 shrink-0" />{reading ? "Reading the file…" : "Upload product list"}</label><Button type="button" variant="outline" onClick={downloadTemplate} className="rounded-xl"><Download />Download template</Button></div>
+    <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. The first row is read as headings.</p>
+    {note && <p role="status" data-testid="bulk-summary" className="rounded-2xl bg-[#EAF4F2] p-3 text-sm font-medium text-[#202827]">{note}</p>}
     {rows.length > 0 && <div className="space-y-3">
       <div className={`hidden gap-3 px-4 text-xs font-black tracking-wide text-stone-500 lg:grid ${bulkCatalogGridClass}`}>
-        <div className="min-w-0">Product Name</div><div className="min-w-0">Categories</div><div className="min-w-0">No. of Packs</div><div className="min-w-0">Price</div><div className="min-w-0">Quantity</div><div className="w-24" aria-hidden="true" />
+        <div className="min-w-0">Product name</div><div className="min-w-0">Category</div><div className="min-w-0">Pack size</div><div className="min-w-0">Price (₹)</div><div className="min-w-0">Stock (packs)</div><div className="min-w-0">Food type</div><div className="w-24" aria-hidden="true" />
       </div>
-      {rows.map((row) => <div key={row.id} className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass}`}><input value={row.name} onChange={(e) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, name: e.target.value } : item))} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, category: value } : item))}><SelectTrigger className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input value={row.pack} onChange={(e) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, pack: e.target.value } : item))} className={`${inputClass} min-w-0`} placeholder="Pack" /><input type="number" min="0" value={row.price || ""} onChange={(e) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, price: Number(e.target.value) } : item))} className={`${inputClass} min-w-0`} placeholder="₹" /><input type="number" min="1" value={row.stock} onChange={(e) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, stock: Number(e.target.value) } : item))} className={`${inputClass} min-w-0`} placeholder="Stock" /><div className="flex w-24 gap-2"><button onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image">{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600"><Trash2 className="size-4" /></button></div></div>)}
+      {rows.map((row, index) => { const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
+        <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
+        <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
+        {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
+      </div>; })}
     </div>}
-    <Button onClick={() => void publishAll()} disabled={busy || !rows.length} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Check />{busy ? "Publishing…" : "Approve & publish selected catalogue"}</Button>
+    <Button onClick={() => void publishAll()} disabled={busy || !readyCount} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Check />{busy ? "Publishing…" : readyCount ? `Approve & publish ${readyCount} item${readyCount === 1 ? "" : "s"}${incomplete ? ` (${incomplete} incomplete will wait)` : ""}` : "Approve & publish selected catalogue"}</Button>
   </DialogContent></Dialog>;
 }
 
@@ -4767,11 +4852,11 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
     setBusy(true);
     try {
       const token = await getAccessToken();
-      const response = await fetch("/api/agent", {
+      const response = await fetchWithDeadline("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: spec.amount, measurementUnit: spec.measure, servingLabel: spec.label, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
-      });
+      }, 60000);
       const json = await response.json() as { result?: { nutritionAvailable?: boolean; nutrition?: Nutrition | null; confidence?: number; summary?: string; recommendedAction?: string }; error?: string };
       if (!response.ok) throw new Error(json.error || "Nutrition could not be estimated");
       const result = json.result;
@@ -5193,7 +5278,7 @@ function HomepageCampaigns({ session, state, setState }: { session: DemoSession;
     setBusy(true);
     try {
       const token = await getAccessToken();
-      const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "campaign_strategy", message: "Analyse current marketplace and purchase behaviour and suggest responsible campaigns for useful customer segments.", role: "admin" }) });
+      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "campaign_strategy", message: "Analyse current marketplace and purchase behaviour and suggest responsible campaigns for useful customer segments.", role: "admin" })  }, 60000);
       const json = await response.json() as { result?: { campaigns?: Array<{ name: string; audience: string; offer: string; rationale: string; channel: string }> }; error?: string };
       if (!response.ok) throw new Error(json.error || "AI campaign analysis failed");
       const result = json.result?.campaigns || [];
@@ -5449,7 +5534,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   const [messages, setMessages] = useState<AgentMessage[]>([{ role: "agent", text: session.role === "customer" ? `Hi ${session.name.split(" ")[0]} 👋 Tell me what you're planning and I'll turn it into a local basket you can review.` : `Hello ${session.name}. I can analyse your ${roleName[session.role].toLowerCase()} workspace and recommend the next action.` }]);
   const [busy, setBusy] = useState(false);
   const [awaitingPhoto, setAwaitingPhoto] = useState<{ orderId: string; complaintText: string } | null>(null);
-  const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null);
+  const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const abortRef = useRef<number | null>(null);
   const scope = useMemo(() => scopedContext(session, state), [session, state]);
   const cartItems = state.cart.filter((item) => item.customerEmail === session.email);
   const cartTotal = cartItems.reduce((sum, item) => { const product = state.products.find((p) => p.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
@@ -5505,8 +5590,11 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
     try {
       const token = await getAccessToken();
       const history = [...messages, userMessage].slice(-12).map((item) => ({ role: item.role, text: item.text, productIds: item.productIds || [] }));
+      // One deadline covers the wait for the first byte and the whole stream, so a stuck answer ends with a message, never a spinner.
+      const controller = new AbortController(); const deadline = window.setTimeout(() => controller.abort(), 90000); abortRef.current = deadline;
       const response = await fetch("/api/agent", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role }),
       });
@@ -5602,8 +5690,10 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         catch (error) { toast.error(errorMessage(error, "Your basket could not be saved. Please try again")); }
       }
     } catch (error) {
-      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.") }]);
+      const timedOut = error instanceof DOMException && error.name === "AbortError";
+      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.") }]);
     } finally {
+      if (abortRef.current !== null) { window.clearTimeout(abortRef.current); abortRef.current = null; }
       setBusy(false);
     }
   }

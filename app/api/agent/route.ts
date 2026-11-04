@@ -31,6 +31,43 @@ type CommerceResult = {
   memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
 };
 
+/** A plain reading of the numbers the page sent, used when the written analysis is slow or unavailable, so the button never just spins. */
+function businessSnapshot(body: AgentRequest) {
+  const context = (body.context || {}) as Record<string, unknown>;
+  const products = Array.isArray(context.products) ? context.products as Array<Record<string, unknown>> : [];
+  const orders = Array.isArray(context.orders) ? context.orders as Array<Record<string, unknown>> : [];
+  const stockOf = (item: Record<string, unknown>) => Number(item.stock ?? 0);
+  const out = products.filter((item) => stockOf(item) <= 0).map((item) => String(item.name || "An item"));
+  const low = products.filter((item) => stockOf(item) > 0 && stockOf(item) <= 5).map((item) => String(item.name || "An item"));
+  const hidden = products.filter((item) => item.active === false && stockOf(item) > 0).map((item) => String(item.name || "An item"));
+  const open = orders.filter((item) => !/delivered|cancel|complete|rejected/i.test(String(item.status || "")));
+  const vendor = (context.vendor || {}) as Record<string, unknown>;
+  const wentWell: string[] = [];
+  const needsAttention: string[] = [];
+  const recovery: string[] = [];
+  if (products.length) wentWell.push(`${products.filter((item) => item.active !== false && stockOf(item) > 0).length} of ${products.length} products are live and in stock.`);
+  if (orders.length && !open.length) wentWell.push("Every order so far has been completed or closed.");
+  if (out.length) { needsAttention.push(`Out of stock: ${out.slice(0, 4).join(", ")}${out.length > 4 ? ` and ${out.length - 4} more` : ""}.`); recovery.push("Update the pack stock for these items so customers can order them again."); }
+  if (low.length) { needsAttention.push(`Running low (5 packs or fewer): ${low.slice(0, 4).join(", ")}.`); recovery.push("Restock the low items before the next delivery day."); }
+  if (hidden.length) { needsAttention.push(`${hidden.length} in-stock item${hidden.length === 1 ? " is" : "s are"} switched off in the catalogue.`); recovery.push("Switch them on in Catalog if you want customers to see them."); }
+  if (open.length) needsAttention.push(`${open.length} open order${open.length === 1 ? "" : "s"} still need fulfilment.`);
+  if (vendor.openToday === false) needsAttention.push("Your store is marked closed today, so customers cannot order.");
+  if (!products.length) needsAttention.push("There are no products in the catalogue yet.");
+  const first = needsAttention[0];
+  return {
+    decision: "BUSINESS_SNAPSHOT", confidence: 60,
+    summary: first ? `Quick read of your numbers: ${first}` : "Quick read of your numbers: nothing needs urgent attention right now.",
+    recommendedAction: recovery[0] || (open.length ? "Work through the open orders first." : "Keep stock up to date and check back after new orders arrive."),
+    insights: { wentWell, needsAttention, recovery },
+  };
+}
+
+/** Keeps a very large store or platform out of one prompt: long lists are cut to their first rows and the whole text is capped. */
+function compactContext(context: unknown, maxRows = 60, maxChars = 60000): string {
+  const text = JSON.stringify(context, (_key, value) => (Array.isArray(value) && value.length > maxRows ? [...value.slice(0, maxRows), `… ${value.length - maxRows} more rows not shown`] : value));
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+}
+
 function controlledFallback(body: AgentRequest) {
   if (body.task === "nutrition") {
     const product = String(body.context?.productName || body.message || "this product");
@@ -45,7 +82,7 @@ function controlledFallback(body: AgentRequest) {
   }
   if (body.task === "order_tracking") return { decision: "TRACKING", confidence: 100, summary: "I reviewed the order status available in this account.", recommendedAction: "Continue monitoring until the next fulfilment update." };
   if (body.task === "cancellation_review") return { decision: "HUMAN_REVIEW", confidence: 91, summary: "The request can be forwarded with the available evidence, but Operations owns the final decision.", recommendedAction: "Send the recommendation to Operations for cancellation and payment-reversal approval." };
-  if (body.task === "business_insights") return { decision: "BUSINESS_SNAPSHOT", confidence: 60, summary: "A written insight is temporarily unavailable.", recommendedAction: "Review the highest-priority item shown on this page and try again shortly." };
+  if (body.task === "business_insights") return businessSnapshot(body);
   if (body.task === "quality_complaint") return { decision: "HUMAN_REVIEW", confidence: 40, summary: "The photo needs a manual review before any refund recommendation is approved.", recommendedAction: "Operations should inspect the photo and customer description before deciding.", quality: { spoilageLikely: false, recommendedRefundPercent: 0 } };
   return { decision: "REVIEW", confidence: 50, summary: "The assistant is temporarily unavailable.", recommendedAction: "Please try again shortly." };
 }
@@ -431,6 +468,7 @@ export async function POST(request: Request) {
       return { validated, scope: loaded.context.scope };
     };
     const failure = "She Agent couldn't complete that request just now. Please try again.";
+    const failureFor = (error: unknown) => (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError") ? "She Agent is taking longer than usual. Please try again in a moment." : failure);
 
     // The chat window asks for a stream: the reply appears word by word while the model is still writing it,
     // and the final, validated result (products, basket changes, tickets) follows as the last event.
@@ -444,7 +482,7 @@ export async function POST(request: Request) {
             send({ type: "result", source: "assistant", scope: done.scope, result: done.validated });
           } catch (error) {
             console.error("[She Agent commerce]", error);
-            send({ type: "error", error: failure });
+            send({ type: "error", error: failureFor(error) });
           }
           controller.close();
         },
@@ -459,7 +497,7 @@ export async function POST(request: Request) {
       // Keep provider/system details out of the product UI, but preserve the precise
       // failure in the server log so local/production debugging is possible.
       console.error("[She Agent commerce]", error);
-      return NextResponse.json({ error: failure }, { status: 502 });
+      return NextResponse.json({ error: failureFor(error) }, { status: 502 });
     }
   }
 
@@ -486,7 +524,7 @@ export async function POST(request: Request) {
     ? { ...access.context, complaintOrder: complaintOrder || null }
     : access.context;
 
-  const prompt = `${sharedGuardrails}${commerceGuidance}${businessInsightsGuidance}${campaignGuidance}${qualityComplaintGuidance}${nutritionGuidance} Task: ${requestedTask}. Current message: ${body.message || ""}. Recent conversation: ${JSON.stringify(recentHistory)}. Product input: ${JSON.stringify(nutritionInput)}. Authorised context: ${JSON.stringify(effectiveContext)}`;
+  const prompt = `${sharedGuardrails}${commerceGuidance}${businessInsightsGuidance}${campaignGuidance}${qualityComplaintGuidance}${nutritionGuidance} Task: ${requestedTask}. Current message: ${body.message || ""}. Recent conversation: ${JSON.stringify(recentHistory)}. Product input: ${JSON.stringify(nutritionInput)}. Authorised context: ${compactContext(effectiveContext)}`;
 
   let properties: Record<string, unknown>;
   let required: string[];
@@ -562,15 +600,30 @@ export async function POST(request: Request) {
     ? [{ role: "user" as const, content: [{ type: "input_text" as const, text: prompt }, { type: "input_image" as const, image_url: imageBase64 }] }]
     : prompt;
 
-  const response = await fetch(`${(process.env.AI_API_BASE || "https://api.openai.com/v1").replace(/\/$/, "")}/responses`, {
+  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+  const requestBody = {
+    model,
+    input,
+    text: { format: { type: "json_schema", name: "sheplates_agent_result", strict: true, schema: { type: "object", additionalProperties: false, properties, required } } },
+  };
+  // Never wait forever: a slow or unreachable model must end in a plain answer, not a button that keeps spinning.
+  const MODEL_WAIT_MS = Number(process.env.AGENT_TASK_TIMEOUT_MS || 40000);
+  const callModel = (payload: Record<string, unknown>) => fetch(`${(process.env.AI_API_BASE || "https://api.openai.com/v1").replace(/\/$/, "")}/responses`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5-mini",
-      input,
-      text: { format: { type: "json_schema", name: "sheplates_agent_result", strict: true, schema: { type: "object", additionalProperties: false, properties, required } } },
-    }),
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(MODEL_WAIT_MS),
   });
+  let response: Response;
+  try {
+    // Reasoning models answer far faster at low effort for these short structured tasks; a model that rejects the setting is retried plainly.
+    response = await callModel(/^(gpt-5|o\d)/i.test(model) ? { ...requestBody, reasoning: { effort: "low" } } : requestBody);
+    if (response.status === 400) response = await callModel(requestBody);
+  } catch (error) {
+    console.error("[She Agent task]", requestedTask, error instanceof Error ? error.message : error);
+    if (commerce) return NextResponse.json({ error: "She Agent is taking too long. Please try again." }, { status: 504 });
+    return NextResponse.json({ source: "assistant", result: controlledFallback(body), warning: "The written analysis took too long, so this is a quick read of your numbers." });
+  }
 
   if (!response.ok) {
     if (commerce) return NextResponse.json({ error: "She Agent is temporarily unavailable. Please try again shortly." }, { status: 503 });

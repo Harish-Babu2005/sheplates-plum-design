@@ -567,6 +567,31 @@ export async function notifyLiveNutritionReview(input: { productId: string; prod
   return commerceRequest({ action: "notify_nutrition_review", ...input });
 }
 
+/**
+ * Deletes one of the vendor's own products. Uses the V9_19 database function, which also clears the product from
+ * customers' baskets. If that function is not installed yet it tries a plain delete, and when the product is still in a
+ * basket (which the table refuses) it takes the product off sale instead and says so.
+ */
+export async function deleteLiveVendorProduct(productId: string): Promise<{ deleted: boolean; removedFromBaskets: number }> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const viaFunction = await supabase.rpc("vendor_delete_menu_item", { p_item_id: productId });
+  if (!viaFunction.error) return { deleted: true, removedFromBaskets: Number(viaFunction.data ?? 0) };
+  const missing = viaFunction.error.code === "PGRST202" || /vendor_delete_menu_item|could not find the function|schema cache/i.test(viaFunction.error.message || "");
+  if (!missing) throw viaFunction.error;
+  const direct = await supabase.from("vendor_menu_items").delete().eq("id", productId).select("id");
+  if (!direct.error) {
+    if (!direct.data?.length) throw new Error("That product could not be deleted.");
+    return { deleted: true, removedFromBaskets: 0 };
+  }
+  if (direct.error.code === "23503") {
+    const off = await supabase.from("vendor_menu_items").update({ active: false, updated_at: new Date().toISOString() }).eq("id", productId);
+    if (off.error) throw off.error;
+    return { deleted: false, removedFromBaskets: 0 };
+  }
+  throw direct.error;
+}
+
 export async function setLiveProductActive(productId: string, active: boolean) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -1047,7 +1072,17 @@ export async function createLiveFoodDrop(input: {
     total_quantity: input.totalQuantity, remaining_quantity: input.totalQuantity,
     starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(),
   }).select(FOOD_DROP_COLUMNS).single();
-  if (result.error || !result.data) throw result.error || new Error("Drop could not be created");
+  if (result.error || !result.data) {
+    const failure = result.error;
+    if (failure && (failure.code === "42501" || /row-level security|permission denied/i.test(failure.message || ""))) {
+      // The database only lets a store publish a Food Drop when its plan includes the feature. Say which of the two it is.
+      const entitled = await supabase.rpc("vendor_has_entitlement", { p_vendor: input.vendorId, p_key: "food_drops" });
+      if (!entitled.error && entitled.data === false) throw new Error("Your store's plan does not include Food Drops in the database yet. Ask Operations to confirm the Thrive or Crown plan on your store, then try again.");
+      throw new Error("You are not allowed to publish a Food Drop for this store. Sign in with the store owner's account, or ask Operations for help.");
+    }
+    if (failure && /food_drops|schema cache|does not exist/i.test(failure.message || "") && !/violates/i.test(failure.message || "")) throw new Error("Food Drops are not set up in the database yet. Ask the Super Admin to run the Food Drops update (V8_2 and V9_12).");
+    throw failure || new Error("Drop could not be created");
+  }
   return mapFoodDropRow(result.data as FoodDropRow);
 }
 
