@@ -25,10 +25,10 @@ const root_block = async () => {
 test("the brand tokens are the launch palette, one value per role", async () => {
   const block = await root_block();
   const expected = {
-    "--brand-primary": "#0C7478", "--brand-primary-hover": "#095A5D", "--brand-secondary": "#FFFFFF", "--brand-accent": "#3DBE74",
-    "--brand-mint": "#D9F5E7", "--background": "#F6F8F8", "--card": "#FFFFFF", "--surface-soft": "#EEF2F2", "--border": "#DDE3E4",
-    "--foreground": "#0F1B1D", "--text-secondary": "#55656A", "--text-muted": "#5F6F74", "--selected-soft": "#E4F2F2",
-    "--success": "#26834A", "--warning": "#795900", "--destructive": "#B42332",
+    "--brand-primary": "#155F65", "--brand-primary-hover": "#0F4A4F", "--brand-secondary": "#FFFFFF", "--brand-accent": "#3DBE74",
+    "--brand-mint": "#D9F5E7", "--background": "#FFFFFF", "--card": "#FFFFFF", "--surface-soft": "#EEF2F2", "--border": "#DDE3E4",
+    "--foreground": "#202827", "--text-secondary": "#55656A", "--text-muted": "#5F6F74", "--selected-soft": "#EAF4F2",
+    "--label-green": "#247343", "--success": "#26834A", "--warning": "#795900", "--destructive": "#B42332",
   };
   for (const [token, value] of Object.entries(expected)) assert.match(block, new RegExp(`${token}:\\s*${value};`, "i"), token);
   assert.match(block, /--action-primary:\s*var\(--brand-primary\)/);
@@ -36,7 +36,7 @@ test("the brand tokens are the launch palette, one value per role", async () => 
   assert.match(block, /--focus-ring:\s*var\(--brand-primary\)/);
   assert.match(block, /--radius-card:\s*24px/);
   assert.match(block, /--radius-control:\s*999px/);
-  assert.equal(await read("design/colors.css").then((c) => /--brand-primary:\s*#0C7478/.test(c)), true, "the reference copy matches");
+  assert.equal(await read("design/colors.css").then((c) => /--brand-primary:\s*#155F65/.test(c)), true, "the reference copy matches");
 });
 
 test("legacy token families keep distinct meanings instead of all pointing at one colour", async () => {
@@ -73,8 +73,8 @@ test("source colours come from the palette: no retired plum, terracotta, gold or
 });
 
 test("brand colours used in components are only the approved palette values", async () => {
-  const allowed = new Set(["#0C7478", "#095A5D", "#3DBE74", "#D9F5E7", "#F6F8F8", "#FFFFFF", "#EEF2F2", "#E3E9E9", "#E4F2F2", "#C5E3E4", "#DDE3E4",
-    "#0F1B1D", "#2F3C3F", "#55656A", "#5F6F74", "#B6C0C2", "#D3E8E9"]);
+  const allowed = new Set(["#155F65", "#0F4A4F", "#3DBE74", "#D9F5E7", "#FFFFFF", "#FFFFFF", "#EEF2F2", "#E3E9E9", "#EAF4F2", "#C5E3E4", "#DDE3E4",
+    "#202827", "#2F3C3F", "#55656A", "#5F6F74", "#B6C0C2", "#D3E8E9", "#247343"]);
   const status = /^(#(?:b42332|795900|fff4cf|eaf5ec|21683b|edf3fd|285fba|fdecef|f0c3c9|26834a|e3a008|f5a524|c98a00|a67c00|d63a4a))$/i;
   const files = [...await sourceFiles("components", [".tsx"])];
   const stray = new Map();
@@ -95,15 +95,15 @@ test("status colours stay their own hues and are not remapped to the brand", asy
   for (const [token, value] of [["--color-emerald-600", "#21683b"], ["--color-amber-700", "#795900"], ["--color-red-600", "#b42332"], ["--color-sky-700", "#285fba"]])
     assert.match(tail, new RegExp(`${token}:\\s*${value}`, "i"), token);
   assert.match(tail, /--color-orange-500:\s*#3DBE74/i, "the stock orange family follows the fresh-green accent");
-  assert.match(tail, /--color-violet-700:\s*#0C7478/i, "the stock violet family is the primary teal");
+  assert.match(tail, /--color-violet-700:\s*#155F65/i, "the stock violet family is the primary teal");
 });
 
 test("the focus ring is a solid token colour and the manifest and meta colour match the brand", async () => {
   assert.match(await read("app/theme-2.css"), /outline: 3px solid var\(--focus-ring\)/);
   const manifest = JSON.parse(await read("public/manifest.webmanifest"));
-  assert.equal(manifest.theme_color, "#0C7478");
-  assert.equal(manifest.background_color, "#F6F8F8");
-  assert.match(await read("app/layout.tsx"), /themeColor: "#0C7478"/);
+  assert.equal(manifest.theme_color, "#155F65");
+  assert.equal(manifest.background_color, "#FFFFFF");
+  assert.match(await read("app/layout.tsx"), /themeColor: "#155F65"/);
 });
 
 test("phone dialogs stay on screen even after the production CSS minifier merges transform and translate", async () => {

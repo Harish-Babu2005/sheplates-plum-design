@@ -59,7 +59,7 @@ mobile/
 ../.github/workflows/          mobile-android.yml, mobile-ios.yml (signed builds) and mobile-ios-verify.yml (unsigned compile check)
 ```
 
-Artwork note: the icons and splash use the current logo on plum. Replace `resources/icon-only.png`,
+Artwork note: the icons and splash use the current logo on peacock teal. Replace `resources/icon-only.png`,
 `icon-foreground.png`, `splash.png` when the designer's new logo arrives, then run `npm run assets` and `npx cap sync`.
 
 ---

@@ -30,7 +30,7 @@
   .k-main > * { min-width: 0; max-width: 100%; }
   .k-main .grid:not([class*="grid-cols"]) { grid-template-columns: minmax(0, 1fr); }
   .k-main .grid > *, .k-main .flex > * { min-width: 0; }
-  .k-scrim { display: block; position: fixed; inset: 0; z-index: 44; border: 0; background: rgba(15, 27, 29, 0.5); }
+  .k-scrim { display: block; position: fixed; inset: 0; z-index: 44; border: 0; background: rgba(32, 40, 39, 0.5); }
   .k-side { position: fixed; z-index: 45; top: 0; left: 0; bottom: 0; height: 100dvh; width: min(86vw, 320px); transform: translateX(-100%); visibility: hidden; transition: transform 0.2s ease, visibility 0.2s; }
   .menu-open .k-side { transform: none; visibility: visible; }
   .k-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; z-index: 43; left: 0; right: 0; bottom: 0; background: #fff; padding: 8px 6px max(10px, env(safe-area-inset-bottom)); box-shadow: 0 -1px 0 var(--border); }

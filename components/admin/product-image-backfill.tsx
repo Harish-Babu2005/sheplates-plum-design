@@ -35,10 +35,10 @@ export function ProductImageBackfill() {
   if (!gap) return null;
   return <section aria-label="Product pictures" className="surface-card flex flex-wrap items-center justify-between gap-4 rounded-3xl p-5">
     <div className="flex min-w-0 items-start gap-3">
-      <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#E4F2F2] text-[#0C7478]"><ImageUp /></div>
+      <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><ImageUp /></div>
       <div className="min-w-0"><h3 className="font-black">Product pictures</h3>
         <p className="text-sm text-[#55656A]">{gap.products === 0 ? "Every product has a picture." : `${gap.products} product${gap.products === 1 ? " has" : "s have"} no photo (${gap.kinds} kind${gap.kinds === 1 ? "" : "s"} of item). Sample images are drawn once per kind and shared.`}</p>
-        {note && <p role="status" className="mt-1 text-sm font-semibold text-[#0F1B1D]">{note}</p>}</div>
+        {note && <p role="status" className="mt-1 text-sm font-semibold text-[#202827]">{note}</p>}</div>
     </div>
     {gap.products > 0 && <Button onClick={() => void run()} disabled={busy}>{busy ? "Creating pictures…" : "Create sample pictures"}</Button>}
   </section>;

@@ -14,22 +14,22 @@
  */
 :root {
   /* Brand */
-  --brand-primary: #0C7478;
-  --brand-primary-hover: #095A5D;
+  --brand-primary: #155F65;
+  --brand-primary-hover: #0F4A4F;
   --brand-secondary: #FFFFFF;
   --brand-secondary-hover: #EEF2F2;
   --brand-accent: #3DBE74;
   --brand-mint: #D9F5E7;
 
   /* Surfaces */
-  --background: #F6F8F8;
+  --background: #FFFFFF;
   --card: #FFFFFF;
   --surface-soft: #EEF2F2;
   --surface-soft-2: #E3E9E9;
   --border: #DDE3E4;
 
   /* Typography */
-  --foreground: #0F1B1D;
+  --foreground: #202827;
   --text-body: #2F3C3F;
   --text-secondary: #55656A;
   --text-muted: #5F6F74;
@@ -38,7 +38,7 @@
   --action-primary: var(--brand-primary);
   --action-hover: var(--brand-primary-hover);
   --selected: var(--brand-primary);
-  --selected-soft: #E4F2F2;
+  --selected-soft: #EAF4F2;
   --selected-soft-strong: #C5E3E4;
   --focus-ring: var(--brand-primary);
 

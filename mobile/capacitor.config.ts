@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
   appId: "com.sheplates.app",
   appName: "ShePlates",
   webDir: "www",
-  backgroundColor: "#FAF7F2",
+  backgroundColor: "#FFFFFF",
   appendUserAgent: "ShePlatesApp/1.0",
   server: {
     url: "https://app.sheplates.com",
@@ -22,16 +22,16 @@ const config: CapacitorConfig = {
     // The web app already pads for the notch and home indicator with env(safe-area-inset-*) (viewport-fit=cover).
     contentInset: "never",
     preferredContentMode: "mobile",
-    backgroundColor: "#FAF7F2",
+    backgroundColor: "#FFFFFF",
     scrollEnabled: true,
   },
   android: {
     allowMixedContent: false,
     webContentsDebuggingEnabled: false,
-    backgroundColor: "#FAF7F2",
+    backgroundColor: "#FFFFFF",
   },
   plugins: {
-    SplashScreen: { launchShowDuration: 1200, launchAutoHide: true, backgroundColor: "#512D3A", showSpinner: false, androidScaleType: "CENTER_CROP" },
+    SplashScreen: { launchShowDuration: 1200, launchAutoHide: true, backgroundColor: "#155F65", showSpinner: false, androidScaleType: "CENTER_CROP" },
     SystemBars: { insetsHandling: "css", style: "LIGHT", initialViewportFitValueHint: "cover" },
   },
 };

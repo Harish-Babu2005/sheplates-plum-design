@@ -15,22 +15,22 @@ export function ShortThumb({ short, onOpen, className = "" }: { short: FoodShort
   return <button type="button" onClick={onOpen} data-testid="short-thumb" aria-label={`Watch ${short.title} from ${short.vendorName}`} className={`group relative block aspect-[9/16] overflow-hidden rounded-[22px] bg-stone-900 text-left shadow-sm ring-1 ring-black/5 transition hover:shadow-lg ${className}`}>
     <span className="absolute inset-0 block"><PhotoTile imageUrl={short.thumbUrl} category={short.vendorCategory} className="h-full w-full" emojiSize={56} /></span>
     <span className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
-    {short.distanceKm != null && <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-[10px] font-black text-stone-800 shadow"><MapPin className="size-3 text-[#0C7478]" />{formatDistanceKm(short.distanceKm)}</span>}
+    {short.distanceKm != null && <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-[10px] font-black text-stone-800 shadow"><MapPin className="size-3 text-[#155F65]" />{formatDistanceKm(short.distanceKm)}</span>}
     <span className="absolute right-2 top-2 rounded-full bg-black/55 px-2 py-1 text-[10px] font-black text-white">{formatDuration(short.durationS)}</span>
-    <span className="absolute bottom-[3.4rem] right-2.5 grid size-9 place-items-center rounded-full bg-white/90 text-[#0C7478] shadow-lg transition group-hover:scale-110"><Play className="ml-0.5 size-4 fill-current" /></span>
+    <span className="absolute bottom-[3.4rem] right-2.5 grid size-9 place-items-center rounded-full bg-white/90 text-[#155F65] shadow-lg transition group-hover:scale-110"><Play className="ml-0.5 size-4 fill-current" /></span>
     <span className="absolute inset-x-2.5 bottom-2.5 text-white"><span className="line-clamp-2 text-[13px] font-black leading-tight drop-shadow">{short.title}</span><span className="mt-0.5 block truncate text-[11px] font-bold text-white/85">{short.vendorName}{short.sample ? " · Sample" : ""}</span></span>
   </button>;
 }
 
 export function DistanceChips({ value, onChange }: { value: number; onChange: (km: number) => void }) {
   return <div role="tablist" aria-label="Distance" className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
-    {VIEW_RADIUS_OPTIONS_KM.map((km) => <button key={km} role="tab" type="button" aria-selected={km === value} onClick={() => onChange(km)} className={`shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-bold transition ${km === value ? "border-[#0C7478] bg-[#0C7478] text-white shadow-none" : "border-stone-200 bg-white text-stone-600 hover:border-[#C5E3E4]"}`}>{km} km</button>)}
+    {VIEW_RADIUS_OPTIONS_KM.map((km) => <button key={km} role="tab" type="button" aria-selected={km === value} onClick={() => onChange(km)} className={`shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-bold transition ${km === value ? "border-[#155F65] bg-[#155F65] text-white shadow-none" : "border-stone-200 bg-white text-stone-600 hover:border-[#C5E3E4]"}`}>{km} km</button>)}
   </div>;
 }
 
 /** The Shorts section inside the Stories tab: distance chips plus a grid. */
 export function ShortsFeed({ shorts, radius, onRadius, onOpen, hasPin, onSetLocation }: { shorts: FoodShort[]; radius: number; onRadius: (km: number) => void; onOpen: (index: number) => void; hasPin: boolean; onSetLocation?: () => void }) {
-  if (!hasPin) return <EmptyState emoji="📍" title="Set your location to see Food Shorts" body="Shorts are shown by distance, so we need your delivery pin first." action={onSetLocation ? <button type="button" onClick={onSetLocation} className="rounded-full bg-[#0C7478] px-5 py-2 text-sm font-black text-white">Set my location</button> : undefined} />;
+  if (!hasPin) return <EmptyState emoji="📍" title="Set your location to see Food Shorts" body="Shorts are shown by distance, so we need your delivery pin first." action={onSetLocation ? <button type="button" onClick={onSetLocation} className="rounded-full bg-[#155F65] px-5 py-2 text-sm font-black text-white">Set my location</button> : undefined} />;
   return <div className="space-y-4">
     <div><h2 className="text-lg font-black tracking-[-.02em]">Food Shorts near you</h2><p className="mt-0.5 text-xs font-bold text-stone-500">Videos from vendors within {radius} km. A vendor only reaches customers inside the distance they chose.</p></div>
     <DistanceChips value={radius} onChange={onRadius} />
@@ -43,7 +43,7 @@ export function ShortsFeed({ shorts, radius, onRadius, onOpen, hasPin, onSetLoca
 export function ShortsRail({ shorts, onOpen, title = "Food Shorts near you", onSeeAll }: { shorts: FoodShort[]; onOpen: (index: number) => void; title?: string; onSeeAll?: () => void }) {
   if (!shorts.length) return null;
   return <section aria-label={title} data-testid="shorts-rail" className="space-y-3">
-    <div className="flex items-end justify-between gap-3"><h2 className="text-lg font-black tracking-[-.02em]">{title}</h2>{onSeeAll && <button type="button" onClick={onSeeAll} className="text-sm font-black text-[#0C7478]">See all</button>}</div>
+    <div className="flex items-end justify-between gap-3"><h2 className="text-lg font-black tracking-[-.02em]">{title}</h2>{onSeeAll && <button type="button" onClick={onSeeAll} className="text-sm font-black text-[#155F65]">See all</button>}</div>
     <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">{shorts.slice(0, 12).map((s, i) => <ShortThumb key={s.id} short={s} onOpen={() => onOpen(i)} className="w-[128px] shrink-0 sm:w-[148px]" />)}</div>
   </section>;
 }
@@ -112,7 +112,7 @@ export function ShortsViewer({ shorts, startIndex, onClose, liked, onLike, onVie
           })()}
           {s.videoUrl
             ? <video ref={(el) => { videos.current[i] = el; }} src={s.videoUrl} poster={s.thumbUrl} muted={muted} loop playsInline preload={Math.abs(i - active) <= 1 ? "auto" : "metadata"} onTimeUpdate={(e) => { if (i === active) setProgress(e.currentTarget.duration ? e.currentTarget.currentTime / e.currentTarget.duration : 0); }} className="h-full w-full object-cover" />
-            : <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#0C7478] via-[#0C7478] to-[#0C7478]">{s.thumbUrl ? <Image src={s.thumbUrl} alt="" fill unoptimized sizes="460px" className="object-cover opacity-80" /> : <span className="text-[120px]" aria-hidden>{categoryEmoji(s.vendorCategory)}</span>}<span className="absolute left-1/2 top-24 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] font-black text-stone-800">Sample clip, no video</span></div>}
+            : <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#155F65] via-[#155F65] to-[#155F65]">{s.thumbUrl ? <Image src={s.thumbUrl} alt="" fill unoptimized sizes="460px" className="object-cover opacity-80" /> : <span className="text-[120px]" aria-hidden>{categoryEmoji(s.vendorCategory)}</span>}<span className="absolute left-1/2 top-24 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] font-black text-stone-800">Sample clip, no video</span></div>}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent" />
           <div className="absolute inset-x-4 bottom-6 flex items-end justify-between gap-3 text-white">
             <div className="min-w-0 flex-1">
@@ -125,11 +125,11 @@ export function ShortsViewer({ shorts, startIndex, onClose, liked, onLike, onVie
               </div>
             </div>
             <div className="flex shrink-0 flex-col items-center gap-3">
-              <button type="button" aria-label={liked.includes(s.id) ? "Unlike" : "Like"} onClick={() => onLike(s.id)} className="grid size-12 place-items-center rounded-full bg-white/15 backdrop-blur transition active:scale-90"><Heart className={`size-6 ${liked.includes(s.id) ? "fill-[#0C7478] text-[#0C7478]" : "text-white"}`} /></button>
+              <button type="button" aria-label={liked.includes(s.id) ? "Unlike" : "Like"} onClick={() => onLike(s.id)} className="grid size-12 place-items-center rounded-full bg-white/15 backdrop-blur transition active:scale-90"><Heart className={`size-6 ${liked.includes(s.id) ? "fill-[#155F65] text-[#155F65]" : "text-white"}`} /></button>
               <span className="-mt-2 text-xs font-black" data-testid="short-likes">{s.likeCount + (liked.includes(s.id) ? 1 : 0) - (baseLiked.has(s.id) ? 1 : 0)}</span>
             </div>
           </div>
-          {i === active && s.videoUrl && <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20"><div className="h-full bg-[#0C7478]" style={{ width: `${progress * 100}%` }} /></div>}
+          {i === active && s.videoUrl && <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20"><div className="h-full bg-[#155F65]" style={{ width: `${progress * 100}%` }} /></div>}
         </div>
       </section>)}
     </div>

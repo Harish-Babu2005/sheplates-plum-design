@@ -73,7 +73,7 @@ const PERMISSION_LABELS: Array<{ key: Permission; label: string }> = [
   { key: "can_upload", label: "Upload certificates" },
 ];
 
-const inputClass = "mt-1 block w-full min-w-0 font-normal rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#0C7478]";
+const inputClass = "mt-1 block w-full min-w-0 font-normal rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#155F65]";
 
 async function p0Request<T>(action: string, body?: Record<string, unknown> | FormData, method = "POST"): Promise<T> {
   const token = await getAccessToken();
@@ -367,13 +367,13 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
               {label}
             </label>)}
           </div>
-          <button type="button" onClick={() => void savePermissions(user.id)} disabled={busy} className="mt-3 rounded-full bg-[#0C7478] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Save permissions</button>
+          <button type="button" onClick={() => void savePermissions(user.id)} disabled={busy} className="mt-3 rounded-full bg-[#155F65] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Save permissions</button>
         </div>)}
       </div>
     </section>}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
     <section className="space-y-3 xl:order-1">
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="P0 status">{tabs.map(([name, list]) => <button key={name} type="button" role="tab" aria-selected={p0Tab === name} onClick={() => setP0Tab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${p0Tab === name ? "bg-[#0C7478] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {list.length}</button>)}</div>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="P0 status">{tabs.map(([name, list]) => <button key={name} type="button" role="tab" aria-selected={p0Tab === name} onClick={() => setP0Tab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${p0Tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {list.length}</button>)}</div>
       {loading ? <p role="status" className="text-sm text-stone-500">Loading P0 vendor records…</p>
         : shownVendors.length === 0 ? <p className="rounded-2xl border border-dashed border-stone-300 p-6 text-sm text-stone-500">No P0 vendors have been created.</p>
           : shownVendors.map((vendor) => {
@@ -403,12 +403,12 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
                 <input aria-label="FSSAI number" placeholder="FSSAI number" value={certificateValue.number} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, number: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
                 <input aria-label="Certificate expiry" type="date" value={certificateValue.expiry} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, expiry: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
                 <input aria-label="Certificate file" type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, file: event.target.files?.[0] || null } }))} className="min-w-0 rounded-lg border border-amber-200 px-3 py-2 text-xs" />
-                <button type="button" onClick={() => void uploadCertificate(vendor.id)} disabled={busy} className="rounded-full bg-[#0C7478] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Upload certificate</button>
+                <button type="button" onClick={() => void uploadCertificate(vendor.id)} disabled={busy} className="rounded-full bg-[#155F65] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Upload certificate</button>
               </div>}
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {approvalPending && !cancelled && hasPermission("can_review") && <>
-                  <button type="button" onClick={() => void review(vendor.id, "verified")} disabled={busy} className="rounded-full bg-[#0C7478] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Approve</button>
+                  <button type="button" onClick={() => void review(vendor.id, "verified")} disabled={busy} className="rounded-full bg-[#155F65] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Approve</button>
                   <button type="button" onClick={() => void review(vendor.id, "rejected")} disabled={busy} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50">Reject</button>
                 </>}
                 {cancelled && hasPermission("can_reactivate") && <button type="button" onClick={() => void reactivate(vendor)} disabled={busy} className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-800 disabled:opacity-50">Reactivate</button>}
@@ -420,7 +420,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
                 <select aria-label="Subscription plan" value={upgradeValue.planCode} onChange={(event) => setUpgrade((current) => ({ ...current, [vendor.id]: { ...upgradeValue, planCode: event.target.value } }))} className="rounded-lg border border-stone-200 px-3 py-2 text-sm">
                   <option value="taster">Taster · ₹499</option><option value="crave">Crave · ₹699</option><option value="thrive">Thrive · ₹799</option><option value="crown">Crown · ₹999</option>
                 </select>
-                <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#0C7478] px-4 py-2 text-xs font-black text-white disabled:opacity-50">Invite / claim</button>
+                <button type="button" onClick={() => void startUpgrade(vendor)} disabled={busy} className="rounded-lg bg-[#155F65] px-4 py-2 text-xs font-black text-white disabled:opacity-50">Invite / claim</button>
               </div>}
             </article>;
           })}
@@ -470,7 +470,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
         <label className="grid content-start text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
         <label className="grid content-start text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
       </div>}
-      <button disabled={busy} className="mt-4 h-12 w-full rounded-full bg-[#0C7478] px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
+      <button disabled={busy} className="mt-4 h-12 w-full rounded-full bg-[#155F65] px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
     </form>}
     </div>
   </div>;

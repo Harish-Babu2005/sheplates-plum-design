@@ -29,7 +29,7 @@ for (const who of ["customer", "vendor", "operations", "admin"] as const) {
       await open(page, who);
       const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth, bg: getComputedStyle(document.body).backgroundColor }));
       expect(m.scroll, "page scrolls sideways").toBeLessThanOrEqual(m.inner + 1);
-      expect(m.bg).toBe("rgb(246, 248, 248)");
+      expect(m.bg).toBe("rgb(255, 255, 255)");
     });
   }
 }
@@ -38,10 +38,10 @@ test("brand roles: actions, navigation and dark panels are teal, the accent is f
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "customer");
   const colour = (selector: string, prop: "backgroundColor" | "color") => page.locator(selector).first().evaluate((el, p) => getComputedStyle(el as HTMLElement)[p as "color"], prop);
-  expect(await colour(".k-actions .ibtn.o", "backgroundColor"), "cart button").toBe("rgb(12, 116, 120)");
-  expect(await colour(".k-menurow button.on", "backgroundColor"), "active navigation").toBe("rgb(12, 116, 120)");
-  expect(await colour(".k-head .k-agent", "backgroundColor"), "She Agent button").toBe("rgb(12, 116, 120)");
-  expect(await colour(".promo", "backgroundColor"), "Food Drops banner").toBe("rgb(12, 116, 120)");
+  expect(await colour(".k-actions .ibtn.o", "backgroundColor"), "cart button").toBe("rgb(21, 95, 101)");
+  expect(await colour(".k-menurow button.on", "backgroundColor"), "active navigation").toBe("rgb(21, 95, 101)");
+  expect(await colour(".k-head .k-agent", "backgroundColor"), "She Agent button").toBe("rgb(21, 95, 101)");
+  expect(await colour(".promo", "backgroundColor"), "Food Drops banner").toBe("rgb(21, 95, 101)");
   expect(await colour(".promo .btn.accent", "backgroundColor"), "banner highlight is fresh green").toBe("rgb(61, 190, 116)");
 });
 
@@ -55,7 +55,7 @@ test("keyboard focus is a visible solid teal ring on buttons and links", async (
   }
   rings.delete("none");
   expect(rings.size, "something took focus").toBeGreaterThan(0);
-  for (const ring of rings) expect(ring, "focus ring").toMatch(/^solid 3px rgb\(12, 116, 120\)$/);
+  for (const ring of rings) expect(ring, "focus ring").toMatch(/^solid 3px rgb\(21, 95, 101\)$/);
 });
 
 test("status colours stay distinct from the brand", async ({ page }) => {

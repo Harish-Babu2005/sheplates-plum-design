@@ -16,7 +16,7 @@ import { Avatar } from "./kit";
 
 type Group = { authorId: string; source: "following" | "nearby"; items: Status[] };
 
-const ringStyle = () => "bg-gradient-to-tr from-[#3DBE74] via-[#0C7478] to-[#0C7478] p-[3px]";
+const ringStyle = () => "bg-gradient-to-tr from-[#3DBE74] via-[#155F65] to-[#155F65] p-[3px]";
 
 export function StatusRail({ mine, groups, onAdd, onOpenMine, onOpenGroup, name, hasPin }: {
   mine: MyStatus[]; groups: Group[]; onAdd: () => void; onOpenMine: () => void; onOpenGroup: (index: number) => void; name: string; hasPin: boolean;
@@ -27,7 +27,7 @@ export function StatusRail({ mine, groups, onAdd, onOpenMine, onOpenGroup, name,
       <div className="flex w-[68px] shrink-0 flex-col items-center gap-1.5">
         <button type="button" onClick={mine.length ? onOpenMine : onAdd} aria-label={mine.length ? "Your status" : "Add your status"} data-testid="my-status" className="relative">
           <Avatar name={name} size={62} ring={mine.length > 0} />
-          <span role="button" tabIndex={-1} aria-label="Add a status" onClick={(e) => { e.stopPropagation(); onAdd(); }} className="absolute -bottom-0.5 -right-0.5 grid size-6 place-items-center rounded-full border-2 border-white bg-[#0C7478] text-white"><Plus className="size-3.5" /></span>
+          <span role="button" tabIndex={-1} aria-label="Add a status" onClick={(e) => { e.stopPropagation(); onAdd(); }} className="absolute -bottom-0.5 -right-0.5 grid size-6 place-items-center rounded-full border-2 border-white bg-[#155F65] text-white"><Plus className="size-3.5" /></span>
         </button>
         <span className="w-full truncate text-center text-[11px] font-bold">{mine.length ? `Your status` : "Add status"}</span>
         {newest && <span className="-mt-1 text-[9px] font-bold text-stone-400">{statusTimeLeft(newest.expiresAt)}</span>}
@@ -44,7 +44,7 @@ export function StatusRail({ mine, groups, onAdd, onOpenMine, onOpenGroup, name,
             <Avatar name={g.items[0].handle} size={62} />
           </span>
           {g.items.length > 1 && (
-            <span className="absolute right-0 top-0 z-10 grid size-5 translate-x-1/4 -translate-y-1/4 place-items-center rounded-full bg-[#0C7478] text-[10px] font-black text-white shadow-sm">
+            <span className="absolute right-0 top-0 z-10 grid size-5 translate-x-1/4 -translate-y-1/4 place-items-center rounded-full bg-[#155F65] text-[10px] font-black text-white shadow-sm">
               {g.items.length}
             </span>
           )}
@@ -107,14 +107,14 @@ export function StatusViewer({ items, own, onClose, onViewed, onLike, onDelete, 
     try { await onLike(current.id, next); } catch (e) { setLikedHere((m) => ({ ...m, [current.id]: !next })); toast.error(errorMessage(e, "Could not save your like")); }
   }
   return createPortal(<div role="dialog" aria-modal="true" aria-label={own ? "Your status" : `${current.handle}'s status`} data-testid="status-viewer" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[260] grid place-items-center bg-[#EEF2F2] p-0 sm:p-5">
-    <button type="button" aria-label="Go back one" disabled={index === 0} onClick={() => moveTo(Math.max(0, index - 1))} className="absolute left-1/2 top-1/2 z-10 hidden size-12 -translate-x-[330px] -translate-y-1/2 place-items-center rounded-full bg-[#0C7478] text-white disabled:opacity-40 sm:grid"><ArrowLeft className="size-6" /></button>
-    <button type="button" aria-label="Go forward one" onClick={advance} className="absolute left-1/2 top-1/2 z-10 hidden size-12 translate-x-[282px] -translate-y-1/2 place-items-center rounded-full bg-[#0C7478] text-white sm:grid"><ArrowRight className="size-6" /></button>
-    <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-[#0C7478] sm:max-h-[860px] sm:rounded-[32px]">
+    <button type="button" aria-label="Go back one" disabled={index === 0} onClick={() => moveTo(Math.max(0, index - 1))} className="absolute left-1/2 top-1/2 z-10 hidden size-12 -translate-x-[330px] -translate-y-1/2 place-items-center rounded-full bg-[#155F65] text-white disabled:opacity-40 sm:grid"><ArrowLeft className="size-6" /></button>
+    <button type="button" aria-label="Go forward one" onClick={advance} className="absolute left-1/2 top-1/2 z-10 hidden size-12 translate-x-[282px] -translate-y-1/2 place-items-center rounded-full bg-[#155F65] text-white sm:grid"><ArrowRight className="size-6" /></button>
+    <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-[#155F65] sm:max-h-[860px] sm:rounded-[32px]">
       {current.kind === "video" && current.mediaUrl
         ? <video key={current.id} ref={video} src={current.mediaUrl} poster={current.thumbUrl} autoPlay muted={muted} playsInline onEnded={advance} onTimeUpdate={(e) => setProgress(e.currentTarget.duration ? e.currentTarget.currentTime / e.currentTarget.duration : 0)} className="h-full w-full object-cover" />
         : current.mediaUrl && failedPhotoId !== current.id ? <img key={current.id} src={current.mediaUrl} alt="Customer status photo" onError={() => setFailedPhotoId(current.id)} className="absolute inset-0 h-full w-full bg-black object-contain" />
         : current.mediaUrl ? <div role="alert" className="grid h-full w-full place-items-center bg-stone-950 px-8 text-center text-sm font-bold text-white">This status photo could not be loaded.</div>
-        : <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#0C7478] via-[#0C7478] to-[#0C7478]"><span className="text-[120px]" aria-hidden>{current.emoji || "🍽️"}</span>{current.sample && <span className="absolute left-1/2 top-28 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] font-black text-stone-800">Sample status</span>}</div>}
+        : <div className="grid h-full w-full place-items-center bg-gradient-to-br from-[#155F65] via-[#155F65] to-[#155F65]"><span className="text-[120px]" aria-hidden>{current.emoji || "🍽️"}</span>{current.sample && <span className="absolute left-1/2 top-28 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] font-black text-stone-800">Sample status</span>}</div>}
       <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/65 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex gap-1" aria-hidden>{items.map((s, i) => <span key={s.id} className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/35"><span className="block h-full bg-white" style={{ width: i < index ? "100%" : i === index ? `${progress * 100}%` : "0%" }} /></span>)}</div>
         <div className="mt-3 flex items-center gap-2 text-white"><Avatar name={own ? "You" : current.handle} size={34} /><div className="min-w-0"><div className="truncate text-sm font-black">{own ? "Your status" : `@${current.handle}`}</div><div className="text-[11px] text-white/75">{statusTimeLeft(current.expiresAt)} · {current.kind === "video" && current.durationS ? formatDuration(current.durationS) : "photo"}</div></div>
@@ -132,7 +132,7 @@ export function StatusViewer({ items, own, onClose, onViewed, onLike, onDelete, 
             {onDelete && <button type="button" aria-label="Delete this status" onClick={async () => { try { await onDelete(current.id); toast.success("Status deleted"); if (count <= 1) onClose(); else setIndex((i) => Math.max(0, i - 1)); } catch (e) { toast.error(errorMessage(e, "Could not delete")); } }} className="ml-auto grid size-10 place-items-center rounded-full bg-white/20 backdrop-blur"><Trash2 className="size-4" /></button>}
           </div>
           : <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-[11px] font-bold text-white/70">Seen once, then gone for you{onReport && <button type="button" aria-label="Report this status" onClick={async () => { const reason = window.prompt("Why are you reporting this status? (optional)") ; if (reason === null) return; try { await onReport(current.id, reason); toast.success("Thanks. Our team will review it."); } catch (e) { toast.error(errorMessage(e, "Could not send the report")); } }} className="rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-black backdrop-blur">Report</button>}</span>
-              <button type="button" aria-label={liked ? "Unlike" : "Like"} onClick={() => void toggleLike()} className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-2 text-sm font-black backdrop-blur"><Heart className={`size-5 ${liked ? "fill-[#0C7478] text-[#0C7478]" : ""}`} /><span data-testid="status-likes">{likeCount}</span></button></div>}
+              <button type="button" aria-label={liked ? "Unlike" : "Like"} onClick={() => void toggleLike()} className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-2 text-sm font-black backdrop-blur"><Heart className={`size-5 ${liked ? "fill-[#155F65] text-[#155F65]" : ""}`} /><span data-testid="status-likes">{likeCount}</span></button></div>}
         {seenBy && <div className="mt-3 max-h-40 overflow-y-auto rounded-2xl bg-black/55 p-3 text-xs backdrop-blur" data-testid="status-seen-by">{seenBy.length ? seenBy.map((v) => <div key={v.handle} className="flex justify-between py-1"><span className="font-black">@{v.handle}</span><span className="text-white/70">{v.liked ? "♥ " : ""}seen</span></div>) : <span className="text-white/70">Nobody has watched this yet.</span>}</div>}
       </div>
     </div>
@@ -171,18 +171,18 @@ export function StatusComposer({ open, onClose, onPost, vendors }: {
     {!file ? <div className="grid grid-cols-2 gap-3">
       <input id="status-photo" type="file" accept="image/*" className="sr-only" aria-label="Choose a photo" onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ""; }} />
       <input id="status-video" type="file" accept="video/mp4,video/quicktime,video/webm,video/*" className="sr-only" aria-label="Choose a video" onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ""; }} />
-      <label htmlFor="status-photo" className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-stone-300 p-5 text-sm font-black transition hover:border-[#0C7478]"><span className="text-3xl" aria-hidden>📷</span>Photo</label>
-      <label htmlFor="status-video" className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-stone-300 p-5 text-sm font-black transition hover:border-[#0C7478]"><span className="text-3xl" aria-hidden>🎬</span>Video, up to 30 s</label>
+      <label htmlFor="status-photo" className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-stone-300 p-5 text-sm font-black transition hover:border-[#155F65]"><span className="text-3xl" aria-hidden>📷</span>Photo</label>
+      <label htmlFor="status-video" className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-stone-300 p-5 text-sm font-black transition hover:border-[#155F65]"><span className="text-3xl" aria-hidden>🎬</span>Video, up to 30 s</label>
       {checking && <p className="col-span-2 text-sm font-bold text-stone-500" role="status">Checking your file…</p>}
     </div>
     : <div className="overflow-hidden rounded-2xl bg-black">{isVideo ? <video src={preview} controls playsInline muted className="max-h-72 w-full object-contain" aria-label="Preview of your video" /> : <img src={preview} alt="Preview of your photo" className="max-h-72 w-full object-contain" />}</div>}
     {file && <>
-      <label className="block text-xs font-black uppercase tracking-[.1em] text-stone-500">Caption (optional)<textarea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={200} rows={2} aria-label="Status caption" placeholder="What are you eating?" className="mt-1.5 w-full rounded-xl border border-stone-200 p-3 text-sm font-medium normal-case tracking-normal text-stone-800 outline-none focus:border-[#0C7478]" /></label>
+      <label className="block text-xs font-black uppercase tracking-[.1em] text-stone-500">Caption (optional)<textarea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={200} rows={2} aria-label="Status caption" placeholder="What are you eating?" className="mt-1.5 w-full rounded-xl border border-stone-200 p-3 text-sm font-medium normal-case tracking-normal text-stone-800 outline-none focus:border-[#155F65]" /></label>
       <label className="block text-xs font-black uppercase tracking-[.1em] text-stone-500">Tag a vendor (optional)<select value={vendorId} onChange={(e) => setVendorId(e.target.value)} aria-label="Tag a vendor" className="mt-1.5 h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm font-bold normal-case tracking-normal text-stone-800"><option value="">No vendor</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
       {isVideo && info && <p className="text-xs font-bold text-stone-500">Length {formatDuration(info.durationS)} of 0:30</p>}
     </>}
     {error && <p role="alert" className="text-sm font-bold text-red-600">{error}</p>}
     <div className="flex gap-2">{file && <button type="button" onClick={() => { setFile(null); setInfo(null); setError(""); }} disabled={busy} className="h-12 rounded-full border border-stone-300 px-5 text-sm font-black">Choose another</button>}
-      <button type="button" disabled={!file || busy} onClick={() => void submit()} className="h-12 flex-1 rounded-full bg-[#0C7478] text-base font-black text-white shadow-none transition hover:bg-[#0C7478] disabled:opacity-40">{busy ? "Posting…" : "Post status"}</button></div>
+      <button type="button" disabled={!file || busy} onClick={() => void submit()} className="h-12 flex-1 rounded-full bg-[#155F65] text-base font-black text-white shadow-none transition hover:bg-[#155F65] disabled:opacity-40">{busy ? "Posting…" : "Post status"}</button></div>
   </DialogContent></Dialog>;
 }

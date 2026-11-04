@@ -84,8 +84,8 @@ export function NearbyVendorsMapOla({
     map.on("load", () => {
       if (loaded) return; loaded = true; window.clearTimeout(timer); brand(map);
       map.addSource("sp-radius", { type: "geojson", data: circle(customerLat, customerLng, latest.current.radiusKm) });
-      map.addLayer({ id: "sp-radius-fill", type: "fill", source: "sp-radius", paint: { "fill-color": "#0C7478", "fill-opacity": 0.08 } });
-      map.addLayer({ id: "sp-radius-line", type: "line", source: "sp-radius", paint: { "line-color": "#0C7478", "line-width": 2 } });
+      map.addLayer({ id: "sp-radius-fill", type: "fill", source: "sp-radius", paint: { "fill-color": "#155F65", "fill-opacity": 0.08 } });
+      map.addLayer({ id: "sp-radius-line", type: "line", source: "sp-radius", paint: { "line-color": "#155F65", "line-width": 2 } });
       setReady(true);
     });
     map.on("styleimagemissing", (e) => { if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) }); });
@@ -131,7 +131,7 @@ export function NearbyVendorsMapOla({
         const body = document.createElement("div"); body.className = "min-w-[160px] text-sm";
         const name = document.createElement("div"); name.className = "font-black"; name.textContent = vendor.name + (vendor.id === closestId ? "  · Closest" : ""); body.append(name);
         const meta = document.createElement("div"); meta.className = "mt-1 text-xs text-stone-500"; meta.textContent = `${vendor.distanceKm.toFixed(1)} km away${vendor.verified ? " · Verified" : ""}`; body.append(meta);
-        if (onSelectVendor) { const b = document.createElement("button"); b.className = "mt-2 w-full rounded-lg bg-[#0C7478] px-2 py-1.5 text-xs font-black text-white"; b.textContent = "View products"; b.onclick = () => onSelectVendor(vendor.id); body.append(b); }
+        if (onSelectVendor) { const b = document.createElement("button"); b.className = "mt-2 w-full rounded-lg bg-[#155F65] px-2 py-1.5 text-xs font-black text-white"; b.textContent = "View products"; b.onclick = () => onSelectVendor(vendor.id); body.append(b); }
         marker.setPopup(new maplibregl.Popup({ offset: 18, closeButton: false }).setDOMContent(body));
       }
       marker.addTo(map); created.push(marker);
@@ -165,13 +165,13 @@ export function NearbyVendorsMapOla({
 
   const centre = useCallback(() => mapRef.current?.flyTo({ center: [customerLng, customerLat], zoom: toGl(zoomForRadius(radiusKm)), duration: 500 }), [customerLat, customerLng, radiusKm]);
   const inRange = vendors.filter((v) => v.distanceKm <= radiusKm).length;
-  const round = "grid size-9 place-items-center rounded-full border border-white/70 bg-white/95 text-lg font-black leading-none text-[#0F1B1D] shadow-md backdrop-blur";
+  const round = "grid size-9 place-items-center rounded-full border border-white/70 bg-white/95 text-lg font-black leading-none text-[#202827] shadow-md backdrop-blur";
 
   return (
     <div className="sp-vendor-map relative overflow-hidden rounded-[26px] border border-stone-200/70" data-map-engine="ola">
       <div ref={box} style={{ height: `${height}px`, width: "100%" }} />
-      <div className="absolute left-3 top-3 z-[5] flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#0F1B1D] shadow-sm backdrop-blur">
-        <MapPin className="size-3.5 shrink-0 text-[#0C7478]" />
+      <div className="absolute left-3 top-3 z-[5] flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#202827] shadow-sm backdrop-blur">
+        <MapPin className="size-3.5 shrink-0 text-[#155F65]" />
         <span className="whitespace-nowrap" data-testid="map-count">{people ? `${radiusKm} km · ${people.length} ${people.length === 1 ? "person" : "people"} nearby` : `${radiusKm} km · ${inRange} vendor${inRange === 1 ? "" : "s"} in range`}</span>
         <span className="ml-1 flex shrink-0 items-center gap-0.5">
           <button type="button" aria-label="Decrease radius" onClick={() => onRadiusChange(Math.max(1, radiusKm - 1))} className="grid size-6 place-items-center rounded-full bg-stone-100 text-sm font-black leading-none hover:bg-stone-200">−</button>
@@ -184,7 +184,7 @@ export function NearbyVendorsMapOla({
         <button type="button" aria-label="Centre the map on my location" title="Centre the map on my location" onClick={centre} className={round}>◎</button>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-3 z-[5] flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-[10px] font-bold text-stone-500 shadow-sm backdrop-blur">
-        <ShoppingBag className="hidden size-3 shrink-0 text-[#0C7478] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">© Ola Maps</span><span className="hidden sm:inline">&middot; © Ola Maps · OpenStreetMap contributors</span>
+        <ShoppingBag className="hidden size-3 shrink-0 text-[#155F65] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">© Ola Maps</span><span className="hidden sm:inline">&middot; © Ola Maps · OpenStreetMap contributors</span>
       </div>
     </div>
   );

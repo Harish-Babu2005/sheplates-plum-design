@@ -8,10 +8,10 @@ import type { LiveCampaign } from "@/lib/campaigns";
 import { endsInLabel } from "@/lib/campaigns-rules";
 
 const THEMES = [
-  "from-[#0C7478] via-[#0C7478] to-[#0C7478]",
-  "from-[#0C7478] via-[#0C7478] to-[#0C7478]",
+  "from-[#155F65] via-[#155F65] to-[#155F65]",
+  "from-[#155F65] via-[#155F65] to-[#155F65]",
   "from-[#3b2410] via-[#7a4a14] to-[#c1651f]",
-  "from-[#0C7478] via-[#0C7478] to-[#0C7478]",
+  "from-[#155F65] via-[#155F65] to-[#155F65]",
 ] as const;
 
 export function CampaignBanner({ campaigns, fallback, onCta, onView, intervalMs = 6000 }: {
@@ -45,7 +45,7 @@ export function CampaignBanner({ campaigns, fallback, onCta, onView, intervalMs 
       <h2 className="mt-3 text-xl font-black leading-tight tracking-[-.02em] sm:text-3xl" data-testid="campaign-headline">{current.headline}</h2>
       {current.subline && <p className="mt-1.5 text-sm text-white/80 sm:text-base">{current.subline}</p>}
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => onCta(current)} data-testid="campaign-cta" className="rounded-full bg-white px-5 py-2 text-sm font-black text-[#0F1B1D] shadow-[0_10px_24px_rgba(0,0,0,.25)] transition hover:scale-[1.03]">{current.ctaLabel}</button>
+        <button type="button" onClick={() => onCta(current)} data-testid="campaign-cta" className="rounded-full bg-white px-5 py-2 text-sm font-black text-[#202827] shadow-[0_10px_24px_rgba(0,0,0,.25)] transition hover:scale-[1.03]">{current.ctaLabel}</button>
         {ends && <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white/85"><Timer className="size-3.5" />Ends in {ends}</span>}
       </div>
     </div>

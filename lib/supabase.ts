@@ -14,6 +14,8 @@ export function isLiveSupabaseMode() {
 }
 
 export type LiveMarketplaceRow = {
+  /** veg, non_veg or egg when the vendor has set it (read through product_food_types). */
+  food_type?: string | null;
   item_id: string; vendor_id: string; vendor_name: string; item_name: string; category: string;
   unit: string; quantity_step: number; stock_quantity: number; image_url: string | null;
   customer_price: number; calories_per_unit: number; protein_g: number; carbs_g: number;
@@ -47,6 +49,7 @@ export type LiveVendorRow = {
 };
 
 export type LiveMenuItemRow = {
+  food_type?: string | null;
   id: string; vendor_id: string; name: string; category: string; unit: string;
   quantity_step: number; stock_quantity: number; vendor_base_price: number; active: boolean;
   calories_per_unit: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number;
@@ -244,6 +247,21 @@ export async function clearLiveCustomerMemory(userId: string) {
   if (result.error) throw result.error;
 }
 
+/**
+ * Adds each product's food type (veg, non_veg, egg) to rows already loaded. It reads through one small function so it
+ * respects who may see what, and it is quiet when the function or column is not deployed yet: products then show no mark.
+ */
+async function attachFoodTypes<T extends { food_type?: string | null }>(supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>, rows: T[], idOf: (row: T) => string) {
+  const ids = rows.map(idOf).filter(Boolean).slice(0, 1000);
+  if (!ids.length) return;
+  try {
+    const { data, error } = await supabase.rpc("product_food_types", { p_ids: ids });
+    if (error || !Array.isArray(data)) return;
+    const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
+    for (const row of rows) row.food_type = types.get(idOf(row)) ?? null;
+  } catch { /* not deployed yet */ }
+}
+
 export async function loadLiveMarketplace(latitude: number, longitude: number) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -256,8 +274,10 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   if (diagnostics.error) throw diagnostics.error;
   if (homeConfig.error) console.error("Homepage merchandising is unavailable:", homeConfig.error.message);
   const config = homeConfig.error ? null : homeConfig.data?.config as { featuredProductIds?: string[]; recommendationPopupEnabled?: boolean; maxFeatured?: number } | null;
+  const marketplaceRows = (items.data || []) as LiveMarketplaceRow[];
+  await attachFoodTypes(supabase, marketplaceRows, (row) => row.item_id);
   return {
-    items: (items.data || []) as LiveMarketplaceRow[],
+    items: marketplaceRows,
     diagnostics: ((diagnostics.data || [])[0] || null) as MarketplaceDiagnostics | null,
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
@@ -353,7 +373,9 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (vendor.error) throw vendor.error;
   if (productError) throw productError;
   if (documents.error) throw documents.error;
-  return { vendor: vendor.data as LiveVendorRow, products: productRows || [], document: documents.data?.[0] || null };
+  const ownRows = productRows || [];
+  await attachFoodTypes(supabase, ownRows, (row) => row.id);
+  return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: documents.data?.[0] || null };
 }
 
 export async function loadLiveVendorWorkspaceForOwner(userId: string) {
@@ -391,7 +413,9 @@ export async function loadLiveOperationsWorkspace() {
   if (campaigns.error) console.error("Marketing campaigns are unavailable:", campaigns.error.message);
   const config = homeConfig.error ? null : homeConfig.data?.config as { featuredProductIds?: string[]; recommendationPopupEnabled?: boolean; maxFeatured?: number } | null;
   const merchandisingError = homeConfig.error?.message || campaigns.error?.message || null;
-  return { vendors: vendorRows, products: (products.data || []) as LiveMenuItemRow[], profiles: profiles.data || [], documents: documents.data || [], merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+  const allProductRows = (products.data || []) as LiveMenuItemRow[];
+  await attachFoodTypes(supabase, allProductRows, (row) => row.id);
+  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
 }
 
 export async function saveLiveMarketplaceHome(config: { featuredProductIds: string[]; recommendationPopupEnabled: boolean; maxFeatured: number }) {
@@ -492,15 +516,27 @@ export async function runProductImageBackfill(limit = 2): Promise<{ generated: n
   return { generated: json.generated ?? 0, reused: json.reused ?? 0, failed: json.failed ?? 0, remainingProducts: json.remainingProducts ?? 0, remainingKinds: json.remainingKinds ?? 0, message: json.message ?? "" };
 }
 
+/** A vendor sets the food type of one of their own products (the marks on customer screens come from this). */
+export async function saveLiveProductFoodType(productId: string, foodType: "veg" | "non_veg" | "egg" | null) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendor_menu_items").update({ food_type: foodType, updated_at: new Date().toISOString() }).eq("id", productId).select("id").maybeSingle();
+  if (result.error) {
+    if (/food_type/i.test(result.error.message || "")) throw new Error("Food types need the V9_18 database update. Ask the Super Admin to run it.");
+    throw result.error;
+  }
+  if (!result.data) throw new Error("That product could not be updated.");
+}
+
 export async function saveLiveVendorProduct(input: {
   vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
-  dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string;
+  dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
   nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const payload = {
+  const basePayload = {
     vendor_id: input.vendorId, name: input.name, category: input.category, unit: input.unit,
     quantity_step: 1, vendor_base_price: input.price, stock_quantity: input.stock, active: input.active,
     calories_per_unit: input.calories, protein_g: input.protein, carbs_g: input.carbs,
@@ -510,11 +546,14 @@ export async function saveLiveVendorProduct(input: {
     nutrition_confidence: input.nutritionConfidence ?? null,
     nutrition_note: input.nutritionNote || null,
   };
+  const payload = input.foodType ? { ...basePayload, food_type: input.foodType } : basePayload;
   let result = await supabase.from("vendor_menu_items").insert(payload).select("id").single();
+  // Same idea for the food type column: save the product even if the V9_18 migration has not been applied yet.
+  if (result.error && /food_type/i.test(result.error.message || "")) result = await supabase.from("vendor_menu_items").insert(basePayload).select("id").single();
   // Backward-compatible retry lets the UI keep working if the production migration
   // has not been applied yet; the release notes still require the migration.
   if (result.error && /nutrition_status|nutrition_confidence|nutrition_note/i.test(result.error.message || "")) {
-    const { nutrition_status: _status, nutrition_confidence: _confidence, nutrition_note: _note, ...legacyPayload } = payload;
+    const { nutrition_status: _status, nutrition_confidence: _confidence, nutrition_note: _note, ...legacyPayload } = basePayload;
     void _status;
     void _confidence;
     void _note;

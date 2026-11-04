@@ -42,7 +42,7 @@ function MapControls({ lat, lng, radiusKm }: { lat: number; lng: number; radiusK
         const make = (label: string, aria: string, onClick: () => void) => {
           const b = L.DomUtil.create("button", "", box) as HTMLButtonElement;
           b.type = "button"; b.textContent = label; b.setAttribute("aria-label", aria); b.title = aria;
-          b.style.cssText = "width:36px;height:36px;border-radius:9999px;border:1px solid rgba(255,255,255,.7);background:rgba(255,255,255,.94);color:#0F1B1D;font:900 18px/1 system-ui;box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer;backdrop-filter:blur(6px)";
+          b.style.cssText = "width:36px;height:36px;border-radius:9999px;border:1px solid rgba(255,255,255,.7);background:rgba(255,255,255,.94);color:#202827;font:900 18px/1 system-ui;box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer;backdrop-filter:blur(6px)";
           L.DomEvent.on(b, "click", (e) => { L.DomEvent.stop(e); onClick(); });
         };
         make("+", "Zoom in", () => map.zoomIn());
@@ -133,7 +133,7 @@ export function NearbyVendorsMapLeaflet({
         <Circle
           center={[customerLat, customerLng]}
           radius={effectiveRadius * 1000}
-          pathOptions={{ color: "#0C7478", weight: 2, fillColor: "#0C7478", fillOpacity: 0.08 }}
+          pathOptions={{ color: "#155F65", weight: 2, fillColor: "#155F65", fillOpacity: 0.08 }}
         />
         <Marker position={[customerLat, customerLng]} icon={customerIcon}>
           <Popup>You are here</Popup>
@@ -174,18 +174,18 @@ export function NearbyVendorsMapLeaflet({
           >
             {!onPinClick && <Popup>
               <div className="min-w-40 text-sm">
-                <div className="font-black text-[#0F1B1D]">{vendor.name}{vendor.id === closestId && <span className="ml-1.5 rounded-full bg-[#E4F2F2] px-1.5 py-0.5 text-[10px] font-black text-[#0C7478]">Closest</span>}</div>
+                <div className="font-black text-[#202827]">{vendor.name}{vendor.id === closestId && <span className="ml-1.5 rounded-full bg-[#EAF4F2] px-1.5 py-0.5 text-[10px] font-black text-[#155F65]">Closest</span>}</div>
                 <div className="mt-1 text-xs text-stone-500">{vendor.distanceKm.toFixed(1)} km away{vendor.verified ? " · Verified" : ""}</div>
                 {vendor.productCount ? <div className="mt-0.5 text-xs text-stone-500">{vendor.productCount} product{vendor.productCount === 1 ? "" : "s"} in range</div> : null}
-                {onSelectVendor && <button onClick={() => onSelectVendor(vendor.id)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#0C7478] px-2 py-1.5 text-xs font-black text-white">View products</button>}
+                {onSelectVendor && <button onClick={() => onSelectVendor(vendor.id)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#155F65] px-2 py-1.5 text-xs font-black text-white">View products</button>}
               </div>
             </Popup>}
             <Tooltip direction="top" offset={[0, -8]} className="sp-map-vendor-tooltip">{vendor.name}</Tooltip>
           </Marker>
         ))}
       </MapContainer>
-      <div className="absolute left-3 top-3 z-1000 flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#0F1B1D] shadow-sm backdrop-blur">
-        <MapPin className="size-3.5 shrink-0 text-[#0C7478]" />
+      <div className="absolute left-3 top-3 z-1000 flex items-center gap-1 rounded-full border border-white/70 bg-white/92 py-1 pl-3 pr-1 text-xs font-black text-[#202827] shadow-sm backdrop-blur">
+        <MapPin className="size-3.5 shrink-0 text-[#155F65]" />
         <span className="whitespace-nowrap" data-testid="map-count">{people ? `${radiusKm} km · ${people.length} ${people.length === 1 ? "person" : "people"} nearby` : `${radiusKm} km · ${vendors.filter((v) => v.distanceKm <= radiusKm).length} vendor${vendors.filter((v) => v.distanceKm <= radiusKm).length === 1 ? "" : "s"} in range`}</span>
         <span className="ml-1 flex shrink-0 items-center gap-0.5">
           <button type="button" aria-label="Decrease radius" onClick={() => onRadiusChange(Math.max(1, radiusKm - 1))} className="grid size-6 place-items-center rounded-full bg-stone-100 text-sm font-black leading-none hover:bg-stone-200">−</button>
@@ -193,7 +193,7 @@ export function NearbyVendorsMapLeaflet({
         </span>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-3 z-1000 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-[10px] font-bold text-stone-500 shadow-sm backdrop-blur">
-        <ShoppingBag className="hidden size-3 shrink-0 text-[#0C7478] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">Tiles &copy; Esri</span><span className="hidden sm:inline">&middot; Tiles &copy; Esri</span>
+        <ShoppingBag className="hidden size-3 shrink-0 text-[#155F65] sm:block" /><span className="hidden sm:inline">Drag the pink handle, or use +/&minus; on the chip, to change your radius</span><span className="sm:hidden">Tiles &copy; Esri</span><span className="hidden sm:inline">&middot; Tiles &copy; Esri</span>
       </div>
     </div>
   );

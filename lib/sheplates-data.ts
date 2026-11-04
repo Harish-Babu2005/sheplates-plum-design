@@ -31,8 +31,8 @@ export type Fulfilment = {
 
 export const categories = [
   { name: "Milk & dairy", emoji: "🥛", color: "#E9F2F8" },
-  { name: "Home food", emoji: "🍱", color: "#E4F2F2" },
-  { name: "Caterer", emoji: "🍽️", color: "#E4F2F2" },
+  { name: "Home food", emoji: "🍱", color: "#EAF4F2" },
+  { name: "Caterer", emoji: "🍽️", color: "#EAF4F2" },
   { name: "Meat & fish", emoji: "🍗", color: "#EEEFF1" },
   { name: "Vegetables", emoji: "🥬", color: "#E4F3EA" },
   { name: "Groceries", emoji: "🛍️", color: "#ECEEF4" },
@@ -40,7 +40,7 @@ export const categories = [
   { name: "Bakery", emoji: "🥖", color: "#EDF1F1" },
   { name: "Snacks", emoji: "🍿", color: "#E6F4EE" },
   { name: "Rice & staples", emoji: "🍚", color: "#EEF0EF" },
-  { name: "Other", emoji: "📦", color: "#E4F2F2" },
+  { name: "Other", emoji: "📦", color: "#EAF4F2" },
 ];
 
 // A controlled vector-icon set instead of raw emoji: renders identically across
@@ -94,5 +94,5 @@ export const initialFulfilments: Fulfilment[] = [
 ];
 
 export const tomorrowDemand = [
-  {name:"Milk",value:186,color:"#4f9cf9"},{name:"Meals",value:124,color:"#0C7478"},{name:"Vegetables",value:78,color:"#14966f"},{name:"Meat",value:52,color:"#9b59b6"},{name:"Groceries",value:31,color:"#f3a712"}
+  {name:"Milk",value:186,color:"#4f9cf9"},{name:"Meals",value:124,color:"#155F65"},{name:"Vegetables",value:78,color:"#14966f"},{name:"Meat",value:52,color:"#9b59b6"},{name:"Groceries",value:31,color:"#f3a712"}
 ];
