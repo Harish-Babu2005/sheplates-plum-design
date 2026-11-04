@@ -15,7 +15,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -589,7 +589,7 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     radiusKm: Number(row.service_radius_km), delivery: row.delivery_enabled, pickup: row.pickup_enabled,
     openToday: row.store_open_today, verification: verificationFromLive(row.verification_status),
     operational: operationalFromLive(row.operational_status), plan: planFromCode(planCodeFromEmbed(row.vendor_plans)),
-    vendorKind: row.vendor_kind || "subscription", termsAccepted: row.terms_accepted,
+    vendorKind: row.vendor_kind || "subscription",
     fssaiNumber: String(document?.document_number || "Submitted"),
     certificateName: String(document?.storage_path || "Private certificate"), expiryDate: String(document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
@@ -701,7 +701,7 @@ quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: Str
     unitPrice: row.unit_price == null ? undefined : Number(row.unit_price),
   })) : [];
   const cart = session.role === "customer" ? [...current.cart.filter((item) => item.customerEmail !== session.email), ...syncedCart] : current.cart;
-  const liveDeliverySlots: VendorDeliverySlot[] = (snapshot.deliverySlots || []).map((row) => ({
+  const deliverySlots: VendorDeliverySlot[] = snapshot.deliverySlots !== undefined ? (snapshot.deliverySlots || []).map((row) => ({
     id: String(row.id),
     vendorId: String(row.vendor_id),
     slotName: String(row.slot_name),
@@ -710,11 +710,10 @@ quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: Str
     isActive: row.is_active !== false,
     createdAt: row.created_at ? String(row.created_at) : undefined,
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
-  }));
+  })) : (current.deliverySlots || []);
   return {
     ...current, orders, schedules: mergedSchedules, staff, assignments, thirdPartyDeliveries, cart, deliverySlots,
     thirdPartyDeliveryAvailable: snapshot.thirdPartyDeliveryAvailable === true,
-    deliverySlots: snapshot.deliverySlots !== undefined ? liveDeliverySlots : (current.deliverySlots || []),
   };
 }
 async function findLocation(params: { lat?: number; lng?: number; address?: string }) {
@@ -1141,7 +1140,7 @@ export function ShePlatesV3() {
       toast.success(`Added ${quantity} × ${drop.title} to your cart`);
     } catch (error) {
       setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...ownCart] }));
-      toast.error(error instanceof Error ? error.message : "This drop could not be added to your cart");
+      toast.error(errorMessage(error, "This drop could not be added to your cart"));
     }
   }
   function renderCustomerPage() {
@@ -1427,65 +1426,109 @@ function OrderDetail({ label, value }: { label: string; value: React.ReactNode }
 
 function VendorOnboarding({ session, setState, onLogout, operationsCreated = false, close }: { session: DemoSession; setState: React.Dispatch<React.SetStateAction<V3State>>; onLogout?: () => void; operationsCreated?: boolean; close?: () => void }) {
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false);
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const [termsModalOpen, setTermsModalOpen] = useState(false);
-
-  // Compliance documents (PDF only) state
-  const [panFile, setPanFile] = useState<File | null>(null);
-  const [govIdFile, setGovIdFile] = useState<File | null>(null);
-  const [addressProofFile, setAddressProofFile] = useState<File | null>(null);
-  const [bankFile, setBankFile] = useState<File | null>(null);
-  const [businessFile, setBusinessFile] = useState<File | null>(null);
-  const [productInfoFile, setProductInfoFile] = useState<File | null>(null);
-
-  // PDF Preview Modal state for uploaded compliance documents
+  const [termsAccepted, setTermsAccepted] = useState(false), [termsModalOpen, setTermsModalOpen] = useState(false);
+  const [panFile, setPanFile] = useState<File | null>(null), [govIdFile, setGovIdFile] = useState<File | null>(null), [addressProofFile, setAddressProofFile] = useState<File | null>(null);
+  const [bankFile, setBankFile] = useState<File | null>(null), [businessFile, setBusinessFile] = useState<File | null>(null), [productInfoFile, setProductInfoFile] = useState<File | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ title: string; fileName: string; url: string } | null>(null);
-
+  const [otherCategory, setOtherCategory] = useState(""), [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState("");
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
   const [form, setForm] = useState({
-    businessName: "",
-    ownerName: operationsCreated ? firstVendorAccount.name : session.name,
-    ownerEmail: operationsCreated ? firstVendorAccount.email : session.email,
-    category: "Groceries",
-    address: "",
-    lat: undefined as number | undefined,
-    lng: undefined as number | undefined,
-    radius: 5,
-    delivery: true,
-    pickup: true,
-    // FSSAI
-    fssai: "",
-    expiry: "",
-    // 1) PAN
-    panNumber: "",
-    // 2) Government ID
-    govIdType: "Aadhaar Card",
-    govIdNumber: "",
-    // 3) Address Proof
-    addressProofType: "Electricity Bill",
-    addressProofRef: "",
-    // 4) Bank Details
-    bankAccountNumber: "",
-    bankIfsc: "",
-    bankName: "",
-    // 5) Business Details
-    businessRegType: "GSTIN Certificate",
-    businessRegNumber: "",
-    // 6) Product Information
-    productInfoTitle: "",
+    businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email,
+    category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true,
+    fssai: "", expiry: "", panNumber: "", govIdType: "Aadhaar Card", govIdNumber: "", addressProofType: "Electricity Bill", addressProofRef: "",
+    bankAccountNumber: "", bankIfsc: "", bankName: "", businessRegType: "GSTIN Certificate", businessRegNumber: "", productInfoTitle: "",
   });
+
+  async function submit() {
+    if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
+    if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
+    if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
+    if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
+    const terms = termsAccepted;
+    if (!terms) return toast.error("Accept the Vendor Terms and Conditions to submit");
+    if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to");
+
+    setBusy(true);
+    let vendorId = id("VEN");
+    try {
+      const category = form.category === "Other" ? otherCategory.trim() : form.category;
+      const additionalDocuments: Array<{ documentType: VendorComplianceDocType; documentNumber?: string; file: File; expiryDate?: string; metadata?: Record<string, unknown> }> = [];
+      if (panFile) additionalDocuments.push({ documentType: "pan", documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined, file: panFile });
+      if (govIdFile) additionalDocuments.push({ documentType: "government_id", documentNumber: form.govIdNumber || undefined, file: govIdFile, metadata: { idType: form.govIdType } });
+      if (addressProofFile) additionalDocuments.push({ documentType: "address_proof", documentNumber: form.addressProofRef || undefined, file: addressProofFile, metadata: { proofType: form.addressProofType } });
+      if (bankFile) additionalDocuments.push({ documentType: "bank_details", documentNumber: form.bankAccountNumber ? `A/C ${form.bankAccountNumber} · ${form.bankIfsc.toUpperCase()}` : undefined, file: bankFile, metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName } });
+      if (businessFile) additionalDocuments.push({ documentType: "business_details", documentNumber: form.businessRegNumber || undefined, file: businessFile, metadata: { regType: form.businessRegType } });
+      if (productInfoFile) additionalDocuments.push({ documentType: "product_information", documentNumber: form.productInfoTitle || undefined, file: productInfoFile });
+
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) {
+        vendorId = await submitLiveVendorApplication({
+          userId: session.userId, businessName: form.businessName, category, locality: form.address,
+          fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address,
+          latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup,
+          operatingHours: { duration_hours: 7 }, termsAccepted: true, termsVersion: "1.0",
+          termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
+          panNumber: form.panNumber || undefined, bankAccountNumber: form.bankAccountNumber || undefined,
+          bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined, businessRegNumber: form.businessRegNumber || undefined,
+          additionalDocuments,
+        });
+      }
+
+      const stateDocs: VendorComplianceDocument[] = [
+        { documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: form.fssai, fileName: file.name, fileSize: file.size, storagePath: file.name, expiryDate: form.expiry, verificationStatus: "submitted" },
+      ];
+      if (panFile || form.panNumber) stateDocs.push({ documentType: "pan", title: "PAN Document", documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined, fileName: panFile?.name, fileSize: panFile?.size, storagePath: panFile?.name || "pending-upload", verificationStatus: "submitted" });
+      if (govIdFile || form.govIdNumber) stateDocs.push({ documentType: "government_id", title: `Government ID (${form.govIdType})`, documentNumber: form.govIdNumber || undefined, fileName: govIdFile?.name, fileSize: govIdFile?.size, storagePath: govIdFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { idType: form.govIdType } });
+      if (addressProofFile || form.addressProofRef) stateDocs.push({ documentType: "address_proof", title: `Address Proof (${form.addressProofType})`, documentNumber: form.addressProofRef || undefined, fileName: addressProofFile?.name, fileSize: addressProofFile?.size, storagePath: addressProofFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { proofType: form.addressProofType } });
+      if (bankFile || form.bankAccountNumber) stateDocs.push({ documentType: "bank_details", title: "Bank Details (Cheque/Passbook)", documentNumber: form.bankAccountNumber ? `A/C: ${form.bankAccountNumber} · IFSC: ${form.bankIfsc.toUpperCase()}` : undefined, fileName: bankFile?.name, fileSize: bankFile?.size, storagePath: bankFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName } });
+      if (businessFile || form.businessRegNumber) stateDocs.push({ documentType: "business_details", title: `Business Details (${form.businessRegType})`, documentNumber: form.businessRegNumber || undefined, fileName: businessFile?.name, fileSize: businessFile?.size, storagePath: businessFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { regType: form.businessRegType } });
+      if (productInfoFile || form.productInfoTitle) stateDocs.push({ documentType: "product_information", title: "Product Information / Catalogue", documentNumber: form.productInfoTitle || undefined, fileName: productInfoFile?.name, fileSize: productInfoFile?.size, storagePath: productInfoFile?.name || "pending-upload", verificationStatus: "submitted" });
+
+      const vendor: Vendor = {
+        id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category,
+        address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup,
+        openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave",
+        termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString(), termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
+        panNumber: form.panNumber || undefined, panDocumentName: panFile?.name,
+        govIdType: form.govIdType, govIdNumber: form.govIdNumber || undefined, govIdDocumentName: govIdFile?.name,
+        addressProofType: form.addressProofType, addressProofDocumentName: addressProofFile?.name,
+        bankAccountNumber: form.bankAccountNumber || undefined, bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined, bankName: form.bankName || undefined, bankDocumentName: bankFile?.name,
+        businessRegType: form.businessRegType, businessRegNumber: form.businessRegNumber || undefined, businessDocumentName: businessFile?.name,
+        productInfoTitle: form.productInfoTitle || undefined, productInfoDocumentName: productInfoFile?.name,
+        documents: stateDocs,
+      };
+
+      setState((s) => ({
+        ...s,
+        vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)],
+        notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your compliance documents and business details."), ...s.notifications],
+        audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit],
+      }));
+      toast.success("Vendor application sent to Operations");
+      if (operationsCreated && invite) {
+        if (isLiveSupabaseMode()) {
+          try {
+            const token = await getAccessToken();
+            if (!token) throw new Error("Sign in again to send invitations");
+            await inviteVendorByEmail({ email: inviteEmail.trim(), name: form.ownerName, businessName: form.businessName }, token);
+            toast.success(`Invitation email sent to ${inviteEmail.trim()}`);
+          } catch (caught) {
+            toast.error(errorMessage(caught, "The invitation email could not be sent"));
+          }
+        } else toast.info("Invitation emails are sent only on the live site. Nothing was emailed in this demo.");
+      }
+      if (operationsCreated && close) close();
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not submit application"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function handlePdfUpload(selectedFile: File | null, onValid: (f: File | null) => void, docLabel: string) {
     if (!selectedFile) return;
     const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
-    if (!isPdf) {
-      toast.error(`"${selectedFile.name}" is not a PDF. ${docLabel} must be in PDF format (.pdf) only.`);
-      return;
-    }
-    if (selectedFile.size > 15 * 1024 * 1024) {
-      toast.error(`"${selectedFile.name}" exceeds the 15 MB size limit.`);
-      return;
-    }
+    if (!isPdf) return toast.error(`"${selectedFile.name}" is not a PDF. ${docLabel} must be in PDF format (.pdf) only.`);
+    if (selectedFile.size > 15 * 1024 * 1024) return toast.error(`"${selectedFile.name}" exceeds the 15 MB size limit.`);
     onValid(selectedFile);
     toast.success(`${docLabel} attached in PDF format`);
   }
@@ -1494,304 +1537,104 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
     const url = URL.createObjectURL(docFile);
     setPreviewDoc({ title, fileName: docFile.name, url });
   }
-  const [otherCategory, setOtherCategory] = useState("");
-  const [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState(""), [terms, setTerms] = useState(false);
+
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
-  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
-  async function submit() {
-    if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) {
-      return toast.error("Complete all business and certification fields");
-    }
-    if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
-    if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) {
-      return toast.error("Detect the store GPS location or find its typed address on the map first");
-    }
-    if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
-    if (!terms) return toast.error("Accept the Vendor Terms and Conditions to submit");
-    if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to");
-    if (!termsAccepted) {
-      return toast.error("You must read and agree to the ShePlates Vendor Terms & Conditions before submitting.");
-    }
-
-    // Strict validation: every uploaded document must be PDF format
-    const allDocFiles = [
-      { label: "FSSAI Food Certificate", file },
-      { label: "PAN Document", file: panFile },
-      { label: "Government ID", file: govIdFile },
-      { label: "Address Proof", file: addressProofFile },
-      { label: "Bank Details", file: bankFile },
-      { label: "Business Details", file: businessFile },
-      { label: "Product Information", file: productInfoFile },
-    ];
-    for (const item of allDocFiles) {
-      if (item.file) {
-        const isPdf = item.file.type === "application/pdf" || item.file.name.toLowerCase().endsWith(".pdf");
-        if (!isPdf) {
-          return toast.error(`${item.label} "${item.file.name}" must be in PDF format (.pdf) only.`);
-        }
-      }
-    }
-
-    setBusy(true);
-    let vendorId = id("VEN");
-    try {
-      const category = form.category === "Other" ? otherCategory.trim() : form.category;
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 }, termsAccepted: terms });
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave" };
-      setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
-      toast.success("Vendor application sent to Operations");
-      if (operationsCreated && invite) {
-        if (isLiveSupabaseMode()) {
-          try { const token = await getAccessToken(); if (!token) throw new Error("Sign in again to send invitations"); await inviteVendorByEmail({ email: inviteEmail.trim(), name: form.ownerName, businessName: form.businessName }, token); toast.success(`Invitation email sent to ${inviteEmail.trim()}`); }
-          catch (caught) { toast.error(errorMessage(caught, "The invitation email could not be sent")); }
-        } else toast.info("Invitation emails are sent only on the live site. Nothing was emailed in this demo.");
-      }
-      close?.();
-    } catch (caught) { toast.error(errorMessage(caught, "Application could not be submitted")); } finally { setBusy(false); }
-
-      // Build structured compliance documents array for state and backend
-      const stateDocs: VendorComplianceDocument[] = [
-        {
-          documentType: "food_certificate",
-          title: "Food Safety Certificate (FSSAI)",
-          documentNumber: form.fssai,
-          fileName: file.name,
-          fileSize: file.size,
-          storagePath: file.name,
-          expiryDate: form.expiry,
-          verificationStatus: "submitted",
-        },
-      ];
-
-      const additionalDocuments: Array<{
-        documentType: VendorComplianceDocType;
-        documentNumber?: string;
-        file: File;
-        expiryDate?: string;
-        metadata?: Record<string, unknown>;
-      }> = [];
-
-      if (panFile || form.panNumber) {
-        if (panFile) {
-          additionalDocuments.push({
-            documentType: "pan",
-            documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined,
-            file: panFile,
-          });
-        }
-        stateDocs.push({
-          documentType: "pan",
-          title: "PAN Document",
-          documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined,
-          fileName: panFile?.name,
-          fileSize: panFile?.size,
-          storagePath: panFile?.name || "pending-upload",
-          verificationStatus: "submitted",
-        });
-      }
-
-      if (govIdFile || form.govIdNumber) {
-        if (govIdFile) {
-          additionalDocuments.push({
-            documentType: "government_id",
-            documentNumber: form.govIdNumber || undefined,
-            file: govIdFile,
-            metadata: { idType: form.govIdType },
-          });
-        }
-        stateDocs.push({
-          documentType: "government_id",
-          title: `Government ID (${form.govIdType})`,
-          documentNumber: form.govIdNumber || undefined,
-          fileName: govIdFile?.name,
-          fileSize: govIdFile?.size,
-          storagePath: govIdFile?.name || "pending-upload",
-          verificationStatus: "submitted",
-          metadata: { idType: form.govIdType },
-        });
-      }
-
-      if (addressProofFile || form.addressProofRef) {
-        if (addressProofFile) {
-          additionalDocuments.push({
-            documentType: "address_proof",
-            documentNumber: form.addressProofRef || undefined,
-            file: addressProofFile,
-            metadata: { proofType: form.addressProofType },
-          });
-        }
-        stateDocs.push({
-          documentType: "address_proof",
-          title: `Address Proof (${form.addressProofType})`,
-          documentNumber: form.addressProofRef || undefined,
-          fileName: addressProofFile?.name,
-          fileSize: addressProofFile?.size,
-          storagePath: addressProofFile?.name || "pending-upload",
-          verificationStatus: "submitted",
-          metadata: { proofType: form.addressProofType },
-        });
-      }
-
-      if (bankFile || form.bankAccountNumber) {
-        if (bankFile) {
-          additionalDocuments.push({
-            documentType: "bank_details",
-            documentNumber: form.bankAccountNumber ? `A/C ${form.bankAccountNumber} · ${form.bankIfsc.toUpperCase()}` : undefined,
-            file: bankFile,
-            metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName },
-          });
-        }
-        stateDocs.push({
-          documentType: "bank_details",
-          title: "Bank Details (Cheque/Passbook)",
-          documentNumber: form.bankAccountNumber ? `A/C: ${form.bankAccountNumber} · IFSC: ${form.bankIfsc.toUpperCase()}` : undefined,
-          fileName: bankFile?.name,
-          fileSize: bankFile?.size,
-          storagePath: bankFile?.name || "pending-upload",
-          verificationStatus: "submitted",
-          metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName },
-        });
-      }
-
-      if (businessFile || form.businessRegNumber) {
-        if (businessFile) {
-          additionalDocuments.push({
-            documentType: "business_details",
-            documentNumber: form.businessRegNumber || undefined,
-            file: businessFile,
-            metadata: { regType: form.businessRegType },
-          });
-        }
-        stateDocs.push({
-          documentType: "business_details",
-          title: `Business Details (${form.businessRegType})`,
-          documentNumber: form.businessRegNumber || undefined,
-          fileName: businessFile?.name,
-          fileSize: businessFile?.size,
-          storagePath: businessFile?.name || "pending-upload",
-          verificationStatus: "submitted",
-          metadata: { regType: form.businessRegType },
-        });
-      }
-
-      if (productInfoFile || form.productInfoTitle) {
-        if (productInfoFile) {
-          additionalDocuments.push({
-            documentType: "product_information",
-            documentNumber: form.productInfoTitle || undefined,
-            file: productInfoFile,
-          });
-        }
-        stateDocs.push({
-          documentType: "product_information",
-          title: "Product Information / Catalogue",
-          documentNumber: form.productInfoTitle || undefined,
-          fileName: productInfoFile?.name,
-          fileSize: productInfoFile?.size,
-          storagePath: productInfoFile?.name || "pending-upload",
-          verificationStatus: "submitted",
-        });
-      }
-
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) {
-        vendorId = await submitLiveVendorApplication({
-          userId: session.userId,
-          businessName: form.businessName,
-          category,
-          locality: form.address,
-          fssaiNumber: form.fssai,
-          expiryDate: form.expiry,
-          certificate: file,
-          address: form.address,
-          latitude: form.lat,
-          longitude: form.lng,
-          radiusKm: form.radius,
-          delivery: form.delivery,
-          pickup: form.pickup,
-          operatingHours: { duration_hours: 7 },
-          termsAccepted: true,
-          termsVersion: "1.0",
-          termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
-          panNumber: form.panNumber || undefined,
-          bankAccountNumber: form.bankAccountNumber || undefined,
-          bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined,
-          businessRegNumber: form.businessRegNumber || undefined,
-          additionalDocuments,
-        });
-      }
-
-      const vendor: Vendor = {
-        id: vendorId,
-        ownerEmail: form.ownerEmail,
-        ownerName: form.ownerName,
-        businessName: form.businessName,
-        category,
-        address: form.address,
-        latitude: form.lat,
-        longitude: form.lng,
-        radiusKm: form.radius,
-        delivery: form.delivery,
-        pickup: form.pickup,
-        openToday: false,
-        fssaiNumber: form.fssai,
-        certificateName: file.name,
-        expiryDate: form.expiry,
-        verification: "Submitted",
-        operational: "Inactive",
-        plan: "Crave",
-        termsAccepted: true,
-        termsVersion: "1.0",
-        termsAcceptedAt: new Date().toISOString(),
-        termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
-        panNumber: form.panNumber || undefined,
-        panDocumentName: panFile?.name,
-        govIdType: form.govIdType,
-        govIdNumber: form.govIdNumber || undefined,
-        govIdDocumentName: govIdFile?.name,
-        addressProofType: form.addressProofType,
-        addressProofDocumentName: addressProofFile?.name,
-        bankAccountNumber: form.bankAccountNumber || undefined,
-        bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined,
-        bankName: form.bankName || undefined,
-        bankDocumentName: bankFile?.name,
-        businessRegType: form.businessRegType,
-        businessRegNumber: form.businessRegNumber || undefined,
-        businessDocumentName: businessFile?.name,
-        productInfoTitle: form.productInfoTitle || undefined,
-        productInfoDocumentName: productInfoFile?.name,
-        documents: stateDocs,
-      };
-
-      setState((s) => ({
-        ...s,
-        vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)],
-        notifications: [
-          notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your compliance documents and business details."),
-          ...s.notifications,
-        ],
-        audit: [
-          audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName),
-          ...s.audit,
-        ],
-      }));
-      toast.success("Vendor application sent to Operations");
-      close?.();
-    } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Application could not be submitted");
-    } finally {
-      setBusy(false);
-    }
+  function detect() {
+    if (!navigator.geolocation) return toast.error("Location is unavailable");
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const point = { lat: position.coords.latitude, lng: position.coords.longitude };
+      set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`);
+      try {
+        const place = await findLocation(point);
+        set("address", place.address); set("lat", place.latitude); set("lng", place.longitude);
+        toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`);
+      } catch (error) {
+        toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details.");
+      } finally { setLocating(false); }
+    }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
-  return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#F5EDE7] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="k-stepper-wrap"><p className="sr-only">Vendor onboarding · {step}/4</p><ol className="k-stepper" aria-label="Onboarding steps">{["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => { const n = index + 1; const done = n < step; return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>; })}</ol><h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div>
-  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#F5EDE7] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#665B5D]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
-  {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
-  {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#512D3A]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
-  {step === 4 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Food certificate / FSSAI number"><input value={form.fssai} onChange={(e) => set("fssai", e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={tomorrow()} value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inputClass} /></Field><label className="surface-card-muted md:col-span-2 grid min-h-36 cursor-pointer place-items-center rounded-3xl border-2 border-dashed p-5 text-center"><input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /><Upload className="mx-auto text-[#b42332]" /><div className="mt-2 font-black">{file?.name || "Upload certificate PDF or image"}</div><div className="text-xs text-stone-500">Private document; accessible only to this vendor and authorised Operations/Admin users.</div></label><label className="md:col-span-2 flex cursor-pointer items-start gap-3 rounded-2xl bg-[#F5EDE7] p-4 text-sm leading-6 text-[#4A4143]"><input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} className="mt-1 size-5 shrink-0 accent-[#512D3A]" /><span><b>I accept the ShePlates Vendor Terms and Conditions (version 1.0).</b> I have read the Vendor Partnership Agreement and understand that my application is reviewed by Operations before my store goes live.</span></label></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#C65D3A] hover:bg-[#A84B2C]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy} className="rounded-xl bg-[#C65D3A] hover:bg-[#A84B2C]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div>{operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#512D3A]" : "bg-[#E9DDD5]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}</div></div>;
-  {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#5ba400]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
-  {step === 4 && <div className="mt-7 space-y-6">
+  async function locateAddress() {
+    if (!form.address.trim()) return toast.error("Enter the store address first");
+    setMapBusy(true);
+    try {
+      const place = await findLocation({ address: form.address });
+      set("address", place.address); set("lat", place.latitude); set("lng", place.longitude);
+      toast.success("Store address pinned on the map");
+    } catch (error) { toast.error(errorMessage(error, "Address was not found")); }
+    finally { setMapBusy(false); }
+  }
+  function continueOnboarding() {
+    if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
+    setStep((current) => current + 1);
+  }
+
+  return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#F5EDE7] p-4 sm:p-8"}>
+    {!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}
+    <div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}>
+      <div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8">
+        <div className="k-stepper-wrap">
+          <p className="sr-only">Vendor onboarding · {step}/4</p>
+          <ol className="k-stepper" aria-label="Onboarding steps">
+            {["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => {
+              const n = index + 1;
+              const done = n < step;
+              return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>;
+            })}
+          </ol>
+          <h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1>
+        </div>
+
+        {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2">
+          <Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field>
+          <Field label="Category">
+            <Select value={form.category} onValueChange={(value) => set("category", value)}>
+              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          {form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}
+          <Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>
+          {operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in.">
+            <Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}>
+              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}
+          {operationsCreated && <div className="rounded-3xl bg-[#F5EDE7] p-4 md:col-span-2">
+            <div className="flex items-center justify-between gap-4">
+              <div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#665B5D]">They get a link to set a password and finish onboarding themselves.</p></div>
+              <Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" />
+            </div>
+            {invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}
+          </div>}
+        </div>}
+
+        {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]">
+          <div className="space-y-4">
+            <Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field>
+            <LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} />
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button>
+              <Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button>
+            </div>
+            <Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field>
+          </div>
+          <MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" />
+        </div>}
+
+        {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3">
+          <ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} />
+          <ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} />
+          <div className="surface-card-muted rounded-3xl p-5">
+            <Store className="text-[#512D3A]" />
+            <h3 className="mt-4 font-black">Operating duration: 7 hours</h3>
+            <p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p>
+            <p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p>
+          </div>
+        </div>}
+
+        {step === 4 && <div className="mt-7 space-y-6">
     {/* Notice: PDF Only Requirement */}
     <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50/70 p-4 text-xs font-semibold text-red-900">
       <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-red-100 text-red-600">
@@ -2407,10 +2250,16 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
     </DialogContent>
   </Dialog>
 
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#ef3d3d] hover:bg-[#d92f2f] disabled:opacity-50 disabled:cursor-not-allowed"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div></div></div>;
+        <div className="mt-8 flex justify-between">
+          <Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>
+          {step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#C65D3A] hover:bg-[#A84B2C]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#C65D3A] hover:bg-[#A84B2C] disabled:opacity-50 disabled:cursor-not-allowed"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}
+        </div>
+      </div>
+      {operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#512D3A]" : "bg-[#E9DDD5]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}
+    </div>
+  </div>;
 }
 
-/** The map libraries need the browser, so the small location map is loaded only there. */
 function PinMap(props: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) {
   const [Component, setComponent] = useState<null | ((p: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) => React.ReactElement)>(null);
   useEffect(() => { let alive = true; void import("@/components/pin-map").then((mod) => { if (alive) setComponent(() => mod.PinMap); }); return () => { alive = false; }; }, []);
@@ -2427,7 +2276,7 @@ function MapPreview({ lat, lng, radius, label = "Selected location", onPinChange
 function ToggleCard({ icon: Icon, title, body, checked, setChecked }: { icon: typeof Store; title: string; body: string; checked: boolean; setChecked: (v: boolean) => void }) { return <div className={`rounded-2xl border p-5 ${checked ? "border-[#512D3A] bg-[#F2E8EC]" : "bg-white"}`}><div className="flex items-center justify-between"><Icon className="text-[#512D3A]" /><Switch checked={checked} onCheckedChange={setChecked} /></div><h3 className="mt-4 font-black">{title}</h3><p className="mt-2 text-sm text-stone-500">{body}</p></div>; }
 
 function CustomerArea({ active, session, state, setState, navigate, openAgent, openVendor, locationSignal, shorts, shortsRadius, onShortsRadius, openShorts, onSeeAllShorts }: { onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; onShortsRadius: (km: number) => void; openShorts: (list: FoodShort[], index: number) => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number }) {
-  if (active === "Cart") return <CartView session={session} state={state} setState={setState} navigate={navigate} />;
+  if (active === "Cart") return <CartView session={session} state={state} setState={setState} navigate={navigate}  />;
   if (active === "My schedule") return <SchedulesV4 session={session} state={state} setState={setState} navigate={navigate} />;
   if (active === "Monthly requirement") return <RequirementsV4 session={session} state={state} setState={setState} />;
   if (active === "My quotations") return isLiveSupabaseMode() ? <LiveCustomerRfqs /> : <CustomerQuotesV4 session={session} state={state} setState={setState} />;
@@ -2814,7 +2663,7 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
     } catch (error) { toast.error(errorMessage(error, "Schedule could not be saved")); }
   }
 
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
+return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -2864,6 +2713,7 @@ function CustomerProfileView({ session, state, setState }: { session: DemoSessio
 
 function CartView({ session, state, setState, navigate }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void }) {
   const items = state.cart.filter((item) => item.customerEmail === session.email);
+  const containsFoodDrop = items.some((item) => Boolean(item.foodDropId));
   const customer = state.customers.find((item) => item.email === session.email);
   const savedAddresses = customer?.addresses?.length
     ? customer.addresses
@@ -2961,15 +2811,15 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
         if (!snapshot) throw new Error("Checkout did not return the latest order state.");
         const next = mergeLiveCommerce(state, snapshot, session);
         setState(next);
-        if (items.some((item) => item.foodDropId)) void refreshDrops();
+        if (items.some((item) => item.foodDropId)) void loadLiveFoodDrops().then((remote) => { if (remote) setState((c) => ({ ...c, foodDrops: remote })); }).catch(() => undefined);
         const ids = Array.isArray(result.orderIds) ? result.orderIds.map(String) : [];
         const createdOrders = next.orders.filter((order) => ids.includes(order.id) && order.payment === "Pending");
         if (createdOrders.length === 1) setPaying(createdOrders[0]);
         toast.success(createdOrders.length > 1 ? `${createdOrders.length} vendor checkouts are ready for payment.` : "Checkout is ready for payment.");
         setAddressDialogOpen(false);
       } catch (error) {
-        if (items.some((item) => item.foodDropId)) void refreshDrops();
-        toast.error(error instanceof Error ? error.message : "Checkout could not be created");
+        if (items.some((item) => item.foodDropId)) void loadLiveFoodDrops().then((remote) => { if (remote) setState((c) => ({ ...c, foodDrops: remote })); }).catch(() => undefined);
+        toast.error(errorMessage(error, "Checkout could not be created"));
       }
       finally { setSavingCart(false); }
       return;
@@ -2978,8 +2828,8 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
 const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : effectiveSelectedSlot, deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
     setAddressDialogOpen(false);
-    setPaying(orders[0] || null);
-    if (orders.length > 1) toast.success(`${orders.length} vendor orders are ready for payment.`);
+    setPaying(order);
+    toast.success("Checkout is ready for payment.");
   }
   function continueWithAddress() {
     const chosen = useNewAddress ? newAddress.trim() : savedAddresses.find((address) => address.id === selectedAddressId)?.address || "";
@@ -2994,13 +2844,31 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
       <div className="space-y-4">
         <section className="surface-card rounded-3xl p-5">
           {(() => { const first = state.products.find((x) => x.id === items[0]?.productId); const kitchen = state.vendors.find((v) => v.id === first?.vendorId); return <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-semibold">{kitchen?.businessName || "Your basket"}</h3><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#4A4143]">One kitchen per order</span></div>; })()}
-          <div className="mt-3 divide-y divide-[#E9DDD5]">{items.map((item) => { const product = state.products.find((x) => x.id === item.productId); if (!product) return null; return <div key={item.id} className="flex flex-wrap items-center gap-3 py-3 sm:flex-nowrap sm:gap-4">
-            <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div>
-            <div className="min-w-35 flex-1"><b className="text-[15px]">{product.name}</b><div className="text-xs text-[#665B5D]">{product.baseUnit} · {money(finalPrice(product, state))} each</div></div>
-            <div className="flex items-center gap-1 rounded-full bg-white p-1"><button type="button" aria-label={`Decrease ${product.name}`} disabled={savingCart} onClick={() => void changeQuantity(item, -1)} className="grid size-9 place-items-center rounded-full bg-[#F5EDE7] text-lg font-semibold disabled:opacity-50">−</button><b className="min-w-8 text-center tabular-nums">{item.quantity}</b><button type="button" aria-label={`Increase ${product.name}`} disabled={savingCart} onClick={() => void changeQuantity(item, 1)} className="grid size-9 place-items-center rounded-full bg-[#F5EDE7] text-lg font-semibold disabled:opacity-50">+</button></div>
-            <b className="w-20 text-right tabular-nums">{money(finalPrice(product, state) * item.quantity)}</b>
-            <button type="button" aria-label={`Remove ${product.name}`} disabled={savingCart} onClick={() => void removeItem(item)} className="grid size-9 place-items-center rounded-full hover:bg-[#fdecef] hover:text-[#b42332]"><X className="size-4" /></button>
-          </div>; })}</div>
+          <div className="mt-3 divide-y divide-[#E9DDD5]">{items.map((item) => {
+            const product = state.products.find((x) => x.id === item.productId);
+            const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
+            if (!product && !drop) return null;
+            const price = item.unitPrice ?? (drop ? drop.dropPrice : (product ? finalPrice(product, state) : 0));
+            const displayName = drop?.title || product?.name || "Flash Drop item";
+            const displayUnit = drop ? (product ? `${product.baseUnit} · Food Drop` : "Food Drop") : (product?.baseUnit || "pack");
+            const category = product?.category || "Pantry";
+            return <div key={item.id} className="surface-card relative flex flex-wrap items-center gap-3 rounded-[22px] p-4 pr-12 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-nowrap sm:gap-4">
+              <button
+                type="button"
+                disabled={savingCart}
+                onClick={() => void removeItem(item)}
+                aria-label={`Remove ${displayName} from cart`}
+                title={`Remove ${displayName}`}
+                className="absolute right-3 top-3 grid size-7 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-hidden"
+              >
+                <X className="size-4" />
+              </button>
+              <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product?.imageUrl ? undefined : categoryVisual(category).bg }}>{product?.imageUrl ? <img src={product.imageUrl} alt={displayName} className="h-full w-full object-cover" /> : <ProductGlyph category={category} />}</div>
+              <div className="min-w-35 flex-1 pr-2"><b className="text-[15px]">{displayName}</b><div className="text-xs text-[#665B5D]">{displayUnit} · {money(price)} each</div></div>
+              <div className="flex items-center gap-1 rounded-full bg-white p-1"><button type="button" aria-label={`Decrease ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, -1)} className="grid size-9 place-items-center rounded-full bg-[#F5EDE7] text-lg font-semibold disabled:opacity-50">−</button><b className="min-w-8 text-center tabular-nums">{item.quantity}</b><button type="button" aria-label={`Increase ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, 1)} className="grid size-9 place-items-center rounded-full bg-[#F5EDE7] text-lg font-semibold disabled:opacity-50">+</button></div>
+              <b className="w-20 text-right tabular-nums">{money(price * item.quantity)}</b>
+            </div>;
+          })}</div>
         </section>
         <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Delivery date</h3><p className="mt-1 text-sm text-[#665B5D]">Plan ahead: pick any day from tomorrow, up to 15 days away</p>
           <label className="mt-3 block max-w-sm text-sm font-semibold text-[#4A4143]">Delivery date<input aria-label="Order delivery date" type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2`} /></label></section>
@@ -3010,58 +2878,6 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
         <div className="my-3 h-px bg-[#E9DDD5]" /><div className="flex items-center justify-between"><b>Estimated total</b><b className="text-2xl tabular-nums">{money(total)}</b></div>
         <Button disabled={savingCart} onClick={() => setAddressDialogOpen(true)} className="mt-4 w-full"><CreditCard />{savingCart ? "Saving…" : "Continue to payment"}</Button></aside>
     </div> : pendingOrders.length === 0 ? <Empty icon={ShoppingCart} title="Your cart is empty" body="Ask She Agent to add products or add them from the marketplace. The same saved basket appears everywhere." /> : null}
-      return <div key={order.id} className="surface-card relative flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 pr-12 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center">
-        <button
-          type="button"
-          onClick={() => {
-            setState((current) => ({
-              ...current,
-              orders: current.orders.filter((o) => o.id !== order.id),
-            }));
-            toast.success("Order removed.");
-          }}
-          aria-label="Remove order"
-          title="Remove order"
-          className="absolute right-3 top-3 grid size-7 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-hidden"
-        >
-          <X className="size-4" />
-        </button><div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div><div className="min-w-0 flex-1"><b>{order.description}</b><div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div><div className="mt-2 text-xl font-black">{money(order.total)}</div>{scheduledDatePassed && <p className="mt-2 text-sm font-medium text-amber-800">Payment unavailable: the scheduled date has passed.</p>}</div><Button disabled={scheduledDatePassed} onClick={() => setPaying(order)} title={scheduledDatePassed ? "Payment is unavailable because the scheduled date has passed" : undefined} className="rounded-xl bg-[#5ba400] transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600 disabled:hover:transform-none disabled:hover:shadow-none">{scheduledDatePassed ? "Scheduled date passed" : <><CreditCard />Pay & place order</>}</Button></div>;
-    })}</div>}
-    {items.length ? <div className="grid gap-5 lg:grid-cols-[1fr_340px]"><div className="space-y-3">{items.map((item) => {
-  const product = state.products.find((x) => x.id === item.productId);
-  const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
-  if (!product && !drop) return null;
-  const price = item.unitPrice ?? (drop ? drop.dropPrice : (product ? finalPrice(product, state) : 0));
-  const displayName = drop?.title || product?.name || "Flash Drop item";
-  const displayUnit = drop ? (product ? `${product.baseUnit} · Food Drop` : "Food Drop") : (product?.baseUnit || "pack");
-  const category = product?.category || "Pantry";
-  return (
-    <div key={item.id} className="surface-card relative flex flex-wrap items-center gap-3 rounded-[22px] p-4 pr-12 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-nowrap sm:gap-4">
-      <button
-        type="button"
-        disabled={savingCart}
-        onClick={() => void removeItem(item)}
-        aria-label={`Remove ${displayName} from cart`}
-        title={`Remove ${displayName}`}
-        className="absolute right-3 top-3 grid size-7 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-hidden"
-      >
-        <X className="size-4" />
-      </button>
-      <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product?.imageUrl ? undefined : categoryVisual(category).bg }}>
-        {product?.imageUrl ? <img src={product.imageUrl} alt={displayName} className="h-full w-full object-cover" /> : <ProductGlyph category={category} />}
-      </div>
-      <div className="min-w-35 flex-1 pr-2">
-        <b>{displayName}</b>
-        <div className="text-xs text-stone-500">{displayUnit} · {money(price)} each</div>
-      </div>
-      <div className="ml-auto flex items-center gap-2">
-        <Button disabled={savingCart} variant="outline" size="sm" onClick={() => void changeQuantity(item, -1)} aria-label="Decrease quantity">−</Button>
-        <b className="min-w-6 text-center">{item.quantity}</b>
-        <Button disabled={savingCart} variant="outline" size="sm" onClick={() => void changeQuantity(item, 1)} aria-label="Increase quantity">+</Button>
-      </div>
-    </div>
-  );
-})}</div><div className="surface-dark h-fit rounded-[28px] p-6 text-white lg:sticky lg:top-6"><h3 className="text-xl font-black">Review basket</h3><Review label="Products" value={String(items.length)} /><label className="mt-3 block text-sm font-bold text-white/70">Delivery date<input aria-label="Order delivery date" type="date" min={containsFoodDrop ? todayISO() : tomorrow()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2 text-stone-900`} /></label><Review label="Estimated total" value={money(total)} /><Button disabled={savingCart} onClick={() => setAddressDialogOpen(true)} className="mt-5 w-full rounded-xl bg-[#ef3d3d]"><CreditCard />{savingCart ? "Saving…" : "Continue to payment"}</Button></div></div> : pendingOrders.length === 0 ? <Empty icon={ShoppingCart} title="Your cart is empty" body="Ask She Agent to add products or add them from the marketplace. The same saved basket appears everywhere." /> : null}
     <Dialog open={addressDialogOpen} onOpenChange={setAddressDialogOpen}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[28px] sm:max-w-xl">
         <DialogHeader>
@@ -4761,8 +4577,6 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
   const [date, setDate] = useState(tomorrow());
   const [slot, setSlot] = useState("06:00–07:00 AM");
   const maxDate = latestOrderDate();
-  const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => s.vendorId === order.vendorId && s.isActive) : [];
-  const maxDate = addDaysISO(todayISO(), 15);
   const vendorActiveSlots = order ? (state.deliverySlots || []).filter((s) => String(s.vendorId).toLowerCase() === String(order.vendorId).toLowerCase() && s.isActive) : [];
   const rescheduleSlotOptions: string[] = vendorActiveSlots.length > 0
     ? vendorActiveSlots.map((s) => formatSlotLabel(s))
@@ -4774,12 +4588,16 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
     if (!order) return;
     if (!date || date < tomorrow()) return toast.error("Choose tomorrow or a later date");
     if (date > maxDate) return toast.error("Orders can only be rescheduled within the next 15 days");
-    try { if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, slot); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot } : x) })); toast.success(`Order moved to ${date}`); close(); } catch (error) { toast.error(errorMessage(error, "Order could not be rescheduled")); }
+    try {
+      if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, effectiveSlot);
+      setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot: effectiveSlot } : x) }));
+      toast.success(`Order moved to ${date}`);
+      close();
+    } catch (error) {
+      toast.error(errorMessage(error, "Order could not be rescheduled"));
+    }
   }
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={slot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#C65D3A] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
-    try { if (isLiveSupabaseMode()) await rescheduleLiveOrder(order.id, date, effectiveSlot); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, date, slot: effectiveSlot } : x) })); toast.success(`Order moved to ${date}`); close(); } catch (error) { toast.error(error instanceof Error ? error.message : "Order could not be rescheduled"); }
-  }
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{rescheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#ef3d3d] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{rescheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#C65D3A] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
 }
 
 function loadRazorpayScript(): Promise<boolean> {
@@ -4815,22 +4633,24 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
 
     if (isLive) {
       try {
-        let rzpOrder: any = null;
+        let liveRzpOrder: any = null;
         try {
           const loaded = await loadRazorpayScript();
           if (loaded && (window as unknown as { Razorpay?: unknown }).Razorpay) {
-            rzpOrder = await createLiveRazorpayOrder(order.id);
+            const rzpOrder = await createLiveRazorpayOrder(order.id);
+            liveRzpOrder = rzpOrder;
           }
         } catch {
-          rzpOrder = null;
+          liveRzpOrder = null;
         }
+        const rzpOrder = liveRzpOrder;
 
         if (!rzpOrder || !rzpOrder.keyId) {
           const saved = await markLiveOrderPaid({ orderId: order.id, method: method, reference: `SIM-${Date.now()}` });
           const transaction = recordTransaction(order, method);
           setState((s) => {
             const base = saved.snapshot
-              ? mergeLiveCommerce(s, saved.snapshot as LiveCommerceStateSnapshot, session)
+              ? mergeLiveCommerce(s, saved.snapshot as LiveCommerceStateSnapshot, { email: order.customerEmail, name: order.customerEmail, role: "customer" })
               : { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
             return {
               ...base,
@@ -4958,7 +4778,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Pay for {order.id}</DialogTitle><DialogDescription>{isLive ? "Secure checkout powered by Razorpay Test Mode. All test payment methods (UPI, Cards, Net banking) are supported." : "Simulated secure checkout for this environment. Confirming here records a real transaction and schedules the vendor payout — no external gateway is charged."}</DialogDescription></DialogHeader>
     <div className="space-y-4">
       <div className="rounded-2xl bg-[#F5EDE7] p-4 text-sm"><Review label="Order" value={order.description} /><Review label="Vendor" value={vendor?.businessName || "—"} /><Review label="Delivery address" value={order.deliveryAddress || "Not provided"} /><Review label="Amount payable" value={money(order.total)} /></div>
-      {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Payment method</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`h-11 rounded-full text-sm font-semibold ${method === item ? "bg-[#512D3A] text-white" : "bg-[#F5EDE7] text-[#4A4143]"}`}>{item}</button>)}</div></div>}
+      {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Demo Mode Simulated Payment</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`h-11 rounded-full text-sm font-semibold ${method === item ? "bg-[#512D3A] text-white" : "bg-[#F5EDE7] text-[#4A4143]"}`}>{item}</button>)}</div></div>}
       {isLive && <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex items-center gap-2"><CreditCard className="size-4 shrink-0 text-emerald-600" /><span>Test Mode: Complete payment securely using Razorpay standard checkout popup.</span></div>}
       <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full"><CreditCard />{busy ? (isLive ? "Opening Razorpay…" : "Processing…") : (isLive ? `Pay ${money(order.total)} with Razorpay` : `Pay ${money(order.total)}`)}</Button>
       <p className="rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]">Payments are processed securely. ShePlates never stores your card or UPI details.</p><p className="text-[11px] leading-5 text-stone-400">A {PLATFORM_COMMISSION_PERCENT}% platform commission is retained; the rest is scheduled to reach the vendor {PAYOUT_CYCLE_DAYS} days after collection.</p>
@@ -5650,6 +5470,7 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
     } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil />{editing ? "Close editor" : "Edit details"}</Button>} />
+    {vendor.termsAccepted === false && <section aria-label="Vendor Terms and Conditions" className="rounded-[28px] bg-[#FFF4CF] p-6 text-[#795900]"><h3 className="flex items-center gap-2 font-black"><AlertTriangle className="size-5" />Accept the Vendor Terms and Conditions</h3><p className="mt-2 text-sm leading-6">Operations cannot approve your store until you accept the ShePlates Vendor Terms and Conditions (version 1.0).</p><label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={termsTick} onChange={(e) => setTermsTick(e.target.checked)} className="mt-1 size-5 shrink-0 accent-[#512D3A]" /><span>I have read and accept the ShePlates Vendor Terms and Conditions.</span></label><Button onClick={() => void acceptTerms()} disabled={termsBusy} className="mt-4 rounded-xl bg-[#512D3A]">{termsBusy ? "Accepting…" : "Accept terms"}</Button></section>}
     <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
       {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#5ba400]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /></div>}
     </div>
@@ -6064,26 +5885,28 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
 }
 function OperationsVerification({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+  const [activeInspectPdf, setActiveInspectPdf] = useState<{ title: string; docName: string; path?: string } | null>(null);
+  const [vendorNotes, setVendorNotes] = useState<Record<string, string>>({});
+
   async function decide(vendor: Vendor, verification: Verification, note = "") {
     try {
-      if (isLiveSupabaseMode()) { await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_")); if (note.trim()) await sendVendorNote(vendor.id, note.trim()); }
-      setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x), notifications: [notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : note.trim() ? `Note from Operations: ${note.trim()}` : "Review the Operations decision in Verification."), ...s.notifications], audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit] }));
-  const [activeInspectPdf, setActiveInspectPdf] = useState<{ title: string; docName: string; path?: string } | null>(null);
-
-  async function decide(vendor: Vendor, verification: Verification) {
-    try {
-      if (isLiveSupabaseMode()) await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_"));
+      if (isLiveSupabaseMode()) {
+        await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_"));
+        if (note.trim()) await sendVendorNote(vendor.id, note.trim());
+      }
       setState((s) => ({
         ...s,
         vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x),
         notifications: [
-          notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : "Review the Operations decision in Verification."),
+          notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : note.trim() ? `Note from Operations: ${note.trim()}` : "Review the Operations decision in Verification."),
           ...s.notifications,
         ],
         audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit],
       }));
       toast.success(`${vendor.businessName}: ${verification} saved`);
-    } catch (error) { toast.error(errorMessage(error, "Verification decision could not be saved")); }
+    } catch (error) {
+      toast.error(errorMessage(error, "Verification decision could not be saved"));
+    }
   }
 
   return (
@@ -6134,6 +5957,7 @@ function OperationsVerification({ session, state, setState }: { session: DemoSes
               }
             }
 
+            const picked = vendor;
             return (
               <div key={vendor.id} className="surface-card rounded-[26px] p-5">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
@@ -6200,18 +6024,34 @@ function OperationsVerification({ session, state, setState }: { session: DemoSes
                     </div>
                   </div>
 
-                  {vendor.verification !== "Verified" && (
-                    <div className="flex flex-wrap gap-2 shrink-0 self-start">
-                      <Button variant="outline" onClick={() => void decide(vendor, "Changes required")} className="rounded-xl">
-                        Request changes
-                      </Button>
-                      <Button variant="outline" onClick={() => void decide(vendor, "Rejected")} className="rounded-xl text-red-600">
-                        Reject
-                      </Button>
-                      <Button onClick={() => void decide(vendor, "Verified")} className="rounded-xl bg-[#5ba400]">
-                        <BadgeCheck />Verify
-                      </Button>
+                  {vendor.verification !== "Verified" ? (
+                    <div className="space-y-3 shrink-0 self-start">
+                      <label className="block text-sm font-semibold text-[#404040]">
+                        Note to the vendor
+                        <textarea
+                          value={vendorNotes[vendor.id] || ""}
+                          onChange={(e) => setVendorNotes((n) => ({ ...n, [vendor.id]: e.target.value }))}
+                          maxLength={500}
+                          rows={3}
+                          placeholder="For example: please upload a clearer photo of the FSSAI page"
+                          className="mt-2 w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none"
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <Button disabled={picked.termsAccepted === false} onClick={() => { void decide(vendor, "Verified", vendorNotes[vendor.id] || ""); setVendorNotes((n) => ({ ...n, [vendor.id]: "" })); }} className="rounded-xl bg-[#5ba400]">
+                          <BadgeCheck />Approve
+                        </Button>
+                        <Button variant="outline" onClick={() => { void decide(vendor, "Changes required", vendorNotes[vendor.id] || ""); setVendorNotes((n) => ({ ...n, [vendor.id]: "" })); }} className="rounded-xl">
+                          Ask for changes
+                        </Button>
+                        <Button variant="outline" onClick={() => { void decide(vendor, "Rejected", vendorNotes[vendor.id] || ""); setVendorNotes((n) => ({ ...n, [vendor.id]: "" })); }} className="rounded-xl text-red-600">
+                          Reject
+                        </Button>
+                      </div>
+                      <p className="text-xs text-stone-500">The vendor receives your note as a notification.</p>
                     </div>
+                  ) : (
+                    <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-medium text-emerald-800">This vendor is verified and can sell.</p>
                   )}
                 </div>
               </div>

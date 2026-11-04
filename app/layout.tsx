@@ -31,6 +31,9 @@ export const metadata: Metadata = {
     shortcut: "/icon-192.png",
     apple: "/apple-touch-icon.png",
   },
+  other: {
+    "codex-preview": "development",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -360,7 +360,7 @@ setPageState("success");
   }
   className="h-12 w-full rounded-xl bg-[#C65D3A] text-sm font-black text-white hover:bg-[#A84B2C]"
 >
-  Go to {resetAudience === "team" ? "Vendor / Team" : "Customer"} sign in
+  {resetAudience === "team" ? "Go to Vendor / Team sign in" : "Go to customer sign in"}
   <ArrowRight className="size-4" />
 </Button>
               </div>

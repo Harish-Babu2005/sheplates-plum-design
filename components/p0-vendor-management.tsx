@@ -211,6 +211,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       request.append("contactPhone", form.contactPhone);
       request.append("whatsappNumber", whatsappNumber);
       request.append("durationHours", form.durationHours);
+      // durationHours: form.durationHours
       request.append("fssaiRequired", String(form.fssaiRequired));
       if (shopImage) request.append("shopImage", shopImage);
       const result = await p0Request<{ vendorId: string }>("create", request);
@@ -380,86 +381,6 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
     {isAdmin && <section className="surface-card rounded-3xl p-5">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Operations permissions</h2><span className="text-xs text-[#665B5D]">Every change is recorded in the audit log</span></div>
       <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">The person who creates a Connect vendor can never approve it. Approval needs a different team member with the Review right. Operations users have no P0 permissions until you assign them.</p>
-    {hasPermission("can_create") && <form onSubmit={(event) => void createVendor(event)} className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-black">Create a P0 Connect listing</h2>
-      <p className="mt-1 text-xs text-stone-500">Creates one unowned vendor record; it starts pending, inactive and hidden. Coordinates and WhatsApp are required for later discovery.</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
-        <div className="flex flex-col text-xs font-bold">
-          <span>Category</span>
-          <Select value={form.category} onValueChange={(value) => updateForm("category", value)}>
-            <SelectTrigger
-              aria-label="Category"
-              className="mt-1 h-[42px] w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900 outline-none focus:border-[#5ba400]"
-            >
-              <SelectValue placeholder="Select a category" />
-            </SelectTrigger>
-            <SelectContent>
-              {VENDOR_ONBOARDING_CATEGORIES.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {form.category === "Other" && (
-          <label className="text-xs font-bold sm:col-span-2">
-            Your category
-            <input
-              required
-              value={otherCategory}
-              onChange={(event) => setOtherCategory(event.target.value)}
-              className={inputClass}
-              placeholder="Enter your business category"
-            />
-          </label>
-        )}
-        <label className="text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
-        <label className="text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => {
-          updateForm("locality", event.target.value);
-          updateForm("latitude", "");
-          updateForm("longitude", "");
-        }} className={inputClass} /></label>
-        <label className="text-xs font-bold sm:col-span-2">Address<textarea value={form.address} onChange={(event) => {
-          updateForm("address", event.target.value);
-          updateForm("latitude", "");
-          updateForm("longitude", "");
-        }} className={inputClass} /></label>
-        <P0VendorLocationPicker
-          address={form.address}
-          locality={form.locality}
-          latitude={form.latitude}
-          longitude={form.longitude}
-          radiusKm={form.radius}
-          onSave={(place) => {
-            updateForm("address", place.address);
-            updateForm("latitude", String(place.latitude));
-            updateForm("longitude", String(place.longitude));
-            setNotice(`Vendor pin saved: ${place.address}`);
-          }}
-        />
-        <label className="text-xs font-bold">Latitude<input required type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateForm("latitude", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Longitude<input required type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateForm("longitude", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Service radius (km)<input required type="number" step="0.5" min="0.5" max="100" value={form.radius} onChange={(event) => updateForm("radius", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Operating duration (hours/day)<input required type="number" min="1" max="24" value={form.durationHours} onChange={(event) => updateForm("durationHours", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Shop image (optional)<input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setShopImage(event.target.files?.[0] || null)} className={inputClass} /><span className="mt-1 block font-normal text-stone-500">PNG, JPG or WebP · max 10 MB{shopImage ? ` · ${shopImage.name}` : ""}</span></label>
-        <label className="text-xs font-bold sm:col-span-2">Description<textarea value={form.description} onChange={(event) => updateForm("description", event.target.value)} className={inputClass} /></label>
-      </div>
-      <label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.fssaiRequired} onChange={(event) => updateForm("fssaiRequired", event.target.checked)} />FSSAI certificate is required for this business</label>
-      {form.fssaiRequired && <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <label className="text-xs font-bold">FSSAI number<input required value={form.fssaiNumber} onChange={(event) => updateForm("fssaiNumber", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
-        <label className="text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
-      </div>}
-      <button disabled={busy} className="mt-4 rounded-xl bg-[#5ba400] px-5 py-3 text-sm font-black text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
-    </form>}
-
-    {isAdmin && <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-black">Operations permissions</h2>
-      <p className="mt-1 text-xs text-stone-500">Operations users have no P0 permissions until Super Admin assigns them individually.</p>
       <div className="mt-4 space-y-4">
         {operationsUsers.map((user) => <div key={user.id} className="rounded-[18px] bg-[#F5EDE7] p-4">
           <div className="font-semibold">{user.full_name || "Operations user"}</div>
@@ -476,6 +397,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
         </div>)}
       </div>
     </section>}
+
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
     <section className="space-y-3 xl:order-1">
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="P0 status">{tabs.map(([name, list]) => <button key={name} type="button" role="tab" aria-selected={p0Tab === name} onClick={() => setP0Tab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${p0Tab === name ? "bg-[#512D3A] text-white" : "bg-white text-[#4A4143]"}`}>{name} · {list.length}</button>)}</div>
@@ -535,7 +457,36 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       <p className="mt-1 text-xs text-stone-500">Creates one unowned vendor record; it starts pending, inactive and hidden. Coordinates and WhatsApp are required for later discovery.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-1">
         <label className="grid content-start text-xs font-bold">Business name<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label>
-        <label className="grid content-start text-xs font-bold">Category<input required value={form.category} onChange={(event) => updateForm("category", event.target.value)} className={inputClass} /></label>
+        <div className="flex flex-col text-xs font-bold">
+          <span>Category</span>
+          <Select value={form.category} onValueChange={(value) => updateForm("category", value)}>
+            <SelectTrigger
+              aria-label="Category"
+              className="mt-1 h-[42px] w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900 outline-none focus:border-[#512D3A]"
+            >
+              <SelectValue placeholder="Select a category" />
+            </SelectTrigger>
+            <SelectContent>
+              {VENDOR_ONBOARDING_CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {form.category === "Other" && (
+          <label className="grid content-start text-xs font-bold md:col-span-2 xl:col-span-1">
+            Your category
+            <input
+              required
+              value={otherCategory}
+              onChange={(event) => setOtherCategory(event.target.value)}
+              className={inputClass}
+              placeholder="Enter your business category"
+            />
+          </label>
+        )}
         <label className="grid content-start text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
         <label className="grid content-start text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
         <label className="grid content-start text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>

@@ -220,8 +220,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     deliverySlots = [];
   }
 
-  return {
-    orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
+  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
     thirdPartyDeliveries: deliveryRequests.data || [],
     thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
     deliverySlots,
@@ -347,8 +346,12 @@ export async function POST(request: Request) {
         grouped.set(String(product.vendor_id), list);
       }
       if (!grouped.size) return NextResponse.json({ error: "The items in your cart are no longer available." }, { status: 409 });
-      const scheduledDate = String(body.scheduledDate || addDays(new Date().toISOString().slice(0, 10), 1));
-      if (!isFutureDate(scheduledDate)) return NextResponse.json({ error: "Choose a delivery date after today." }, { status: 400 });
+      const containsFoodDrop = draft.items.some((item) => Boolean(item.food_drop_id));
+      const scheduledDate = String(body.scheduledDate || (containsFoodDrop ? new Date().toISOString().slice(0, 10) : addDays(new Date().toISOString().slice(0, 10), 1)));
+      const isAllowedDate = containsFoodDrop
+        ? (/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate) && scheduledDate >= new Date().toISOString().slice(0, 10))
+        : isFutureDate(scheduledDate);
+      if (!isAllowedDate) return NextResponse.json({ error: containsFoodDrop ? "Choose today or a future delivery date." : "Choose a delivery date after today." }, { status: 400 });
       if (!withinOrderWindow(scheduledDate)) return NextResponse.json({ error: `Choose a delivery date within the next ${ORDER_WINDOW_DAYS} days.` }, { status: 400 });
       const scheduledSlot = String(body.slot || "07:00–08:00 AM");
       const vendorFulfilments = new Map<string, string>();
@@ -459,8 +462,10 @@ export async function POST(request: Request) {
     }
 
     if (action === "mark_paid") {
-      if (process.env.NEXT_PUBLIC_DEMO_MODE === "false" && Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)) {
-        return NextResponse.json({ error: "Direct payment marking is disabled when Razorpay is active. Please complete checkout via Razorpay." }, { status: 403 });
+      if (process.env.NEXT_PUBLIC_DEMO_MODE === "false") {
+        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+          return NextResponse.json({ error: "Direct payment marking is disabled in live mode when Razorpay is configured. Complete checkout via Razorpay." }, { status: 403 });
+        }
       }
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const orderId = String(body.orderId || "");
