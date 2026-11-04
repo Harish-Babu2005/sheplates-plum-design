@@ -19,15 +19,15 @@ async function openAsCustomer(page: Page) {
 
   await page.goto("/");
   await dismissTourIfOpen(page);
-  await expect(page.getByRole("button", { name: "Schedules", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Orders", exact: true }).first()).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe("Customer Orders & Live Tracking Redesign (Demo Mode)", () => {
   test("Order cards render clean e-commerce UI without embedded maps, with timeline and action buttons", async ({ page }) => {
     await openAsCustomer(page);
 
-    // Navigate to Schedules -> Orders
-    await page.getByRole("button", { name: "Schedules", exact: true }).click();
+    // Navigate to Orders
+    await page.getByRole("button", { name: "Orders", exact: true }).first().click();
     await dismissTourIfOpen(page);
 
     // Verify Heading and Dashboard Metric Cards with exact match

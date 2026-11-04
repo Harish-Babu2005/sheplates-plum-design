@@ -3,10 +3,11 @@
 // (category grid, promo, vendor rows), the Maps tab, the Food Drops tab and the
 // Schedules tab wrapper.
 import type * as React from "react";
+import type { ComponentType } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isLiveSupabaseMode, loadConnectVendorsNearby, normalizeWhatsAppNumber, trackLiveVendorWhatsAppClick, type ConnectVendor, type WhatsAppClickSource } from "@/lib/supabase";
 import { mergeMarketplaceAndConnectPins, uniqueById } from "@/lib/connect-map";
-import { BadgeCheck, List, MapPin, Search, Timer, Zap, MessageCircle } from "lucide-react";
+import { BadgeCheck, InfoIcon as Info, List, MapPin, Search, Timer, Zap, MessageCircle, Soup, BowlFood, Fish, Carrot, Basket, Croissant, ChefHat, Drop, Cookie, Sparkles, Star } from "@/components/icons";
 import { toast } from "sonner";
 import { MARKET_GROUPS } from "@/lib/market-groups";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
@@ -18,6 +19,13 @@ import type { PeopleApi } from "@/lib/people";
 import { PeopleDistanceChips, PersonRow, usePeopleQuery } from "./people";
 import { EmptyState, PhotoTile, SectionHeader, SegTabs, Stars, categoryEmoji, haversineKm, money, shortArea, useIsMobile, useTicker, vendorPhoto, vendorRating } from "./kit";
 
+/** True from 1024 px up, where the Maps tab shows the list and the map side by side (W21). */
+function useIsWide() {
+  const [wide, setWide] = useState(false);
+  useEffect(() => { const query = window.matchMedia("(min-width: 1024px)"); const update = () => setWide(query.matches); update(); query.addEventListener("change", update); return () => query.removeEventListener("change", update); }, []);
+  return wide;
+}
+
 type Coords = { latitude?: number; longitude?: number; address?: string };
 
 export function vendorDistanceKm(profile: Coords, vendor: Vendor) {
@@ -26,38 +34,46 @@ export function vendorDistanceKm(profile: Coords, vendor: Vendor) {
 
 /* ---------- Marketplace sections ---------- */
 
+const GROUP_ICON: Record<string, ComponentType<{ className?: string }>> = {
+  "Ready to Cook": Soup, Meals: BowlFood, "Meat & Seafood": Fish, "Vegetables & Fruits": Carrot, "Grocery & Staples": Basket,
+  "Bakery & Desserts": Croissant, "Home Foods": ChefHat, "Beverages & Dairy": Drop, Snacks: Cookie, "Premium & Artisan": Sparkles,
+};
+
 export function CategoryGrid({ selected, onSelect }: { selected: string; onSelect: (key: string) => void }) {
-  return <section data-tour="categories" aria-label="Browse categories" className="grid grid-cols-5 gap-x-2 gap-y-4 md:grid-cols-10">
+  return <section data-tour="categories" aria-label="Browse categories" className="sh k-chips">
     {MARKET_GROUPS.map((group) => {
       const active = selected === group.key;
-      return <button key={group.key} type="button" aria-label={group.key} aria-pressed={active} onClick={() => onSelect(active ? "All" : group.key)} className="group flex flex-col items-center gap-1.5 text-center">
-        <span className={`grid size-14 place-items-center rounded-full text-2xl shadow-sm transition group-hover:-translate-y-0.5 sm:size-16 ${active ? "ring-[3px] ring-[#e0194f] ring-offset-2" : ""}`} style={{ background: group.tint }} aria-hidden>{group.emoji}</span>
-        <span className={`text-[11px] font-bold leading-tight ${active ? "text-[#e0194f]" : "text-stone-700"}`}>{group.key}</span>
-      </button>;
+      const Icon = GROUP_ICON[group.key] ?? Sparkles;
+      return <button key={group.key} type="button" aria-label={group.key} aria-pressed={active} onClick={() => onSelect(active ? "All" : group.key)} className={`chip${active ? " on" : ""}`}><Icon className="size-5" />{group.key}</button>;
     })}
   </section>;
 }
 
 export function PromoBanner({ onShop }: { onShop: () => void }) {
-  return <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-[#1f2a1a] via-[#26331f] to-[#3a1a22] p-5 text-white sm:p-7">
-    <div className="absolute -right-6 -top-6 text-[120px] opacity-20" aria-hidden>🥬</div>
-    <div className="relative max-w-md"><h2 className="text-xl font-black tracking-[-.02em] sm:text-2xl">Fresh Local Ingredients</h2><p className="mt-1 text-sm text-white/70">From nearby stores and home kitchens</p>
-      <button type="button" onClick={onShop} className="mt-4 rounded-full bg-[#e0194f] px-5 py-2 text-sm font-black shadow-[0_10px_24px_rgba(224,25,79,.35)] transition hover:bg-[#c4123f]">Shop Now</button></div>
-  </section>;
+  return <div className="sh"><section className="promo k-promo" style={{ padding: "18px 22px" }}>
+    <div className="col" style={{ gap: 6 }}>
+      <span className="pill dark" style={{ width: "max-content" }}><Zap className="size-4" />Food Drops</span>
+      <h2 className="h2" style={{ fontSize: 24 }}>Tonight 8 PM to midnight</h2>
+      <div className="s">Surplus meals from nearby kitchens at up to 50% off</div>
+      <button type="button" onClick={onShop} className="btn xs gold" style={{ width: "max-content", marginTop: 6 }}>See today&apos;s drops</button>
+    </div>
+    <div className="k-promo-ic"><Zap className="size-10" /></div>
+  </section></div>;
 }
 
 export function VendorMiniCard({ state, vendor, profile, onOpen }: { state: V3State; vendor: Vendor; profile: Coords; onOpen: (id: string) => void }) {
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor);
-  return <button type="button" onClick={() => onOpen(vendor.id)} aria-label={`Open ${vendor.businessName}`} className="w-[150px] shrink-0 snap-start text-left sm:w-[170px]">
-    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} className="h-[110px] rounded-[22px] shadow-sm transition hover:shadow-md sm:h-[124px]" emojiSize={42} />
-    <div className="mt-2 truncate text-sm font-black">{vendor.businessName}</div>
-    <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-stone-500">{rating ? <><Stars value={rating.average} size={11} /><span>{rating.average.toFixed(1)}</span></> : <span>New</span>}{distance !== null && <span>· {distance.toFixed(1)} km</span>}</div>
+  return <button type="button" onClick={() => onOpen(vendor.id)} aria-label={`Open ${vendor.businessName}`} className="sh k-kcard snap-start text-left">
+    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} className="k-kimg" emojiSize={42} />
+    <span className="rate k-krate"><Star className="size-4" />{rating ? rating.average.toFixed(1) : "New"}</span>
+    <div className="k-kbody"><div className="h4" style={{ fontSize: 16 }}>{vendor.businessName}</div>
+      <div className="s m row g4" style={{ marginTop: 2 }}><MapPin className="size-4" />{distance !== null ? `${distance.toFixed(1)} km` : vendor.category}</div></div>
   </button>;
 }
 
 export function VendorRow({ title, vendors, state, profile, onOpen, onSeeAll }: { title: string; vendors: Vendor[]; state: V3State; profile: Coords; onOpen: (id: string) => void; onSeeAll?: () => void }) {
   if (!vendors.length) return null;
-  return <section><SectionHeader title={title} action={onSeeAll ? "See All" : undefined} onAction={onSeeAll} />
+  return <section><SectionHeader title={title} action={onSeeAll ? "See all" : undefined} onAction={onSeeAll} />
     <div className="-mx-1 mt-3 flex snap-x gap-3 overflow-x-auto px-1 pb-2 hide-scrollbar">{vendors.map((vendor) => <VendorMiniCard key={vendor.id} state={state} vendor={vendor} profile={profile} onOpen={onOpen} />)}</div>
   </section>;
 }
@@ -76,14 +92,14 @@ export function VendorCard({ state, vendor, profile, onOpen, compact = false, co
     </div>
     <div className="flex shrink-0 flex-col items-end gap-2">{vendor.openToday ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Open Now</span> : <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-black text-stone-500">Closed</span>}
       <div className="flex items-center gap-2">
-        {connectVendor && connectNumber && onContact && <button type="button" disabled={contactPending} onClick={() => onContact(connectVendor, contactSource)} className="inline-flex items-center gap-1 rounded-full bg-[#168a4a] px-3 py-1.5 text-xs font-black text-white disabled:opacity-60"><MessageCircle className="size-3" />{contactPending ? "Opening…" : "WhatsApp"}</button>}
-        <button type="button" onClick={() => onOpen(vendor.id)} className="rounded-full bg-[#e0194f] px-4 py-1.5 text-xs font-black text-white transition hover:bg-[#c4123f]">View</button>
+        {connectVendor && connectNumber && onContact && <button type="button" disabled={contactPending} onClick={() => onContact(connectVendor, contactSource)} className="inline-flex items-center gap-1 rounded-full bg-[#C65D3A] px-3 py-1.5 text-xs font-black text-white disabled:opacity-60"><MessageCircle className="size-3" />{contactPending ? "Opening…" : "WhatsApp"}</button>}
+        <button type="button" onClick={() => onOpen(vendor.id)} className="rounded-full bg-[#C65D3A] px-4 py-1.5 text-xs font-black text-white transition hover:bg-[#C65D3A]">View</button>
       </div></div>
   </div>;
 }
 
 function ConnectVendorCard({ vendor, selected, onSelect }: { vendor: ConnectVendor; selected: boolean; onSelect: () => void }) {
-  return <button type="button" onClick={onSelect} aria-pressed={selected} className={`flex w-full items-center gap-3 rounded-[22px] border bg-white p-3 text-left shadow-sm transition sm:p-4 ${selected ? "border-[#e0194f] ring-2 ring-[#fbd0dc]" : "border-stone-200/70 hover:border-[#f4a3b9]"}`}>
+  return <button type="button" onClick={onSelect} aria-pressed={selected} className={`flex w-full items-center gap-3 rounded-[22px] border bg-white p-3 text-left shadow-sm transition sm:p-4 ${selected ? "border-[#512D3A] ring-2 ring-[#E6D2DA]" : "border-stone-200/70 hover:border-[#E6D2DA]"}`}>
     <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
     <span className="min-w-0 flex-1">
       <span className="block truncate font-black">{vendor.vendor_name}</span>
@@ -106,7 +122,7 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
   const whatsappUrl = whatsappNumber
     ? `https://wa.me/${whatsappNumber.slice(1)}?text=${encodeURIComponent(`Hi ${vendor.vendor_name}, I found your business on ShePlates and would like to enquire.`)}`
     : null;
-  return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-[22px] border border-[#f4a3b9] bg-white p-4 shadow-sm sm:p-5">
+  return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-3xl bg-white p-4 ring-2 ring-[#512D3A] sm:p-5">
     <div className="flex items-start gap-3">
       <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} className="size-16 shrink-0 rounded-2xl" emojiSize={28} />
       <div className="min-w-0 flex-1">
@@ -115,9 +131,11 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
         <p className="mt-1 text-xs text-stone-500">{vendor.address || vendor.locality || "Address unavailable"}</p>
       </div>
     </div>
+    <div className="mt-3 flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]"><BadgeCheck className="size-4" />Verified by ShePlates</span>{typeof durationHours === "number" && Number.isFinite(durationHours) && <span className="rounded-full bg-[#F5EDE7] px-3 py-1 text-xs font-semibold">Open about {durationHours} hours a day</span>}</div>
     {vendor.description && <p className="mt-3 text-sm leading-6 text-stone-600">{vendor.description}</p>}
     {typeof durationHours === "number" && Number.isFinite(durationHours) && <p className="mt-2 text-xs text-stone-500">Operating duration: {durationHours} hours (schedule not specified)</p>}
-    {whatsappUrl && <button type="button" disabled={contactPending} onClick={() => onContact(vendor, source)} className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#168a4a] px-4 py-2.5 text-sm font-black text-white transition hover:bg-[#11733d] disabled:cursor-wait disabled:opacity-70"><MessageCircle className="size-4" />{contactPending ? "Opening WhatsApp…" : "Contact on WhatsApp"}</button>}
+    {whatsappUrl && <button type="button" disabled={contactPending} onClick={() => onContact(vendor, source)} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-[15px] font-bold text-[#292526] transition hover:bg-[#1fb957] disabled:cursor-wait disabled:opacity-70"><MessageCircle className="size-5" />{contactPending ? "Opening WhatsApp…" : "Contact on WhatsApp"}</button>}
+    <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">This kitchen takes orders directly on WhatsApp. These orders are arranged with the kitchen and are not paid through ShePlates.</p>
   </section>;
 }
 
@@ -135,12 +153,13 @@ function LazyMap(props: React.ComponentProps<typeof NearbyVendorsMapComponent>) 
   return <Component {...props} />;
 }
 
-export function MapsTab({ state, profile, social, shorts, people, peopleRadius, onPeopleRadius, onOpenShorts, locationConfirmed, onOpenVendor, onConfirmLocation }: {
+export function MapsTab({ state, profile, social, shorts, people, peopleRadius, onPeopleRadius, onOpenShorts, locationConfirmed, onOpenVendor, onConfirmLocation, initialTab }: {
+  initialTab?: "People";
   shorts: ShortsApi; people: PeopleApi; peopleRadius: number; onPeopleRadius: (km: number) => void; onOpenShorts: (list: FoodShort[], index: number) => void;
   state: V3State; profile: Coords; social: SocialApi; locationConfirmed: boolean;
   onOpenVendor: (id: string) => void; onConfirmLocation: () => void;
 }) {
-  const [tab, setTab] = useState<MapTab>("Nearby");
+  const [tab, setTab] = useState<MapTab>(initialTab ?? "Nearby");
   const [view, setView] = useState<"map" | "list">("map");
   const [vendorRadius, setVendorRadius] = useState(10);
   const [radiusLoaded, setRadiusLoaded] = useState(false);
@@ -150,6 +169,7 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
   const [pendingWhatsAppVendorId, setPendingWhatsAppVendorId] = useState<string | null>(null);
   const whatsappClickLocks = useRef(new Set<string>());
   const mobile = useIsMobile();
+  const wide = useIsWide();
   const onPeople = tab === "People";
   const [connectLoad, setConnectLoad] = useState<
     | { locationKey: string; status: "loading" }
@@ -354,38 +374,51 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
   }
   const mapPeople: MapPerson[] | undefined = onPeople ? nearbyPeople.flatMap((p) => (p.pin ? [{ id: p.id, handle: p.handle, lat: p.pin.lat, lng: p.pin.lng, distanceKm: p.distanceKm ?? 0, following: p.following, hasStatus: p.hasStatus }] : [])) : undefined;
 
-  if (!locationConfirmed) return <EmptyState emoji="📍" title="Confirm your location to see the map" body="We match vendors to your exact delivery pin, so the map only appears once it's set." action={<button type="button" onClick={onConfirmLocation} className="rounded-full bg-[#e0194f] px-5 py-2 text-sm font-black text-white">Set my location</button>} />;
+  if (!locationConfirmed) return <EmptyState emoji="📍" title="Confirm your location to see the map" body="We match vendors to your exact delivery pin, so the map only appears once it's set." action={<button type="button" onClick={onConfirmLocation} className="rounded-full bg-[#C65D3A] px-5 py-2 text-sm font-black text-white">Set my location</button>} />;
 
-  return <div className="space-y-4">
+  return <div className={wide ? "k-maps space-y-4" : "space-y-4"}>
     <div className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-3.5 py-3 shadow-sm"><Search className="size-4 text-stone-400" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={onPeople ? "Search people on the map by handle" : "Search vendors on the map"} aria-label={onPeople ? "Search people on the map" : "Search vendors on the map"} className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
     <SegTabs tabs={MAP_TABS} value={tab} onChange={(next) => { setTab(next); setSelectedId(""); }} />
     {onPeople && <div className="space-y-2">
       <PeopleDistanceChips value={peopleRadius} onChange={onPeopleRadius} />
       <div role="tablist" aria-label="Who to show" className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">{PEOPLE_FILTERS.map((f) => <button key={f} role="tab" type="button" aria-selected={f === peopleFilter} onClick={() => setPeopleFilter(f)} className={`shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-bold transition ${f === peopleFilter ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white text-stone-600 hover:border-stone-400"}`}>{f}</button>)}</div>
     </div>}
-    {view === "map" ? <div className="overflow-hidden rounded-[26px] shadow-[0_18px_50px_rgba(35,10,20,.12)]">
+    {(view === "map" || wide) && <div className="k-maps-map overflow-hidden rounded-[28px]">
       <LazyMap customerLat={profile.latitude!} customerLng={profile.longitude!} vendors={mapVendors} radiusKm={radius} onRadiusChange={setRadius} height={mobile ? 330 : 460} photoPins selectedId={selectedMapVendor?.id} onPinClick={setSelectedId}
         people={mapPeople} selectedPersonId={selectedPerson?.id} onPersonClick={setSelectedId} />
-    </div> : onPeople ? <div className="space-y-2" data-testid="people-list">{nearbyPeople.map((p) => <PersonRow key={p.id} person={p} selected={p.id === selectedPerson?.id} onSelect={() => setSelectedId(p.id)} onFollow={people.follow} onUnfollow={people.unfollow} />)}</div>
+    </div>}
+    {(view === "list" || wide) && (onPeople ? <div className="space-y-2" data-testid="people-list">{nearbyPeople.map((p) => <PersonRow key={p.id} person={p} selected={p.id === selectedPerson?.id} onSelect={() => setSelectedId(p.id)} onFollow={people.follow} onUnfollow={people.unfollow} />)}</div>
       : <div className="space-y-3">{rows.map((r) => {
         const connectVendor = connectRows.find((item) => item.vendor_id === r.vendor.id);
         return <VendorCard key={r.vendor.id} state={state} vendor={r.vendor} profile={profile} onOpen={onOpenVendor} connectVendor={connectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === r.vendor.id} contactSource="search" />;
-      })}{connectRows.filter((vendor) => !rows.some((row) => row.vendor.id === vendor.vendor_id)).map((vendor) => <ConnectVendorCard key={vendor.vendor_id} vendor={vendor} selected={vendor.vendor_id === selectedId} onSelect={() => setSelectedId(vendor.vendor_id)} />)}</div>}
+      })}{connectRows.filter((vendor) => !rows.some((row) => row.vendor.id === vendor.vendor_id)).map((vendor) => <ConnectVendorCard key={vendor.vendor_id} vendor={vendor} selected={vendor.vendor_id === selectedId} onSelect={() => setSelectedId(vendor.vendor_id)} />)}</div>)}
     {!onPeople && view === "list" && selectedConnectVendor && <ConnectVendorDetails vendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedConnectVendor.vendor_id} source="search" />}
     {!onPeople && connectLoading && <p role="status" className="text-sm font-bold text-stone-500">Loading nearby direct-contact vendors…</p>}
     {!onPeople && connectError && <p role="alert" className="text-sm font-bold text-red-600">{connectError}</p>}
     {onPeople ? (view === "map" && (selectedPerson ? <PersonRow person={selectedPerson} onFollow={people.follow} onUnfollow={people.unfollow} />
       : peopleQuery.error ? <p role="alert" className="text-sm font-bold text-red-600">{peopleQuery.error}</p>
         : !peopleQuery.loading && <EmptyState emoji="🧭" title={peopleFilter === "Following" ? "Nobody you follow is on the map here" : `Nobody on the map within ${peopleRadius} km`} body="People appear here only when they choose to be on the map. Try a wider distance, or search a handle from Stories." />))
-      : view === "map" && (selectedMarketplaceVendor ? <div className="space-y-2"><VendorCard state={state} vendor={selectedMarketplaceVendor.vendor} profile={profile} onOpen={onOpenVendor} connectVendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedMarketplaceVendor.vendor.id} contactSource={query.trim() ? "search" : "map"} />{(() => { const list = shortsByVendor.get(selectedMarketplaceVendor.vendor.id) || []; return list.length ? <button type="button" onClick={() => onOpenShorts(list, 0)} data-testid="watch-shorts" className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#f4a3b9] bg-[#fff1f5] px-4 py-3 text-sm font-black text-[#e0194f] transition hover:bg-[#ffe3ec]">▶ Watch {list.length} Food Short{list.length === 1 ? "" : "s"} from {selectedMarketplaceVendor.vendor.businessName}</button> : null; })()}</div> : selectedConnectVendor ? <ConnectVendorDetails vendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedConnectVendor.vendor_id} source={query.trim() ? "search" : "map"} /> : connectLoading ? null : connectError ? null : <EmptyState emoji={tab === "Following" ? "💛" : tab === "Shorts" ? "🎬" : "🗺️"} title={tab === "Following" ? "You're not following any vendors yet" : tab === "Shorts" ? "No Food Shorts in this range" : "No vendors in this range"} body={tab === "Following" ? "Open a vendor and tap Follow — they'll show up here and in your Following feed." : tab === "Shorts" ? "Vendors with a Food Short that reaches you appear here. Try widening the radius with the + button." : "Try widening the radius with the + button."} />)}
+      : view === "map" && (selectedMarketplaceVendor ? <div className="space-y-2"><VendorCard state={state} vendor={selectedMarketplaceVendor.vendor} profile={profile} onOpen={onOpenVendor} connectVendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedMarketplaceVendor.vendor.id} contactSource={query.trim() ? "search" : "map"} />{(() => { const list = shortsByVendor.get(selectedMarketplaceVendor.vendor.id) || []; return list.length ? <button type="button" onClick={() => onOpenShorts(list, 0)} data-testid="watch-shorts" className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#E6D2DA] bg-[#F2E8EC] px-4 py-3 text-sm font-black text-[#512D3A] transition hover:bg-[#F2E8EC]">▶ Watch {list.length} Food Short{list.length === 1 ? "" : "s"} from {selectedMarketplaceVendor.vendor.businessName}</button> : null; })()}</div> : selectedConnectVendor ? <ConnectVendorDetails vendor={selectedConnectVendor} onContact={contactConnectVendor} contactPending={pendingWhatsAppVendorId === selectedConnectVendor.vendor_id} source={query.trim() ? "search" : "map"} /> : connectLoading ? null : connectError ? null : <EmptyState emoji={tab === "Following" ? "💛" : tab === "Shorts" ? "🎬" : "🗺️"} title={tab === "Following" ? "You're not following any vendors yet" : tab === "Shorts" ? "No Food Shorts in this range" : "No vendors in this range"} body={tab === "Following" ? "Open a vendor and tap Follow — they'll show up here and in your Following feed." : tab === "Shorts" ? "Vendors with a Food Short that reaches you appear here. Try widening the radius with the + button." : "Try widening the radius with the + button."} />)}
     {onPeople && <p className="px-1 text-[11px] font-bold text-stone-400">Shown to the nearest half kilometre. You appear here only if you switch on “Let people nearby find me” in your profile.</p>}
-    <div className="flex justify-center"><button type="button" onClick={() => setView((v) => (v === "map" ? "list" : "map"))} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2 text-sm font-black shadow-sm transition hover:border-[#f4a3b9]">{view === "map" ? <><List className="size-4" />List ({onPeople ? nearbyPeople.length : mapVendors.length})</> : <><MapPin className="size-4" />Map</>}</button></div>
+    {!wide && <div className="flex justify-center"><button type="button" onClick={() => setView((v) => (v === "map" ? "list" : "map"))} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2 text-sm font-black shadow-sm transition hover:border-[#E6D2DA]">{view === "map" ? <><List className="size-4" />List ({onPeople ? nearbyPeople.length : mapVendors.length})</> : <><MapPin className="size-4" />Map</>}</button></div>}
   </div>;
 }
 
 /* ---------- Food Drops tab ---------- */
 
 type DropScope = "Nearby" | "Following" | "Trending" | "Across City";
+
+/** Live window banner (W17): counts down to midnight IST while Food Drops are open, or to 8 PM otherwise. */
+function DropWindowBanner() {
+  const now = useTicker();
+  const ist = new Date(now + 5.5 * 3600_000);
+  const sec = ist.getUTCHours() * 3600 + ist.getUTCMinutes() * 60 + ist.getUTCSeconds();
+  const live = sec >= 20 * 3600;
+  const remaining = live ? 86400 - sec : 20 * 3600 - sec;
+  const clock = [Math.floor(remaining / 3600), Math.floor((remaining % 3600) / 60), remaining % 60].map((n) => String(n).padStart(2, "0")).join(":");
+  return <div className="flex items-center justify-between gap-4 rounded-[28px] bg-[#512D3A] px-6 py-5 text-white"><div><div className="text-xs text-white/80">{live ? "Live now · closes at midnight" : "Opens at 8 PM"}</div><div className="text-[40px] font-bold leading-tight tabular-nums text-[#D9B879]" aria-label="Time left">{clock}</div></div><span className="grid size-14 shrink-0 place-items-center rounded-full bg-[#512D3A] text-white"><Timer className="size-7" /></span></div>;
+}
+
 const DROP_SCOPES = ["Nearby", "Following", "Trending", "Across City"] as const;
 
 function dropTag(drop: FoodDrop) {
@@ -405,9 +438,9 @@ function DropCard({ drop, state, profile, onClaim }: { drop: FoodDrop; state: V3
   const left = drop.remainingQuantity; const urgent = schedule.endsAt.getTime() - now < 3_600_000;
   return <article className="overflow-hidden rounded-[26px] border border-stone-200/70 bg-white shadow-sm">
     <PhotoTile imageUrl={product?.imageUrl} category={product?.category} className="h-48 sm:h-52" emojiSize={64}>
-      <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black text-white shadow-lg ${status === "live" && urgent ? "bg-[#e0194f]" : "bg-[#171914]/85"}`}><Timer className="size-3.5" /><span>{status === "live" ? <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">LIVE · Closes in</span>{formatCountdown(schedule.endsAt.toISOString(), new Date(now))}</> : <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">Scheduled</span>Starts at 8:00 PM</>}</span></span>
-      {tag && <span className="absolute right-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-black text-[#c4123f] shadow">{tag}</span>}
-      <span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-black text-[#e0194f] shadow">{discountPercent(drop)}% off</span>
+      <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black text-white shadow-lg ${status === "live" && urgent ? "bg-[#512D3A]" : "bg-[#292526]/85"}`}><Timer className="size-3.5" /><span>{status === "live" ? <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">LIVE · Closes in</span>{formatCountdown(schedule.endsAt.toISOString(), new Date(now))}</> : <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">Scheduled</span>Starts at 8:00 PM</>}</span></span>
+      {tag && <span className="absolute right-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-black text-[#512D3A] shadow">{tag}</span>}
+      <span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-black text-[#512D3A] shadow">{discountPercent(drop)}% off</span>
     </PhotoTile>
     <div className="p-4"><h3 className="font-black leading-snug">{drop.title}</h3>
       <p className="mt-0.5 text-xs font-bold text-stone-500">{vendor?.businessName || "Local vendor"}{distance !== null ? ` · ${distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}` : ""}</p>
@@ -415,7 +448,7 @@ function DropCard({ drop, state, profile, onClaim }: { drop: FoodDrop; state: V3
         <div><div className="flex items-baseline gap-2"><span className="text-xl font-black">{money(drop.dropPrice)}</span><span className="text-xs font-bold text-stone-400 line-through">{money(drop.originalPrice)}</span></div><div className="mt-0.5 text-xs font-bold text-stone-500">{left} pack{left === 1 ? "" : "s"} left</div></div>
         <button type="button" disabled={busy || left <= 0 || status !== "live"} onClick={async () => { setBusy(true); try { await onClaim(drop, 1); } finally { setBusy(false); } }} className="rounded-full bg-[#e0194f] px-6 py-2.5 text-sm font-black text-white shadow-[0_10px_24px_rgba(224,25,79,.3)] transition hover:bg-[#c4123f] disabled:opacity-50">{busy ? "Adding…" : status === "live" ? "Add to cart" : "Available at 8 PM"}</button>
       </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-[#e0194f]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-[#512D3A]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
     </div>
   </article>;
 }
@@ -433,13 +466,15 @@ export function FoodDropsTab({ state, profile, social, onClaim, onRefresh }: { s
     return [...live].sort((a, b) => new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime());
   }, [state.foodDrops, state.vendors, scope, social.followed, profile]);
   return <div className="space-y-4">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-2"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#fff0f4] text-[#e0194f]"><Zap className="size-5" /></span><div><h1 className="text-xl font-black tracking-[-.02em]">Food Drops</h1><p className="text-xs font-bold text-stone-500">Surplus and limited batches from local vendors — while they last.</p></div></div>
-      <p className="rounded-2xl border border-[#f4d8df] bg-[#fff7f8] px-4 py-3 text-sm font-bold leading-relaxed text-[#8f2943] sm:max-w-fit">🕗 Food Drops: 8:00 PM – 12:00 AM IST | Grab your favourite deals every evening!</p>
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div><h1 className="text-[28px] font-bold leading-tight">Food Drops</h1><p className="mt-1 text-sm text-[#665B5D]">Surplus and limited batches from kitchens you can reach, every evening from 8 PM to midnight.</p></div>
+      <span className="inline-flex w-max items-center gap-2 rounded-full bg-[#F2E8EC] px-3 py-1.5 text-xs font-semibold text-[#512D3A]"><span className="size-2 rounded-full bg-[#512D3A]" />8 PM to midnight</span>
     </div>
+    <DropWindowBanner />
     <SegTabs tabs={DROP_SCOPES} value={scope} onChange={setScope} />
     {drops.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{drops.map((drop) => <DropCard key={drop.id} drop={drop} state={state} profile={profile} onClaim={onClaim} />)}</div>
       : <EmptyState emoji={scope === "Following" ? "💛" : "⚡"} title={scope === "Following" ? "No drops from vendors you follow" : "No drops here right now"} body={scope === "Following" ? "Follow vendors from their profile and their drops land here first." : "Vendors post drops when they have surplus or a limited batch. Check back soon, or try Across City."} />}
+    <div className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><Info className="mt-0.5 size-5 shrink-0" />A Food Drop can be claimed only on the evening it is created, between 8 PM and midnight IST.</div>
   </div>;
 }
 
@@ -455,24 +490,6 @@ export function SchedulesTab({
   orders: React.ReactNode;
   subscriptions: React.ReactNode;
 }) {
-  const [tab, setTab] = useState<"Orders" | "Subscriptions">(initial);
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-black tracking-[-.02em]">
-          My Schedules
-        </h1>
-      </div>
-
-      <SegTabs
-        tabs={["Orders", "Subscriptions"] as const}
-        value={tab}
-        onChange={setTab}
-        className="[&_button]:flex-1 [&_button]:rounded-xl"
-      />
-
-      {tab === "Orders" ? orders : subscriptions}
-    </div>
-  );
+  // Orders and Schedules are separate pages in the menu (W14 / W16), so each shows only its own content.
+  return <>{initial === "Orders" ? orders : subscriptions}</>;
 }

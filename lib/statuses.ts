@@ -236,7 +236,14 @@ export function useStatuses(user: PeopleUser & { handle: string }, people: Peopl
     return out;
   }, [mode]);
 
-  return { mode, groups, mine, post, markViewed, toggleLike, remove, viewers, refresh: loadRemote, ttlHours: STATUS_TTL_MS / 3_600_000 };
+  // A customer reports somebody else's status. Remote: stored for Operations (V9_13_STORIES_MONITOR.sql). Local demo: nothing to send.
+  const report = useCallback(async (id: string, reason: string) => {
+    if (mode !== "remote") return;
+    const res = await getSupabaseBrowserClient()?.rpc("report_status", { p_status: id, p_reason: reason });
+    if (res?.error) throw new Error(/function .* does not exist|schema cache/i.test(res.error.message) ? "Reporting is not switched on yet" : res.error.message);
+  }, [mode]);
+
+  return { mode, groups, mine, post, markViewed, toggleLike, remove, viewers, report, refresh: loadRemote, ttlHours: STATUS_TTL_MS / 3_600_000 };
 }
 
 export type StatusesApi = ReturnType<typeof useStatuses>;

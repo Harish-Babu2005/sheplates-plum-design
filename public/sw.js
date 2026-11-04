@@ -12,10 +12,12 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(fetch(event.request).then((response) => {
-    const copy = response.clone();
-    caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+    if (response.ok) {
+      const copy = response.clone();
+      caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
+    }
     return response;
-  }).catch(() => caches.match(event.request).then((cached) => cached || caches.match("/"))));
+  }).catch(() => caches.match(event.request).then((cached) => cached || (event.request.mode === "navigate" ? caches.match("/") : undefined)).then((found) => found || Response.error())));
 });
 
 self.addEventListener("push", (event) => {

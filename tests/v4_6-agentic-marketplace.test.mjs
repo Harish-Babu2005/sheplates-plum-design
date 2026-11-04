@@ -9,7 +9,7 @@ const migration = fs.readFileSync(new URL("../supabase/V4_6_AGENTIC_COMMERCE.sql
 const imageRoute = fs.readFileSync(new URL("../app/api/image-enhance/route.ts", import.meta.url), "utf8");
 
 test("customer marketplace is clean, searchable and recommendation-first", () => {
-  assert.match(app, /role === "customer" \? <main/);
+  assert.match(app, /role === "customer" \? <><main/);
   assert.match(app, /Planning period/);
   assert.match(app, /Max calories \/ pack/);
   assert.match(app, /Min protein/);

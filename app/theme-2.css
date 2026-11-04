@@ -1,0 +1,743 @@
+/*
+ * ShePlates theme: Outfit, plum identity with terracotta actions and gold highlights, flat surfaces, pill controls, 24px cards.
+ * Loaded last, so it re-points every earlier colour family (--sp-*, --sp7-*, --sp71-*, --sp72-*) at the semantic tokens below
+ * and flattens the older glass, gradient and shadow treatments. One look for all four roles.
+ */
+@font-face {
+  font-family: "Outfit";
+  src: url("/fonts/Outfit-Variable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+ * Semantic brand tokens. Every colour in the app resolves to one of these roles.
+ *   plum        identity, navigation, headings, selected states, dark panels
+ *   terracotta  primary actions and purchase controls
+ *   gold        selective highlights only (never body text on light grounds)
+ * Status colours (success, warning, destructive, info) are deliberately NOT brand colours.
+ */
+:root,
+html.theme-customer {
+  /* Brand identity */
+  --brand-primary: #512D3A;
+  --brand-primary-hover: #40222E;
+  --brand-secondary: #C65D3A;
+  --brand-secondary-hover: #A84B2C;
+  --brand-accent: #D9B879;
+
+  /* Surfaces */
+  --background: #FAF7F2;
+  --card: #FFFFFF;
+  --surface-soft: #F5EDE7;
+  --surface-soft-2: #EDE2DA;
+  --border: #E9DDD5;
+
+  /* Typography */
+  --foreground: #292526;
+  --text-body: #4A4143;
+  --text-secondary: #665B5D;
+  --text-muted: #756B6C;
+
+  /* Interaction */
+  --action-primary: var(--brand-secondary);
+  --action-hover: var(--brand-secondary-hover);
+  --selected: var(--brand-primary);
+  --selected-soft: #F2E8EC;
+  --selected-soft-strong: #E6D2DA;
+  --focus-ring: var(--brand-primary);
+  --on-brand: #FFFFFF;
+
+  /* Status (not brand colours) */
+  --success: #26834A;
+  --success-text: #21683B;
+  --success-bg: #EAF5EC;
+  --warning: #795900;
+  --warning-bg: #FFF4CF;
+  --destructive: #B42332;
+  --destructive-bg: #FDECEF;
+  --info: #285FBA;
+  --info-bg: #EDF3FD;
+
+  --font-sans: "Outfit", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-card: 24px;
+  --radius-control: 999px;
+  --radius: 1.5rem;
+
+  /* Kit aliases (design-kit.css and the older board classes read these names) */
+  --o: var(--brand-primary);
+  --o-d: var(--brand-primary-hover);
+  --o-t: var(--selected-soft);
+  --o-t2: var(--selected-soft-strong);
+  --ot: var(--brand-primary);
+  --act: var(--action-primary);
+  --act-d: var(--action-hover);
+  --gold: var(--brand-accent);
+  --ink: var(--foreground);
+  --ink-2: var(--text-body);
+  --mut: var(--text-secondary);
+  --ph: var(--text-muted);
+  --dis: #B9AEA9;
+  --surf: var(--surface-soft);
+  --surf-2: var(--surface-soft-2);
+  --line: var(--border);
+  --ok: var(--success);
+  --ok-t: var(--success-text);
+  --ok-bg: var(--success-bg);
+  --warn-bg: var(--warning-bg);
+  --warn-t: var(--warning);
+  --bad-t: var(--destructive);
+  --bad-bg: var(--destructive-bg);
+  --info-bg: #EDF3FD;
+
+  /* shadcn semantic variables */
+  --card-foreground: var(--foreground);
+  --popover: #FFFFFF;
+  --popover-foreground: var(--foreground);
+  --primary: var(--action-primary);
+  --primary-foreground: #FFFFFF;
+  --secondary: var(--surface-soft);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-soft);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--selected-soft);
+  --accent-foreground: var(--foreground);
+  --input: var(--border);
+  --ring: var(--focus-ring);
+  --chart-1: #512D3A;
+  --chart-2: #C65D3A;
+  --chart-3: #D9B879;
+  --chart-4: #7F9A6A;
+  --chart-5: #285FBA;
+  --sidebar: var(--brand-primary);
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-primary: var(--brand-secondary);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: var(--brand-primary-hover);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #6A4452;
+  --sidebar-ring: var(--brand-accent);
+
+  /* Legacy families (--sp-*, --sp7-*, --sp71-*, --sp72-*): each keeps its meaning but points at a semantic role.
+     Green/coral/orange names are historical. Nothing here maps every family to one colour. */
+  --sp-ink: var(--foreground);
+  --sp-ink-soft: var(--text-body);
+  --sp-cream: var(--background);
+  --sp-paper: var(--card);
+  --sp-green: var(--brand-primary);
+  --sp-green-deep: var(--brand-primary-hover);
+  --sp-green-soft: var(--selected-soft);
+  --sp-coral: var(--brand-secondary);
+  --sp-coral-soft: #F8E7DF;
+  --sp-border: var(--border);
+  --sp-shadow-sm: none;
+  --sp-shadow-md: none;
+  --sp-shadow-lg: 0 18px 48px rgba(41, 37, 38, 0.14);
+
+  --sp7-orange: var(--brand-secondary);
+  --sp7-orange-strong: var(--brand-secondary-hover);
+  --sp7-orange-soft: #F8E7DF;
+  --sp7-green: var(--brand-primary);
+  --sp7-green-soft: var(--selected-soft);
+  --sp7-ink: var(--foreground);
+  --sp7-ink-2: var(--text-body);
+  --sp7-muted: var(--text-secondary);
+  --sp7-bg: var(--background);
+  --sp7-paper: var(--card);
+  --sp7-line: var(--border);
+  --sp7-line-strong: var(--border);
+  --sp7-shadow-1: none;
+  --sp7-shadow-2: none;
+  --sp7-shadow-3: 0 18px 48px rgba(41, 37, 38, 0.14);
+
+  --sp71-glass: var(--card);
+  --sp71-glass-strong: var(--card);
+  --sp71-glass-soft: var(--surface-soft);
+  --sp71-glass-dark: var(--brand-primary);
+  --sp71-hairline: var(--border);
+  --sp71-line: var(--border);
+  --sp71-shadow: none;
+  --sp71-shadow-float: 0 18px 48px rgba(41, 37, 38, 0.14);
+  --sp71-blur: 0px;
+
+  --sp72-green: var(--brand-primary);
+  --sp72-green-strong: var(--brand-primary-hover);
+  --sp72-green-soft: var(--selected-soft);
+  --sp72-lime: var(--brand-accent);
+  --sp72-ink: var(--foreground);
+  --sp72-muted: var(--text-secondary);
+  --sp72-paper: var(--card);
+  --sp72-bg: var(--background);
+  --sp72-line: var(--border);
+  --sp72-shadow-sm: none;
+  --sp72-shadow-md: none;
+  --sp72-shadow-lg: 0 18px 48px rgba(41, 37, 38, 0.14);
+}
+
+@theme inline {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html body {
+  font-family: "Outfit", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+}
+html body * {
+  font-family: inherit;
+}
+html body .font-mono,
+html body code,
+html body pre,
+html body kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+html ::selection {
+  background: var(--selected-soft-strong);
+  color: var(--foreground);
+}
+
+/* ---- page grounds: flat, no glow ---- */
+html .app-shell-bg,
+html .sp-v7.app-shell-bg,
+html .sp-entry.app-shell-bg,
+html.theme-customer .app-shell-bg,
+html.theme-customer .sp-v7.app-shell-bg,
+html.theme-customer .sp-entry.app-shell-bg {
+  background: var(--background);
+}
+html body,
+html.theme-customer body {
+  background: var(--background);
+}
+
+/* ---- surfaces: flat cards, 24px radius, hairline instead of shadow ---- */
+html .surface-card,
+html .sp-v7 .surface-card,
+html.theme-customer .sp-v7 .surface-card {
+  border: 0 !important;
+  background: var(--card) !important;
+  box-shadow: inset 0 0 0 1px var(--border) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html .surface-card-muted,
+html .sp-v7 .surface-card-muted,
+html.theme-customer .sp-v7 .surface-card-muted {
+  border: 0 !important;
+  background: var(--surface-soft) !important;
+  box-shadow: none !important;
+}
+html .glass,
+html .sp-glass {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: var(--border) !important;
+}
+html .surface-dark,
+html.theme-customer .surface-dark,
+html .section-hero,
+html.theme-customer .section-hero,
+html .sp-agent-preview .surface-dark,
+html.theme-customer .sp-agent-preview .surface-dark {
+  border: 0;
+  background: var(--brand-primary) !important;
+  box-shadow: none;
+  color: #ffffff;
+}
+html .soft-chip,
+html.theme-customer .soft-chip {
+  border: 0;
+  border-radius: 999px;
+  background: var(--selected-soft);
+  color: var(--brand-primary);
+}
+html .food-shadow {
+  box-shadow: none;
+}
+html .brand-grid {
+  background-image: none;
+}
+
+/* ---- header and navigation ---- */
+html .sp-v7 .sp-app-header,
+html.theme-customer .sp-v7 .sp-app-header {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 1px solid var(--border) !important;
+  box-shadow: none !important;
+}
+html .nav-shell,
+html.theme-customer .nav-shell,
+html .sp-v7 .sp-portal-sidebar,
+html.theme-customer .sp-v7 .sp-portal-sidebar {
+  background: var(--brand-primary) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html .nav-item {
+  color: rgba(255, 255, 255, 0.72);
+  border: 0;
+  border-radius: 999px;
+}
+html .nav-item:hover,
+html .sp-v7 .sp-portal-sidebar .nav-item:hover,
+html.theme-customer .sp-v7 .sp-portal-sidebar .nav-item:hover {
+  background: var(--brand-primary-hover) !important;
+  color: #ffffff;
+}
+html .nav-item-active,
+html.theme-customer .nav-item-active,
+html .sp-portal-sidebar .nav-item-active,
+html.theme-customer .sp-portal-sidebar .nav-item-active,
+html .sp-v7 .sp-portal-sidebar .nav-item-active {
+  background: var(--brand-secondary) !important;
+  color: var(--on-brand) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+html .nav-item-active svg {
+  color: var(--on-brand);
+}
+
+/* mobile bottom bar: a floating plum pill, agent button in gold */
+html .sp-mobile-bottom-nav,
+html.theme-customer .sp-mobile-bottom-nav,
+html .sp-v7 .sp-mobile-bottom-nav,
+html.theme-customer .sp-v7 .sp-mobile-bottom-nav {
+  background: var(--brand-primary) !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  box-shadow: 0 14px 36px rgba(41, 37, 38, 0.28) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html .sp-mobile-bottom-nav .sp-nav-agent,
+html.theme-customer .sp-mobile-bottom-nav .sp-nav-agent {
+  background: var(--brand-accent) !important;
+  color: var(--brand-primary) !important;
+  box-shadow: none !important;
+}
+
+/* ---- inputs: soft cream pills, plum tint and ring on focus ---- */
+html [data-slot="input"],
+html [data-slot="select-trigger"],
+html .input,
+html .entry-input,
+html .sp-v7 [data-slot="input"],
+html .sp-v7 [data-slot="select-trigger"] {
+  min-height: 48px;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--surface-soft) !important;
+  color: var(--foreground);
+  box-shadow: none !important;
+  padding-inline: 1.1rem;
+}
+html [data-slot="input"]::placeholder,
+html .input::placeholder,
+html .entry-input::placeholder {
+  color: var(--text-secondary);
+}
+html [data-slot="input"]:focus,
+html [data-slot="input"]:focus-visible,
+html [data-slot="select-trigger"]:focus,
+html [data-slot="select-trigger"]:focus-visible,
+html .input:focus,
+html .entry-input:focus,
+html.theme-customer .input:focus,
+html.theme-customer .entry-input:focus,
+html .sp-v7 [data-slot="input"]:focus,
+html .sp-v7 [data-slot="select-trigger"]:focus,
+html.theme-customer .sp-v7 [data-slot="input"]:focus,
+html.theme-customer .sp-v7 [data-slot="select-trigger"]:focus {
+  background: var(--selected-soft-strong) !important;
+  border: 0 !important;
+  box-shadow: inset 0 0 0 2px var(--selected) !important;
+  outline: none;
+}
+html [data-slot="input"][aria-invalid="true"],
+html [data-slot="select-trigger"][aria-invalid="true"] {
+  box-shadow: inset 0 0 0 2px #b42332 !important;
+}
+html [data-slot="textarea"],
+html .sp-v7 [data-slot="textarea"] {
+  border: 0 !important;
+  border-radius: 24px !important;
+  background: var(--surface-soft) !important;
+  box-shadow: none !important;
+  padding: 0.9rem 1.1rem;
+}
+html [data-slot="textarea"]:focus,
+html [data-slot="textarea"]:focus-visible {
+  background: var(--selected-soft-strong) !important;
+  box-shadow: inset 0 0 0 2px var(--selected) !important;
+  outline: none;
+}
+@media (max-width: 767px) {
+  html input,
+  html textarea,
+  html select {
+    color: var(--foreground) !important;
+    background-color: var(--surface-soft) !important;
+  }
+  html input:focus,
+  html textarea:focus {
+    background-color: var(--selected-soft-strong) !important;
+  }
+  html input::placeholder,
+  html textarea::placeholder {
+    color: var(--text-secondary) !important;
+  }
+}
+
+/* ---- buttons ---- */
+html [data-slot="button"] {
+  min-height: 44px;
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: none;
+}
+html [data-slot="button"][data-variant="default"] {
+  background: var(--action-primary);
+  color: var(--on-brand);
+  box-shadow: none;
+}
+html [data-slot="button"][data-variant="default"]:hover {
+  background: var(--action-hover);
+  transform: none;
+  box-shadow: none; color: var(--on-brand); }
+html [data-slot="button"][data-variant="outline"] {
+  background: #ffffff;
+  border: 0;
+  box-shadow: inset 0 0 0 2px var(--selected);
+  color: var(--foreground);
+}
+html [data-slot="button"][data-variant="outline"]:hover {
+  background: var(--selected-soft);
+  transform: none;
+}
+html [data-slot="button"][data-variant="secondary"] {
+  background: var(--surface-soft);
+  color: var(--foreground);
+}
+html [data-slot="button"][data-variant="secondary"]:hover {
+  background: var(--surface-soft-2);
+}
+html [data-slot="button"][data-variant="ghost"]:hover {
+  background: var(--surface-soft);
+}
+html [data-slot="button"][data-variant="destructive"] {
+  background: #ffffff;
+  color: #b42332;
+  box-shadow: inset 0 0 0 2px #f0c3c9;
+}
+html [data-slot="button"][data-variant="destructive"]:hover {
+  background: #fdecef;
+}
+html [data-slot="button"][data-variant="link"] {
+  color: var(--brand-primary);
+}
+html .sp-entry-primary-btn,
+html.theme-customer .sp-entry-primary-btn {
+  background: var(--action-primary) !important;
+  color: var(--on-brand) !important;
+  box-shadow: none !important;
+  border-radius: 999px;
+}
+html .sp-entry-ghost-btn,
+html.theme-customer .sp-entry-ghost-btn {
+  border: 0;
+  background: var(--surface-soft);
+  border-radius: 999px;
+}
+
+/* focus ring: solid plum, visible on ivory, white and soft surfaces */
+html button:focus-visible,
+html a:focus-visible,
+html [role="button"]:focus-visible,
+html.theme-customer button:focus-visible,
+html.theme-customer a:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- tables ---- */
+html [data-slot="table-container"],
+html .sp-v7 [data-slot="table-container"],
+html.theme-customer .sp-v7 [data-slot="table-container"] {
+  border: 0;
+  border-radius: 24px;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+html [data-slot="table-header"] {
+  background: transparent;
+}
+html [data-slot="table-row"],
+html .sp-v7 [data-slot="table-row"] {
+  border-color: var(--border);
+}
+html [data-slot="table-row"]:hover,
+html.theme-customer [data-slot="table-row"]:hover {
+  background: var(--selected-soft);
+}
+
+/* ---- dialogs, sheets, menus: solid white, large radius, one soft shadow ---- */
+html [data-slot="dialog-content"],
+html [data-slot="sheet-content"],
+html [data-slot="popover-content"],
+html [data-slot="dropdown-menu-content"],
+html [data-slot="select-content"],
+html.theme-customer [data-slot="dialog-content"],
+html.theme-customer [data-slot="sheet-content"],
+html.theme-customer [data-slot="popover-content"],
+html.theme-customer [data-slot="dropdown-menu-content"],
+html.theme-customer [data-slot="select-content"] {
+  background: #ffffff !important;
+  border: 0 !important;
+  border-radius: 28px;
+  box-shadow: 0 18px 48px rgba(41, 37, 38, 0.18) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html [data-slot="dialog-overlay"],
+html [data-slot="sheet-overlay"] {
+  background: rgba(41, 37, 38, 0.5);
+  backdrop-filter: none;
+}
+html [data-slot="select-item"][data-highlighted],
+html [data-slot="dropdown-menu-item"][data-highlighted] {
+  background: var(--selected-soft);
+  color: var(--foreground);
+}
+
+/* ---- marketplace ---- */
+html .sp-market-toolbar,
+html .sp-v7 .sp-market-toolbar,
+html.theme-customer .sp-v7 .sp-market-toolbar {
+  background: #ffffff !important;
+  border: 0 !important;
+  box-shadow: 0 1px 0 var(--border) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html .sp-product-card,
+html .sp-v7 .sp-product-card,
+html.theme-customer .sp-v7 .sp-product-card {
+  border: 0 !important;
+  background: var(--card) !important;
+  box-shadow: inset 0 0 0 1px var(--border) !important;
+  border-radius: 24px;
+}
+html .sp-product-card:hover,
+html.theme-customer .sp-product-card:hover {
+  transform: none;
+  box-shadow: inset 0 0 0 2px var(--selected) !important;
+  border-color: transparent;
+}
+html .sp-product-image,
+html .sp-v7 .sp-product-image,
+html.theme-customer .sp-product-image,
+html.theme-customer .sp-v7 .sp-product-image {
+  background: var(--selected-soft) !important;
+  border-radius: 20px;
+}
+html .sp-filter-drawer {
+  background: #ffffff;
+  border: 0;
+}
+html .sp-v7 .sp-category-chip,
+html.theme-customer .sp-v7 .sp-category-chip {
+  border: 0 !important;
+  background: var(--surface-soft) !important;
+  border-radius: 999px;
+}
+
+/* ---- She Agent and entry hero ---- */
+html .sp-ai-card,
+html .sp-v7 .sp-ai-card,
+html.theme-customer .sp-ai-card,
+html.theme-customer .sp-v7 .sp-ai-card {
+  background: var(--selected-soft) !important;
+  border: 0 !important;
+  color: var(--foreground);
+}
+html .sp-ai-card h2,
+html .sp-v7 .sp-ai-card h2 { color: var(--foreground) !important; }
+html .sp-ai-card p,
+html .sp-v7 .sp-ai-card p { color: var(--text-secondary) !important; }
+html .sp-ai-card > button:first-child,
+html .sp-v7 .sp-ai-card > button:first-child { background: var(--card) !important; color: var(--foreground) !important; }
+html .sp-ai-card .surface-card-muted,
+html .sp-v7 .sp-ai-card .surface-card-muted { background: var(--card) !important; color: var(--foreground) !important; }
+html .sp-ai-card .surface-card-muted .text-stone-500,
+html .sp-v7 .sp-ai-card .surface-card-muted .text-stone-500 { color: var(--text-secondary) !important; }
+html .sp-agent-orb,
+html.theme-customer .sp-agent-orb,
+html .sp-agent-launcher > span:first-child,
+html.theme-customer .sp-agent-launcher > span:first-child {
+  background: var(--selected) !important;
+  color: var(--on-brand) !important;
+  box-shadow: none !important;
+}
+html .sp-agent-orb-status,
+html.theme-customer .sp-agent-orb-status {
+  background: #26834a;
+  box-shadow: none;
+}
+html .sp-agent-panel,
+html.theme-customer .sp-agent-panel {
+  background: #ffffff !important;
+  border: 0 !important;
+  box-shadow: 0 18px 48px rgba(41, 37, 38, 0.18) !important;
+  backdrop-filter: none !important;
+}
+html .sp-agent-panel > div:first-child,
+html.theme-customer .sp-agent-panel > div:first-child {
+  background: var(--brand-primary) !important;
+}
+html .sp-entry-hero,
+html.theme-customer .sp-entry-hero {
+  background: var(--selected-soft) !important;
+  border: 0;
+}
+html .sp-entry-ambient-a,
+html .sp-entry-ambient-b,
+html .sp-entry-visual-glow,
+html.theme-customer .sp-entry-ambient-a,
+html.theme-customer .sp-entry-ambient-b,
+html.theme-customer .sp-entry-visual-glow {
+  background: transparent;
+  filter: none;
+}
+html .sp-entry-kicker,
+html.theme-customer .sp-entry-kicker {
+  border: 0;
+  background: var(--selected-soft-strong);
+  color: var(--brand-primary);
+}
+html .sp-entry-search,
+html.theme-customer .sp-entry-search {
+  border: 0 !important;
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow: none !important;
+}
+html .sp-entry-category,
+html .sp-entry-plan-card,
+html .sp-entry-trust-card,
+html .sp-entry-popular-chip,
+html .sp-entry-feature-agent,
+html.theme-customer .sp-entry-category,
+html.theme-customer .sp-entry-plan-card,
+html.theme-customer .sp-entry-trust-card,
+html.theme-customer .sp-entry-popular-chip,
+html.theme-customer .sp-entry-feature-agent {
+  border: 0;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+html .sp-entry-category.is-active,
+html.theme-customer .sp-entry-category.is-active {
+  background: var(--selected-soft);
+  box-shadow: inset 0 0 0 2px var(--selected);
+}
+html .sp-entry-visual,
+html .sp-entry-visual-card,
+html .sp-entry-visual-top,
+html.theme-customer .sp-entry-visual,
+html.theme-customer .sp-entry-visual-card,
+html.theme-customer .sp-entry-visual-top {
+  box-shadow: none;
+}
+html .sp-entry-visual::after {
+  background: none;
+}
+html .sp-entry .sp-entry-header,
+html .sp-entry-footer,
+html.theme-customer .sp-entry .sp-entry-header,
+html.theme-customer .sp-entry-footer {
+  border-color: var(--border) !important;
+}
+html .sp-auth-dialog .sp-auth-hero,
+html.theme-customer .sp-auth-dialog .sp-auth-hero {
+  background: var(--selected-soft) !important;
+  border-bottom: 0;
+}
+
+/* ---- maps ---- */
+html .sp-vendor-map,
+html.theme-customer .sp-vendor-map {
+  box-shadow: none;
+  border-radius: 24px;
+}
+html .sp-vendor-map .leaflet-container,
+html.theme-customer .sp-vendor-map .leaflet-container {
+  background: var(--surface-soft);
+}
+html .sp-map-you-dot,
+html.theme-customer .sp-map-you-dot {
+  background: var(--selected);
+  box-shadow: 0 2px 8px rgba(41, 37, 38, 0.3); color: var(--on-brand); }
+html .sp-map-you-pulse,
+html.theme-customer .sp-map-you-pulse {
+  background: rgba(81, 45, 58, 0.28);
+}
+html .sp-map-vendor-pin,
+html.theme-customer .sp-map-vendor-pin {
+  border: 2px solid var(--selected);
+}
+html .sp-map-vendor-closest .sp-map-vendor-pin,
+html.theme-customer .sp-map-vendor-closest .sp-map-vendor-pin {
+  border-color: var(--foreground);
+}
+html .sp-map-vendor-ring,
+html.theme-customer .sp-map-vendor-ring {
+  border: 2px solid rgba(41, 37, 38, 0.4);
+}
+html .sp-map-handle,
+html.theme-customer .sp-map-handle {
+  border: 3px solid var(--selected);
+}
+
+/* ---- loose utility sweeps ---- */
+html [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ---- stock Tailwind palettes ----
+ * Neutrals (stone) and the brand families (violet and rose = plum, orange = terracotta, lime = gold) follow the brand.
+ * Status families (emerald/green = success, amber = warning, red = error, sky = info) keep their own hues on purpose:
+ * a verified badge, a warning or an error must never turn brand-coloured. */
+:root {
+  --color-stone-50: #FAF7F2; --color-stone-100: #F5EDE7; --color-stone-200: #E9DDD5; --color-stone-300: #D9CCC3;
+  --color-stone-400: #6F6567; --color-stone-500: #665B5D; --color-stone-600: #4A4143; --color-stone-700: #3A3234;
+  --color-stone-800: #312A2C; --color-stone-900: #292526; --color-stone-950: #292526;
+
+  --color-violet-50: #F2E8EC; --color-violet-100: #EADCE2; --color-violet-200: #DFC9D2; --color-violet-300: #C7A5B3;
+  --color-violet-400: #9A6A7C; --color-violet-700: #512D3A; --color-violet-800: #40222E; --color-violet-900: #331A24;
+  --color-violet-950: #2A1620;
+  --color-rose-50: #F2E8EC; --color-rose-100: #EADCE2; --color-rose-200: #DFC9D2; --color-rose-500: #512D3A;
+  --color-rose-600: #40222E; --color-rose-700: #512D3A;
+
+  --color-orange-50: #FBEFEA; --color-orange-100: #F6DDD2; --color-orange-200: #EFC5B3; --color-orange-500: #C65D3A;
+  --color-orange-600: #A84B2C; --color-orange-700: #8C3D23;
+  --color-lime-50: #FAF3E3; --color-lime-500: #D9B879; --color-lime-600: #B8975A; --color-lime-700: #8A6D3B;
+
+  /* status: unchanged hues */
+  --color-emerald-50: #eaf5ec; --color-emerald-100: #eaf5ec; --color-emerald-200: #cde6d3; --color-emerald-500: #26834a;
+  --color-emerald-600: #21683b; --color-emerald-700: #21683b; --color-emerald-800: #1b5a33; --color-emerald-900: #1a3d29;
+  --color-green-50: #eaf5ec; --color-green-100: #eaf5ec; --color-green-500: #26834a; --color-green-600: #21683b; --color-green-700: #21683b;
+  --color-amber-50: #fff4cf; --color-amber-100: #fff4cf; --color-amber-200: #ffe58a; --color-amber-500: #ffca2c;
+  --color-amber-600: #795900; --color-amber-700: #795900; --color-amber-800: #6b4f00; --color-amber-900: #5c4300;
+  --color-red-50: #fdecef; --color-red-100: #fdecef; --color-red-200: #f0c3c9; --color-red-500: #d63a4a;
+  --color-red-600: #b42332; --color-red-700: #b42332; --color-red-800: #8f1c29;
+  --color-sky-50: #edf3fd; --color-sky-100: #edf3fd; --color-sky-200: #cbdaf3; --color-sky-700: #285fba; --color-sky-800: #285fba; --color-sky-900: #1f4f9e;
+}

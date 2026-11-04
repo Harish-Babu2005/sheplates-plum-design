@@ -118,17 +118,14 @@ test.describe("Food Shorts: distance control (demo data)", () => {
     await expect(viewer).toHaveCount(0);
   });
 
-  test("Marketplace shows a Food Shorts row for the chosen distance and See all opens Stories", async ({ page }) => {
-    await openAs(page, CUSTOMER, SEEDED, "Marketplace");
-    const rail = page.getByTestId("shorts-rail");
-    await expect(rail).toBeVisible();
-    await expect(rail.getByRole("heading", { name: "Food Shorts within 5 km" })).toBeVisible();
-    await expect(rail.getByRole("button", { name: /^Watch A reach 2 km from/ })).toBeVisible();
-    await expect(rail.getByRole("button", { name: /^Watch B reach 10 km from/ })).toHaveCount(0);
-    await rail.getByRole("button", { name: "See all" }).click();
+  test("Stories shows the Food Shorts for the chosen distance", async ({ page }) => {
+    await openAs(page, CUSTOMER, SEEDED, "Stories");
+    await page.getByRole("button", { name: "Stories", exact: true }).first().click();
     await expect(page.getByRole("heading", { name: "Food Shorts", exact: true })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Nearby" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("shorts-grid")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Watch A reach 2 km from/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Watch B reach 10 km from/ })).toHaveCount(0);
   });
 });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import type { ReactElement } from "react";
 
 type Place = { address: string; latitude: number; longitude: number };
@@ -78,7 +79,7 @@ export function P0VendorLocationPicker({
       setDraftPlace({ place: result, query });
       setSuggestions([]);
     } catch (caught) {
-      setLocationError(caught instanceof Error ? caught.message : "The address could not be found.");
+      setLocationError(errorMessage(caught, "The address could not be found."));
     } finally {
       setBusy("");
     }

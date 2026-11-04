@@ -34,6 +34,7 @@ test("Operations and Super Admin both have a P0 Connect vendors screen in the me
     await page.evaluate(() => sessionStorage.removeItem("seeded"));
     await openAs(page, who);
     await dismissTourIfOpen(page);
+    await openStaffNavIfCollapsed(page);
     const entry = page.getByRole("button", { name: "P0 Connect vendors" }).first();
     await expect(entry).toBeVisible({ timeout: 60_000 });
     await entry.click();
@@ -63,6 +64,7 @@ test("vendors are not offered a P0 menu or a made-up 'Vendor workspace' entry", 
 test("Super Admin sees the four plans with Annexure A prices", async ({ page }) => {
   await openAs(page, "admin");
   await dismissTourIfOpen(page);
+  await openStaffNavIfCollapsed(page);
   await page.getByRole("button", { name: "Vendor plans" }).first().click({ timeout: 60_000 });
   for (const [name, price] of [["Taster", "499"], ["Crave", "699"], ["Thrive", "799"], ["Crown", "999"]]) {
     const card = page.locator("h3", { hasText: new RegExp(`^${name}$`) }).first().locator("xpath=ancestor::div[contains(@class,'surface-card')][1]");
@@ -90,8 +92,8 @@ test("customers have no Cancel button on orders or schedules", async ({ page }) 
   await openAs(page, "customer");
   await dismissTourIfOpen(page);
   await expect(page.getByRole("button", { name: "Stories", exact: true })).toBeVisible({ timeout: 60_000 });
-  for (const name of ["Profile", "Schedules"]) {
-    await page.getByRole("button", { name, exact: true }).first().click().catch(() => {});
+  for (const name of (page.viewportSize()?.width ?? 1280) < 768 ? ["Orders", "Profile"] : ["Orders", "Schedules"]) {
+    await page.getByRole("button", { name, exact: true }).first().click({ timeout: 10_000 });
     await expect(page.getByRole("button", { name: /^Cancel( order| schedule)?$/ })).toHaveCount(0);
   }
 });

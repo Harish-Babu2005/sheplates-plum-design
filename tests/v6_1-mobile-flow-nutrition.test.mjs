@@ -25,9 +25,9 @@ test('v6.1 mobile auth remains usable with the keyboard open', () => {
 });
 
 test('mobile marketplace avoids button collisions and overlay nav conflicts', () => {
-  assert.match(app, /sp-market-grid/);
-  assert.match(app, /sp-card-actions/);
-  assert.match(css, /@media \(max-width: 430px\)[\s\S]*sp-market-grid[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(app, /k-plist/);
+  assert.match(app, /k-pr-btns/);
+  assert.match(fs.readFileSync(new URL('../app/shell-kit.css', import.meta.url), 'utf8'), /@media \(max-width: 640px\)[\s\S]*\.k-pr \{ grid-template-columns: 64px/);
   assert.match(app, /!notificationsOpen && <CustomerBottomNav/);
   assert.match(app, /sp-notification-sheet/);
 });

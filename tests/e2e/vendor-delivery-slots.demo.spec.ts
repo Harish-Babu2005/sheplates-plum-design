@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { buildDemoState } from "./fixtures/demo-state";
-import { dismissTourIfOpen } from "./helpers";
+import { dismissTourIfOpen, openStaffNavIfCollapsed } from "./helpers";
 
 const SESSIONS = {
   vendor: { email: "v-meena@sheplates.demo", name: "Meena", role: "vendor", toursCompleted: ["vendor_v1"] },
@@ -25,6 +25,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
     await openAs(page, "vendor");
     await dismissTourIfOpen(page);
 
+    await openStaffNavIfCollapsed(page);
     // Open mobile sidebar if needed
     const toggleNav = page.getByRole("button", { name: "Toggle navigation" });
     if (await toggleNav.isVisible()) {
@@ -123,7 +124,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
   test("Customer checkout displays vendor's configured active delivery slots", async ({ page }) => {
     // Seed cart with Mini Meals (p-1) from vendor v-meena
     await openAs(page, "customer", (state) => {
-      state.cart = [{ id: "cart-1", customerEmail: "customer@sheplates.demo", productId: "p-1", quantity: 1 }];
+      state.cart = [{ id: "cart-1", customerEmail: "customer@sheplates.demo", productId: "p-1", quantity: 1 }] as unknown as typeof state.cart;
     });
     await dismissTourIfOpen(page);
 

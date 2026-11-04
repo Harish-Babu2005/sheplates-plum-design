@@ -58,7 +58,7 @@ test("new customer must confirm and save a movable delivery pin before continuin
   await continueButton.click();
   await expect(page.getByText("Customer setup · 3/3")).toBeVisible();
   await page.getByRole("button", { name: "Save profile", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Marketplace", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible();
 
   const saved = await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("sheplates-v3-state") || "{}");

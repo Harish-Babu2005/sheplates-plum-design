@@ -1,4 +1,4 @@
-import { Milk, Soup, Drumstick, Carrot, ShoppingBag, Egg, Croissant, Wheat, Package, type LucideIcon } from "lucide-react";
+import { Milk, Soup, Drumstick, Carrot, ShoppingBag, Egg, Croissant, Wheat, Package, type LucideIcon } from "@/components/icons";
 
 export type Role = "customer" | "vendor" | "operations" | "admin";
 export type SubscriptionStatus = "active" | "paused" | "cancelled";
@@ -94,5 +94,5 @@ export const initialFulfilments: Fulfilment[] = [
 ];
 
 export const tomorrowDemand = [
-  {name:"Milk",value:186,color:"#4f9cf9"},{name:"Meals",value:124,color:"#e94b3c"},{name:"Vegetables",value:78,color:"#14966f"},{name:"Meat",value:52,color:"#9b59b6"},{name:"Groceries",value:31,color:"#f3a712"}
+  {name:"Milk",value:186,color:"#4f9cf9"},{name:"Meals",value:124,color:"#512D3A"},{name:"Vegetables",value:78,color:"#14966f"},{name:"Meat",value:52,color:"#9b59b6"},{name:"Groceries",value:31,color:"#f3a712"}
 ];

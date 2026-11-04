@@ -23,6 +23,10 @@ async function openAs(page: Page, extra: Record<string, unknown> = {}, session: 
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Stories", exact: true })).toBeVisible({ timeout: 15_000 });
 }
+async function openProfile(page: Page) {
+  if ((page.viewportSize()?.width ?? 1280) >= 768) await page.locator('[data-tour="account"]').click(); // desktop: Profile lives in the account menu
+  await page.getByRole("button", { name: "Profile", exact: true }).click();
+}
 const tab = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const ring = (page: Page, handle: string) => page.getByRole("button", { name: new RegExp(`^${handle.replace(".", "\\.")}'s status`) });
 const mineKey = `local-${DEMO_CUSTOMER.email}`;
@@ -147,7 +151,7 @@ test.describe("People: follow, search by handle, and who is nearby (demo data)",
     await expect(ring(page, "priya_eats")).toHaveAttribute("data-source", "nearby");
 
     // and the profile counts them, with a list to unfollow from
-    await tab(page, "Profile").click();
+    await openProfile(page);
     await expect(page.getByRole("button", { name: "Following 1" })).toBeVisible();
     await page.getByRole("button", { name: "Following 1" }).click();
     const list = page.getByRole("dialog", { name: "Following" });
@@ -208,20 +212,21 @@ test.describe("People: follow, search by handle, and who is nearby (demo data)",
     await page.getByRole("tab", { name: "Everyone" }).click();
     await page.getByLabel("Search people on the map").fill("div");
     await expect(pins).toHaveCount(1);
-    await page.getByRole("button", { name: /^List \(/ }).click();
+    const listToggle = page.getByRole("button", { name: /^List \(/ });
+    if (await listToggle.isVisible()) await listToggle.click(); // from 1024 px the list sits beside the map
     await expect(page.getByTestId("people-list").getByTestId("person-row")).toHaveAttribute("data-handle", "divya_r");
   });
 
   test("the profile is slim: counts, a map switch that is off by default, and no upload gallery", async ({ page }) => {
     await openAs(page);
-    await tab(page, "Profile").click();
+    await openProfile(page);
     const toggle = page.getByRole("switch", { name: "Show me on the map" });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(page.getByText(/never your delivery pin/)).toBeVisible();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await page.reload();
-    await tab(page, "Profile").click();
+    await openProfile(page);
     await expect(page.getByRole("switch", { name: "Show me on the map" })).toHaveAttribute("aria-checked", "true");
     for (const name of ["Photos", "Food Trials", "Saved"]) await expect(page.getByRole("tab", { name })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Your status" })).toBeVisible();
@@ -229,7 +234,7 @@ test.describe("People: follow, search by handle, and who is nearby (demo data)",
 
   test("nobody sees you on the map unless you chose it, and only a coarse position is stored", async ({ page }) => {
     await openAs(page);
-    await tab(page, "Profile").click();
+    await openProfile(page);
     await page.getByRole("switch", { name: "Show me on the map" }).click();
     const stored = await page.evaluate((email) => {
       const mine = JSON.parse(localStorage.getItem(`sheplates-people-v1:${email}`) || "{}");
