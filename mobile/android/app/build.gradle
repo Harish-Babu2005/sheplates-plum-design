@@ -14,8 +14,8 @@ android {
         applicationId "com.sheplates.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (System.getenv("SHEPLATES_VERSION_CODE") ?: "1").toInteger()
-        versionName (System.getenv("SHEPLATES_VERSION_NAME") ?: "1.0.0")
+        versionCode = Integer.parseInt(System.getenv("SHEPLATES_VERSION_CODE") ?: "1")
+        versionName = System.getenv("SHEPLATES_VERSION_NAME") ?: "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -27,7 +27,7 @@ android {
         release {
             def storePath = signingValue('storeFile', 'ANDROID_KEYSTORE_FILE')
             if (storePath) {
-                storeFile file(storePath)
+                storeFile rootProject.file(storePath)
                 storePassword signingValue('storePassword', 'ANDROID_KEYSTORE_PASSWORD')
                 keyAlias signingValue('keyAlias', 'ANDROID_KEY_ALIAS')
                 keyPassword signingValue('keyPassword', 'ANDROID_KEY_PASSWORD')

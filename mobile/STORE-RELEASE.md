@@ -56,7 +56,7 @@ mobile/
     ios-iphone-6.7in/          7 screenshots, 1290 x 2796 (use for the 6.7-inch and 6.9-inch slots)
     ios-app-store-icon-1024.png
   scripts/create-upload-key.sh creates the Android upload key
-../.github/workflows/          mobile-android.yml and mobile-ios.yml (build in the cloud, no local tools needed)
+../.github/workflows/          mobile-android.yml, mobile-ios.yml (signed builds) and mobile-ios-verify.yml (unsigned compile check)
 ```
 
 Artwork note: the icons and splash use the current logo on plum. Replace `resources/icon-only.png`,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -35,9 +36,10 @@ test("Android declares only the permissions the app uses and keeps secrets out o
   assert.match(gradle, /signingConfigs\.release/);
   const ignore = await read("mobile/.gitignore");
   for (const pattern of ["*.jks", "*.keystore", "keystore.properties", "*.p12", "*.mobileprovision", "AuthKey_*.p8"]) assert.ok(ignore.includes(pattern), pattern);
-  const walk = async (dir) => { const out = []; for (const e of await readdir(path.join(root, dir), { withFileTypes: true })) { if (e.name === "node_modules" || e.name === ".gradle") continue; const rel = path.join(dir, e.name); if (e.isDirectory()) out.push(...await walk(rel)); else out.push(rel); } return out; };
-  const secrets = (await walk("mobile")).filter((f) => /\.(jks|keystore|p12|mobileprovision|p8)$/.test(f) || path.basename(f) === "keystore.properties");
-  assert.deepEqual(secrets, [], "no signing material in the project folder");
+  // Only files git tracks matter here: the key made by create-upload-key.sh lives in android/ but is ignored.
+  const tracked = execFileSync("git", ["ls-files", "mobile"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+  const secrets = tracked.filter((f) => /\.(jks|keystore|p12|mobileprovision|p8)$/.test(f) || path.basename(f) === "keystore.properties");
+  assert.deepEqual(secrets, [], "no signing material is tracked by git");
 });
 
 test("iPhone has the permission texts, export compliance, privacy manifest and UPI schemes", async () => {
@@ -78,6 +80,10 @@ test("the offline screen retries the hosted app, and the release workflows and g
   assert.match(ios, /xcodebuild archive/);
   assert.match(ios, /exportArchive/);
   assert.match(await read("mobile/ios/ExportOptions.plist"), /app-store-connect/);
+  const verify = await read(".github/workflows/mobile-ios-verify.yml");
+  assert.match(verify, /CODE_SIGNING_ALLOWED=NO/);
+  assert.match(verify, /-sdk iphoneos/);
+  assert.match(verify, /-sdk iphonesimulator/);
   const guide = await read("mobile/STORE-RELEASE.md");
   for (const topic of ["Privacy Policy", "account deletion", "Data safety", "App Privacy", "com.sheplates.app", "Review notes"]) assert.ok(guide.toLowerCase().includes(topic.toLowerCase()), topic);
 });

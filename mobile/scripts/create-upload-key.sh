@@ -9,7 +9,7 @@ KEYSTORE="android/sheplates-upload.jks"
 ALIAS="sheplates-upload"
 if [ -f "$KEYSTORE" ]; then echo "$KEYSTORE already exists. Not overwriting."; exit 1; fi
 command -v keytool >/dev/null || { echo "keytool not found. Install a JDK 21 first."; exit 1; }
-PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+PASS="$(openssl rand -hex 16)"
 keytool -genkeypair -v -storetype JKS -keystore "$KEYSTORE" -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
   -storepass "$PASS" -keypass "$PASS" -dname "CN=ShePlates, OU=Mobile, O=ShePlates, L=Coimbatore, ST=Tamil Nadu, C=IN" >/dev/null
 umask 077
