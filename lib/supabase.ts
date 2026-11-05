@@ -380,7 +380,6 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   // The certificate is the vendor's FSSAI document; newer rows can be PAN, bank and so on.
   const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
   return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
-  return { vendor: vendor.data as LiveVendorRow, products: productRows || [], document: documents.data?.[0] || null, documents: documents.data || [] };
 }
 
 export async function loadLiveVendorWorkspaceForOwner(userId: string) {
@@ -735,6 +734,43 @@ export async function saveLiveVendorLocation(input: { vendorId: string; address:
   if (result.error) throw result.error;
 }
 
+export async function saveLiveVendorProfile(input: {
+  vendorId: string;
+  businessName?: string;
+  category?: string;
+  ownerName?: string;
+  ownerRole?: string;
+  phone?: string;
+  bio?: string;
+  address?: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (input.businessName !== undefined) updatePayload.name = input.businessName;
+  if (input.category !== undefined) updatePayload.category = input.category;
+  if (input.bio !== undefined) updatePayload.description = input.bio;
+  if (input.phone !== undefined) updatePayload.whatsapp_number = input.phone;
+  if (input.address !== undefined) {
+    updatePayload.address = input.address;
+    updatePayload.locality = input.address;
+  }
+  const result = await supabase.from("vendors").update(updatePayload).eq("id", input.vendorId);
+  if (result.error) throw result.error;
+
+  const { data: authData } = await supabase.auth.getUser();
+  if (authData?.user) {
+    const profileUpdates: Record<string, unknown> = {};
+    if (input.ownerName) profileUpdates.full_name = input.ownerName;
+    if (input.phone) profileUpdates.phone = input.phone;
+    if (Object.keys(profileUpdates).length) {
+      await supabase.from("profiles").update(profileUpdates).eq("id", authData.user.id);
+    }
+  }
+}
+
 
 export type OnboardingComplianceDocument = {
   documentType: "food_certificate" | "pan" | "government_id" | "address_proof" | "bank_details" | "business_details" | "product_information";
@@ -762,30 +798,6 @@ export async function submitLiveVendorApplication(input: {
   if (!isPdfUpload(input.certificate)) throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
   for (const doc of input.additionalDocuments ?? []) {
     if (!isPdfUpload(doc.file)) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
-  panNumber?: string;
-  bankAccountNumber?: string;
-  bankIfsc?: string;
-  businessRegNumber?: string;
-  additionalDocuments?: OnboardingComplianceDocument[];
-}) {
-  if (!input.termsAccepted) {
-    throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
-  }
-
-  // Validate PDF format on primary certificate
-  const certIsPdf = input.certificate.type === "application/pdf" || input.certificate.name.toLowerCase().endsWith(".pdf");
-  if (!certIsPdf) {
-    throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
-  }
-
-  // Validate PDF format on all additional compliance documents
-  if (input.additionalDocuments) {
-    for (const doc of input.additionalDocuments) {
-      const isPdf = doc.file.type === "application/pdf" || doc.file.name.toLowerCase().endsWith(".pdf");
-      if (!isPdf) {
-        throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
-      }
-    }
   }
 
   const supabase = getSupabaseBrowserClient();
@@ -808,10 +820,6 @@ export async function submitLiveVendorApplication(input: {
     for (const doc of input.additionalDocuments ?? []) extraPaths.push(await store(doc.file));
   } catch (error) { await discard(); throw error; }
 
-  const safeName = input.certificate.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-  const objectPath = `${input.userId}/${crypto.randomUUID()}-${safeName}`;
-  const upload = await supabase.storage.from("vendor-certificates").upload(objectPath, input.certificate, { upsert: false });
-  if (upload.error) throw upload.error;
   const vendor = await supabase.from("vendors").insert({
     owner_id: input.userId, name: input.businessName, category: input.category,
     locality: input.locality, verification_status: "submitted", operational_status: "inactive",
@@ -820,13 +828,6 @@ export async function submitLiveVendorApplication(input: {
     pickup_enabled: input.pickup ?? true, store_open_today: false,
     // The database stamps the acceptance time, version and document reference.
     terms_accepted: true,
-    terms_version: input.termsVersion || "1.0",
-    terms_accepted_at: new Date().toISOString(),
-    terms_document_reference: input.termsDocumentReference || "/docs/sheplates-vendor-terms-v1.0.pdf",
-    ...(input.panNumber ? { pan_number: input.panNumber } : {}),
-    ...(input.bankAccountNumber ? { bank_account_number: input.bankAccountNumber } : {}),
-    ...(input.bankIfsc ? { bank_ifsc: input.bankIfsc } : {}),
-    ...(input.businessRegNumber ? { business_registration_number: input.businessRegNumber } : {}),
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) {
@@ -848,34 +849,6 @@ export async function submitLiveVendorApplication(input: {
     documents = await supabase.from("vendor_documents").insert(rows.map(({ vendor_id, document_type, document_number, storage_path, expiry_date, verification_status }) => ({ vendor_id, document_type, document_number, storage_path, expiry_date, verification_status })));
   }
   if (documents.error) throw documents.error;
-  const document = await supabase.from("vendor_documents").insert({
-    vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber,
-    storage_path: objectPath, file_name: input.certificate.name, file_size: input.certificate.size,
-    mime_type: "application/pdf", expiry_date: input.expiryDate, verification_status: "submitted",
-  });
-  if (document.error) throw document.error;
-
-  if (input.additionalDocuments?.length) {
-    for (const doc of input.additionalDocuments) {
-      const docSafeName = doc.file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-      const docPath = `${input.userId}/${crypto.randomUUID()}-${docSafeName}`;
-      const docUpload = await supabase.storage.from("vendor-certificates").upload(docPath, doc.file, { upsert: false });
-      if (!docUpload.error) {
-        await supabase.from("vendor_documents").insert({
-          vendor_id: vendor.data.id,
-          document_type: doc.documentType,
-          document_number: doc.documentNumber || null,
-          storage_path: docPath,
-          file_name: doc.file.name,
-          file_size: doc.file.size,
-          mime_type: "application/pdf",
-          expiry_date: doc.expiryDate || null,
-          verification_status: "submitted",
-          metadata: doc.metadata || {},
-        });
-      }
-    }
-  }
 
   const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id }).eq("id", input.userId).select("id").maybeSingle();
   if (profile.error) throw profile.error;
@@ -901,32 +874,6 @@ export async function signedVendorDocumentUrl(storagePath: string, seconds = 600
   return signed.data.signedUrl;
 }
 
-export async function acceptLiveVendorTerms(vendorId: string, version = "1.0") {
-  const token = await getAccessToken();
-  const response = await fetch("/api/vendor/onboarding", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
-      action: "accept_terms",
-      vendorId,
-      termsVersion: version,
-      documentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
-    }),
-  });
-  const result = await response.json() as Record<string, unknown> & { error?: string };
-  if (!response.ok) throw new Error(result.error || "Failed to accept Terms & Conditions.");
-  return result;
-}
-
-/**
- * Super-Admin-only: create a real, confirmed account with a role-scoped
- * profile (Operations or Super Admin) via the service-role-backed API route. The route
- * itself re-verifies the caller is an admin before touching Auth — this client call is
- * a convenience wrapper, not the security boundary.
- */
 export async function createStaffUser(input: { name: string; email: string; role: "operations" | "admin" }) {
   const token = await getAccessToken();
   const response = await fetch("/api/admin/create-user", {
