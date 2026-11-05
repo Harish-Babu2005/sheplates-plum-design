@@ -2744,13 +2744,13 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
         ? await createLiveFoodDrop({ vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity })
         : { id: id("DROP"), vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity, remainingQuantity: quantity, startsAt: dropWindow.startsAt.toISOString(), endsAt: dropWindow.endsAt.toISOString(), status: "active" };
       setState((s) => ({ ...s, foodDrops: [drop, ...s.foodDrops] }));
-      toast.success(dropDisplayStatus(drop) === "live" ? "Food Drop is live" : "Food Drop scheduled for 8:00 PM");
+      toast.success(dropDisplayStatus(drop) === "live" ? "Food Drop is live" : "Food Drop scheduled for 12:00 PM");
       dismiss();
     } catch (error) { toast.error(errorMessage(error, "Drop could not be created")); }
     finally { setBusy(false); }
   }
 
-  return <Dialog open={open} onOpenChange={(v) => !v && dismiss()}><DialogContent className="rounded-[26px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-lg font-black">New Food Drop</DialogTitle><DialogDescription>Prepare a discounted quantity of one of your products in advance. Customers can claim it only on the day you create it, from 8:00 PM to midnight IST. Stock is enforced by the database, even under simultaneous requests.</DialogDescription></DialogHeader>
+  return <Dialog open={open} onOpenChange={(v) => !v && dismiss()}><DialogContent className="rounded-[26px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-lg font-black">New Food Drop</DialogTitle><DialogDescription>Prepare a discounted quantity of one of your products in advance. Customers can claim it only on the day you create it, from 12:00 PM to 6:00 PM IST.. Stock is enforced by the database, even under simultaneous requests.</DialogDescription></DialogHeader>
     <div className="space-y-4">
       <Field label="Product"><Select value={productId} onValueChange={(value) => {
         setProductId(value);
@@ -2762,7 +2762,7 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
       }}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
       <Field label="Drop title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field>
       <div className="grid grid-cols-2 gap-3"><Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}><input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} /></Field><Field label="Units available"><input type="number" min="1" step="1" value={quantity || ""} onChange={(e) => setQuantity(Number(e.target.value))} className={inputClass} /></Field></div>
-      <p className="rounded-xl bg-[#EEF2F2] p-3 text-xs font-bold text-stone-600">Scheduled — starts at 8:00 PM. A drop is claimable only tonight and stops at midnight.</p>
+      <p className="rounded-xl bg-[#EEF2F2] p-3 text-xs font-bold text-stone-600">Scheduled — starts at 12:00 PM. A drop is claimable only today and stops at 6:00 PM.</p>
       <Button onClick={() => void submit()} disabled={busy || !products.length} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Zap />{busy ? "Publishing…" : "Schedule drop"}</Button>
     </div>
   </DialogContent></Dialog>;
@@ -2803,7 +2803,9 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
   if (!["Thrive", "Crown"].includes(vendor.plan)) return <div className="space-y-6"><Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Daily evening offers on your own products." /><Empty icon={Zap} title="Food Drops are on the Thrive and Crown plans" body={`Your store is on the ${vendor.plan} plan. Ask Operations to move you to Thrive or Crown to publish Food Drops.`} /></div>;
   return <div className="space-y-6">
     <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={<Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button>} />
-    <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium leading-relaxed text-[#285fba]">How it works: Food Drops run 8:00 PM – 12:00 AM IST. Each drop is available only on the evening it is created, and unclaimed units do not carry over.</p>
+    <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium leading-relaxed text-[#285fba]">
+  How it works: Food Drops run 12:00 PM – 6:00 PM IST. Each drop is available only on the day it is created, and unclaimed units do not carry over.
+</p>
     {!products.length && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Add an active product in your Catalog first — a drop always discounts an existing product.</div>}
     {drops.length ? <div className="grid gap-4 lg:grid-cols-2">{drops.map((drop) => {
       const product = state.products.find((p) => p.id === drop.productId);
@@ -2813,12 +2815,12 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
       const revenue = dropClaims.reduce((sum, c) => sum + c.totalPrice, 0);
       const claimedUnits = drop.totalQuantity - drop.remainingQuantity;
       const tone = status === "live" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : status === "sold_out" ? "border-amber-200 bg-amber-50 text-amber-800" : status === "scheduled" ? "border-sky-200 bg-sky-50 text-sky-800" : "border-stone-200 bg-stone-50 text-stone-500";
-      const statusLabel = status === "live" ? "LIVE" : status === "scheduled" ? "Scheduled — Starts at 8:00 PM" : status === "sold_out" ? "Sold out" : "Ended";
+      const statusLabel = status === "live" ? "LIVE" : status === "scheduled" ? "Scheduled — Starts at 12:00 PM" : status === "sold_out" ? "Sold out" : "Ended";
       return <div key={drop.id} className="surface-card rounded-[26px] p-5">
         <div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{drop.title}</h3><p className="mt-1 text-xs text-stone-500">{product?.name || "Product"}</p></div><Status className={tone}>{statusLabel}</Status></div>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><Review label="Price" value={`${money(drop.dropPrice)} (was ${money(drop.originalPrice)})`} /><Review label="Discount" value={`${discountPercent(drop)}%`} /><Review label="Claimed" value={`${claimedUnits} / ${drop.totalQuantity}`} /><Review label="Revenue" value={money(revenue)} /></div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
-        {status === "live" && <p className="mt-3 text-xs font-bold text-stone-500"><Timer className="mr-1 inline size-3.5" />Closes at midnight · {formatCountdown(foodDropSchedule(drop).endsAt.toISOString(), currentTime)}</p>}
+        {status === "live" && <p className="mt-3 text-xs font-bold text-stone-500"><Timer className="mr-1 inline size-3.5" />Closes at 6:00 PM· {formatCountdown(foodDropSchedule(drop).endsAt.toISOString(), currentTime)}</p>}
         {(status === "live" || status === "scheduled") && <Button size="sm" variant="outline" onClick={() => void cancel(drop)} className="mt-4 rounded-xl text-red-600">End drop now</Button>}
       </div>;
     })}</div> : <Empty icon={Zap} title="No drops yet" body="Create a flash offer on one of your products to drive same-day demand." />}
