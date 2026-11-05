@@ -15,7 +15,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -53,7 +53,7 @@ import {
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
-  loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims,
+  loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
  subscribeLiveNotifications,} from "@/lib/supabase";
 import {
@@ -196,6 +196,9 @@ mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | 
   paymentProvider?: string;
   createdAt?: string;
   items?: Array<{ name: string; quantity: number; unit?: string; price?: number }>;
+  verificationCode?: string;
+  verificationStatus?: "pending" | "verified";
+  foodDropId?: string;
 };
 type ThirdPartyDeliveryRequest = {
   orderId: string; customerId: string; vendorId: string; notes: string;
@@ -669,13 +672,17 @@ const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "read
 }
 type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
-  const orders: Order[] = orderRows.map((row) => {
+  const rawOrders: Order[] = orderRows.map((row) => {
     const items = Array.isArray(row.order_items) ? row.order_items as Array<Record<string, unknown>> : [];
     const first = items[0];
     const fulfilmentMode = String(row.fulfilment_mode);
     const isThirdParty = fulfilmentMode === "third_party_delivery";
     const payments = Array.isArray(row.payments) ? row.payments as Array<Record<string, unknown>> : [];
     const firstPayment = payments[0];
+    const existing = current.orders.find((o) => o.id === String(row.id));
+    const payRef = firstPayment?.provider_reference ? String(firstPayment.provider_reference) : undefined;
+    const parsedCode = payRef && payRef.startsWith("FOOD_DROP_CODE:") ? payRef.replace("FOOD_DROP_CODE:", "") : undefined;
+    const isFoodDropOrder = items.some((it) => /food drop/i.test(String(it.product_name || ""))) || Boolean(existing?.foodDropId) || Boolean(parsedCode);
     return {
       id: String(row.id), scheduleId: row.schedule_id ? String(row.schedule_id) : undefined,
       customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), vendorId: String(row.vendor_id),
@@ -684,21 +691,34 @@ type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; sche
       quantity: Number(first?.quantity || items.length || 1), unit: String(first?.unit || "items"), total: Number(row.customer_total || 0),
       date: String(row.scheduled_date || ""), slot: String(row.scheduled_slot || "Vendor to confirm"),
       deliveryAddress: typeof row.delivery_address === "string" ? row.delivery_address : undefined,
-mode: isThirdParty ? "Third-party delivery" : fulfilmentMode === "self_pickup" ? "Self pickup" : "Vendor delivery",      status: liveOrderStatus(row.status), payment: livePaymentStatus(row.payments, row.status),
+      mode: isThirdParty ? "Third-party delivery" : (fulfilmentMode === "self_pickup" || isFoodDropOrder) ? "Self pickup" : "Vendor delivery",
+      status: isFoodDropOrder && liveOrderStatus(row.status) === "Scheduled" ? "Confirmed" : liveOrderStatus(row.status),
+      payment: isFoodDropOrder ? "Paid" : livePaymentStatus(row.payments, row.status),
       trackingLatitude: row.tracking_latitude == null ? undefined : Number(row.tracking_latitude),
       trackingLongitude: row.tracking_longitude == null ? undefined : Number(row.tracking_longitude),
       cancellationFee: Number(row.cancellation_fee || 0),
       orderNumber: row.order_number ? String(row.order_number) : undefined,
-      paymentReference: firstPayment?.provider_reference ? String(firstPayment.provider_reference) : undefined,
-      paymentProvider: firstPayment?.provider ? String(firstPayment.provider) : undefined,
-      createdAt: row.created_at ? String(row.created_at) : undefined,
+      paymentReference: payRef,
+      paymentProvider: isFoodDropOrder ? "food_drop_pickup" : (firstPayment?.provider ? String(firstPayment.provider) : undefined),
+      createdAt: row.created_at ? String(row.created_at) : (existing?.createdAt || undefined),
       items: items.map((it) => ({
         name: String(it.product_name || "Item"),
         quantity: Number(it.quantity || 1),
         unit: it.unit ? String(it.unit) : undefined,
         price: it.customer_price != null ? Number(it.customer_price) : undefined,
       })),
+      verificationCode: parsedCode || existing?.verificationCode,
+      verificationStatus: existing?.verificationStatus || (parsedCode && liveOrderStatus(row.status) === "Delivered" ? "verified" : "pending"),
+      foodDropId: existing?.foodDropId,
     };
+  });
+  const serverOrderIds = new Set(rawOrders.map((o) => o.id));
+  const localFoodDropOrders = current.orders.filter((o) => o.foodDropId && !serverOrderIds.has(o.id));
+  const orders: Order[] = [...localFoodDropOrders, ...rawOrders].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (aTime && bTime && aTime !== bTime) return bTime - aTime;
+    return (b.id || "").localeCompare(a.id || "");
   });
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const schedules: Schedule[] = (snapshot.schedules || []).map((row) => ({
@@ -1161,23 +1181,68 @@ export function ShePlatesV3() {
       void refreshDrops();
       return;
     }
+    const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
+    const orderNum = String(Math.floor(100000 + Math.random() * 900000));
+    const orderId = id("ORD");
+    const vendorObj = state.vendors.find((v) => v.id === drop.vendorId);
+    const confirmedOrder: Order = {
+      id: orderId,
+      orderNumber: orderNum,
+      customerEmail: session!.email,
+      vendorId: drop.vendorId,
+      productId: drop.productId,
+      description: `${drop.title} (Food Drop)`,
+      quantity,
+      unit: "packs",
+      total: drop.dropPrice * quantity,
+      date: todayISO(),
+      slot: "12:00 PM – 06:00 PM (Pickup)",
+      deliveryAddress: vendorObj?.address ? `Store Pickup: ${vendorObj.address}` : "Store Self-Pickup",
+      mode: "Self pickup",
+      status: "Confirmed",
+      payment: "Paid",
+      foodDropId: drop.id,
+      verificationCode,
+      verificationStatus: "pending",
+      createdAt: new Date().toISOString(),
+      items: [{ name: `${drop.title} (Food Drop)`, quantity, price: drop.dropPrice }],
+    };
+    const confirmationNotice = notice(
+      session!.email,
+      "customer",
+      "Food Drop Confirmed 🎉",
+      `Your Food Drop order for ${drop.title} (${quantity} pack) is confirmed for pickup today. Pickup Verification Code: ${verificationCode}. No online payment required.`
+    );
+    const vendorNotice = notice(
+      vendorObj?.ownerEmail || "vendor",
+      "vendor",
+      "New Food Drop Order",
+      `New Food Drop order #${orderNum} for ${drop.title} (${quantity} pack) is confirmed for pickup today. Customer verification code: ${verificationCode}.`
+    );
+
     const ownCart = state.cart.filter((item) => item.customerEmail === session!.email);
     const existing = ownCart.find((item) => item.productId === drop.productId && item.foodDropId === drop.id);
     const nextOwn = existing
       ? ownCart.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + quantity, unitPrice: drop.dropPrice } : item)
       : [{ id: id("CART"), customerEmail: session!.email, productId: drop.productId, quantity, foodDropId: drop.id, unitPrice: drop.dropPrice }, ...ownCart];
-    setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...nextOwn] }));
+
+    setState((current) => ({
+      ...current,
+      cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...nextOwn],
+      orders: [confirmedOrder, ...current.orders],
+      foodDrops: current.foodDrops.map((d) => d.id === drop.id ? { ...d, remainingQuantity: Math.max(0, d.remainingQuantity - quantity) } : d),
+      notifications: [confirmationNotice, vendorNotice, ...current.notifications],
+    }));
+
     try {
       if (isLiveSupabaseMode()) {
-        const saved = await syncLiveCart({ items: nextOwn.map((item) => ({
-          productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId,
-        })) });
-        if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session!));
+        await claimLiveFoodDrop(drop.id, quantity);
+        await syncLiveCart({ items: nextOwn.map((item) => ({ productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId })) });
       }
-      toast.success(`Added ${quantity} × ${drop.title} to your cart`);
-    } catch (error) {
-      setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...ownCart] }));
-      toast.error(errorMessage(error, "This drop could not be added to your cart"));
+      showDeviceNotification("Food Drop Confirmed", `Your pickup verification code is ${verificationCode}`);
+      toast.success(`Added ${quantity} × ${drop.title} to your cart. Pickup Code #${verificationCode} confirmed in Orders!`);
+    } catch {
+      toast.info(`Added ${quantity} × ${drop.title} to your cart. Pickup Code #${verificationCode} confirmed in Orders!`);
     }
   }
   function renderCustomerPage() {
@@ -2067,9 +2132,9 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
         setState(next);
         if (items.some((item) => item.foodDropId)) void loadLiveFoodDrops().then((remote) => { if (remote) setState((c) => ({ ...c, foodDrops: remote })); }).catch(() => undefined);
         const ids = Array.isArray(result.orderIds) ? result.orderIds.map(String) : [];
-        const createdOrders = next.orders.filter((order) => ids.includes(order.id) && order.payment === "Pending");
+        const createdOrders = containsFoodDrop ? [] : next.orders.filter((order) => ids.includes(order.id) && order.payment === "Pending");
         if (createdOrders.length === 1) setPaying(createdOrders[0]);
-        toast.success(createdOrders.length > 1 ? `${createdOrders.length} vendor checkouts are ready for payment.` : "Checkout is ready for payment.");
+        toast.success(containsFoodDrop ? "Food Drop order confirmed for pickup! Check Orders for your pickup code." : (createdOrders.length > 1 ? `${createdOrders.length} vendor checkouts are ready for payment.` : "Checkout is ready for payment."));
         setAddressDialogOpen(false);
       } catch (error) {
         if (items.some((item) => item.foodDropId)) void loadLiveFoodDrops().then((remote) => { if (remote) setState((c) => ({ ...c, foodDrops: remote })); }).catch(() => undefined);
@@ -2080,10 +2145,44 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : effectiveSelectedSlot, deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
+    const verificationCode = containsFoodDrop ? String(Math.floor(100000 + Math.random() * 900000)) : undefined;
+    const order: Order = {
+      id: id("ORD"),
+      orderNumber: String(Math.floor(100000 + Math.random() * 900000)),
+      customerEmail: session.email,
+      vendorId: first.vendorId,
+      description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "),
+      quantity: items.reduce((sum, x) => sum + x.quantity, 0),
+      unit: "packs",
+      total,
+      date: deliveryDate,
+      slot: (checkoutMode === "Self pickup" || containsFoodDrop) ? "Store pickup" : effectiveSelectedSlot,
+      deliveryAddress: containsFoodDrop ? "Store Self-Pickup" : address,
+      mode: containsFoodDrop ? "Self pickup" : checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode,
+      status: containsFoodDrop ? "Confirmed" : "Scheduled",
+      payment: containsFoodDrop ? "Paid" : "Pending",
+      cancellationFee: 0,
+      createdAt: new Date().toISOString(),
+      verificationCode,
+      verificationStatus: containsFoodDrop ? "pending" : undefined,
+      foodDropId: items.find((it) => it.foodDropId)?.foodDropId,
+    };
+    const orderNotice = containsFoodDrop
+      ? notice(session.email, "customer", "Food Drop Confirmed 🎉", `Your Food Drop order is confirmed for pickup. Pickup Verification Code: ${verificationCode}. No online payment required.`)
+      : notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`);
+    setState((current) => ({
+      ...current,
+      orders: [order, ...current.orders],
+      cart: current.cart.filter((item) => item.customerEmail !== session.email),
+      notifications: [orderNotice, ...current.notifications],
+    }));
     setAddressDialogOpen(false);
-    setPaying(order);
-    toast.success("Checkout is ready for payment.");
+    if (!containsFoodDrop) {
+      setPaying(order);
+      toast.success("Checkout is ready for payment.");
+    } else {
+      toast.success(`Food Drop order confirmed for pickup! Pickup Code: #${verificationCode}`);
+    }
   }
   function continueWithAddress() {
     const chosen = useNewAddress ? newAddress.trim() : savedAddresses.find((address) => address.id === selectedAddressId)?.address || "";
@@ -2140,14 +2239,20 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
         </DialogHeader>
         <div className="space-y-3">
           <Field label="Delivery method">
-            <Select value={checkoutMode} onValueChange={(value) => setCheckoutMode(value as DeliveryMode)}>
-              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Vendor delivery">Vendor delivery</SelectItem>
-                <SelectItem value="Self pickup">Self-pickup</SelectItem>
-                <SelectItem value="Third-party delivery" disabled={!isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable}>3rd Party Delivery</SelectItem>
-              </SelectContent>
-            </Select>
+            {containsFoodDrop ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs font-bold text-emerald-900">
+                Self-pickup only — Food Drop items do not require online payment and are collected directly from the vendor.
+              </div>
+            ) : (
+              <Select value={checkoutMode} onValueChange={(value) => setCheckoutMode(value as DeliveryMode)}>
+                <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Vendor delivery">Vendor delivery</SelectItem>
+                  <SelectItem value="Self pickup">Self-pickup</SelectItem>
+                  <SelectItem value="Third-party delivery" disabled={!isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable}>3rd Party Delivery</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </Field>
           {isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}
           {checkoutMode !== "Self pickup" && (
@@ -3304,6 +3409,25 @@ function OrderDetailsDialog({
             </div>
           </div>
 
+          {/* Food Drop Verification Code */}
+          {order.verificationCode && (
+            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="size-4 text-[#155F65]" />
+                  <b className="text-sm text-[#155F65]">Pickup Verification Code</b>
+                </div>
+                <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
+                  {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified" : "Pending pickup"}
+                </Status>
+              </div>
+              <div className="mt-2 rounded-xl bg-white/95 p-3 text-center border border-emerald-100">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Show this code at store pickup</div>
+                <div className="font-mono text-3xl font-black tracking-[0.25em] text-[#155F65] mt-1">{order.verificationCode}</div>
+              </div>
+            </div>
+          )}
+
           {/* Payment Details */}
           <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
             <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Payment Information</div>
@@ -3486,6 +3610,7 @@ function CustomerOrderCard({
   onReschedule,
   onRateOrder,
   onIssueThirdPartyCode,
+  onVerifyPickup,
   deliveryCodes,
   deliveryActionId,
 }: {
@@ -3497,6 +3622,7 @@ function CustomerOrderCard({
   onReschedule: (order: Order) => void;
   onRateOrder: (order: Order) => void;
   onIssueThirdPartyCode: (order: Order) => void;
+  onVerifyPickup?: (order: Order) => void;
   deliveryCodes: Record<string, { code: string; expiresAt: string }>;
   deliveryActionId: string | null;
 }) {
@@ -3620,6 +3746,47 @@ function CustomerOrderCard({
         </div>
       )}
 
+      {/* Food Drop Delivery / Pickup Verification Code */}
+      {order.verificationCode && (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-[#155F65] text-white">
+                <KeyRound className="size-4" />
+              </span>
+              <div>
+                <b className="text-sm text-[#155F65]">Food Drop Pickup Verification Code</b>
+                <span className="ml-2 text-xs font-bold text-stone-500">• Self Pickup (No online payment)</span>
+              </div>
+            </div>
+            <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
+              {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified & Collected" : "Show Code at Pickup"}
+            </Status>
+          </div>
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/95 rounded-xl p-3.5 border border-emerald-100">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">Unique Pickup Code</div>
+              <div className="font-mono text-2xl sm:text-3xl font-black tracking-[0.25em] text-[#155F65]">
+                {order.verificationCode}
+              </div>
+            </div>
+            {order.verificationStatus !== "verified" && order.status !== "Delivered" && onVerifyPickup && (
+              <Button
+                size="sm"
+                onClick={() => onVerifyPickup(order)}
+                className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F] text-white font-bold"
+              >
+                <CheckCircle2 className="size-4 mr-1.5" />
+                Verify Food Received
+              </Button>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-stone-500">
+            Show this verification code to the vendor when collecting your food. Once verified, the order is marked Delivered.
+          </p>
+        </div>
+      )}
+
       {/* Action Footer */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-stone-100 mt-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -3711,6 +3878,33 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       toast.error(errorMessage(error, "The delivery request could not be accepted"));
     } finally { setDeliveryActionId(null); }
   }
+  async function handleVerifyFoodDropPickup(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) {
+        await updateLiveOrderStatus(order.id, "Delivered");
+      }
+      setState((current) => ({
+        ...current,
+        orders: current.orders.map((o) =>
+          o.id === order.id
+            ? { ...o, status: "Delivered", verificationStatus: "verified" as const }
+            : o
+        ),
+        notifications: [
+          notice(
+            session.email,
+            "customer",
+            "Food Drop Collected",
+            `Pickup verified for ${order.description}. Enjoy your meal!`
+          ),
+          ...current.notifications,
+        ],
+      }));
+      toast.success("Food Drop pickup verified! Order marked as Delivered.");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not verify pickup"));
+    }
+  }
   async function issueThirdPartyCode(order: Order) {
     setDeliveryActionId(order.id);
     try {
@@ -3771,7 +3965,13 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         <div className="flex items-center gap-3 rounded-[28px] bg-[#EEF2F2] p-4"><span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#155F65] text-lg font-bold">{(partner?.name || kitchen?.businessName || "D").slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1"><div className="truncate font-semibold">{partner ? `${partner.name} · Delivery partner` : "Delivery partner not assigned yet"}</div><div className="truncate text-xs text-[#55656A]">{kitchen?.businessName || "Your kitchen"} team</div></div>{partner?.phone && <a href={`tel:${partner.phone}`} aria-label={`Call ${partner.name}`} className="grid size-11 shrink-0 place-items-center rounded-full bg-[#155F65] text-white"><PhoneCall className="size-5" /></a>}</div></div>;
     })()}
     {orders.length ? <div className="space-y-4">
-      {orders.sort((a, b) => a.date.localeCompare(b.date)).map((order) => {
+      {[...orders].sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (aTime && bTime && aTime !== bTime) return bTime - aTime;
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return (b.id || "").localeCompare(a.id || "");
+      }).map((order) => {
         if (scope === "customer") {
           return (
             <CustomerOrderCard
@@ -3784,6 +3984,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
               onReschedule={(ord) => setRescheduling(ord)}
               onRateOrder={(ord) => setRatingOrder(ord)}
               onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
+              onVerifyPickup={(ord) => void handleVerifyFoodDropPickup(ord)}
               deliveryCodes={deliveryCodes}
               deliveryActionId={deliveryActionId}
             />
@@ -3806,6 +4007,17 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><b>{order.description}</b><Status>{order.status}</Status><Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{order.payment}</Status><span className="font-mono text-xs text-stone-400">{order.id}</span></div>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-5">{details.map(([label, value]) => <OrderDetail key={label} label={label} value={value} />)}</div>
+              {order.verificationCode && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-emerald-950">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="size-4 text-[#155F65]" />
+                    <span><b>Pickup Code:</b> <span className="font-mono text-base font-black tracking-widest">{order.verificationCode}</span></span>
+                  </div>
+                  <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
+                    {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified" : "Pending pickup"}
+                  </Status>
+                </div>
+              )}
               {order.status === "Out for delivery" && <div className="mt-4"><MapPreview lat={order.trackingLatitude || vendor?.latitude} lng={order.trackingLongitude || vendor?.longitude} radius={0} label="Live delivery position" /></div>}
               {order.mode === "Third-party delivery" && thirdPartyDelivery && <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2"><b className="text-sm text-violet-950">3rd Party Delivery Request</b><Status>{thirdPartyDelivery.status}</Status></div>
