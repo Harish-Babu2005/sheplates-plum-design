@@ -4,6 +4,7 @@ This release fixes the customer commerce-state split found during live testing.
 
 ## Fixed
 
+- Food Drops now enter the shared cart at their discounted price and become vendor-specific orders during checkout.
 - Cart is now account-backed in live mode instead of being only browser-local state.
 - Marketplace Add, She Agent basket actions, Cart quantity changes and removals all persist to the same draft cart.
 - She Agent now sees the same saved cart that the Cart screen displays.
@@ -19,7 +20,7 @@ This release fixes the customer commerce-state split found during live testing.
 
 ## Database
 
-No new migration is required. The release uses the existing `commerce_carts` and `commerce_cart_items` tables introduced in the V4 upgrade.
+The original state-sync release uses the existing `commerce_carts` and `commerce_cart_items` tables introduced in the V4 upgrade. Food Drop cart and checkout support additionally requires `supabase/V9_13_FOOD_DROP_CART_CHECKOUT.sql`, applied after the V9_12 Food Drops migration.
 
 ## Regression coverage
 

@@ -463,6 +463,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
             <SelectTrigger
               aria-label="Category"
               className="mt-1 h-[42px] w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900 outline-none focus:border-[#155F65]"
+              className="mt-1 h-[42px] w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900 outline-none focus:border-[#512D3A]"
             >
               <SelectValue placeholder="Select a category" />
             </SelectTrigger>

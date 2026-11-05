@@ -128,9 +128,7 @@ async function draftCartForCustomer(admin: AdminClient, customerId: string) {
   const cart = await admin.from("commerce_carts").select("id,status,created_by,created_at,updated_at").eq("customer_id", customerId).eq("status", "draft").order("updated_at", { ascending: false }).limit(1).maybeSingle();
   if (cart.error) throw cart.error;
   if (!cart.data) return { cart: null, items: [] as Array<Record<string, unknown>> };
-  let items = await admin.from("commerce_cart_items").select("id,cart_id,menu_item_id,vendor_id,quantity,unit,unit_price,food_drop_id,created_at").eq("cart_id", cart.data.id).order("created_at", { ascending: true });
-  // A database without the V9_13 Food Drop cart update has no food_drop_id column: the basket must still load.
-  if (items.error && /food_drop_id/i.test(items.error.message || "")) items = await admin.from("commerce_cart_items").select("id,cart_id,menu_item_id,vendor_id,quantity,unit,unit_price,created_at").eq("cart_id", cart.data.id).order("created_at", { ascending: true }) as unknown as typeof items;
+  const items = await admin.from("commerce_cart_items").select("id,cart_id,menu_item_id,vendor_id,quantity,unit,unit_price,food_drop_id,created_at").eq("cart_id", cart.data.id).order("created_at", { ascending: true });
   if (items.error) throw items.error;
   return { cart: cart.data as Record<string, unknown>, items: (items.data || []) as Array<Record<string, unknown>> };
 }
@@ -298,7 +296,7 @@ export async function POST(request: Request) {
       const removed = await admin.from("commerce_cart_items").delete().eq("cart_id", cartId);
       if (removed.error) throw removed.error;
       if (normalized.length) {
-        const added = await admin.from("commerce_cart_items").insert(normalized.map((item) => ({ cart_id: cartId, menu_item_id: item.productId, vendor_id: item.vendorId, quantity: item.quantity, unit: item.unit, unit_price: item.unitPrice, ...(item.foodDropId ? { food_drop_id: item.foodDropId } : {}) })));
+        const added = await admin.from("commerce_cart_items").insert(normalized.map((item) => ({ cart_id: cartId, menu_item_id: item.productId, vendor_id: item.vendorId, quantity: item.quantity, unit: item.unit, unit_price: item.unitPrice, food_drop_id: item.foodDropId || null })));
         if (added.error) throw added.error;
       }
       await admin.from("commerce_carts").update({ updated_at: new Date().toISOString(), created_by: String(body.createdBy || "customer") === "she_agent" ? "she_agent" : "customer" }).eq("id", cartId);
