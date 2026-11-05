@@ -280,7 +280,12 @@ export function ComplianceStep(p: ComplianceStepProps) {
 }
 
 /** Operations / Super Admin: the documents a vendor submitted, each openable as a real PDF (a short-lived private link). */
-export function ComplianceDocumentList({ vendor }: { vendor: { documents?: VendorComplianceDocument[]; certificateName?: string; fssaiNumber?: string; expiryDate?: string } }) {
+export function ComplianceDocumentList({ vendor, checkedKeys, onToggleDoc, selectable = false }: {
+  vendor: { documents?: VendorComplianceDocument[]; certificateName?: string; fssaiNumber?: string; expiryDate?: string };
+  checkedKeys?: Set<string>;
+  onToggleDoc?: (key: string) => void;
+  selectable?: boolean;
+}) {
   const [open, setOpen] = useState<{ title: string; fileName: string; url: string } | null>(null);
   const [busyId, setBusyId] = useState("");
   // A vendor saved before documents were listed (or in the demo) still has its certificate details on the vendor row.
@@ -296,10 +301,31 @@ export function ComplianceDocumentList({ vendor }: { vendor: { documents?: Vendo
     finally { setBusyId(""); }
   }
   return <section aria-label="Submitted compliance documents" data-testid="compliance-documents" className="rounded-2xl bg-white p-4">
-    <div className="mb-2 flex items-center gap-2"><FileText className="size-4 text-[#155F65]" /><span className="text-xs font-black uppercase tracking-wider text-[#202827]">Submitted Compliance Documents (PDF) · {docs.length}</span></div>
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2"><FileText className="size-4 text-[#155F65]" /><span className="text-xs font-black uppercase tracking-wider text-[#202827]">Submitted Compliance Documents (PDF) · {docs.length}</span></div>
+      {selectable && docs.length > 0 && (
+        <span className="text-xs font-bold text-[#155F65]">
+          {docs.filter((_, idx) => checkedKeys?.has(docs[idx].id || `${docs[idx].documentType}-${idx}`)).length} of {docs.length} verified
+        </span>
+      )}
+    </div>
     {docs.length ? <div className="grid gap-2 sm:grid-cols-2">{docs.map((doc, index) => {
-      const key = doc.id || `${doc.documentType}-${index}`; return <div key={key} className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-[#F7FAFA] p-2.5 text-xs">
-        <div className="min-w-0"><div className="flex items-center gap-1.5"><span className="rounded bg-red-100 px-1 font-mono text-[10px] font-black text-red-700">PDF</span><span className="truncate font-black text-[#202827]">{doc.title}</span></div>{doc.documentNumber && <div className="mt-0.5 truncate font-mono text-[11px] text-stone-600">{doc.documentNumber}</div>}{doc.expiryDate && <div className="text-[10px] text-stone-500">Expires {doc.expiryDate}</div>}{doc.fileName && <div className="truncate text-[10px] text-stone-400">{doc.fileName}</div>}</div>
+      const key = doc.id || `${doc.documentType}-${index}`;
+      const isChecked = checkedKeys?.has(key) ?? false;
+      return <div key={key} className={`flex items-center justify-between gap-2 rounded-xl border p-2.5 text-xs transition ${isChecked ? "border-[#155F65] bg-[#EAF4F2]/50" : "border-stone-200 bg-[#F7FAFA]"}`}>
+        <div className="flex min-w-0 items-start gap-2">
+          {selectable && (
+            <input
+              type="checkbox"
+              id={`check-doc-${key}`}
+              aria-label={`Verify ${doc.title}`}
+              checked={isChecked}
+              onChange={() => onToggleDoc?.(key)}
+              className="mt-0.5 size-4 rounded border-stone-300 text-[#155F65] accent-[#155F65] cursor-pointer"
+            />
+          )}
+          <div className="min-w-0"><div className="flex items-center gap-1.5"><span className="rounded bg-red-100 px-1 font-mono text-[10px] font-black text-red-700">PDF</span><label htmlFor={selectable ? `check-doc-${key}` : undefined} className={`truncate font-black text-[#202827] ${selectable ? "cursor-pointer" : ""}`}>{doc.title}</label></div>{doc.documentNumber && <div className="mt-0.5 truncate font-mono text-[11px] text-stone-600">{doc.documentNumber}</div>}{doc.expiryDate && <div className="text-[10px] text-stone-500">Expires {doc.expiryDate}</div>}{doc.fileName && <div className="truncate text-[10px] text-stone-400">{doc.fileName}</div>}</div>
+        </div>
         <Button type="button" variant="ghost" size="sm" disabled={busyId === key} onClick={() => void inspect(doc, key)} aria-label={`Inspect ${doc.title}`} className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold"><Eye className="size-3.5 text-[#155F65]" />{busyId === key ? "Opening…" : "Inspect"}</Button>
       </div>;
     })}</div> : <p className="text-xs text-stone-500">No documents on record for this vendor{vendor.certificateName ? ` besides the certificate file (${vendor.certificateName})` : ""}.</p>}

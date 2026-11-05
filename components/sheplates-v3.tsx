@@ -1266,9 +1266,9 @@ export function ShePlatesV3() {
   const content = role === "customer"
     ? renderCustomerPage()
     : role === "vendor"
-      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} />
+      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} />
       : role === "operations"
-        ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} />
+        ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} onOpenVendorProfile={setVendorProfileId} />
         : <AdminArea active={active} session={session} state={state} setState={setState} />;
 
   const customerCartCount = role === "customer" ? state.cart.filter((item) => item.customerEmail === session.email).reduce((sum, item) => sum + item.quantity, 0) : 0;
@@ -1287,22 +1287,25 @@ export function ShePlatesV3() {
       {content}
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
-      <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onToggleWishlist={(product) => setState((current) => {
-        const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
-        return {
-          ...current,
-          wishlist: alreadySaved
-            ? current.wishlist.filter((item) => !(item.customerEmail === session.email && item.productId === product.id))
-            : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
-        };
-      })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
       {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} close={() => setPlanProduct(null)} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
     </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
+      onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); else setActive("Vendor profile"); }}
+      vendor={vendor}
       banner={<>
         {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card flex items-center gap-3 rounded-2xl p-3 text-sm"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
+
+    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onToggleWishlist={(product) => setState((current) => {
+      const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
+      return {
+        ...current,
+        wishlist: alreadySaved
+          ? current.wishlist.filter((item) => !(item.customerEmail === session.email && item.productId === product.id))
+          : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
+      };
+    })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
 
     {!(role === "customer" && active === "She Agent") && <button data-tour="agent-desktop" onClick={() => (role === "customer" ? setActive("She Agent") : setAgentOpen(true))} className={`${role === "customer" ? "sp-desktop-agent-launcher" : "sp-staff-agent-launcher"} sp-agent-launcher group fixed bottom-5 right-4 z-30 grid size-16 place-items-center rounded-full border border-white/70 bg-white/92 p-2 shadow-[0_22px_70px_rgba(25, 19, 21,.24)] backdrop-blur-xl transition hover:shadow-[0_28px_90px_rgba(25, 19, 21,.30)] sm:right-6`} aria-label="Open She Agent">
       <span className="sp-agent-orb relative grid size-12 place-items-center rounded-full text-white"><Activity className="size-5" /></span>
@@ -1538,14 +1541,26 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
+  function continueOnboarding() {
+    if (step === 1 && !form.businessName.trim()) return toast.error("Please enter your business name");
+    if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
+    if (step === 2 && !form.address.trim()) return toast.error("Please enter the store address");
+    setStep((current) => current + 1);
+  }
   async function submit() {
-    if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
-    const certificateProblem = pdfProblem(file, "The Food Safety Certificate"); if (certificateProblem) return toast.error(certificateProblem);
+    if (!form.businessName.trim()) { setStep(1); return toast.error("Please enter your business name in Step 1."); }
+    if (!form.address.trim()) { setStep(2); return toast.error("Please enter your store address in Step 2."); }
+    if (!form.fssai.trim()) { setStep(4); return toast.error("Please enter your 14-digit FSSAI licence number in Step 4."); }
+    if (!form.expiry) { setStep(4); return toast.error("Please choose the FSSAI certificate expiry date in Step 4."); }
+    const certFile = file || Object.values(docFiles).find((f): f is File => Boolean(f));
+    if (!certFile) { setStep(4); return toast.error("Please upload your Food Safety Certificate (FSSAI) PDF."); }
+    const certificateProblem = pdfProblem(certFile, "The Food Safety Certificate"); if (certificateProblem) return toast.error(certificateProblem);
     const fieldProblems = complianceFieldProblems(docFields); if (fieldProblems.length) return toast.error(fieldProblems[0]);
-    if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
-    if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
-    if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
+    if (form.category === "Other" && !otherCategory.trim()) { setStep(1); return toast.error("Enter your business category"); }
+    const lat = Number.isFinite(form.lat) ? form.lat! : 13.0827;
+    const lng = Number.isFinite(form.lng) ? form.lng! : 80.2707;
+    const delivery = form.delivery || (!form.delivery && !form.pickup);
+    const pickup = form.pickup;
     if (!termsAccepted) return toast.error("Accept the Vendor Terms and Conditions to submit");
     if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to");
     setBusy(true);
@@ -1554,12 +1569,12 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
       const category = form.category === "Other" ? otherCategory.trim() : form.category;
       // Each document the vendor attached, with the number or details typed for it. Optional documents they skipped are not sent.
       const extraDocuments = COMPLIANCE_DOCS.filter((doc) => docFiles[doc.key]).map((doc) => ({ documentType: doc.key, file: docFiles[doc.key]!, ...documentEntry(doc.key, docFields) }));
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 }, termsAccepted, termsVersion: VENDOR_TERMS_VERSION, termsDocumentReference: VENDOR_TERMS_PDF, additionalDocuments: extraDocuments });
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: certFile, address: form.address, latitude: lat, longitude: lng, radiusKm: form.radius, delivery, pickup, operatingHours: { duration_hours: 7 }, termsAccepted, termsVersion: VENDOR_TERMS_VERSION, termsDocumentReference: VENDOR_TERMS_PDF, additionalDocuments: extraDocuments });
       const documents: VendorComplianceDocument[] = [
-        { documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: form.fssai, fileName: file.name, fileSize: file.size, expiryDate: form.expiry, verificationStatus: "submitted" },
+        { documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: form.fssai, fileName: certFile.name, fileSize: certFile.size, expiryDate: form.expiry, verificationStatus: "submitted" },
         ...extraDocuments.map((doc) => ({ documentType: doc.documentType, title: doc.title, documentNumber: doc.documentNumber, fileName: doc.file.name, fileSize: doc.file.size, metadata: doc.metadata, verificationStatus: "submitted" })),
       ];
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, ownerRole: form.ownerRole || "Proprietor", phone: form.phone, bio: form.bio, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave", termsAccepted: true, termsVersion: VENDOR_TERMS_VERSION, termsAcceptedAt: new Date().toISOString(), termsDocumentReference: VENDOR_TERMS_PDF, documents };
+      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, ownerRole: form.ownerRole || "Proprietor", phone: form.phone, bio: form.bio, businessName: form.businessName, category, address: form.address, latitude: lat, longitude: lng, radiusKm: form.radius, delivery, pickup, openToday: false, fssaiNumber: form.fssai, certificateName: certFile.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave", termsAccepted: true, termsVersion: VENDOR_TERMS_VERSION, termsAcceptedAt: new Date().toISOString(), termsDocumentReference: VENDOR_TERMS_PDF, documents };
       setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
       toast.success("Vendor application sent to Operations");
       if (operationsCreated && invite) {
@@ -3057,13 +3072,13 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
   </div>;
 }
 
-function VendorArea({ active, session, state, setState, shorts }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi }) {
+function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void }) {
   const vendor = vendorFor(state, session)!;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
   if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
-  if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} />;
+  if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
@@ -5255,7 +5270,7 @@ export function EditVendorProfileDialog({
   );
 }
 
-function VerificationView({ vendor, setState, session }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; onOpenVendorProfile?: () => void }) {
   const [editing, setEditing] = useState(false);
   const [certificate, setCertificate] = useState(vendor.fssaiNumber || "");
   const [fileName, setFileName] = useState(vendor.certificateName || "");
@@ -5307,7 +5322,7 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
       setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
     } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
-  return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
+  return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
     {vendor.termsAccepted === false && <section aria-label="Vendor Terms and Conditions" className="rounded-[28px] bg-[#FFF4CF] p-6 text-[#795900]"><h3 className="flex items-center gap-2 font-black"><AlertTriangle className="size-5" />Accept the Vendor Terms and Conditions</h3><p className="mt-2 text-sm leading-6">Operations cannot approve your store until you accept the ShePlates Vendor Terms and Conditions (version 1.0).</p><label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={termsTick} onChange={(e) => setTermsTick(e.target.checked)} className="mt-1 size-5 shrink-0 accent-[#155F65]" /><span>I have read and accept the ShePlates Vendor Terms and Conditions.</span></label><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setTermsViewOpen(true)} className="rounded-xl bg-white text-[#202827]"><FileText className="size-4" />View Terms &amp; Conditions</Button><Button onClick={() => void acceptTerms()} disabled={termsBusy} className="rounded-xl bg-[#155F65]">{termsBusy ? "Accepting…" : "Accept terms"}</Button></div></section>}
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsTick(true); setTermsViewOpen(false); toast.success("Tick confirmed. Press Accept terms to finish."); } : undefined} />
     <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">"{vendor.bio}"</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
@@ -5734,11 +5749,11 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
 
 function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
-function OperationsArea({ active, session, state, setState, navigate, openAgent }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   if (active === "AI insights") return <AIInsights role="operations" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
   if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
-  if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} />;
+  if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Store & radius") return <OperationsStoreRadius session={session} state={state} setState={setState} />;
   if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
   if (active === "RFQ desk") return isLiveSupabaseMode() ? <LiveRfqDesk /> : <RFQDesk state={state} />;
@@ -5832,7 +5847,7 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
     {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell>{vendor.address}<div className="text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="sr-only">Operations vendor onboarding</DialogTitle><DialogDescription className="sr-only">Create a vendor application</DialogDescription></DialogHeader><VendorOnboarding operationsCreated session={session} setState={setState} close={() => setOpen(false)} /></DialogContent></Dialog></div>;
 }
-function OperationsVerification({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
 
   async function decide(vendor: Vendor, verification: Verification, note = "") {
@@ -5858,21 +5873,177 @@ function OperationsVerification({ session, state, setState }: { session: DemoSes
   const [tab, setTab] = useState<"Submitted" | "Under review" | "Changes required" | "All">("All");
   const [pickedId, setPickedId] = useState("");
   const [vendorNote, setVendorNote] = useState("");
+  const [checkedDocs, setCheckedDocs] = useState<Record<string, Set<string>>>({});
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
+  const [rejectionReason, setRejectionReason] = useState("");
   const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
   const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
   const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
+
+  const pickedDocs = picked
+    ? picked.documents?.length
+      ? picked.documents
+      : picked.fssaiNumber || picked.certificateName
+        ? [{ id: "cert-0", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)" }]
+        : []
+    : [];
+  const pickedChecked = (picked && checkedDocs[picked.id]) || new Set<string>();
+  const allDocsChecked = pickedDocs.length > 0 ? pickedDocs.every((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)) : true;
+
+  function toggleDoc(key: string) {
+    if (!picked) return;
+    setCheckedDocs((prev) => {
+      const cur = new Set(prev[picked.id] || []);
+      if (cur.has(key)) cur.delete(key);
+      else cur.add(key);
+      return { ...prev, [picked.id]: cur };
+    });
+  }
+
+  function verifyAllDocs() {
+    if (!picked) return;
+    const allKeys = new Set(pickedDocs.map((doc, idx) => doc.id || `${doc.documentType}-${idx}`));
+    setCheckedDocs((prev) => ({ ...prev, [picked.id]: allKeys }));
+    toast.success(`Marked all ${pickedDocs.length} documents as verified`);
+  }
+
+  function handleApprove() {
+    if (!picked) return;
+    if (picked.termsAccepted === false) {
+      toast.error("This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved.");
+      return;
+    }
+    if (!allDocsChecked && pickedDocs.length > 0) {
+      const verifiedCount = pickedDocs.filter((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)).length;
+      toast.error(`Please verify and tick all uploaded documents (${verifiedCount} of ${pickedDocs.length} checked). Ticking checkboxes confirms each document was inspected.`);
+      return;
+    }
+    void decide(picked, "Verified", vendorNote);
+    setVendorNote("");
+  }
+
+  function openRejectModal(decision: "Rejected" | "Changes required") {
+    setPendingDecision(decision);
+    setRejectionReason(vendorNote.trim());
+    setRejectModalOpen(true);
+  }
+
+  function confirmRejection() {
+    if (!picked) return;
+    if (!rejectionReason.trim()) {
+      toast.error("Please write a reason so the vendor understands what needs correction.");
+      return;
+    }
+    void decide(picked, pendingDecision, rejectionReason.trim());
+    setRejectModalOpen(false);
+    setRejectionReason("");
+    setVendorNote("");
+  }
+
   return <div className="space-y-5"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Check each vendor's documents, location and radius before they can sell." />
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
         {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`block w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="flex items-start justify-between gap-2"><b>{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-xl font-semibold">{picked.businessName}</h3><p className="text-xs text-[#55656A]">Owner {picked.ownerName} · {picked.ownerEmail} · {picked.plan} plan</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}</div><p className="text-xs text-[#55656A]">Owner {picked.ownerName} · {picked.ownerEmail} · {picked.plan} plan</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
         <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
         <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {picked.fssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {picked.expiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
-        <ComplianceDocumentList vendor={picked} />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
+            {picked.verification !== "Verified" && pickedDocs.length > 0 && (
+              <button
+                type="button"
+                onClick={verifyAllDocs}
+                className="text-xs font-bold text-[#155F65] hover:underline cursor-pointer"
+              >
+                Tick all ({pickedDocs.length}) documents
+              </button>
+            )}
+          </div>
+          <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
+        </div>
         <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
-        {picked.verification !== "Verified" ? <div className="space-y-3">{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false} onClick={() => { void decide(picked, "Verified", vendorNote); setVendorNote(""); }}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => { void decide(picked, "Changes required", vendorNote); setVendorNote(""); }}>Ask for changes</Button><Button variant="outline" onClick={() => { void decide(picked, "Rejected", vendorNote); setVendorNote(""); }} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
+        {picked.verification !== "Verified" ? <div className="space-y-3">{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
       </section>}
-    </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}</div>;
+    </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
+
+    <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
+      <DialogContent className="max-w-lg rounded-3xl p-6">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black text-[#202827]">
+            {pendingDecision === "Rejected" ? "Reject Vendor Application" : "Request Changes from Vendor"}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-stone-500">
+            Write the specific reason for {pendingDecision === "Rejected" ? "rejecting" : "requesting changes on"} <b>{picked?.businessName}</b>. The vendor will receive this note as an instant notification.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div>
+            <label className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
+              Quick Reasons
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "FSSAI certificate expired or invalid",
+                "Address proof illegible / address mismatch",
+                "Government ID name mismatch",
+                "Store outside active delivery radius",
+                "Bank details unverified / missing IFSC",
+                "Please upload menu catalogue PDF",
+              ].map((snippet) => (
+                <button
+                  key={snippet}
+                  type="button"
+                  onClick={() =>
+                    setRejectionReason((prev) =>
+                      prev ? `${prev}. ${snippet}` : snippet
+                    )
+                  }
+                  className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:border-[#155F65] hover:bg-[#EAF4F2] transition cursor-pointer"
+                >
+                  + {snippet}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="rejection-reason-textarea" className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
+              Reason / Instructions for Vendor <span className="text-rose-600">*</span>
+            </label>
+            <textarea
+              id="rejection-reason-textarea"
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              rows={4}
+              maxLength={600}
+              placeholder="Explain clearly what document or detail is required or why the application cannot be accepted..."
+              className="w-full rounded-2xl border border-stone-300 bg-white p-3.5 text-sm text-[#202827] outline-none focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10"
+            />
+            <p className="mt-1 text-right text-[11px] text-stone-400">{rejectionReason.length}/600</p>
+          </div>
+        </div>
+
+        <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => setRejectModalOpen(false)} className="rounded-xl">
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmRejection}
+            className={`rounded-xl font-bold ${
+              pendingDecision === "Rejected"
+                ? "bg-[#b42332] text-white hover:bg-rose-700"
+                : "bg-[#155F65] text-white hover:bg-[#0F4A4F]"
+            }`}
+          >
+            Confirm {pendingDecision === "Rejected" ? "Rejection" : "Changes Required"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>;
 }
 function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const [q, setQ] = useState(""); const [onlyCustom, setOnlyCustom] = useState(false); const products = state.products.filter((x) => x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0); const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length; return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="grid gap-4 sm:grid-cols-3"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(customCount)} icon={Percent} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div><div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" /><button type="button" onClick={() => setOnlyCustom(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>All</button><button type="button" onClick={() => setOnlyCustom(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>Custom %</button></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-bold">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
 function RFQDesk({ state }: { state: V3State }) {
