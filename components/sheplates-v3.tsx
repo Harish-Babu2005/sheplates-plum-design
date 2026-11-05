@@ -49,7 +49,7 @@ import {
   acceptLiveThirdPartyDelivery, issueLiveThirdPartyDeliveryCode, verifyLiveThirdPartyDeliveryCode,
   decideLiveVendorVerification, getAccessToken, isLiveSupabaseMode, isSupabaseConfigured,
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
-  loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile,
+  loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
@@ -611,6 +611,9 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     openToday: row.store_open_today, verification: verificationFromLive(row.verification_status),
     operational: operationalFromLive(row.operational_status), plan: planFromCode(planCodeFromEmbed(row.vendor_plans)),
     vendorKind: row.vendor_kind || "subscription",
+    logoUrl: row.logo_url || undefined,
+    bannerUrl: row.banner_url || undefined,
+    bio: row.description || undefined,
     fssaiNumber: String(document?.document_number || "Submitted"),
     certificateName: String(document?.storage_path || "Private certificate"), expiryDate: String(document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
@@ -1079,10 +1082,20 @@ export function ShePlatesV3() {
         }));
       } else if (syncSession.role === "vendor" && syncSession.vendorId) {
         const workspace = await loadLiveVendorWorkspace(syncSession.vendorId);
-        if (!cancelled) setState((current) => ({ ...current,
-          vendors: [vendorFromLive(workspace.vendor, { email: syncSession.email, name: syncSession.name }, workspace.document || undefined, workspace.documents as Array<Record<string, unknown>> | undefined)],
-          products: workspace.products.map(productFromLive),
-        }));
+        if (!cancelled) setState((current) => {
+          const existing = current.vendors.find((v) => v.id === syncSession.vendorId);
+          const live = vendorFromLive(workspace.vendor, { email: syncSession.email, name: syncSession.name }, workspace.document || undefined, workspace.documents as Array<Record<string, unknown>> | undefined);
+          if (!live.logoUrl && existing?.logoUrl) live.logoUrl = existing.logoUrl;
+          if (!live.bannerUrl && existing?.bannerUrl) live.bannerUrl = existing.bannerUrl;
+          if (!live.ownerRole && existing?.ownerRole) live.ownerRole = existing.ownerRole;
+          if (!live.phone && existing?.phone) live.phone = existing.phone;
+          if (!live.bio && existing?.bio) live.bio = existing.bio;
+          return {
+            ...current,
+            vendors: [live],
+            products: workspace.products.map(productFromLive),
+          };
+        });
       } else {
         const workspace = await loadLiveOperationsWorkspace();
         if (!cancelled) setState((current) => ({ ...current,
@@ -2928,7 +2941,31 @@ function readImage(file: File, done: (value: string) => void) { const reader = n
 
 function StorefrontPos({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const outlets = vendor.outlets || [{ id: `${vendor.id}-main`, name: "Main outlet", address: vendor.address, latitude: vendor.latitude, longitude: vendor.longitude, radiusKm: vendor.radiusKm, openToday: vendor.openToday, certificateNumber: vendor.fssaiNumber, certificateName: vendor.certificateName, certificateExpiry: vendor.expiryDate }];
-  function asset(kind: "logoUrl" | "bannerUrl", file?: File) { if (!file) return; readImage(file, (value) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, [kind]: value } : x), audit: [audit(session, `Updated storefront ${kind === "logoUrl" ? "logo" : "banner"}`, vendor.businessName), ...s.audit] })); toast.success("Storefront image updated"); }); }
+  function asset(kind: "logoUrl" | "bannerUrl", file?: File) {
+    if (!file) return;
+    readImage(file, async (dataUrl) => {
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, [kind]: dataUrl } : x),
+        audit: [audit(session, `Updated storefront ${kind === "logoUrl" ? "logo" : "cover banner"}`, vendor.businessName), ...s.audit],
+      }));
+      toast.success(kind === "logoUrl" ? "Updating store logo…" : "Updating cover banner…");
+      try {
+        let finalUrl = dataUrl;
+        if (isLiveSupabaseMode()) {
+          finalUrl = await uploadLiveVendorImage(vendor.id, dataUrl);
+          await saveLiveVendorBranding({ vendorId: vendor.id, [kind]: finalUrl });
+        }
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, [kind]: finalUrl } : x),
+        }));
+        toast.success(kind === "logoUrl" ? "Store logo saved!" : "Cover banner saved!");
+      } catch (error) {
+        console.error("Could not persist storefront image to server:", error);
+      }
+    });
+  }
   function addOutlet() { const name = prompt("Outlet / POS name"); const address = prompt("Complete outlet address"); if (!name || !address) return; const outlet: VendorOutlet = { id: id("POS"), name, address, radiusKm: vendor.radiusKm, openToday: false }; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: [...outlets, outlet] } : x) })); toast.success("Outlet added. Add its certification and exact location before opening."); }
   function updateOutlet(outletId: string, patch: Partial<VendorOutlet>) { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: outlets.map((outlet) => outlet.id === outletId ? { ...outlet, ...patch } : outlet) } : x), audit: [audit(session, "Updated outlet", `${vendor.businessName} · ${outletId}`), ...s.audit] })); }
   function editCertification(outlet: VendorOutlet) { const number = prompt("Certification / licence number", outlet.certificateNumber || "") ?? (outlet.certificateNumber || ""); const expiry = prompt("Expiry date (YYYY-MM-DD)", outlet.certificateExpiry || "") ?? (outlet.certificateExpiry || ""); updateOutlet(outlet.id, { certificateNumber: number, certificateExpiry: expiry }); toast.success("Outlet certification saved"); }

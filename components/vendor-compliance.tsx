@@ -297,10 +297,12 @@ export function ComplianceDocumentList({ vendor }: { vendor: { documents?: Vendo
   }
   return <section aria-label="Submitted compliance documents" data-testid="compliance-documents" className="rounded-2xl bg-white p-4">
     <div className="mb-2 flex items-center gap-2"><FileText className="size-4 text-[#155F65]" /><span className="text-xs font-black uppercase tracking-wider text-[#202827]">Submitted Compliance Documents (PDF) · {docs.length}</span></div>
-    {docs.length ? <div className="grid gap-2 sm:grid-cols-2">{docs.map((doc, index) => { const key = doc.id || `${doc.documentType}-${index}`; return <div key={key} className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-[#F7FAFA] p-2.5 text-xs">
-      <div className="min-w-0"><div className="flex items-center gap-1.5"><span className="rounded bg-red-100 px-1 font-mono text-[10px] font-black text-red-700">PDF</span><span className="truncate font-black text-[#202827]">{doc.title}</span></div>{doc.documentNumber && <div className="mt-0.5 truncate font-mono text-[11px] text-stone-600">{doc.documentNumber}</div>}{doc.expiryDate && <div className="text-[10px] text-stone-500">Expires {doc.expiryDate}</div>}{doc.fileName && <div className="truncate text-[10px] text-stone-400">{doc.fileName}</div>}</div>
-      <Button type="button" variant="ghost" size="sm" disabled={busyId === key} onClick={() => void inspect(doc, key)} aria-label={`Inspect ${doc.title}`} className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold"><Eye className="size-3.5 text-[#155F65]" />{busyId === key ? "Opening…" : "Inspect"}</Button>
-    </div>; })}</div> : <p className="text-xs text-stone-500">No documents on record for this vendor{vendor.certificateName ? ` besides the certificate file (${vendor.certificateName})` : ""}.</p>}
+    {docs.length ? <div className="grid gap-2 sm:grid-cols-2">{docs.map((doc, index) => {
+      const key = doc.id || `${doc.documentType}-${index}`; return <div key={key} className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-[#F7FAFA] p-2.5 text-xs">
+        <div className="min-w-0"><div className="flex items-center gap-1.5"><span className="rounded bg-red-100 px-1 font-mono text-[10px] font-black text-red-700">PDF</span><span className="truncate font-black text-[#202827]">{doc.title}</span></div>{doc.documentNumber && <div className="mt-0.5 truncate font-mono text-[11px] text-stone-600">{doc.documentNumber}</div>}{doc.expiryDate && <div className="text-[10px] text-stone-500">Expires {doc.expiryDate}</div>}{doc.fileName && <div className="truncate text-[10px] text-stone-400">{doc.fileName}</div>}</div>
+        <Button type="button" variant="ghost" size="sm" disabled={busyId === key} onClick={() => void inspect(doc, key)} aria-label={`Inspect ${doc.title}`} className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold"><Eye className="size-3.5 text-[#155F65]" />{busyId === key ? "Opening…" : "Inspect"}</Button>
+      </div>;
+    })}</div> : <p className="text-xs text-stone-500">No documents on record for this vendor{vendor.certificateName ? ` besides the certificate file (${vendor.certificateName})` : ""}.</p>}
     <PdfPreviewDialog doc={open} onClose={() => setOpen(null)} />
   </section>;
 }

@@ -44,6 +44,9 @@ export type LiveVendorRow = {
   terms_version?: string | null;
   terms_accepted_at?: string | null;
   terms_document_reference?: string | null;
+  logo_url?: string | null;
+  banner_url?: string | null;
+  description?: string | null;
   // Embedded via the vendors.plan_id -> vendor_plans foreign key. This client
   // has no generated Database types, so supabase-js can't confirm the FK is
   // many-to-one — it types (and may return) this as an array either way.
@@ -360,7 +363,7 @@ export async function loadConnectVendorsNearby(
 export async function loadLiveVendorWorkspace(vendorId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
+  const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   let productRows = productResult.data as LiveMenuItemRow[] | null;
@@ -371,7 +374,10 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
     productError = fallbackProducts.error;
   }
   const [initialVendor, documents] = await Promise.all([vendorPromise, documentsPromise]);
-  const vendor = initialVendor;
+  let vendor = initialVendor;
+  if (vendor.error && (vendor.error.code === "42703" || /banner_url|logo_url|description/i.test(vendor.error.message || ""))) {
+    vendor = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status").eq("id", vendorId).single();
+  }
   if (vendor.error) throw vendor.error;
   if (productError) throw productError;
   if (documents.error) throw documents.error;
@@ -395,7 +401,7 @@ export async function loadLiveOperationsWorkspace() {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
-    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
+    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
     supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
@@ -733,6 +739,27 @@ export async function saveLiveVendorLocation(input: { vendorId: string; address:
   }).eq("id", input.vendorId);
   if (result.error) throw result.error;
 }
+
+
+export async function saveLiveVendorBranding(input: {
+  vendorId: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.logoUrl !== undefined) patch.logo_url = input.logoUrl;
+  if (input.bannerUrl !== undefined) patch.banner_url = input.bannerUrl;
+
+  let result = await supabase.from("vendors").update(patch).eq("id", input.vendorId);
+  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || "")) && patch.logo_url) {
+    result = await supabase.from("vendors").update({ logo_url: patch.logo_url, updated_at: patch.updated_at }).eq("id", input.vendorId);
+  }
+  if (result.error) throw result.error;
+}
+
+export const uploadLiveVendorImage = uploadLiveProductImage;
 
 export async function saveLiveVendorProfile(input: {
   vendorId: string;
