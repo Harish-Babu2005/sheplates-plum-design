@@ -1226,10 +1226,28 @@ export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
   if (result.error) throw result.error;
 }
 
-/** The write path for a claim: calls atomic claim_food_drop() RPC, with fallback for legacy DB triggers. */
-export async function claimLiveFoodDrop(dropId: string, quantity: number): Promise<import("@/lib/food-drops").FoodDropClaim> {
+/** The write path for a claim: calls commerce API with admin service role, with fallback for direct DB. */
+export async function claimLiveFoodDrop(dropId: string, quantity: number): Promise<import("@/lib/food-drops").FoodDropClaim & { orderId?: string; orderNumber?: string; verificationCode?: string; remainingQuantity?: number }> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  try {
+    const res = await commerceRequest({ action: "claim_food_drop", dropId, quantity }) as { success?: boolean; remainingQuantity?: number; dropId?: string; orderId?: string; orderNumber?: string; verificationCode?: string };
+    if (res && res.success) {
+      return {
+        id: res.orderId || `claim-${Date.now()}`,
+        dropId,
+        customerEmail: "",
+        quantity,
+        unitPrice: 0,
+        totalPrice: 0,
+        claimedAt: new Date().toISOString(),
+        orderId: res.orderId,
+        orderNumber: res.orderNumber,
+        verificationCode: res.verificationCode,
+        remainingQuantity: res.remainingQuantity,
+      };
+    }
+  } catch {}
   try {
     const result = await supabase.rpc("claim_food_drop", { p_drop_id: dropId, p_quantity: quantity }).single();
     if (!result.error && result.data) {

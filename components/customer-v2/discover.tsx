@@ -466,11 +466,13 @@ function dropTag(drop: FoodDrop) {
 function DropCard({ drop, state, profile, onClaim }: { drop: FoodDrop; state: V3State; profile: Coords; onClaim: (drop: FoodDrop, quantity: number) => Promise<void> }) {
   const now = useTicker();
   const [busy, setBusy] = useState(false);
+  const [quantity, setQuantity] = useState(1);
   const product = state.products.find((p) => p.id === drop.productId); const vendor = state.vendors.find((v) => v.id === drop.vendorId);
   const distance = vendor ? vendorDistanceKm(profile, vendor) : null; const tag = dropTag(drop);
   const status = dropDisplayStatus(drop, new Date(now));
   const schedule = foodDropSchedule(drop);
   const left = drop.remainingQuantity; const urgent = schedule.endsAt.getTime() - now < 3_600_000;
+  const currentQuantity = Math.min(Math.max(1, quantity), Math.max(1, left));
   return <article className="overflow-hidden rounded-[26px] border border-stone-200/70 bg-white shadow-sm">
     <PhotoTile imageUrl={product?.imageUrl} category={product?.category} className="h-48 sm:h-52" emojiSize={64}>
       <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black text-white shadow-lg ${status === "live" && urgent ? "bg-[#155F65]" : "bg-[#202827]/85"}`}><Timer className="size-3.5" /><span>{status === "live" ? <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">LIVE · Closes in</span>{formatCountdown(schedule.endsAt.toISOString(), new Date(now))}</> : <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">Scheduled</span>Starts at 12:00 PM</>}</span></span>
@@ -481,7 +483,49 @@ function DropCard({ drop, state, profile, onClaim }: { drop: FoodDrop; state: V3
       <p className="mt-0.5 text-xs font-bold text-stone-500">{vendor?.businessName || "Local vendor"}{distance !== null ? ` · ${distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}` : ""}</p>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div><div className="flex items-baseline gap-2"><span className="text-xl font-black">{money(drop.dropPrice)}</span><span className="text-xs font-bold text-stone-400 line-through">{money(drop.originalPrice)}</span></div><div className="mt-0.5 text-xs font-bold text-stone-500">{left} pack{left === 1 ? "" : "s"} left</div></div>
-        <button type="button" disabled={busy || left <= 0 || status !== "live"} onClick={async () => { setBusy(true); try { await onClaim(drop, 1); } finally { setBusy(false); } }} className={`rounded-full px-6 py-2.5 text-sm font-black text-white shadow-none transition disabled:cursor-not-allowed ${status === "live" ? "bg-[#155F65] hover:bg-[#0F4A4F]" : "bg-[#E1AE9B]"}`}>{busy ? "Adding…" : status === "live" ? "Add to cart" : "Available at 12 PM"}</button>
+        <div className="flex items-center gap-2">
+          {status === "live" && left > 0 && (
+            <div className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-1 text-xs font-bold">
+              <button
+                type="button"
+                disabled={busy || currentQuantity <= 1}
+                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                className="grid size-6 place-items-center rounded-full text-stone-600 hover:bg-stone-200 disabled:opacity-30"
+                aria-label="Decrease quantity"
+              >
+                −
+              </button>
+              <span className="w-5 text-center font-black text-stone-800">{currentQuantity}</span>
+              <button
+                type="button"
+                disabled={busy || currentQuantity >= left}
+                onClick={() => setQuantity((q) => Math.min(left, q + 1))}
+                className="grid size-6 place-items-center rounded-full text-stone-600 hover:bg-stone-200 disabled:opacity-30"
+                aria-label="Increase quantity"
+              >
+                +
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            aria-label="Add to cart"
+            disabled={busy || left <= 0 || status !== "live"}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onClaim(drop, currentQuantity);
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className={`rounded-full px-5 py-2.5 text-sm font-black text-white shadow-none transition disabled:cursor-not-allowed ${
+              status === "live" ? "bg-[#155F65] hover:bg-[#0F4A4F]" : "bg-[#E1AE9B]"
+            }`}
+          >
+            {busy ? "Adding…" : status === "live" ? "Add to orders" : "Available at 12 PM"}
+          </button>
+        </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
     </div>

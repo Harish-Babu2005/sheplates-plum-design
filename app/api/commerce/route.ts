@@ -263,6 +263,103 @@ export async function POST(request: Request) {
   const action = String(body.action || "");
   const { admin, profile } = ctx;
   try {
+    if (action === "claim_food_drop") {
+      const dropId = String(body.dropId || "");
+      const quantity = Math.max(1, Math.floor(Number(body.quantity || 1)));
+      const { data: drop, error: fetchErr } = await admin.from("food_drops").select("id,vendor_id,product_id,title,drop_price,remaining_quantity,starts_at,ends_at,status").eq("id", dropId).maybeSingle();
+      if (fetchErr || !drop) return NextResponse.json({ error: "Food Drop not found." }, { status: 404 });
+      if (drop.status !== "active") return NextResponse.json({ error: "This Food Drop is no longer active." }, { status: 409 });
+      if (Number(drop.remaining_quantity || 0) < quantity) {
+        return NextResponse.json({ error: `Only ${drop.remaining_quantity} pack(s) remaining.` }, { status: 409 });
+      }
+
+      const start = new Date(String(drop.starts_at || 0));
+      const istStart = new Date(start.getTime() + 330 * 60_000);
+      let newStartsAt = drop.starts_at;
+      let newEndsAt = drop.ends_at;
+      if (istStart.getUTCHours() >= 18) {
+        const correctedStart = new Date(Date.UTC(istStart.getUTCFullYear(), istStart.getUTCMonth(), istStart.getUTCDate(), 12) - 330 * 60_000);
+        const correctedEnd = new Date(correctedStart.getTime() + 6 * 60 * 60_000);
+        newStartsAt = correctedStart.toISOString();
+        newEndsAt = correctedEnd.toISOString();
+      }
+
+      const nextRemaining = Math.max(0, Number(drop.remaining_quantity || 0) - quantity);
+      const updateResult = await admin.from("food_drops").update({
+        remaining_quantity: nextRemaining,
+        starts_at: newStartsAt,
+        ends_at: newEndsAt,
+        updated_at: new Date().toISOString(),
+      }).eq("id", dropId);
+      if (updateResult.error) throw updateResult.error;
+
+      try {
+        await admin.from("food_drop_claims").insert({
+          drop_id: dropId,
+          customer_id: profile.id,
+          quantity,
+          unit_price: Number(drop.drop_price || 0),
+          total_price: Number(drop.drop_price || 0) * quantity,
+        });
+      } catch {}
+
+      const ordNum = orderNumber();
+      const code = generateDeliveryVerificationCode();
+      const dropPrice = Number(drop.drop_price || 0);
+      const total = dropPrice * quantity;
+      const today = new Date().toISOString().slice(0, 10);
+      let createdOrderId: string | undefined;
+
+      try {
+        const insertedOrder = await admin.from("orders").insert({
+          order_number: ordNum,
+          customer_id: profile.id,
+          vendor_id: drop.vendor_id,
+          vendor_base_total: 0,
+          markup_total: 0,
+          tax_amount: 0,
+          delivery_fee: 0,
+          customer_total: total,
+          delivery_address: "Store Self-Pickup",
+          fulfilment_mode: "self_pickup",
+          scheduled_date: today,
+          scheduled_slot: "12:00 PM – 06:00 PM (Pickup)",
+          status: "confirmed",
+        }).select("id,order_number").single();
+
+        if (insertedOrder.data) {
+          createdOrderId = insertedOrder.data.id;
+          await admin.from("order_items").insert({
+            order_id: insertedOrder.data.id,
+            product_name: `${drop.title} (Food Drop)`,
+            quantity,
+            unit: "packs",
+            vendor_base_price: 0,
+            markup_percent: 0,
+            customer_price: dropPrice,
+          });
+          await admin.from("payments").insert({
+            order_id: insertedOrder.data.id,
+            customer_id: profile.id,
+            amount: total,
+            status: "paid",
+            provider: "food_drop_pickup",
+            provider_reference: `FOOD_DROP_CODE:${code}`,
+          });
+        }
+      } catch (orderErr) {
+        console.error("Order creation in claim_food_drop error:", orderErr);
+      }
+
+      return NextResponse.json({
+        success: true,
+        remainingQuantity: nextRemaining,
+        dropId,
+        orderId: createdOrderId,
+        orderNumber: ordNum,
+        verificationCode: code,
+      });
+    }
     if (action === "sync_cart") {
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const requested = Array.isArray(body.items) ? body.items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
