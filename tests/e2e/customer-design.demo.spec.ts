@@ -69,7 +69,8 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await page.getByRole("button", { name: "Open Meena's Home Kitchen" }).first().click();
 
     const dialog = page.getByRole("dialog");
-    const productName = (await dialog.locator(".leading-snug").first().textContent())?.trim();
+    // the name may start with the food-type mark's tooltip text (Vegetarian, Non-vegetarian, Contains egg)
+    const productName = (await dialog.locator(".leading-snug").first().textContent())?.trim().replace(/^(Vegetarian|Non-vegetarian|Contains egg)/, "");
     const saveButton = dialog.getByRole("button", { name: "Save to wishlist" }).first();
     await expect(saveButton).toBeVisible();
     await saveButton.click();
@@ -79,13 +80,13 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await openProfile(page);
     await page.getByRole("button", { name: "Wishlist", exact: true }).first().click();
     await expect(page.getByRole("heading", { name: "Your wishlist" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: productName! })).toBeVisible();
+    await expect(page.getByRole("heading", { name: new RegExp(productName!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) })).toBeVisible();
   });
 
   test("Food Drops: live cards with countdowns; Following scope fills once a vendor is followed", async ({ page }) => {
     await openAsCustomer(page);
     await go(page, "Food Drops");
-    await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(4);
+    await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(4);
     await expect(page.getByText("Slightly blemished").first()).toBeVisible();
     await expect(page.getByText(/Closes in/i).first()).toBeVisible();
 
@@ -102,7 +103,7 @@ test.describe("Customer portal — redesigned shell (demo data)", () => {
     await go(page, "Food Drops");
     await page.getByRole("tab", { name: "Following" }).click();
     await expect(page.getByRole("heading", { name: "Fresh Croissants (Surplus)" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add +" })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(1);
   });
 
   test("Schedules and Orders are separate pages in the menu", async ({ page }) => {

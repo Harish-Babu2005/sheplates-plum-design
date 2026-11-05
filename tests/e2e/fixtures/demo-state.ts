@@ -22,7 +22,7 @@ export function buildDemoState() {
   ];
   let n = 0;
   const product = (vendorId: string, name: string, category: string, baseUnit: string, vendorPrice: number, calories = 320, protein = 12) => ({
-    id: `p-${++n}`, vendorId, name, category, emoji: "🍽️", baseUnit, quantityStep: 1, vendorPrice, stock: 40, active: true, calories, protein, carbs: 40, fat: 10, fibre: 3, dietaryTags: [], nutritionStatus: "Estimated",
+    id: `p-${++n}`, vendorId, name, category, emoji: "🍽️", foodType: /chicken|mutton|fish|prawn|beef|meat/i.test(name) ? "non_veg" : /\begg/i.test(name) ? "egg" : "veg", /* test data only: real products are marked by their vendor */ baseUnit, quantityStep: 1, vendorPrice, stock: 40, active: true, calories, protein, carbs: 40, fat: 10, fibre: 3, dietaryTags: [], nutritionStatus: "Estimated",
   });
   const products = [
     product("v-meena", "Mini Meals", "Home food", "1 complete meal", 120, 520, 18), product("v-meena", "Variety Rice", "Home food", "1 portion", 100, 430), product("v-meena", "Sambar Rice", "Home food", "1 portion", 90, 400),

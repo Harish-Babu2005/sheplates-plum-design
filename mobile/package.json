@@ -1,0 +1,29 @@
+{
+  "name": "sheplates-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ShePlates Android and iPhone apps (Capacitor shell around the hosted app)",
+  "scripts": {
+    "assets": "npx capacitor-assets generate --iconBackgroundColor '#FAF7F2' --iconBackgroundColorDark '#512D3A' --splashBackgroundColor '#FAF7F2' --splashBackgroundColorDark '#512D3A'",
+    "sync": "npx cap sync",
+    "android:aab": "cd android && ./gradlew bundleRelease",
+    "android:apk": "cd android && ./gradlew assembleDebug",
+    "ios:open": "npx cap open ios",
+    "doctor": "npx cap doctor"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
+    "@capacitor/keyboard": "^8.0.6",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -196,6 +196,7 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
 
     // Verify inspection modal opens
     await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByText(/Uploaded files are kept on the live site only/i)).toBeVisible();
     await expect(page.getByText(/Verified compliance document in strict PDF format/i)).toBeVisible();
   });
 });

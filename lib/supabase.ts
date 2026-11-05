@@ -14,6 +14,8 @@ export function isLiveSupabaseMode() {
 }
 
 export type LiveMarketplaceRow = {
+  /** veg, non_veg or egg when the vendor has set it (read through product_food_types). */
+  food_type?: string | null;
   item_id: string; vendor_id: string; vendor_name: string; item_name: string; category: string;
   unit: string; quantity_step: number; stock_quantity: number; image_url: string | null;
   customer_price: number; calories_per_unit: number; protein_g: number; carbs_g: number;
@@ -49,6 +51,7 @@ export type LiveVendorRow = {
 };
 
 export type LiveMenuItemRow = {
+  food_type?: string | null;
   id: string; vendor_id: string; name: string; category: string; unit: string;
   quantity_step: number; stock_quantity: number; vendor_base_price: number; active: boolean;
   calories_per_unit: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number;
@@ -246,6 +249,21 @@ export async function clearLiveCustomerMemory(userId: string) {
   if (result.error) throw result.error;
 }
 
+/**
+ * Adds each product's food type (veg, non_veg, egg) to rows already loaded. It reads through one small function so it
+ * respects who may see what, and it is quiet when the function or column is not deployed yet: products then show no mark.
+ */
+async function attachFoodTypes<T extends { food_type?: string | null }>(supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>, rows: T[], idOf: (row: T) => string) {
+  const ids = rows.map(idOf).filter(Boolean).slice(0, 1000);
+  if (!ids.length) return;
+  try {
+    const { data, error } = await supabase.rpc("product_food_types", { p_ids: ids });
+    if (error || !Array.isArray(data)) return;
+    const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
+    for (const row of rows) row.food_type = types.get(idOf(row)) ?? null;
+  } catch { /* not deployed yet */ }
+}
+
 export async function loadLiveMarketplace(latitude: number, longitude: number) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -258,8 +276,10 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   if (diagnostics.error) throw diagnostics.error;
   if (homeConfig.error) console.error("Homepage merchandising is unavailable:", homeConfig.error.message);
   const config = homeConfig.error ? null : homeConfig.data?.config as { featuredProductIds?: string[]; recommendationPopupEnabled?: boolean; maxFeatured?: number } | null;
+  const marketplaceRows = (items.data || []) as LiveMarketplaceRow[];
+  await attachFoodTypes(supabase, marketplaceRows, (row) => row.item_id);
   return {
-    items: (items.data || []) as LiveMarketplaceRow[],
+    items: marketplaceRows,
     diagnostics: ((diagnostics.data || [])[0] || null) as MarketplaceDiagnostics | null,
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
@@ -355,6 +375,11 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (vendor.error) throw vendor.error;
   if (productError) throw productError;
   if (documents.error) throw documents.error;
+  const ownRows = productRows || [];
+  await attachFoodTypes(supabase, ownRows, (row) => row.id);
+  // The certificate is the vendor's FSSAI document; newer rows can be PAN, bank and so on.
+  const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
+  return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
   return { vendor: vendor.data as LiveVendorRow, products: productRows || [], document: documents.data?.[0] || null, documents: documents.data || [] };
 }
 
@@ -393,7 +418,9 @@ export async function loadLiveOperationsWorkspace() {
   if (campaigns.error) console.error("Marketing campaigns are unavailable:", campaigns.error.message);
   const config = homeConfig.error ? null : homeConfig.data?.config as { featuredProductIds?: string[]; recommendationPopupEnabled?: boolean; maxFeatured?: number } | null;
   const merchandisingError = homeConfig.error?.message || campaigns.error?.message || null;
-  return { vendors: vendorRows, products: (products.data || []) as LiveMenuItemRow[], profiles: profiles.data || [], documents: documents.data || [], merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+  const allProductRows = (products.data || []) as LiveMenuItemRow[];
+  await attachFoodTypes(supabase, allProductRows, (row) => row.id);
+  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
 }
 
 export async function saveLiveMarketplaceHome(config: { featuredProductIds: string[]; recommendationPopupEnabled: boolean; maxFeatured: number }) {
@@ -459,15 +486,62 @@ export async function uploadLiveProductImage(vendorId: string, dataUrl: string) 
   return result.publicUrl;
 }
 
+/** Asks the server to draw a sample picture for a product with no photo. Send productId to attach it, or name and category to preview. */
+export async function generateLiveProductImage(input: { productId?: string; name?: string; category?: string; force?: boolean }): Promise<string> {
+  const token = await getAccessToken();
+  const response = await fetch("/api/product-image-generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(input),
+  });
+  const json = await response.json() as { imageUrl?: string; error?: string };
+  if (!response.ok || !json.imageUrl) throw new Error(json.error || "The image could not be created.");
+  return json.imageUrl;
+}
+
+/** Super Admin: how many products still have no picture. */
+export async function loadProductImageGap(): Promise<{ products: number; kinds: number }> {
+  const token = await getAccessToken();
+  const response = await fetch("/api/admin/backfill-product-images", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const json = await response.json() as { products?: number; kinds?: number; error?: string };
+  if (!response.ok) throw new Error(json.error || "Could not count products without a picture.");
+  return { products: json.products ?? 0, kinds: json.kinds ?? 0 };
+}
+
+/** Super Admin: draw pictures for a few product types at a time. */
+export async function runProductImageBackfill(limit = 2): Promise<{ generated: number; reused: number; failed: number; remainingProducts: number; remainingKinds: number; message: string }> {
+  const token = await getAccessToken();
+  const response = await fetch("/api/admin/backfill-product-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ limit }),
+  });
+  const json = await response.json() as { generated?: number; reused?: number; failed?: number; remainingProducts?: number; remainingKinds?: number; message?: string; error?: string };
+  if (!response.ok) throw new Error(json.error || "The images could not be created.");
+  return { generated: json.generated ?? 0, reused: json.reused ?? 0, failed: json.failed ?? 0, remainingProducts: json.remainingProducts ?? 0, remainingKinds: json.remainingKinds ?? 0, message: json.message ?? "" };
+}
+
+/** A vendor sets the food type of one of their own products (the marks on customer screens come from this). */
+export async function saveLiveProductFoodType(productId: string, foodType: "veg" | "non_veg" | "egg" | null) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendor_menu_items").update({ food_type: foodType, updated_at: new Date().toISOString() }).eq("id", productId).select("id").maybeSingle();
+  if (result.error) {
+    if (/food_type/i.test(result.error.message || "")) throw new Error("Food types need the V9_18 database update. Ask the Super Admin to run it.");
+    throw result.error;
+  }
+  if (!result.data) throw new Error("That product could not be updated.");
+}
+
 export async function saveLiveVendorProduct(input: {
   vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
-  dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string;
+  dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
   nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const payload = {
+  const basePayload = {
     vendor_id: input.vendorId, name: input.name, category: input.category, unit: input.unit,
     quantity_step: 1, vendor_base_price: input.price, stock_quantity: input.stock, active: input.active,
     calories_per_unit: input.calories, protein_g: input.protein, carbs_g: input.carbs,
@@ -477,11 +551,14 @@ export async function saveLiveVendorProduct(input: {
     nutrition_confidence: input.nutritionConfidence ?? null,
     nutrition_note: input.nutritionNote || null,
   };
+  const payload = input.foodType ? { ...basePayload, food_type: input.foodType } : basePayload;
   let result = await supabase.from("vendor_menu_items").insert(payload).select("id").single();
+  // Same idea for the food type column: save the product even if the V9_18 migration has not been applied yet.
+  if (result.error && /food_type/i.test(result.error.message || "")) result = await supabase.from("vendor_menu_items").insert(basePayload).select("id").single();
   // Backward-compatible retry lets the UI keep working if the production migration
   // has not been applied yet; the release notes still require the migration.
   if (result.error && /nutrition_status|nutrition_confidence|nutrition_note/i.test(result.error.message || "")) {
-    const { nutrition_status: _status, nutrition_confidence: _confidence, nutrition_note: _note, ...legacyPayload } = payload;
+    const { nutrition_status: _status, nutrition_confidence: _confidence, nutrition_note: _note, ...legacyPayload } = basePayload;
     void _status;
     void _confidence;
     void _note;
@@ -493,6 +570,31 @@ export async function saveLiveVendorProduct(input: {
 
 export async function notifyLiveNutritionReview(input: { productId: string; productName: string; reason: string }) {
   return commerceRequest({ action: "notify_nutrition_review", ...input });
+}
+
+/**
+ * Deletes one of the vendor's own products. Uses the V9_19 database function, which also clears the product from
+ * customers' baskets. If that function is not installed yet it tries a plain delete, and when the product is still in a
+ * basket (which the table refuses) it takes the product off sale instead and says so.
+ */
+export async function deleteLiveVendorProduct(productId: string): Promise<{ deleted: boolean; removedFromBaskets: number }> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const viaFunction = await supabase.rpc("vendor_delete_menu_item", { p_item_id: productId });
+  if (!viaFunction.error) return { deleted: true, removedFromBaskets: Number(viaFunction.data ?? 0) };
+  const missing = viaFunction.error.code === "PGRST202" || /vendor_delete_menu_item|could not find the function|schema cache/i.test(viaFunction.error.message || "");
+  if (!missing) throw viaFunction.error;
+  const direct = await supabase.from("vendor_menu_items").delete().eq("id", productId).select("id");
+  if (!direct.error) {
+    if (!direct.data?.length) throw new Error("That product could not be deleted.");
+    return { deleted: true, removedFromBaskets: 0 };
+  }
+  if (direct.error.code === "23503") {
+    const off = await supabase.from("vendor_menu_items").update({ active: false, updated_at: new Date().toISOString() }).eq("id", productId);
+    if (off.error) throw off.error;
+    return { deleted: false, removedFromBaskets: 0 };
+  }
+  throw direct.error;
 }
 
 export async function setLiveProductActive(productId: string, active: boolean) {
@@ -642,6 +744,8 @@ export type OnboardingComplianceDocument = {
   metadata?: Record<string, unknown>;
 };
 
+const isPdfUpload = (file: Pick<File, "name" | "type">) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
 export async function submitLiveVendorApplication(input: {
   userId: string; businessName: string; category: string; locality: string;
   fssaiNumber: string; expiryDate: string; certificate: File; address?: string;
@@ -651,6 +755,13 @@ export async function submitLiveVendorApplication(input: {
   termsAccepted?: boolean;
   termsVersion?: string;
   termsDocumentReference?: string;
+  /** Optional compliance documents (PAN, ID, address, bank, business, products). Their numbers stay with the document, which only the vendor and Operations can read. */
+  additionalDocuments?: OnboardingComplianceDocument[];
+}) {
+  if (!input.termsAccepted) throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
+  if (!isPdfUpload(input.certificate)) throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
+  for (const doc of input.additionalDocuments ?? []) {
+    if (!isPdfUpload(doc.file)) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
   panNumber?: string;
   bankAccountNumber?: string;
   bankIfsc?: string;
@@ -679,6 +790,24 @@ export async function submitLiveVendorApplication(input: {
 
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+
+  // Upload every file first. If any upload fails, nothing is left half-saved: the files already uploaded are removed.
+  const uploaded: string[] = [];
+  const store = async (file: File) => {
+    const path = `${input.userId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+    const result = await supabase.storage.from("vendor-certificates").upload(path, file, { upsert: false, contentType: "application/pdf" });
+    if (result.error) throw new Error(`"${file.name}" could not be uploaded: ${result.error.message}`);
+    uploaded.push(path);
+    return path;
+  };
+  const discard = async () => { if (uploaded.length) await supabase.storage.from("vendor-certificates").remove(uploaded); };
+  let objectPath = "";
+  const extraPaths: string[] = [];
+  try {
+    objectPath = await store(input.certificate);
+    for (const doc of input.additionalDocuments ?? []) extraPaths.push(await store(doc.file));
+  } catch (error) { await discard(); throw error; }
+
   const safeName = input.certificate.name.replace(/[^a-zA-Z0-9._-]/g, "-");
   const objectPath = `${input.userId}/${crypto.randomUUID()}-${safeName}`;
   const upload = await supabase.storage.from("vendor-certificates").upload(objectPath, input.certificate, { upsert: false });
@@ -701,10 +830,24 @@ export async function submitLiveVendorApplication(input: {
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) {
-    // Do not leave the uploaded certificate behind when the application itself was refused.
-    await supabase.storage.from("vendor-certificates").remove([objectPath]);
+    // Do not leave the uploaded files behind when the application itself was refused.
+    await discard();
     throw vendor.error;
   }
+
+  const rows = [
+    { vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber, storage_path: objectPath, file_name: input.certificate.name, file_size: input.certificate.size, mime_type: "application/pdf", expiry_date: input.expiryDate, verification_status: "submitted", metadata: {} },
+    ...(input.additionalDocuments ?? []).map((doc, index) => ({
+      vendor_id: vendor.data.id, document_type: doc.documentType, document_number: doc.documentNumber || null, storage_path: extraPaths[index],
+      file_name: doc.file.name, file_size: doc.file.size, mime_type: "application/pdf", expiry_date: doc.expiryDate || null, verification_status: "submitted", metadata: doc.metadata || {},
+    })),
+  ];
+  let documents = await supabase.from("vendor_documents").insert(rows);
+  // A database that has not had the V9_20 update yet has no file detail columns: save the documents without them.
+  if (documents.error && /file_name|file_size|mime_type|metadata/i.test(documents.error.message || "")) {
+    documents = await supabase.from("vendor_documents").insert(rows.map(({ vendor_id, document_type, document_number, storage_path, expiry_date, verification_status }) => ({ vendor_id, document_type, document_number, storage_path, expiry_date, verification_status })));
+  }
+  if (documents.error) throw documents.error;
   const document = await supabase.from("vendor_documents").insert({
     vendor_id: vendor.data.id, document_type: "food_certificate", document_number: input.fssaiNumber,
     storage_path: objectPath, file_name: input.certificate.name, file_size: input.certificate.size,
@@ -738,6 +881,24 @@ export async function submitLiveVendorApplication(input: {
   if (profile.error) throw profile.error;
   if (!profile.data) throw new Error("Your vendor application was saved, but your account could not be linked to it. Please contact Operations before submitting again.");
   return vendor.data.id as string;
+}
+
+/** A vendor accepts the Vendor Terms and Conditions. The database records the time, version and document reference. */
+export async function acceptLiveVendorTerms(vendorId: string) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendors").update({ terms_accepted: true }).eq("id", vendorId).select("id").maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error("Your vendor account could not be updated. Sign in again and retry.");
+}
+
+/** A short-lived private link to a document a vendor uploaded. Only the vendor and Operations / Super Admin are allowed to ask for one. */
+export async function signedVendorDocumentUrl(storagePath: string, seconds = 600): Promise<string> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const signed = await supabase.storage.from("vendor-certificates").createSignedUrl(storagePath, seconds);
+  if (signed.error || !signed.data?.signedUrl) throw new Error(signed.error?.message || "The document could not be opened.");
+  return signed.data.signedUrl;
 }
 
 export async function acceptLiveVendorTerms(vendorId: string, version = "1.0") {
@@ -1053,7 +1214,17 @@ export async function createLiveFoodDrop(input: {
     total_quantity: input.totalQuantity, remaining_quantity: input.totalQuantity,
     starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(),
   }).select(FOOD_DROP_COLUMNS).single();
-  if (result.error || !result.data) throw result.error || new Error("Drop could not be created");
+  if (result.error || !result.data) {
+    const failure = result.error;
+    if (failure && (failure.code === "42501" || /row-level security|permission denied/i.test(failure.message || ""))) {
+      // The database only lets a store publish a Food Drop when its plan includes the feature. Say which of the two it is.
+      const entitled = await supabase.rpc("vendor_has_entitlement", { p_vendor: input.vendorId, p_key: "food_drops" });
+      if (!entitled.error && entitled.data === false) throw new Error("Your store's plan does not include Food Drops in the database yet. Ask Operations to confirm the Thrive or Crown plan on your store, then try again.");
+      throw new Error("You are not allowed to publish a Food Drop for this store. Sign in with the store owner's account, or ask Operations for help.");
+    }
+    if (failure && /food_drops|schema cache|does not exist/i.test(failure.message || "") && !/violates/i.test(failure.message || "")) throw new Error("Food Drops are not set up in the database yet. Ask the Super Admin to run the Food Drops update (V8_2 and V9_12).");
+    throw failure || new Error("Drop could not be created");
+  }
   return mapFoodDropRow(result.data as FoodDropRow);
 }
 

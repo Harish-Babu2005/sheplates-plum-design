@@ -126,6 +126,8 @@ export async function POST(request: Request) {
     const expiryDate = String(body.expiryDate || "").trim();
     const certificateStoragePath = String(body.certificateStoragePath || "").trim();
 
+    // PAN, bank and registration numbers are kept with their document (vendor_documents: only the vendor and
+    // Operations can read it), never as columns on the vendor row that customers can see.
     // Compliance document fields
     const panNumber = body.panNumber ? String(body.panNumber).trim().toUpperCase() : null;
     const bankAccountNumber = body.bankAccountNumber ? String(body.bankAccountNumber).trim() : null;
@@ -161,6 +163,17 @@ export async function POST(request: Request) {
 
     // Determine target owner user ID: vendor self-onboarding or staff assigning
     const targetUserId = profile.role === "vendor" ? authData.user.id : String(body.userId || authData.user.id);
+
+    // A stored file must live in the owner's own folder, so an application can never point at somebody else's upload.
+    for (const doc of rawDocuments) {
+      const path = String(doc.storagePath || "");
+      if (path && !path.startsWith(`${targetUserId}/`)) {
+        return NextResponse.json({ error: `Document "${doc.fileName || doc.documentType}" is not stored in the owner's folder.` }, { status: 400 });
+      }
+    }
+    if (certificateStoragePath && !certificateStoragePath.startsWith(`${targetUserId}/`)) {
+      return NextResponse.json({ error: "The certificate is not stored in the owner's folder." }, { status: 400 });
+    }
 
     // 2. Insert vendor record with verified terms acceptance & server-generated timestamp
     const vendorInsert = await c.admin

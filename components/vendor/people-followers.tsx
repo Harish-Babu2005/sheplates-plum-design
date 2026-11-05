@@ -35,7 +35,7 @@ export function VendorPeopleFollowers({ vendor }: { vendor: Vendor }) {
 
   return <div className="space-y-5">
     <div className="flex items-end justify-between gap-3">
-      <div><p className="text-xs font-black uppercase tracking-[.16em] text-[#512D3A]">CUSTOMER COMMUNITY</p><h1 className="mt-1 text-xl font-black">People followers</h1><p className="mt-1 text-sm text-stone-500">Customers who follow {vendor.businessName}.</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[.16em] text-[#155F65]">CUSTOMER COMMUNITY</p><h1 className="mt-1 text-xl font-black">People followers</h1><p className="mt-1 text-sm text-stone-500">Customers who follow {vendor.businessName}.</p></div>
       <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black shadow-sm">{followers.length} follower{followers.length === 1 ? "" : "s"}</span>
     </div>
     {loading && !followers.length ? <p className="text-sm font-bold text-stone-500" role="status">Loading followers…</p>

@@ -29,23 +29,23 @@ for (const who of ["customer", "vendor", "operations", "admin"] as const) {
       await open(page, who);
       const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth, bg: getComputedStyle(document.body).backgroundColor }));
       expect(m.scroll, "page scrolls sideways").toBeLessThanOrEqual(m.inner + 1);
-      expect(m.bg).toBe("rgb(250, 247, 242)");
+      expect(m.bg).toBe("rgb(255, 255, 255)");
     });
   }
 }
 
-test("brand roles: actions are terracotta, navigation and selection are plum, dark panels are plum", async ({ page }) => {
+test("brand roles: actions, navigation and dark panels are teal, the accent is fresh green", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "customer");
   const colour = (selector: string, prop: "backgroundColor" | "color") => page.locator(selector).first().evaluate((el, p) => getComputedStyle(el as HTMLElement)[p as "color"], prop);
-  expect(await colour(".k-actions .ibtn.o", "backgroundColor"), "cart button").toBe("rgb(198, 93, 58)");
-  expect(await colour(".k-menurow button.on", "backgroundColor"), "active navigation").toBe("rgb(81, 45, 58)");
-  expect(await colour(".k-head .k-agent", "backgroundColor"), "She Agent button").toBe("rgb(81, 45, 58)");
-  expect(await colour(".promo", "backgroundColor"), "Food Drops banner").toBe("rgb(81, 45, 58)");
-  expect(await colour(".promo .btn.gold", "backgroundColor"), "banner highlight is gold").toBe("rgb(217, 184, 121)");
+  expect(await colour(".k-actions .ibtn.o", "backgroundColor"), "cart button").toBe("rgb(21, 95, 101)");
+  expect(await colour(".k-menurow button.on", "backgroundColor"), "active navigation").toBe("rgb(21, 95, 101)");
+  expect(await colour(".k-head .k-agent", "backgroundColor"), "She Agent button").toBe("rgb(21, 95, 101)");
+  expect(await colour(".promo", "backgroundColor"), "Food Drops banner").toBe("rgb(21, 95, 101)");
+  expect(await colour(".promo .btn.accent", "backgroundColor"), "banner highlight is fresh green").toBe("rgb(61, 190, 116)");
 });
 
-test("keyboard focus is a visible solid plum ring on buttons and links", async ({ page }) => {
+test("keyboard focus is a visible solid teal ring on buttons and links", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "customer");
   const rings = new Set<string>();
@@ -55,7 +55,7 @@ test("keyboard focus is a visible solid plum ring on buttons and links", async (
   }
   rings.delete("none");
   expect(rings.size, "something took focus").toBeGreaterThan(0);
-  for (const ring of rings) expect(ring, "focus ring").toMatch(/^solid 3px rgb\(81, 45, 58\)$/);
+  for (const ring of rings) expect(ring, "focus ring").toMatch(/^solid 3px rgb\(21, 95, 101\)$/);
 });
 
 test("status colours stay distinct from the brand", async ({ page }) => {
@@ -80,6 +80,21 @@ for (const width of [320, 360, 390]) {
     expect(dialog.r).toBeLessThanOrEqual(dialog.vw);
     expect(dialog.t).toBeGreaterThanOrEqual(0);
     expect(dialog.b).toBeLessThanOrEqual(dialog.vh + 1);
-    expect(dialog.title, "heading is readable on the plum panel").toBe("rgb(255, 255, 255)");
+    expect(dialog.title, "heading is readable on the teal panel").toBe("rgb(255, 255, 255)");
   });
 }
+
+test("staff tables become readable cards on a phone and nothing is clipped", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "admin");
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^Vendors\s*\d*$/ }).click();
+  await page.waitForTimeout(800);
+  const row = page.locator("[data-slot='table-body'] [data-slot='table-row']").first();
+  await expect(row).toBeVisible();
+  expect(await row.evaluate((el) => getComputedStyle(el).display), "rows are cards").toBe("grid");
+  const cells = await row.locator("> *").evaluateAll((els) => els.map((el) => ({ right: Math.round(el.getBoundingClientRect().right), label: el.getAttribute("data-label") })));
+  for (const cell of cells) expect(cell.right, "cell runs off the screen").toBeLessThanOrEqual(390);
+  expect(cells.slice(1).every((c) => !!c.label), "every value has its column heading").toBe(true);
+});

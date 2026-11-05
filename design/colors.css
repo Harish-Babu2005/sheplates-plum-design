@@ -3,50 +3,52 @@
  * The app reads these values from the :root block at the top of app/theme-2.css; keep the two in step.
  * Fonts: Outfit. Controls are pill shaped, cards use a 24px radius, surfaces are flat.
  *
- * Roles
- *   Plum        identity, navigation, headings, selected states, dark panels
- *   Terracotta  primary actions and purchase controls (never a whole dashboard)
- *   Gold        selective highlights; never body text on a light ground
- *   Status      success, warning, destructive and info stay their own colours
+ * Launch palette
+ *   Peacock teal  primary: buttons, navigation, selected states, links, focus ring, dark panels
+ *   White         secondary: cards and secondary buttons
+ *   Near black    headings, text and icons
+ *   Fresh green   accent fill, always with near-black text (white on it is only 2.4:1)
+ *   Mint          accent tint and highlight text on teal
+ *   Greys         page, soft surfaces, borders and secondary text
+ *   Status        success, warning, destructive and info stay their own colours
  */
 :root {
-  /* Brand identity */
-  --brand-primary: #512D3A;
-  --brand-primary-hover: #40222E;
-  --brand-secondary: #C65D3A;
-  --brand-secondary-hover: #A84B2C;
-  --brand-accent: #D9B879;
+  /* Brand */
+  --brand-primary: #155F65;
+  --brand-primary-hover: #0F4A4F;
+  --brand-secondary: #FFFFFF;
+  --brand-secondary-hover: #EEF2F2;
+  --brand-accent: #3DBE74;
+  --brand-mint: #D9F5E7;
 
   /* Surfaces */
-  --background: #FAF7F2;
+  --background: #FFFFFF;
   --card: #FFFFFF;
-  --surface-soft: #F5EDE7;
-  --border: #E9DDD5;
+  --surface-soft: #EEF2F2;
+  --surface-soft-2: #E3E9E9;
+  --border: #DDE3E4;
 
   /* Typography */
-  --foreground: #292526;
-  --text-secondary: #665B5D;
-  --text-muted: #756B6C;
+  --foreground: #202827;
+  --text-body: #2F3C3F;
+  --text-secondary: #55656A;
+  --text-muted: #5F6F74;
 
   /* Interaction */
-  --action-primary: var(--brand-secondary);
-  --action-hover: var(--brand-secondary-hover);
+  --action-primary: var(--brand-primary);
+  --action-hover: var(--brand-primary-hover);
   --selected: var(--brand-primary);
-  --selected-soft: #F2E8EC;
+  --selected-soft: #EAF4F2;
+  --selected-soft-strong: #C5E3E4;
   --focus-ring: var(--brand-primary);
 
   /* Status */
   --success: #26834A;
   --warning: #795900;
   --destructive: #B42332;
+  --info: #285FBA;
 
   --font-sans: "Outfit", sans-serif;
   --radius-card: 24px;
   --radius-control: 999px;
-
-  /* Extra tokens used by the app (see app/theme-2.css for the full list) */
-  --surface-soft-2: #EDE2DA;
-  --selected-soft-strong: #E6D2DA;
-  --text-body: #4A4143;
-  --info: #285FBA;
 }

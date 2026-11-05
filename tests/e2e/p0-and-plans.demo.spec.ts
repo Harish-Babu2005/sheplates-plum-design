@@ -104,6 +104,7 @@ test("P0 Connect vendor listing category dropdown contains onboarding categories
   const entry = page.getByRole("button", { name: "P0 Connect vendors" }).first();
   await expect(entry).toBeVisible({ timeout: 60_000 });
   await entry.click();
+  await expect(page.getByRole("heading", { name: "Add a Connect vendor" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Create a P0 Connect listing" })).toBeVisible({ timeout: 15_000 });
 
   const categoryCombobox = page.getByRole("combobox", { name: "Category" });

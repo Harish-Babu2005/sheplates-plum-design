@@ -703,7 +703,7 @@ export async function POST(request: Request) {
       if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
       const documentNumber = String(body.documentNumber || "").trim();
       const expiryDate = body.expiryDate ? String(body.expiryDate) : null;
-      const { data: existing } = await admin.from("vendor_documents").select("id").eq("vendor_id", profile.vendor_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      const { data: existing } = await admin.from("vendor_documents").select("id").eq("vendor_id", profile.vendor_id).in("document_type", ["food_certificate", "fssai"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (existing?.id) await admin.from("vendor_documents").update({ document_number: documentNumber, expiry_date: expiryDate, verification_status: "submitted", updated_at: new Date().toISOString() }).eq("id", existing.id);
       else await admin.from("vendor_documents").insert({ vendor_id: profile.vendor_id, document_type: "fssai", document_number: documentNumber, storage_path: "pending-upload", expiry_date: expiryDate, verification_status: "submitted" });
       await admin.from("vendors").update({ verification_status: "submitted", operational_status: "inactive", marketplace_visible: false, updated_at: new Date().toISOString() }).eq("id", profile.vendor_id);

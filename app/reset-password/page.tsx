@@ -234,7 +234,7 @@ setPageState("success");
   }
 
   return (
-    <div className="min-h-screen bg-[#F5EDE7] text-[#292526]">
+    <div className="min-h-screen bg-[#EEF2F2] text-[#202827]">
       <Toaster position="top-center" richColors />
 
       {/* Header */}
@@ -248,10 +248,10 @@ setPageState("success");
             />
           </div>
           <div>
-            <div className="text-xl font-black tracking-[-.03em] text-[#292526]">
+            <div className="text-xl font-black tracking-[-.03em] text-[#202827]">
               ShePlates
             </div>
-            <div className="text-[10px] font-black uppercase tracking-[.18em] text-[#512D3A]">
+            <div className="text-[10px] font-black uppercase tracking-[.18em] text-[#155F65]">
               Agentic local commerce
             </div>
           </div>
@@ -268,7 +268,7 @@ setPageState("success");
       <main className="mx-auto flex max-w-lg flex-col px-4 pb-16 pt-6 sm:pt-12">
         <div className="overflow-hidden rounded-3xl border border-stone-200/70 bg-white shadow-xl shadow-stone-200/40">
           {/* Card Hero Header */}
-          <div className="bg-linear-to-r from-[#512D3A] via-[#512D3A] to-[#512D3A] p-6 text-white sm:p-7">
+          <div className="bg-linear-to-r from-[#155F65] via-[#155F65] to-[#155F65] p-6 text-white sm:p-7">
             <div className="flex items-center gap-2.5 text-xs font-black uppercase tracking-wider text-white/80">
               <KeyRound className="size-4" />
               <span>Security</span>
@@ -293,7 +293,7 @@ setPageState("success");
             {/* Loading State */}
             {pageState === "loading" && (
               <div className="flex flex-col items-center justify-center py-10 text-center">
-                <RefreshCcw className="size-8 animate-spin text-[#512D3A]" />
+                <RefreshCcw className="size-8 animate-spin text-[#155F65]" />
                 <p className="mt-4 text-sm font-bold text-stone-600">
                   Verifying your reset link…
                 </p>
@@ -324,7 +324,7 @@ setPageState("success");
                 <div className="flex flex-col gap-3">
                   <Button
                     onClick={() => router.push("/?forgot=true")}
-                    className="h-12 w-full rounded-xl bg-[#512D3A] text-sm font-black text-white hover:bg-black"
+                    className="h-12 w-full rounded-xl bg-[#155F65] text-sm font-black text-white hover:bg-black"
                   >
                     Request a new reset link <ArrowRight className="size-4" />
                   </Button>
@@ -358,7 +358,7 @@ setPageState("success");
   onClick={() =>
     router.push(`/?login=${resetAudience}`)
   }
-  className="h-12 w-full rounded-xl bg-[#C65D3A] text-sm font-black text-white hover:bg-[#A84B2C]"
+  className="h-12 w-full rounded-xl bg-[#155F65] text-sm font-black text-white hover:bg-[#0F4A4F]"
 >
   {resetAudience === "team" ? "Go to Vendor / Team sign in" : "Go to customer sign in"}
   <ArrowRight className="size-4" />
@@ -380,7 +380,7 @@ setPageState("success");
                         {userEmail}
                       </div>
                     </div>
-                    <BadgeCheck className="size-5 shrink-0 text-[#512D3A]" />
+                    <BadgeCheck className="size-5 shrink-0 text-[#155F65]" />
                   </div>
                 )}
 
@@ -486,7 +486,7 @@ setPageState("success");
 
                 <Button
                   disabled={busy}
-                  className="h-12 w-full rounded-xl bg-[#512D3A] text-base font-black text-white hover:bg-black"
+                  className="h-12 w-full rounded-xl bg-[#155F65] text-base font-black text-white hover:bg-black"
                 >
                   {busy ? "Updating password…" : "Update password"}
                   <ArrowRight />
@@ -498,7 +498,7 @@ setPageState("success");
 
         {/* Security badge footer */}
         <div className="mt-6 flex items-center justify-center gap-2 text-xs font-bold text-stone-400">
-          <ShieldCheck className="size-4 text-[#512D3A]" />
+          <ShieldCheck className="size-4 text-[#155F65]" />
           <span>Secured with ShePlates Authentication</span>
         </div>
       </main>

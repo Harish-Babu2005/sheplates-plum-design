@@ -1,37 +1,38 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { adminClient, callerFromRequest, ensureConceptImage, ImageError, setProductImage } from "@/lib/product-image-server";
 
-async function authorised(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!url || !anon || !token) return process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
-  const client = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } });
-  const { data: auth } = await client.auth.getUser(token); if (!auth.user) return false;
-  const { data: profile } = await client.from("profiles").select("role").eq("id", auth.user.id).maybeSingle();
-  return profile?.role === "vendor" || profile?.role === "admin";
-}
+export const maxDuration = 120;
 
+/**
+ * Draws a sample picture for a product that has none. A vendor may only do this for their own store; Operations and
+ * Super Admin may do it for any product. Send { productId } to attach the picture, or { name, category } to preview it.
+ * { force: true } draws a fresh variant (Regenerate). A vendor's own photo is never replaced unless force is sent.
+ */
 export async function POST(request: Request) {
-  if (!(await authorised(request))) return NextResponse.json({ error: "Vendor or Super Admin access is required." }, { status: 403 });
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "Image creation is temporarily unavailable." }, { status: 503 });
-  const body = await request.json() as { productName?: string; category?: string; pack?: string };
-  if (!body.productName?.trim()) return NextResponse.json({ error: "Enter a product name." }, { status: 400 });
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
-      size: "1024x1024",
-      quality: "medium",
-      prompt: `Create a clean realistic ecommerce catalogue photo of ${body.productName}. Category: ${body.category || "food"}. Selling pack: ${body.pack || "retail pack"}. Use an honest neutral product presentation, soft daylight, uncluttered warm background, no people, no text overlays, no fake brand labels, and no misleading quantity.`,
-    }),
-  });
-  const json = await response.json() as { data?: Array<{ b64_json?: string; url?: string }>; error?: { message?: string } };
-  if (!response.ok) return NextResponse.json({ error: json.error?.message || "Image creation failed." }, { status: response.status });
-  const item = json.data?.[0];
-  if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}` });
-  if (item?.url) return NextResponse.json({ imageUrl: item.url });
-  return NextResponse.json({ error: "No image was returned." }, { status: 502 });
+  try {
+    const caller = await callerFromRequest(request);
+    if (!caller) return NextResponse.json({ error: "Sign in to create an image." }, { status: 401 });
+    if (!["vendor", "admin", "operations"].includes(caller.role)) return NextResponse.json({ error: "Vendor access is required." }, { status: 403 });
+    const admin = adminClient();
+    if (!admin) return NextResponse.json({ error: "Image storage is unavailable." }, { status: 503 });
+
+    const body = await request.json() as { productId?: string; name?: string; category?: string; force?: boolean };
+    let name = String(body.name ?? "");
+    let category = String(body.category ?? "");
+    const productId = body.productId?.trim();
+    if (productId) {
+      const { data: product } = await admin.from("vendor_menu_items").select("id,vendor_id,name,category,image_url").eq("id", productId).maybeSingle();
+      if (!product) return NextResponse.json({ error: "That product was not found." }, { status: 404 });
+      if (caller.role === "vendor" && caller.vendorId !== product.vendor_id) return NextResponse.json({ error: "This product belongs to another store." }, { status: 403 });
+      if (product.image_url && !body.force) return NextResponse.json({ imageUrl: product.image_url, source: "existing" });
+      name = String(product.name); category = String(product.category);
+    }
+
+    const result = await ensureConceptImage(admin, { name, category, vendorId: caller.role === "vendor" ? caller.vendorId : null, force: !!body.force });
+    if (productId) await setProductImage(admin, [productId], result.imageUrl, !body.force);
+    return NextResponse.json(result);
+  } catch (error) {
+    if (error instanceof ImageError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The image could not be created." }, { status: 500 });
+  }
 }

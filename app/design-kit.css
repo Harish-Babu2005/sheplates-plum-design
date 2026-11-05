@@ -50,7 +50,7 @@
 .sh .btn.sec{background:var(--s);color:var(--ink)}
 .sh .btn.out{background:var(--w);color:var(--ot);box-shadow:inset 0 0 0 2px var(--o)}
 .sh .btn.dark{background:var(--o);color:var(--on-brand)}
-.sh .btn.gold{background:var(--gold);color:var(--o)}
+.sh .btn.accent{background:var(--brand-accent);color:var(--ink)}
 .sh .btn.bad{background:var(--w);color:var(--redt);box-shadow:inset 0 0 0 2px #f0c3c9}
 .sh .btn.sm{height:40px;padding:0 18px;font-size:14px}
 .sh .btn.xs{height:34px;padding:0 14px;font-size:13px}
@@ -109,14 +109,14 @@
 .sh .card.o{background:var(--o); color: var(--on-brand); }
 .sh .card.dark{background:var(--o);color:var(--on-brand)}
 .sh .card.p0{padding:0;overflow:hidden}
-.sh .ph{display:grid;place-items:center;border-radius:20px;color:rgba(41,37,38,.55)}
+.sh .ph{display:grid;place-items:center;border-radius:20px;color:rgba(32,40,39,.55)}
 .sh .ph.a{background:var(--selected-soft)}
-.sh .ph.b{background:#E4EBDD}
-.sh .ph.c{background:#F6EBD3}
-.sh .ph.d{background:#F8E7DF}
-.sh .ph.e{background:#E3E9EF}
-.sh .ph.f{background:#EFE6DA}
-.sh .ph.g{background:#EBDDE3}
+.sh .ph.b{background:#E4F3EA}
+.sh .ph.c{background:#E6F4EE}
+.sh .ph.d{background:#E9EEF1}
+.sh .ph.e{background:#DDEBF3}
+.sh .ph.f{background:#ECEFEF}
+.sh .ph.g{background:#DDEFEF}
 .sh .promo{background:var(--o);border-radius:28px;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:12px;overflow:hidden; color: var(--on-brand); }
 .sh .phone{width:390px;height:844px;position:relative;overflow:hidden;background:var(--w)}
 .sh .phone .body{position:absolute;left:0;right:0;top:0;bottom:0;padding:28px 20px 112px;overflow:hidden;display:flex;flex-direction:column;gap:16px}
@@ -129,13 +129,13 @@
 .sh .nav .it .cnt{position:absolute;right:2px;top:2px}
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--w);border-radius:32px 32px 0 0;padding:14px 20px 24px;display:flex;flex-direction:column;gap:14px}
 .sheet::before{content:"";width:44px;height:5px;border-radius:3px;background:var(--dis);align-self:center}
-.sh .scrim{position:absolute;inset:0;background:rgba(41,37,38,.45)}
+.sh .scrim{position:absolute;inset:0;background:rgba(32,40,39,.45)}
 .sh .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
 .sh .sectionhd{display:flex;align-items:center;justify-content:space-between}
 .sh .sectionhd a{font:600 14px 'Outfit',sans-serif;color:var(--ot);text-decoration:none}
 .sh .fav{position:absolute;right:10px;top:10px}
-.sh .rate{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border-radius:14px;background:#fff;font:700 13px 'Outfit',sans-serif}
-.sh .rate .ic{color:var(--yel);width:16px;height:16px}
+.sh .rate{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border-radius:14px;background:var(--label-green);color:#fff;font:700 13px 'Outfit',sans-serif}
+.sh .rate .ic{color:#fff;width:16px;height:16px}
 .sh .qty{display:inline-flex;align-items:center;gap:14px;height:40px;padding:0 6px;border-radius:20px;background:var(--s);font:700 15px 'Outfit',sans-serif}
 .sh .qty i{width:30px;height:30px;border-radius:50%;background:#fff;display:grid;place-items:center;font-style:normal}
 .sh .step{display:flex;gap:12px;align-items:flex-start}
@@ -427,11 +427,11 @@
 .sh .i-whatsapp-logo{-webkit-mask-image:url(/icons/whatsapp-logo.svg);mask-image:url(/icons/whatsapp-logo.svg)}
 .sh .i-x{-webkit-mask-image:url(/icons/x.svg);mask-image:url(/icons/x.svg)}
 
-/* States: terracotta actions darken on hover; every focusable control shows the plum focus ring; disabled looks the same everywhere. */
-.sh .btn:hover:not(.sec):not(.out):not(.dark):not(.gold):not(.bad):not(.dis){background:var(--act-d)}
+/* States: teal actions darken on hover; every focusable control shows the teal focus ring; disabled looks the same everywhere. */
+.sh .btn:hover:not(.sec):not(.out):not(.dark):not(.accent):not(.bad):not(.dis){background:var(--act-d)}
 .sh .btn.dark:hover{background:var(--o-d)}
 .sh .btn:focus-visible,.sh .ibtn:focus-visible,.sh .chip:focus-visible,.sh .pill:focus-visible,.sh a:focus-visible,.sh button:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
 .sh .btn:disabled,.sh .btn[aria-disabled="true"]{background:var(--s);color:var(--ph);box-shadow:none;cursor:not-allowed}
 
-/* Chips and pills that sit on a plum surface */
+/* Chips and pills that sit on a teal surface */
 .sh .promo .pill.dark,.sh .card.o .pill.dark,.sh .card.dark .pill.dark{background:rgba(255,255,255,.16);color:var(--on-brand)}

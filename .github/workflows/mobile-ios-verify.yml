@@ -1,0 +1,49 @@
+name: iPhone project check
+
+# Proves the iPhone project compiles, without any Apple account or signing. Runs on every push that touches mobile/,
+# or by hand from the Actions tab. It also publishes a simulator build of the app (App.app.zip) you can run in the iOS
+# Simulator on a Mac. The signed App Store build is the separate "iPhone App Store build" workflow.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["mobile/**", ".github/workflows/mobile-ios-verify.yml"]
+
+jobs:
+  compile:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: xcodebuild -version
+      - run: npm ci
+      - run: npx cap sync ios
+      - name: Compile for iPhone devices (unsigned)
+        run: |
+          xcodebuild build -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/device" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+      - name: Compile for the iOS Simulator
+        run: |
+          xcodebuild build -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/sim" CODE_SIGNING_ALLOWED=NO
+      - name: Check the built app
+        run: |
+          APP="$RUNNER_TEMP/device/Build/Products/Release-iphoneos/App.app"
+          test -f "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          test -f "$APP/PrivacyInfo.xcprivacy" && echo "privacy manifest packaged"
+          test -f "$APP/public/offline.html" && echo "offline screen packaged"
+      - name: Zip the simulator app
+        run: cd "$RUNNER_TEMP/sim/Build/Products/Debug-iphonesimulator" && ditto -c -k --keepParent App.app "$GITHUB_WORKSPACE/App-simulator.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sheplates-ios-simulator-app
+          path: App-simulator.zip
