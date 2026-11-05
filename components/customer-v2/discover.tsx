@@ -53,7 +53,7 @@ export function PromoBanner({ onShop }: { onShop: () => void }) {
   return <div className="sh"><section className="promo k-promo" style={{ padding: "18px 22px" }}>
     <div className="col" style={{ gap: 6 }}>
       <span className="pill dark" style={{ width: "max-content" }}><Zap className="size-4" />Food Drops</span>
-      <h2 className="h2" style={{ fontSize: 24 }}>Tonight 8 PM to midnight</h2>
+      <h2 className="h2" style={{ fontSize: 24 }}>Todayy 12 PM to 6 PM</h2>
       <div className="s">Surplus meals from nearby kitchens at up to 50% off</div>
       <button type="button" onClick={onShop} className="btn xs accent" style={{ width: "max-content", marginTop: 6 }}>See today&apos;s drops</button>
     </div>
@@ -412,11 +412,46 @@ type DropScope = "Nearby" | "Following" | "Trending" | "Across City";
 function DropWindowBanner() {
   const now = useTicker();
   const ist = new Date(now + 5.5 * 3600_000);
-  const sec = ist.getUTCHours() * 3600 + ist.getUTCMinutes() * 60 + ist.getUTCSeconds();
-  const live = sec >= 20 * 3600;
-  const remaining = live ? 86400 - sec : 20 * 3600 - sec;
-  const clock = [Math.floor(remaining / 3600), Math.floor((remaining % 3600) / 60), remaining % 60].map((n) => String(n).padStart(2, "0")).join(":");
-  return <div className="flex items-center justify-between gap-4 rounded-[28px] bg-[#155F65] px-6 py-5 text-white"><div><div className="text-xs text-white/80">{live ? "Live now · closes at midnight" : "Opens at 8 PM"}</div><div className="text-[40px] font-bold leading-tight tabular-nums text-[#D9F5E7]" aria-label="Time left">{clock}</div></div><span className="grid size-14 shrink-0 place-items-center rounded-full bg-[#155F65] text-white"><Timer className="size-7" /></span></div>;
+
+  const sec =
+    ist.getUTCHours() * 3600 +
+    ist.getUTCMinutes() * 60 +
+    ist.getUTCSeconds();
+
+  const OPEN = 12 * 3600;
+  const CLOSE = 18 * 3600;
+
+  const live = sec >= OPEN && sec < CLOSE;
+
+  const remaining = live
+    ? CLOSE - sec
+    : sec < OPEN
+      ? OPEN - sec
+      : 86400 - sec + OPEN;
+
+  const clock = [
+    Math.floor(remaining / 3600),
+    Math.floor((remaining % 3600) / 60),
+    remaining % 60,
+  ]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[28px] bg-[#155F65] px-6 py-5 text-white">
+      <div>
+        <div className="text-xs text-white/80">
+          {live ? "Live now · closes at 6 PM" : "Opens at 12 PM"}
+        </div>
+        <div className="text-[40px] font-bold leading-tight tabular-nums text-[#D9F5E7]">
+          {clock}
+        </div>
+      </div>
+      <span className="grid size-14 shrink-0 place-items-center rounded-full bg-[#155F65] text-white">
+        <Timer className="size-7" />
+      </span>
+    </div>
+  );
 }
 
 const DROP_SCOPES = ["Nearby", "Following", "Trending", "Across City"] as const;
@@ -438,7 +473,7 @@ function DropCard({ drop, state, profile, onClaim }: { drop: FoodDrop; state: V3
   const left = drop.remainingQuantity; const urgent = schedule.endsAt.getTime() - now < 3_600_000;
   return <article className="overflow-hidden rounded-[26px] border border-stone-200/70 bg-white shadow-sm">
     <PhotoTile imageUrl={product?.imageUrl} category={product?.category} className="h-48 sm:h-52" emojiSize={64}>
-      <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black text-white shadow-lg ${status === "live" && urgent ? "bg-[#155F65]" : "bg-[#202827]/85"}`}><Timer className="size-3.5" /><span>{status === "live" ? <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">LIVE · Closes in</span>{formatCountdown(schedule.endsAt.toISOString(), new Date(now))}</> : <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">Scheduled</span>Starts at 8:00 PM</>}</span></span>
+      <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black text-white shadow-lg ${status === "live" && urgent ? "bg-[#155F65]" : "bg-[#202827]/85"}`}><Timer className="size-3.5" /><span>{status === "live" ? <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">LIVE · Closes in</span>{formatCountdown(schedule.endsAt.toISOString(), new Date(now))}</> : <><span className="block text-[9px] font-bold uppercase leading-none opacity-80">Scheduled</span>Starts at 12:00 PM</>}</span></span>
       {tag && <span className="absolute right-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-black text-[#155F65] shadow">{tag}</span>}
       <span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-black text-[#155F65] shadow">{discountPercent(drop)}% off</span>
     </PhotoTile>
@@ -467,14 +502,14 @@ export function FoodDropsTab({ state, profile, social, onClaim, onRefresh }: { s
   }, [state.foodDrops, state.vendors, scope, social.followed, profile]);
   return <div className="space-y-4">
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-      <div><h1 className="text-[28px] font-bold leading-tight">Food Drops</h1><p className="mt-1 text-sm text-[#55656A]">Surplus and limited batches from kitchens you can reach, every evening from 8 PM to midnight.</p></div>
-      <span className="inline-flex w-max items-center gap-2 rounded-full bg-[#EAF4F2] px-3 py-1.5 text-xs font-semibold text-[#155F65]"><span className="size-2 rounded-full bg-[#155F65]" />8 PM to midnight</span>
+      <div><h1 className="text-[28px] font-bold leading-tight">Food Drops</h1><p className="mt-1 text-sm text-[#55656A]">Surplus and limited batches from kitchens you can reach, every day from 12 PM to 6 PM.</p></div>
+      <span className="inline-flex w-max items-center gap-2 rounded-full bg-[#EAF4F2] px-3 py-1.5 text-xs font-semibold text-[#155F65]"><span className="size-2 rounded-full bg-[#155F65]" />12 PM to 6 PM</span>
     </div>
     <DropWindowBanner />
     <SegTabs tabs={DROP_SCOPES} value={scope} onChange={setScope} />
     {drops.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{drops.map((drop) => <DropCard key={drop.id} drop={drop} state={state} profile={profile} onClaim={onClaim} />)}</div>
       : <EmptyState emoji={scope === "Following" ? "💛" : "⚡"} title={scope === "Following" ? "No drops from vendors you follow" : "No drops here right now"} body={scope === "Following" ? "Follow vendors from their profile and their drops land here first." : "Vendors post drops when they have surplus or a limited batch. Check back soon, or try Across City."} />}
-    <div className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><Info className="mt-0.5 size-5 shrink-0" />A Food Drop can be claimed only on the evening it is created, between 8 PM and midnight IST.</div>
+    <div className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><Info className="mt-0.5 size-5 shrink-0" />A Food Drop can be claimed only on the evening it is created, between 12 PM and 6 PM IST.</div>
   </div>;
 }
 

@@ -33,8 +33,9 @@ export type FoodDropClaim = {
 export type DropDisplayStatus = "scheduled" | "live" | "sold_out" | "ended" | "cancelled";
 
 const FOOD_DROP_TIME_ZONE_OFFSET_MS = 330 * 60_000;
-const FOOD_DROP_OPEN_HOUR = 20;
-const FOOD_DROP_WINDOW_MS = 4 * 60 * 60_000;
+const FOOD_DROP_OPEN_HOUR = 12;
+const FOOD_DROP_CLOSE_HOUR = 18;
+const FOOD_DROP_WINDOW_MS = 6 * 60 * 60_000;
 
 function istClock(now: Date) {
   return new Date(now.getTime() + FOOD_DROP_TIME_ZONE_OFFSET_MS);
@@ -46,7 +47,8 @@ function istOpeningFor(now: Date) {
 }
 
 export function isFoodDropPurchaseWindow(now: Date = new Date()): boolean {
-  return istClock(now).getUTCHours() >= FOOD_DROP_OPEN_HOUR;
+  const hour = istClock(now).getUTCHours();
+  return hour >= FOOD_DROP_OPEN_HOUR && hour < FOOD_DROP_CLOSE_HOUR;
 }
 
 export function nextFoodDropWindow(now: Date = new Date()): { startsAt: Date; endsAt: Date } {

@@ -58,8 +58,8 @@ set search_path = public
 as $$
 declare
   v_local_now timestamp without time zone := now() at time zone 'Asia/Kolkata';
-  v_local_open timestamp without time zone := date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '20 hours';
-  v_local_close timestamp without time zone := date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '1 day';
+  v_local_open timestamp without time zone := date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '12 hours';
+  v_local_close timestamp without time zone := date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '18 hours';
 begin
   if v_local_now >= v_local_open then
     new.starts_at := now();
@@ -103,7 +103,7 @@ begin
     returning * into v_drop;
 
   if v_drop.id is null then
-    raise exception 'Food Drops are claimable only tonight, from 8:00 PM to midnight IST, while stock lasts' using errcode = 'P0001';
+    raise exception 'Food Drops are claimable from 12:00 PM to 6:00 PM IST, while stock lasts' using errcode = 'P0001';
   end if;
 
   insert into public.food_drop_claims (drop_id, customer_id, quantity, unit_price, total_price)
