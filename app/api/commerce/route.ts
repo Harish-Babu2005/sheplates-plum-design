@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
+import { calculateBillingSummary } from "@/lib/billing";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -139,17 +140,26 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (!ctx) throw new Error("Unauthorised");
   const { admin, profile } = ctx;
   const role = profile.role;
-  const orderQuery = admin.from("orders").select("id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)").order("created_at", { ascending: false }).limit(500);
-  if (role === "customer") orderQuery.eq("customer_id", profile.id);
+  const selectWithBilling = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,subtotal,gst_rate,gst_amount,discount_amount,total_amount,currency,delivery_distance,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
+  const selectBase = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
+
+  let orderQuery = admin.from("orders").select(selectWithBilling).order("created_at", { ascending: false }).limit(500);
+  if (role === "customer") orderQuery = orderQuery.eq("customer_id", profile.id);
   if (role === "vendor") {
     if (!profile.vendor_id) return { orders: [], schedules: [], staff: [], assignments: [], deliverySlots: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: true };
-    orderQuery.eq("vendor_id", profile.vendor_id);
+    orderQuery = orderQuery.eq("vendor_id", profile.vendor_id);
   }
   const schedulesQuery = admin.from("product_schedules").select("id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at").order("start_date", { ascending: true }).limit(500);
   if (role === "customer") schedulesQuery.eq("customer_id", profile.id);
   if (role === "vendor" && profile.vendor_id) schedulesQuery.eq("vendor_id", profile.vendor_id);
 
-  const [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
+  let [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
+  if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
+    let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
+    if (role === "customer") fallbackOrderQuery = fallbackOrderQuery.eq("customer_id", profile.id);
+    if (role === "vendor" && profile.vendor_id) fallbackOrderQuery = fallbackOrderQuery.eq("vendor_id", profile.vendor_id);
+    orders = (await fallbackOrderQuery) as any;
+  }
   if (orders.error) throw orders.error;
   if (schedules.error) throw schedules.error;
   const orderIds = (orders.data || []).map((order) => String(order.id));
@@ -509,6 +519,20 @@ export async function POST(request: Request) {
         const isFoodDrop = items.some((item) => Boolean(item.food_drop_id));
         const fulfilmentMode = isFoodDrop ? "self_pickup" : vendorFulfilments.get(vendorId);
         if (!fulfilmentMode) return NextResponse.json({ error: "This vendor's fulfilment settings could not be loaded." }, { status: 409 });
+
+        const { data: vendorRow } = await admin
+          .from("vendors")
+          .select("id,owner_id,latitude,longitude,radius_km,delivery_enabled,pickup_enabled,delivery_fee")
+          .eq("id", vendorId)
+          .maybeSingle();
+
+        const custLat = body.customerLatitude != null && Number.isFinite(Number(body.customerLatitude))
+          ? Number(body.customerLatitude)
+          : (profile as Record<string, unknown>).latitude != null ? Number((profile as Record<string, unknown>).latitude) : undefined;
+        const custLng = body.customerLongitude != null && Number.isFinite(Number(body.customerLongitude))
+          ? Number(body.customerLongitude)
+          : (profile as Record<string, unknown>).longitude != null ? Number((profile as Record<string, unknown>).longitude) : undefined;
+
         let vendorBaseTotal = 0; let customerTotal = 0;
         const orderItems = items.map((item) => {
           const product = item.product as Record<string, unknown>;
@@ -519,7 +543,46 @@ export async function POST(request: Request) {
           vendorBaseTotal += base * quantity; customerTotal += price * quantity;
           return { product_name: drop ? `${String(drop.title)} — ${String(product.name || "Product")}` : String(product.name || "Product"), quantity, unit: String(item.unit || product.unit || "pack"), vendor_base_price: base, markup_percent: base > 0 ? Math.max(0, ((price / base) - 1) * 100) : 0, customer_price: price };
         });
-        const inserted = await admin.from("orders").insert({ order_number: orderNumber(), customer_id: profile.id, vendor_id: vendorId, vendor_base_total: vendorBaseTotal, markup_total: Math.max(0, customerTotal - vendorBaseTotal), tax_amount: 0, delivery_fee: 0, customer_total: customerTotal, delivery_address: isFoodDrop ? "Store Self-Pickup" : deliveryAddress, fulfilment_mode: fulfilmentMode, scheduled_date: scheduledDate, scheduled_slot: isFoodDrop ? "12:00 PM – 06:00 PM (Pickup)" : scheduledSlot, status: isFoodDrop ? "confirmed" : "awarded" }).select("id,order_number").single();
+
+        const billing = calculateBillingSummary({
+          items: orderItems.map((item) => ({
+            name: item.product_name,
+            price: item.customer_price,
+            quantity: item.quantity,
+          })),
+          mode: fulfilmentMode,
+          customerCoords: { latitude: custLat, longitude: custLng },
+          vendorCoords: { latitude: vendorRow?.latitude, longitude: vendorRow?.longitude },
+          serviceRadiusKm: vendorRow?.radius_km,
+          vendorCustomFee: vendorRow?.delivery_fee,
+        });
+
+        if (!billing.isWithinRadius && fulfilmentMode === "vendor_delivery") {
+          return NextResponse.json({ error: billing.warningMessage || "Delivery address is beyond the vendor's service radius." }, { status: 400 });
+        }
+
+        const inserted = await admin.from("orders").insert({
+          order_number: orderNumber(),
+          customer_id: profile.id,
+          vendor_id: vendorId,
+          vendor_base_total: vendorBaseTotal,
+          markup_total: Math.max(0, billing.subtotal - vendorBaseTotal),
+          subtotal: billing.subtotal,
+          tax_amount: billing.gstAmount,
+          gst_amount: billing.gstAmount,
+          gst_rate: billing.gstRate,
+          delivery_fee: billing.deliveryFee,
+          delivery_distance: billing.deliveryDistanceKm,
+          discount_amount: billing.discountAmount,
+          total_amount: billing.totalAmount,
+          currency: billing.currency,
+          customer_total: billing.totalAmount,
+          delivery_address: isFoodDrop ? "Store Self-Pickup" : deliveryAddress,
+          fulfilment_mode: fulfilmentMode,
+          scheduled_date: scheduledDate,
+          scheduled_slot: isFoodDrop ? "12:00 PM – 06:00 PM (Pickup)" : scheduledSlot,
+          status: isFoodDrop ? "confirmed" : "awarded",
+        }).select("id,order_number").single();
         if (inserted.error) throw inserted.error;
         orderIds.push(inserted.data.id);
         if (fulfilmentMode === "third_party_delivery") {
@@ -532,15 +595,14 @@ export async function POST(request: Request) {
         if (itemInsert.error) throw itemInsert.error;
         if (isFoodDrop) {
           const verificationCode = generateDeliveryVerificationCode();
-          const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: customerTotal, status: "paid", provider: "food_drop_pickup", provider_reference: `FOOD_DROP_CODE:${verificationCode}` });
+          const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: billing.totalAmount, status: "paid", provider: "food_drop_pickup", provider_reference: `FOOD_DROP_CODE:${verificationCode}` });
           if (payment.error) throw payment.error;
           await admin.from("notifications").insert({ recipient_id: profile.id, kind: "food_drop_confirmed", title: "Food Drop Confirmed", body: `${inserted.data.order_number} is confirmed for pickup. Show verification code ${verificationCode} at the store.`, entity_type: "order", entity_id: inserted.data.id });
-          const { data: vendorRow } = await admin.from("vendors").select("owner_id").eq("id", vendorId).maybeSingle();
           if (vendorRow?.owner_id) {
             await admin.from("notifications").insert({ recipient_id: vendorRow.owner_id, kind: "new_order", title: "New Food Drop order", body: `${inserted.data.order_number} confirmed for pickup (Code: ${verificationCode}).`, entity_type: "order", entity_id: inserted.data.id });
           }
         } else {
-          const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: customerTotal, status: "pending", provider: "checkout" });
+          const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: billing.totalAmount, status: "pending", provider: "checkout" });
           if (payment.error) throw payment.error;
           await admin.from("notifications").insert({ recipient_id: profile.id, kind: "payment", title: "Complete payment", body: `${inserted.data.order_number} is ready for payment.`, entity_type: "order", entity_id: inserted.data.id });
         }

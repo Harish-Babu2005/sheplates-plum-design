@@ -64,6 +64,13 @@ import {
   dropDisplayStatus, discountPercent, claimedPercent, formatCountdown, foodDropSchedule, nextFoodDropWindow,
   type FoodDrop, type FoodDropClaim,
 } from "@/lib/food-drops";
+import {
+  calculateBillingSummary,
+  DEFAULT_DELIVERY_PRICING,
+  CATEGORY_GST_RATES,
+  haversineDistanceKm,
+  type BillingSummary,
+} from "@/lib/billing";
 import { useSocial } from "@/lib/social";
 import { groupMatches } from "@/lib/market-groups";
 import { CustomerBottomNav, CustomerFooter, CustomerHeader, tabOf } from "@/components/customer-v2/shell";
@@ -199,6 +206,14 @@ mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | 
   verificationCode?: string;
   verificationStatus?: "pending" | "verified";
   foodDropId?: string;
+  subtotal?: number;
+  gstRate?: number;
+  gstAmount?: number;
+  deliveryFee?: number;
+  discountAmount?: number;
+  totalAmount?: number;
+  currency?: string;
+  deliveryDistanceKm?: number | null;
 };
 type ThirdPartyDeliveryRequest = {
   orderId: string; customerId: string; vendorId: string; notes: string;
@@ -715,6 +730,14 @@ type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; sche
       verificationCode: parsedCode || existing?.verificationCode,
       verificationStatus: existing?.verificationStatus || (parsedCode && liveOrderStatus(row.status) === "Delivered" ? "verified" : "pending"),
       foodDropId: existing?.foodDropId,
+      subtotal: row.subtotal != null ? Number(row.subtotal) : (existing?.subtotal ?? (Number(row.customer_total || 0) - Number(row.tax_amount || 0) - Number(row.delivery_fee || 0))),
+      gstRate: row.gst_rate != null ? Number(row.gst_rate) : existing?.gstRate,
+      gstAmount: row.gst_amount != null ? Number(row.gst_amount) : (row.tax_amount != null ? Number(row.tax_amount) : existing?.gstAmount),
+      deliveryFee: row.delivery_fee != null ? Number(row.delivery_fee) : existing?.deliveryFee,
+      discountAmount: row.discount_amount != null ? Number(row.discount_amount) : existing?.discountAmount,
+      totalAmount: row.total_amount != null ? Number(row.total_amount) : (Number(row.customer_total || 0) || existing?.totalAmount),
+      currency: typeof row.currency === "string" ? row.currency : (existing?.currency || "INR"),
+      deliveryDistanceKm: row.delivery_distance != null ? Number(row.delivery_distance) : existing?.deliveryDistanceKm,
     };
   });
   const serverOrderIds = new Set(rawOrders.map((o) => o.id));
@@ -2171,6 +2194,35 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const effectiveSelectedSlot = (selectedSlot && cartSlotOptions.includes(selectedSlot)) ? selectedSlot : (cartSlotOptions[0] || "");
   const total = items.reduce((sum, item) => { const product = state.products.find((x) => x.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
 
+  const firstProduct = state.products.find((p) => p.id === items[0]?.productId);
+  const cartVendor = state.vendors.find((v) => v.id === firstProduct?.vendorId);
+  const activeSelectedAddress = useNewAddress
+    ? null
+    : savedAddresses.find((address) => address.id === selectedAddressId) || savedAddresses[0];
+
+  const custLat = activeSelectedAddress?.latitude ?? customer?.latitude;
+  const custLng = activeSelectedAddress?.longitude ?? customer?.longitude;
+
+  const billingSummary = useMemo(() => {
+    return calculateBillingSummary({
+      items: items.map((item) => {
+        const prod = state.products.find((x) => x.id === item.productId);
+        const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
+        const price = item.unitPrice ?? (drop ? drop.dropPrice : (prod ? finalPrice(prod, state) : 0));
+        return {
+          name: drop?.title || prod?.name || "Item",
+          price,
+          quantity: item.quantity,
+          category: prod?.category,
+        };
+      }),
+      mode: containsFoodDrop ? "Self pickup" : checkoutMode,
+      customerCoords: { latitude: custLat, longitude: custLng },
+      vendorCoords: { latitude: cartVendor?.latitude, longitude: cartVendor?.longitude },
+      serviceRadiusKm: cartVendor?.radiusKm,
+    });
+  }, [items, state.products, state.foodDrops, containsFoodDrop, checkoutMode, custLat, custLng, cartVendor?.latitude, cartVendor?.longitude, cartVendor?.radiusKm, state]);
+
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
     setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));
     if (!isLiveSupabaseMode()) return;
@@ -2214,6 +2266,10 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       toast.error(`Choose a delivery date within the next ${ORDER_WINDOW_DAYS} days.`);
       return;
     }
+    if (!containsFoodDrop && checkoutMode === "Vendor delivery" && !billingSummary.isWithinRadius) {
+      toast.error(billingSummary.warningMessage || "Delivery address is beyond the vendor's service radius.");
+      return;
+    }
     const address = deliveryAddress.trim();
     if (!address) {
       toast.error("Choose a saved delivery address or enter a new one.");
@@ -2242,12 +2298,21 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       try {
         // Sync first so carts created on another device / older build are reconciled before checkout.
         await syncLiveCart({ items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId })) });
-const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]);
+        const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selectedSlot || cartSlotOptions[0]);
         if (checkoutMode !== "Self pickup" && !effectiveSlot) {
           toast.error("Please select a delivery time slot.");
           return;
         }
-        const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: effectiveSlot, deliveryAddress: address, mode: checkoutMode, deliveryInstructions: finalInstructions });        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
+        const result = await checkoutLiveCart({
+          scheduledDate: deliveryDate,
+          slot: effectiveSlot,
+          deliveryAddress: address,
+          mode: checkoutMode,
+          deliveryInstructions: finalInstructions,
+          customerLatitude: custLat != null ? Number(custLat) : undefined,
+          customerLongitude: custLng != null ? Number(custLng) : undefined,
+        });
+        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
         if (!snapshot) throw new Error("Checkout did not return the latest order state.");
         const next = mergeLiveCommerce(state, snapshot, session);
         setState(next);
@@ -2275,7 +2340,15 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
       description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "),
       quantity: items.reduce((sum, x) => sum + x.quantity, 0),
       unit: "packs",
-      total,
+      subtotal: billingSummary.subtotal,
+      gstRate: billingSummary.gstRate,
+      gstAmount: billingSummary.gstAmount,
+      deliveryFee: billingSummary.deliveryFee,
+      deliveryDistanceKm: billingSummary.deliveryDistanceKm,
+      discountAmount: billingSummary.discountAmount,
+      total: billingSummary.totalAmount,
+      totalAmount: billingSummary.totalAmount,
+      currency: billingSummary.currency,
       date: deliveryDate,
       slot: (checkoutMode === "Self pickup" || containsFoodDrop) ? "Store pickup" : effectiveSelectedSlot,
       deliveryAddress: containsFoodDrop ? "Store Self-Pickup" : address,
@@ -2284,6 +2357,16 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
       payment: containsFoodDrop ? "Paid" : "Pending",
       cancellationFee: 0,
       createdAt: new Date().toISOString(),
+      items: items.map((item) => {
+        const prod = state.products.find((x) => x.id === item.productId);
+        const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
+        return {
+          name: drop?.title || prod?.name || "Item",
+          quantity: item.quantity,
+          unit: prod?.baseUnit,
+          price: item.unitPrice ?? (drop ? drop.dropPrice : (prod ? finalPrice(prod, state) : 0)),
+        };
+      }),
       verificationCode,
       verificationStatus: containsFoodDrop ? "pending" : undefined,
       foodDropId: items.find((it) => it.foodDropId)?.foodDropId,
@@ -2348,9 +2431,47 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
           <label className="mt-3 block max-w-sm text-sm font-semibold text-[#2F3C3F]">Delivery date<input aria-label="Order delivery date" type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} className={`${inputClass} mt-2`} /></label></section>
       </div>
       <aside className="surface-card h-fit rounded-3xl p-5 lg:sticky lg:top-40"><h3 className="text-lg font-semibold">Order summary</h3>
-        <div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span className="text-[#2F3C3F]">Products</span><b>{items.length}</b></div><div className="flex justify-between"><span className="text-[#2F3C3F]">Items</span><b>{items.reduce((sum, item) => sum + item.quantity, 0)}</b></div></div>
-        <div className="my-3 h-px bg-[#DDE3E4]" /><div className="flex items-center justify-between"><b>Estimated total</b><b className="text-2xl tabular-nums">{money(total)}</b></div>
-        <Button disabled={savingCart} onClick={() => setAddressDialogOpen(true)} className="mt-4 w-full"><CreditCard />{savingCart ? "Saving…" : "Continue to payment"}</Button></aside>
+        <div className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between"><span className="text-[#2F3C3F]">Products</span><b>{items.length}</b></div>
+          <div className="flex justify-between"><span className="text-[#2F3C3F]">Items</span><b>{items.reduce((sum, item) => sum + item.quantity, 0)}</b></div>
+          <div className="flex justify-between"><span className="text-[#2F3C3F]">Item subtotal</span><b className="tabular-nums">{money(billingSummary.subtotal)}</b></div>
+          <div className="flex justify-between">
+            <span className="text-[#2F3C3F]">
+              Delivery fee {billingSummary.deliveryDistanceKm != null ? `(${billingSummary.deliveryDistanceKm} km)` : ""}
+            </span>
+            <b className="tabular-nums">
+              {billingSummary.isPickup ? "₹0 (Store Pickup)" : billingSummary.isThirdParty ? "₹0 (3rd Party)" : money(billingSummary.deliveryFee)}
+            </b>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[#2F3C3F]">Taxes (GST {billingSummary.gstRate}%)</span>
+            <b className="tabular-nums">{money(billingSummary.gstAmount)}</b>
+          </div>
+          {billingSummary.discountAmount > 0 && (
+            <div className="flex justify-between text-emerald-700">
+              <span>Discount</span>
+              <b className="tabular-nums">−{money(billingSummary.discountAmount)}</b>
+            </div>
+          )}
+        </div>
+        <div className="my-3 h-px bg-[#DDE3E4]" />
+        <div className="flex items-center justify-between">
+          <b>Estimated total</b>
+          <b className="text-2xl tabular-nums">{money(billingSummary.totalAmount)}</b>
+        </div>
+        {!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery" && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-700">
+            Delivery unavailable: Address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor's {billingSummary.serviceRadiusKm} km service limit. Switch to Self-pickup or 3rd Party Delivery.
+          </div>
+        )}
+        <Button
+          disabled={savingCart || (!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery")}
+          onClick={() => setAddressDialogOpen(true)}
+          className="mt-4 w-full"
+        >
+          <CreditCard />{savingCart ? "Saving…" : "Continue to payment"}
+        </Button>
+      </aside>
     </div> : pendingOrders.length === 0 ? <Empty icon={ShoppingCart} title="Your cart is empty" body="Ask She Agent to add products or add them from the marketplace. The same saved basket appears everywhere." /> : null}
     <Dialog open={addressDialogOpen} onOpenChange={setAddressDialogOpen}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[28px] sm:max-w-xl">
@@ -2443,8 +2564,43 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
             <span className="flex items-center gap-2"><Plus className="size-4" /> Use a new address</span>
           </button>
           {useNewAddress && <Field label="New delivery address"><Textarea autoFocus value={newAddress} onChange={(event) => setNewAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field>}
+          <div className="rounded-2xl bg-stone-50 p-3.5 text-xs space-y-1.5 border border-stone-200">
+            <div className="flex justify-between text-stone-600">
+              <span>Item Subtotal:</span>
+              <span className="font-mono font-semibold">{money(billingSummary.subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-stone-600">
+              <span>Delivery fee {billingSummary.deliveryDistanceKm != null ? `(${billingSummary.deliveryDistanceKm} km)` : ""}:</span>
+              <span className="font-mono font-semibold">
+                {billingSummary.isPickup ? "₹0 (Store Pickup)" : billingSummary.isThirdParty ? "₹0 (3rd Party)" : money(billingSummary.deliveryFee)}
+              </span>
+            </div>
+            <div className="flex justify-between text-stone-600">
+              <span>GST ({billingSummary.gstRate}%):</span>
+              <span className="font-mono font-semibold">{money(billingSummary.gstAmount)}</span>
+            </div>
+            {billingSummary.discountAmount > 0 && (
+              <div className="flex justify-between text-emerald-700 font-semibold">
+                <span>Discount:</span>
+                <span className="font-mono">−{money(billingSummary.discountAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-black text-stone-900 border-t border-stone-200 pt-1.5 text-sm">
+              <span>Total Payable:</span>
+              <span className="font-mono">{money(billingSummary.totalAmount)}</span>
+            </div>
+            {!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery" && (
+              <p className="mt-1 font-bold text-red-600">
+                Delivery address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor's {billingSummary.serviceRadiusKm} km service limit.
+              </p>
+            )}
+          </div>
         </div>
-        <Button disabled={savingCart || (useNewAddress ? !newAddress.trim() : !savedAddresses.some((address) => address.id === selectedAddressId))} onClick={continueWithAddress} className="w-full rounded-xl bg-[#155F65]">
+        <Button
+          disabled={savingCart || (!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery") || (useNewAddress ? !newAddress.trim() : !savedAddresses.some((address) => address.id === selectedAddressId))}
+          onClick={continueWithAddress}
+          className="w-full rounded-xl bg-[#155F65]"
+        >
           <CreditCard />{savingCart ? "Saving…" : "Continue to payment"}
         </Button>
       </DialogContent>
@@ -3601,9 +3757,37 @@ function OrderDetailsDialog({
                 </div>
               )}
             </div>
-            <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3 text-base font-black text-stone-900">
-              <span>Total Paid</span>
-              <span>{money(order.total)}</span>
+            <div className="mt-3 space-y-1.5 border-t border-stone-200 pt-3 text-xs">
+              {order.subtotal != null && (
+                <div className="flex justify-between text-stone-600">
+                  <span>Item Subtotal</span>
+                  <span className="font-mono font-semibold">{money(order.subtotal)}</span>
+                </div>
+              )}
+              {order.deliveryFee != null && (
+                <div className="flex justify-between text-stone-600">
+                  <span>Delivery Fee {order.deliveryDistanceKm != null ? `(${order.deliveryDistanceKm} km)` : ""}</span>
+                  <span className="font-mono font-semibold">
+                    {order.mode === "Self pickup" ? "₹0 (Store Pickup)" : order.mode === "Third-party delivery" ? "₹0 (3rd Party)" : money(order.deliveryFee)}
+                  </span>
+                </div>
+              )}
+              {order.gstAmount != null && (
+                <div className="flex justify-between text-stone-600">
+                  <span>Taxes (GST {order.gstRate ?? 5}%)</span>
+                  <span className="font-mono font-semibold">{money(order.gstAmount)}</span>
+                </div>
+              )}
+              {order.discountAmount != null && order.discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Discount</span>
+                  <span className="font-mono font-semibold">−{money(order.discountAmount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-stone-200 pt-2 text-base font-black text-stone-900">
+                <span>Total {order.payment === "Paid" ? "Paid" : "Payable"}</span>
+                <span>{money(order.totalAmount ?? order.total)}</span>
+              </div>
             </div>
           </div>
 
@@ -3892,7 +4076,13 @@ function CustomerOrderCard({
         {/* Amount */}
         <div className="sm:text-right shrink-0">
           <div className="text-xs uppercase font-bold tracking-wider text-stone-400">Total</div>
-          <div className="text-xl sm:text-2xl font-black text-stone-900">{money(order.total)}</div>
+          <div className="text-xl sm:text-2xl font-black text-stone-900">{money(order.totalAmount ?? order.total)}</div>
+          {order.deliveryFee != null && (
+            <div className="text-[11px] text-stone-500 font-medium">
+              Delivery: {order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)}
+              {order.gstAmount != null ? ` · GST: ${money(order.gstAmount)}` : ""}
+            </div>
+          )}
           {order.items && order.items.length > 1 && (
             <div className="text-[11px] text-stone-400 font-medium">+{order.items.length - 1} more item(s)</div>
           )}
@@ -4198,8 +4388,11 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         const details = [
           ["Delivery", <Fragment key="delivery"><span>{order.date}</span><span className="mt-1 block text-xs font-semibold text-stone-600">{order.slot}</span></Fragment>],
           ["Items", <span className="font-bold" key="items">{order.quantity} × {product?.name || order.description}</span>],
-          ["Total", money(order.total)],
+          ["Total", money(order.totalAmount ?? order.total)],
           ["Mode", order.mode],
+          ...(order.subtotal != null ? [["Subtotal", money(order.subtotal)] as const] : []),
+          ...(order.deliveryFee != null ? [["Delivery Fee", order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)] as const] : []),
+          ...(order.gstAmount != null ? [["GST", `${money(order.gstAmount)} (${order.gstRate ?? 5}%)`] as const] : []),
           ["Delivery person", person ? <Fragment key="delivery-person"><span className="block">{person.name}</span><span className="mt-1 block break-all text-xs font-semibold text-stone-600">{person.phone}</span></Fragment> : "Not assigned"],
         ] as const;
         return <div key={order.id} className="surface-card rounded-[28px] p-5">
@@ -4480,13 +4673,40 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
   }
 
   if (placed) return <Dialog open onOpenChange={(open) => { if (!open) { close(); onPaid?.(); } }}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader className="items-center text-center"><span className="mx-auto grid size-16 place-items-center rounded-full bg-[#eaf5ec] text-[#21683b]"><Check className="size-8" /></span><DialogTitle className="text-[28px] font-bold">Order placed!</DialogTitle><DialogDescription>{vendor?.businessName || "The kitchen"} has your order. We will message you when it is accepted.</DialogDescription></DialogHeader>
-    <div className="space-y-2 rounded-2xl bg-[#EEF2F2] p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-[#55656A]">Order number</span><b>{order.id}</b></div><div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery</span><b className="text-right">{order.date} · {order.slot}</b></div><div className="flex justify-between gap-4"><span className="text-[#55656A]">Items</span><b className="text-right">{order.description}</b></div><div className="flex justify-between gap-4"><span className="text-[#55656A]">Paid {isLive ? "with Razorpay" : `with ${method}`}</span><b className="tabular-nums">{money(order.total)}</b></div></div>
+    <div className="space-y-2 rounded-2xl bg-[#EEF2F2] p-4 text-sm">
+      <div className="flex justify-between gap-4"><span className="text-[#55656A]">Order number</span><b>{order.orderNumber || order.id}</b></div>
+      <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery</span><b className="text-right">{order.date} · {order.slot}</b></div>
+      <div className="flex justify-between gap-4"><span className="text-[#55656A]">Items</span><b className="text-right">{order.description}</b></div>
+      {order.subtotal != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Item subtotal</span><b className="tabular-nums">{money(order.subtotal)}</b></div>}
+      {order.deliveryFee != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery fee</span><b className="tabular-nums">{order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)}</b></div>}
+      {order.gstAmount != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">GST ({order.gstRate ?? 5}%)</span><b className="tabular-nums">{money(order.gstAmount)}</b></div>}
+      <div className="flex justify-between gap-4"><span className="text-[#55656A]">Paid {isLive ? "with Razorpay" : `with ${method}`}</span><b className="tabular-nums">{money(order.totalAmount ?? order.total)}</b></div>
+    </div>
     <p className="rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">Need a change before the kitchen accepts? Contact Support with your order number: 9600037836 (9:30 AM to 7 PM).</p>
     <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => { close(); onPaid?.(); }}>Track my order</Button><Button variant="secondary" onClick={() => close()}>Back to home</Button></div></DialogContent></Dialog>;
 
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Pay for {order.id}</DialogTitle><DialogDescription>{isLive ? "Secure checkout powered by Razorpay Test Mode. All test payment methods (UPI, Cards, Net banking) are supported." : "Simulated secure checkout for this environment. Confirming here records a real transaction and schedules the vendor payout — no external gateway is charged."}</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <div className="rounded-2xl bg-[#EEF2F2] p-4 text-sm"><Review label="Order" value={order.description} /><Review label="Vendor" value={vendor?.businessName || "—"} /><Review label="Delivery address" value={order.deliveryAddress || "Not provided"} /><Review label="Amount payable" value={money(order.total)} /></div>
+      <div className="rounded-2xl bg-[#EEF2F2] p-4 text-sm space-y-1">
+        <Review label="Order" value={order.description} />
+        <Review label="Vendor" value={vendor?.businessName || "—"} />
+        <Review label="Delivery address" value={order.deliveryAddress || "Not provided"} />
+        {order.subtotal != null && <Review label="Item subtotal" value={money(order.subtotal)} />}
+        {order.deliveryFee != null && (
+          <Review
+            label={`Delivery fee${order.deliveryDistanceKm != null ? ` (${order.deliveryDistanceKm} km)` : ""}`}
+            value={order.mode === "Self pickup" ? "₹0 (Store Pickup)" : order.mode === "Third-party delivery" ? "₹0 (3rd Party)" : money(order.deliveryFee)}
+          />
+        )}
+        {order.gstAmount != null && (
+          <Review label={`GST${order.gstRate != null ? ` (${order.gstRate}%)` : ""}`} value={money(order.gstAmount)} />
+        )}
+        {order.discountAmount != null && order.discountAmount > 0 && (
+          <Review label="Discount" value={`−${money(order.discountAmount)}`} />
+        )}
+        <div className="my-1.5 h-px bg-stone-300" />
+        <Review label="Amount payable" value={money(order.totalAmount ?? order.total)} />
+      </div>
       {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Demo Mode Simulated Payment</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`h-11 rounded-full text-sm font-semibold ${method === item ? "bg-[#155F65] text-white" : "bg-[#EEF2F2] text-[#2F3C3F]"}`}>{item}</button>)}</div></div>}
       {isLive && <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex items-center gap-2"><CreditCard className="size-4 shrink-0 text-emerald-600" /><span>Test Mode: Complete payment securely using Razorpay standard checkout popup.</span></div>}
       <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full"><CreditCard />{busy ? (isLive ? "Opening Razorpay…" : "Processing…") : (isLive ? `Pay ${money(order.total)} with Razorpay` : `Pay ${money(order.total)}`)}</Button>

@@ -1056,7 +1056,7 @@ export async function syncLiveCart(input: { items: Array<{ productId: string; qu
   return commerceRequest({ action: "sync_cart", items: input.items, createdBy: input.createdBy || "customer" });
 }
 
-export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string; mode?: string; deliveryInstructions?: string }) {
+export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string; mode?: string; deliveryInstructions?: string; customerLatitude?: number; customerLongitude?: number }) {
   return commerceRequest({ action: "checkout_cart", ...(input || {}) });
 }
 
