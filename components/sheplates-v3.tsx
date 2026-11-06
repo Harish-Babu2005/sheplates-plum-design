@@ -272,6 +272,11 @@ function stateWithoutInlineProductImages(state: V3State): V3State {
       imageUrl: product.imageUrl?.startsWith("data:") ? undefined : product.imageUrl,
       originalImageUrl: product.originalImageUrl?.startsWith("data:") ? undefined : product.originalImageUrl,
     })),
+    vendors: state.vendors.map((vendor) => ({
+      ...vendor,
+      logoUrl: vendor.logoUrl?.startsWith("data:") && vendor.logoUrl.length > 150000 ? undefined : vendor.logoUrl,
+      bannerUrl: vendor.bannerUrl?.startsWith("data:") && vendor.bannerUrl.length > 300000 ? undefined : vendor.bannerUrl,
+    })),
   };
 }
 
@@ -1064,13 +1069,20 @@ export function ShePlatesV3() {
           const marketplace = await loadLiveMarketplace(Number(preference.latitude), Number(preference.longitude));
           products = marketplace.items.map(marketplaceProductFromLive); merchandising = marketplace.merchandising; merchandisingError = marketplace.merchandisingError || null;
           const unique = new Map<string, Vendor>();
-          marketplace.items.forEach((row) => unique.set(row.vendor_id, {
-            id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name,
-            category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)),
-            latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined,
-            delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified",
-            certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code),
-          }));
+          const brandMap = new Map((marketplace.vendorBranding || []).map((b) => [b.id, b]));
+          marketplace.items.forEach((row) => {
+            const brand = brandMap.get(row.vendor_id);
+            unique.set(row.vendor_id, {
+              id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name,
+              category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)),
+              latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined,
+              delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified",
+              certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code),
+              logoUrl: brand?.logo_url || undefined,
+              bannerUrl: brand?.banner_url || undefined,
+              bio: brand?.description || undefined,
+            });
+          });
           vendors = [...unique.values()];
         }
         if (!cancelled) setState((current) => ({
@@ -1098,7 +1110,15 @@ export function ShePlatesV3() {
               isDefault: true,
             }],
           }] : current.customers.filter((item) => item.email !== syncSession.email),
-          vendors, products, markups: {}, merchandising, merchandisingError,
+          vendors: vendors.map((v) => {
+            const existing = current.vendors.find((cv) => cv.id === v.id);
+            return {
+              ...v,
+              logoUrl: v.logoUrl || existing?.logoUrl,
+              bannerUrl: v.bannerUrl || existing?.bannerUrl,
+              bio: v.bio || existing?.bio,
+            };
+          }), products, markups: {}, merchandising, merchandisingError,
         }));
       } else if (syncSession.role === "vendor" && syncSession.vendorId) {
         const workspace = await loadLiveVendorWorkspace(syncSession.vendorId);
@@ -1269,7 +1289,7 @@ export function ShePlatesV3() {
       ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} />
       : role === "operations"
         ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} onOpenVendorProfile={setVendorProfileId} />
-        : <AdminArea active={active} session={session} state={state} setState={setState} />;
+        : <AdminArea active={active} session={session} state={state} setState={setState} onOpenVendorProfile={setVendorProfileId} />;
 
   const customerCartCount = role === "customer" ? state.cart.filter((item) => item.customerEmail === session.email).reduce((sum, item) => sum + item.quantity, 0) : 0;
   const customerQuoteCount = role === "customer" ? state.quotes.filter((quote) => {
@@ -1742,9 +1762,37 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       const live = await loadLiveMarketplace(profile.latitude!, profile.longitude!);
       const products = live.items.map(marketplaceProductFromLive);
       const vendorMap = new Map<string, Vendor>();
-      live.items.forEach((row) => vendorMap.set(row.vendor_id, { id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name, category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)), latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined, delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified", certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code) }));
+      const brandMap = new Map((live.vendorBranding || []).map((b) => [b.id, b]));
+      live.items.forEach((row) => {
+        const brand = brandMap.get(row.vendor_id);
+        vendorMap.set(row.vendor_id, {
+          id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name,
+          category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)),
+          latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined,
+          delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified",
+          certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code),
+          logoUrl: brand?.logo_url || undefined,
+          bannerUrl: brand?.banner_url || undefined,
+          bio: brand?.description || undefined,
+        });
+      });
       setDiagnostics(live.diagnostics);
-      setState((current) => ({ ...current, products, vendors: [...vendorMap.values()], markups: {}, merchandising: live.merchandising || current.merchandising, merchandisingError: live.merchandisingError || null }));
+      setState((current) => ({
+        ...current,
+        products,
+        vendors: [...vendorMap.values()].map((v) => {
+          const existing = current.vendors.find((cv) => cv.id === v.id);
+          return {
+            ...v,
+            logoUrl: v.logoUrl || existing?.logoUrl,
+            bannerUrl: v.bannerUrl || existing?.bannerUrl,
+            bio: v.bio || existing?.bio,
+          };
+        }),
+        markups: {},
+        merchandising: live.merchandising || current.merchandising,
+        merchandisingError: live.merchandisingError || null,
+      }));
       if (showSuccess) toast.success(products.length ? `${products.length} serviceable product pack(s) refreshed` : "Marketplace checked; see the eligibility explanation below");
     } catch (error) { setCatalogueError(errorMessage(error, "Marketplace could not be refreshed")); }
     finally { setRefreshing(false); }
@@ -3076,7 +3124,7 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const vendor = vendorFor(state, session)!;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
-  if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} />;
+  if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
@@ -3158,12 +3206,46 @@ function VendorAIInsights({ vendor, state, session }: { vendor: Vendor; state: V
   </div>;
 }
 
-function readImage(file: File, done: (value: string) => void) { const reader = new FileReader(); reader.onload = () => done(String(reader.result || "")); reader.readAsDataURL(file); }
+function readImage(file: File, done: (value: string) => void, maxWidth = 800, maxHeight = 800, quality = 0.82) {
+  if (typeof window === "undefined" || !file.type.startsWith("image/") || file.type.includes("svg")) {
+    const reader = new FileReader();
+    reader.onload = () => done(String(reader.result || ""));
+    reader.readAsDataURL(file);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const raw = String(reader.result || "");
+    const img = new window.Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.max(1, Math.round(width * ratio));
+        height = Math.max(1, Math.round(height * ratio));
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return done(raw);
+      ctx.drawImage(img, 0, 0, width, height);
+      done(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => done(raw);
+    img.src = raw;
+  };
+  reader.readAsDataURL(file);
+}
 
-function StorefrontPos({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+function StorefrontPos({ vendor, state, setState, session, onOpenVendorProfile }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; onOpenVendorProfile?: () => void }) {
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
   const outlets = vendor.outlets || [{ id: `${vendor.id}-main`, name: "Main outlet", address: vendor.address, latitude: vendor.latitude, longitude: vendor.longitude, radiusKm: vendor.radiusKm, openToday: vendor.openToday, certificateNumber: vendor.fssaiNumber, certificateName: vendor.certificateName, certificateExpiry: vendor.expiryDate }];
   function asset(kind: "logoUrl" | "bannerUrl", file?: File) {
     if (!file) return;
+    const maxW = kind === "logoUrl" ? 256 : 960;
+    const maxH = kind === "logoUrl" ? 256 : 360;
     readImage(file, async (dataUrl) => {
       setState((s) => ({
         ...s,
@@ -3184,16 +3266,18 @@ function StorefrontPos({ vendor, state, setState, session }: { vendor: Vendor; s
         toast.success(kind === "logoUrl" ? "Store logo saved!" : "Cover banner saved!");
       } catch (error) {
         console.error("Could not persist storefront image to server:", error);
+        toast.error(errorMessage(error, "Could not save storefront image to server"));
       }
-    });
+    }, maxW, maxH, 0.85);
   }
   function addOutlet() { const name = prompt("Outlet / POS name"); const address = prompt("Complete outlet address"); if (!name || !address) return; const outlet: VendorOutlet = { id: id("POS"), name, address, radiusKm: vendor.radiusKm, openToday: false }; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: [...outlets, outlet] } : x) })); toast.success("Outlet added. Add its certification and exact location before opening."); }
   function updateOutlet(outletId: string, patch: Partial<VendorOutlet>) { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: outlets.map((outlet) => outlet.id === outletId ? { ...outlet, ...patch } : outlet) } : x), audit: [audit(session, "Updated outlet", `${vendor.businessName} · ${outletId}`), ...s.audit] })); }
   function editCertification(outlet: VendorOutlet) { const number = prompt("Certification / licence number", outlet.certificateNumber || "") ?? (outlet.certificateNumber || ""); const expiry = prompt("Expiry date (YYYY-MM-DD)", outlet.certificateExpiry || "") ?? (outlet.certificateExpiry || ""); updateOutlet(outlet.id, { certificateNumber: number, certificateExpiry: expiry }); toast.success("Outlet certification saved"); }
-  return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button>} />
-    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><h2 className="text-lg font-black">{vendor.businessName}</h2><p className="text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products</p></div></div>
+  return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1" />Edit Profile &amp; Branding</Button>{onOpenVendorProfile && <Button size="sm" variant="outline" onClick={onOpenVendorProfile} className="h-9 rounded-xl text-xs font-bold text-[#155F65] bg-white"><Eye className="size-3.5 mr-1" />Preview Store</Button>}<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button></div>} />
+    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
     <div className="grid gap-4 lg:grid-cols-2">{outlets.map((outlet) => <div key={outlet.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Building2 /></div><div className="min-w-0 flex-1"><b>{outlet.name}</b><p className="mt-1 text-sm text-stone-500">{outlet.address}</p></div><Status>{outlet.openToday ? "Open" : "Closed"}</Status></div><div className="mt-3 text-xs text-stone-500">Service radius: {outlet.radiusKm} km · {Number.isFinite(outlet.latitude) ? "Pinned" : "Needs map pin"}</div><div className="mt-4 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><b>Outlet certification</b><div className="mt-1 text-xs text-stone-500">{outlet.certificateNumber || "Not added"}{outlet.certificateExpiry ? ` · expires ${outlet.certificateExpiry}` : ""}</div></div><Button size="sm" variant="outline" onClick={() => editCertification(outlet)}><Pencil />Edit</Button></div><label className="mt-3 inline-flex cursor-pointer items-center text-xs font-black text-[#155F65]"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => updateOutlet(outlet.id, { certificateName: e.target.files?.[0]?.name || outlet.certificateName })} /><Upload className="mr-1 size-3.5" />{outlet.certificateName || "Upload certificate"}</label></div></div>)}</div>
     <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} />
+    {editProfileOpen && <EditVendorProfileDialog open onClose={() => setEditProfileOpen(false)} vendor={vendor} setState={setState} session={session} />}
   </div>;
 }
 
@@ -5069,7 +5153,19 @@ export function EditVendorProfileDialog({
   const [bio, setBio] = useState(vendor.bio || "");
   const [address, setAddress] = useState(vendor.address || "");
   const [radiusKm, setRadiusKm] = useState(vendor.radiusKm || 5);
+  const [logoUrl, setLogoUrl] = useState(vendor.logoUrl || "");
+  const [bannerUrl, setBannerUrl] = useState(vendor.bannerUrl || "");
   const [busy, setBusy] = useState(false);
+
+  function handleImagePick(kind: "logoUrl" | "bannerUrl", file?: File) {
+    if (!file) return;
+    const maxW = kind === "logoUrl" ? 256 : 960;
+    const maxH = kind === "logoUrl" ? 256 : 360;
+    readImage(file, (dataUrl) => {
+      if (kind === "logoUrl") setLogoUrl(dataUrl);
+      else setBannerUrl(dataUrl);
+    }, maxW, maxH, 0.85);
+  }
 
   async function handleSave() {
     if (!businessName.trim()) return toast.error("Enter your business name");
@@ -5079,7 +5175,16 @@ export function EditVendorProfileDialog({
 
     setBusy(true);
     try {
+      let finalLogo = logoUrl;
+      let finalBanner = bannerUrl;
+
       if (isLiveSupabaseMode()) {
+        if (logoUrl.startsWith("data:")) {
+          finalLogo = await uploadLiveVendorImage(vendor.id, logoUrl);
+        }
+        if (bannerUrl.startsWith("data:")) {
+          finalBanner = await uploadLiveVendorImage(vendor.id, bannerUrl);
+        }
         await saveLiveVendorProfile({
           vendorId: vendor.id,
           businessName: businessName.trim(),
@@ -5089,6 +5194,13 @@ export function EditVendorProfileDialog({
           phone: phone.trim(),
           bio: bio.trim(),
           address: address.trim(),
+          logoUrl: finalLogo || undefined,
+          bannerUrl: finalBanner || undefined,
+        });
+        await saveLiveVendorBranding({
+          vendorId: vendor.id,
+          logoUrl: finalLogo,
+          bannerUrl: finalBanner,
         });
         if (vendor.latitude && vendor.longitude) {
           await saveLiveVendorLocation({
@@ -5115,6 +5227,8 @@ export function EditVendorProfileDialog({
                 bio: bio.trim(),
                 address: address.trim(),
                 radiusKm,
+                logoUrl: finalLogo || undefined,
+                bannerUrl: finalBanner || undefined,
               }
             : v
         ),
@@ -5151,6 +5265,60 @@ export function EditVendorProfileDialog({
         </DialogHeader>
 
         <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4 space-y-3">
+            <span className="block text-xs font-black uppercase tracking-wider text-[#155F65]">
+              Storefront Branding &amp; Images
+            </span>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-bold text-stone-600 mb-1.5">Store Logo / Avatar</label>
+                <div className="flex items-center gap-3">
+                  <div className="size-16 shrink-0 overflow-hidden rounded-2xl border-2 border-stone-300 bg-white grid place-items-center">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Store logo" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-xl font-black text-[#155F65]">{businessName[0] || "V"}</span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-[#155F65] shadow-xs hover:bg-[#EAF4F2]">
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("logoUrl", e.target.files?.[0])} />
+                      <Pencil className="size-3.5" />
+                      <span>{logoUrl ? "Change logo" : "Upload logo"}</span>
+                    </label>
+                    {logoUrl && (
+                      <button type="button" onClick={() => setLogoUrl("")} className="block text-[11px] text-rose-600 font-semibold hover:underline">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-600 mb-1.5">Cover Banner</label>
+                <div className="relative h-16 w-full overflow-hidden rounded-2xl border-2 border-stone-300 bg-stone-100">
+                  {bannerUrl ? (
+                    <img src={bannerUrl} alt="Store banner" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-linear-to-r from-[#155F65] to-[#155F65] flex items-center justify-center text-xs font-bold text-white/80">
+                      Default banner
+                    </div>
+                  )}
+                  <label className="absolute right-2 top-2 inline-flex cursor-pointer items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#202827] shadow-xs backdrop-blur hover:bg-white">
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("bannerUrl", e.target.files?.[0])} />
+                    <ImageUp className="size-3" />
+                    <span>Update</span>
+                  </label>
+                  {bannerUrl && (
+                    <button type="button" onClick={() => setBannerUrl("")} className="absolute left-2 bottom-1 text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-md hover:bg-black/80">
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Business name">
               <input
@@ -5944,8 +6112,8 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
   return <div className="space-y-5"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Check each vendor's documents, location and radius before they can sell." />
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
-        {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`block w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="flex items-start justify-between gap-2"><b>{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}</div><p className="text-xs text-[#55656A]">Owner {picked.ownerName} · {picked.ownerEmail} · {picked.plan} plan</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+        {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
+      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}</div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
         <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
         <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {picked.fssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {picked.expiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
         <div className="space-y-2">
@@ -6136,14 +6304,14 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
   <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
 }
 
-function AdminArea({ active, session, state, setState }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
   if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
   if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
-  if (active === "Vendors") return <AdminVendors state={state} setState={setState} />;
-  if (active === "Vendor plans") return <Plans state={state} setState={setState} />;
+  if (active === "Vendors") return <AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Vendor plans") return <Plans state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Pricing policies") return <AdminPricing state={state} />;
   if (active === "Stories monitor") return <StoriesMonitor />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
@@ -6324,12 +6492,12 @@ function CreateUserDialog({ open, close, session, setState, live }: { open: bool
     </div>}
   </DialogContent></Dialog>;
 }
-function AdminVendors({ state, setState }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function AdminVendors({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const allVendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
   const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
   const [vQuery, setVQuery] = useState("");
   const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
-  return <div className="space-y-6"><Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." /><ProductImageBackfill /><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">{(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}<input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>{vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Daily service</TableHead><TableHead>Products</TableHead><TableHead>Plan</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.ownerEmail}</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</TableCell><TableCell>{state.products.filter((x) => x.vendorId === vendor.id).length}</TableCell><TableCell><Select value={vendor.plan} onValueChange={(value) => { const plan = value as Vendor["plan"]; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) })); if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) })); toast.error(error.message || "Could not save the plan change"); }); }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}</div>;
+  return <div className="space-y-6"><Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." /><ProductImageBackfill /><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">{(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}<input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>{vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Daily service</TableHead><TableHead>Products</TableHead><TableHead>Plan</TableHead><TableHead className="text-right">Store</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}><TableCell><div className="flex items-center gap-3"><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.ownerEmail}</div><div className="text-[11px] text-[#155F65] font-semibold">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div></div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</TableCell><TableCell>{state.products.filter((x) => x.vendorId === vendor.id).length}</TableCell><TableCell><Select value={vendor.plan} onValueChange={(value) => { const plan = value as Vendor["plan"]; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) })); if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) })); toast.error(error.message || "Could not save the plan change"); }); }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell><TableCell className="text-right">{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview</Button>}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}</div>;
 }
 function PlanFeatureTable() {
   const plans = ["Taster", "Crave", "Thrive", "Crown"];
@@ -6343,7 +6511,7 @@ function PlanFeatureTable() {
   ];
   return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
 }
-function Plans({ state, setState }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors state={state} setState={setState} /></div>; }
+function Plans({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
 function AdminPricing({ state }: { state: V3State }) {
   const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
   const pct = (id: string) => state.markups[id] || 0;

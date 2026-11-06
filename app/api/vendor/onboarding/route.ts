@@ -192,6 +192,9 @@ export async function POST(request: Request) {
         terms_version: termsVersion,
         terms_accepted_at: serverTimestamp,
         terms_document_reference: termsDocRef,
+        ...(body.logoUrl ? { logo_url: String(body.logoUrl) } : body.logo_url ? { logo_url: String(body.logo_url) } : {}),
+        ...(body.bannerUrl ? { banner_url: String(body.bannerUrl) } : body.banner_url ? { banner_url: String(body.banner_url) } : {}),
+        ...(body.bio ? { description: String(body.bio) } : body.description ? { description: String(body.description) } : {}),
         ...(body.operatingHours ? { operating_hours: body.operatingHours } : {}),
       })
       .select("id")

@@ -64,7 +64,7 @@ export function PromoBanner({ onShop }: { onShop: () => void }) {
 export function VendorMiniCard({ state, vendor, profile, onOpen }: { state: V3State; vendor: Vendor; profile: Coords; onOpen: (id: string) => void }) {
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor);
   return <button type="button" onClick={() => onOpen(vendor.id)} aria-label={`Open ${vendor.businessName}`} className="sh k-kcard snap-start text-left">
-    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} className="k-kimg" emojiSize={42} />
+    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="k-kimg" emojiSize={42} />
     <span className="rate k-krate"><Star className="size-4" />{rating ? rating.average.toFixed(1) : "New"}</span>
     <div className="k-kbody"><div className="h4" style={{ fontSize: 16 }}>{vendor.businessName}</div>
       <div className="s m row g4" style={{ marginTop: 2 }}><MapPin className="size-4" />{distance !== null ? `${distance.toFixed(1)} km` : vendor.category}</div></div>
@@ -84,7 +84,7 @@ export function VendorCard({ state, vendor, profile, onOpen, compact = false, co
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor);
   const connectNumber = connectVendor?.whatsapp_number ? normalizeWhatsAppNumber(connectVendor.whatsapp_number) : null;
   return <div className={`flex items-center gap-3 rounded-[22px] border border-stone-200/70 bg-white p-3 shadow-sm ${compact ? "" : "sm:p-4"}`}>
-    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
+    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5"><span className="truncate font-black">{vendor.businessName}</span>{vendor.verification === "Verified" && <BadgeCheck className="size-4 shrink-0 text-emerald-600" aria-label="Verified" />}</div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-bold text-stone-500">{rating ? <span className="flex items-center gap-1 text-amber-600"><Stars value={rating.average} size={12} />{rating.average.toFixed(1)} <span className="text-stone-400">({rating.count})</span></span> : <span>New on ShePlates</span>}{distance !== null && <span>· {distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</span>}<span>· {shortArea(vendor.address)}</span></div>
@@ -100,7 +100,7 @@ export function VendorCard({ state, vendor, profile, onOpen, compact = false, co
 
 function ConnectVendorCard({ vendor, selected, onSelect }: { vendor: ConnectVendor; selected: boolean; onSelect: () => void }) {
   return <button type="button" onClick={onSelect} aria-pressed={selected} className={`flex w-full items-center gap-3 rounded-[22px] border bg-white p-3 text-left shadow-sm transition sm:p-4 ${selected ? "border-[#155F65] ring-2 ring-[#C5E3E4]" : "border-stone-200/70 hover:border-[#C5E3E4]"}`}>
-    <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
+    <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} initial={vendor.vendor_name?.[0]} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
     <span className="min-w-0 flex-1">
       <span className="block truncate font-black">{vendor.vendor_name}</span>
       <span className="mt-0.5 block truncate text-xs font-bold text-stone-500">{vendor.category} · {vendor.distance_km.toFixed(1)} km</span>
@@ -124,7 +124,7 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
     : null;
   return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-3xl bg-white p-4 ring-2 ring-[#155F65] sm:p-5">
     <div className="flex items-start gap-3">
-      <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} className="size-16 shrink-0 rounded-2xl" emojiSize={28} />
+      <PhotoTile imageUrl={vendor.logo_url} category={vendor.category} initial={vendor.vendor_name?.[0]} className="size-16 shrink-0 rounded-2xl" emojiSize={28} />
       <div className="min-w-0 flex-1">
         <h2 className="font-black">{vendor.vendor_name}</h2>
         <p className="mt-0.5 text-xs font-bold text-stone-500">{vendor.category} · {vendor.distance_km.toFixed(1)} km away</p>

@@ -55,11 +55,34 @@ export function Avatar({ name, size = 40, ring = false }: { name: string; size?:
   return <span className={`grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#155F65] to-[#155F65] font-black text-white ${ring ? "ring-[3px] ring-[#155F65] ring-offset-2" : ""}`} style={{ width: size, height: size, fontSize: size * 0.36 }}>{initials}</span>;
 }
 
-/** A photo when there is one, otherwise a warm tinted tile with the category emoji —
+/** A photo when there is one, otherwise a warm tinted tile with the store initial or category emoji —
  * so cards keep the photo-forward look of the design before vendors upload images. */
-export function PhotoTile({ imageUrl, category, className = "", emojiSize = 44, children }: { imageUrl?: string | null; category?: string; className?: string; emojiSize?: number; children?: React.ReactNode }) {
-  return <div className={`relative overflow-hidden ${className}`} style={imageUrl ? undefined : { background: `linear-gradient(135deg, ${categoryTint(category || "")}, #F2F8F8)` }}>
-    {imageUrl ? <Image src={imageUrl} alt="" fill unoptimized sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" /> : <span className="absolute inset-0 grid place-items-center" style={{ fontSize: emojiSize }} aria-hidden>{categoryEmoji(category || "")}</span>}
+export function PhotoTile({ imageUrl, category, initial, className = "", emojiSize = 44, children }: { imageUrl?: string | null; category?: string; initial?: string; className?: string; emojiSize?: number; children?: React.ReactNode }) {
+  const [loadError, setLoadError] = useState(false);
+  const trimmed = typeof imageUrl === "string" ? imageUrl.trim() : "";
+  const hasValidImage = Boolean(trimmed && trimmed !== "null" && trimmed !== "undefined" && !loadError);
+
+  useEffect(() => {
+    setLoadError(false);
+  }, [trimmed]);
+
+  return <div className={`relative overflow-hidden ${className}`} style={hasValidImage ? undefined : { background: `linear-gradient(135deg, ${categoryTint(category || "")}, #F2F8F8)` }}>
+    {hasValidImage ? (
+      <img
+        src={trimmed}
+        alt=""
+        className="h-full w-full object-cover"
+        onError={() => setLoadError(true)}
+      />
+    ) : initial ? (
+      <span className="absolute inset-0 grid place-items-center font-black text-[#155F65]" style={{ fontSize: Math.max(16, emojiSize * 0.75) }} aria-hidden>
+        {initial}
+      </span>
+    ) : (
+      <span className="absolute inset-0 grid place-items-center" style={{ fontSize: emojiSize }} aria-hidden>
+        {categoryEmoji(category || "")}
+      </span>
+    )}
     {children}
   </div>;
 }

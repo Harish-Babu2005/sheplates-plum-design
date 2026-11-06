@@ -13,13 +13,21 @@ export async function POST(request: Request) {
   const { data: authData } = await caller.auth.getUser(token);
   if (!authData.user) return NextResponse.json({ error: "Unauthorised." }, { status: 401 });
   const { data: profile } = await caller.from("profiles").select("role,vendor_id").eq("id", authData.user.id).maybeSingle();
-  if (!profile || !["vendor", "admin"].includes(profile.role)) return NextResponse.json({ error: "Vendor or Super Admin access is required." }, { status: 403 });
+  if (!profile || !["vendor", "operations", "admin"].includes(profile.role)) {
+    return NextResponse.json({ error: "Vendor, Operations, or Super Admin access is required." }, { status: 403 });
+  }
 
   const body = await request.json() as { vendorId?: string; dataUrl?: string };
   const vendorId = body.vendorId?.trim();
   const match = body.dataUrl?.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!vendorId || !match) return NextResponse.json({ error: "Upload a valid product image." }, { status: 400 });
-  if (profile.role === "vendor" && profile.vendor_id && profile.vendor_id !== vendorId) return NextResponse.json({ error: "This image belongs to another store." }, { status: 403 });
+  if (profile.role === "vendor") {
+    const isLinked = profile.vendor_id && profile.vendor_id === vendorId;
+    if (!isLinked) {
+      const { data: ownVendor } = await caller.from("vendors").select("id").eq("id", vendorId).eq("owner_id", authData.user.id).maybeSingle();
+      if (!ownVendor) return NextResponse.json({ error: "This image belongs to another store." }, { status: 403 });
+    }
+  }
 
   const bytes = Buffer.from(match[2], "base64");
   if (bytes.length > 10 * 1024 * 1024) return NextResponse.json({ error: "Image must be under 10 MB." }, { status: 413 });
