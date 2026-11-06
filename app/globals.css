@@ -2004,6 +2004,44 @@ body {
 /* ========================================================================== */
 /* Interactive nearby-vendors map (Leaflet)                                   */
 /* ========================================================================== */
+.leaflet-container,
+.maplibregl-map,
+.sp-vendor-map,
+[data-map-engine],
+.sp-map-preview {
+  isolation: isolate !important;
+  position: relative !important;
+  z-index: 0 !important;
+}
+
+/* Constrain Leaflet's internal high z-indexes so controls and panes never escape into dialogs */
+.leaflet-pane {
+  z-index: 1 !important;
+}
+.leaflet-tile-pane {
+  z-index: 1 !important;
+}
+.leaflet-overlay-pane {
+  z-index: 2 !important;
+}
+.leaflet-shadow-pane {
+  z-index: 3 !important;
+}
+.leaflet-marker-pane {
+  z-index: 4 !important;
+}
+.leaflet-tooltip-pane {
+  z-index: 5 !important;
+}
+.leaflet-popup-pane {
+  z-index: 6 !important;
+}
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 10 !important;
+}
+
 .sp-vendor-map { box-shadow: 0 20px 60px rgba(35, 28, 30,.10); animation: sp-map-in .38s cubic-bezier(.2,.8,.2,1) both; }
 .sp-vendor-map .leaflet-container { font-family: inherit; background: #eef2ec; }
 .sp-vendor-map .leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 18px 50px rgba(32, 40, 39,.18); animation: sp-map-popup-in .18s ease-out both; }

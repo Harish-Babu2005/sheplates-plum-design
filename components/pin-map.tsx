@@ -72,12 +72,12 @@ function OlaPin({ lat, lng, radiusKm, access, onFail, onChange }: { lat: number;
     const src = m.getSource("sp-area") as maplibregl.GeoJSONSource | undefined; src?.setData(ring(lat, lng, radiusKm));
     if (m.getLayer("sp-area-fill")) { m.setPaintProperty("sp-area-fill", "fill-opacity", radiusKm > 0 ? 0.08 : 0); m.setPaintProperty("sp-area-line", "line-width", radiusKm > 0 ? 2 : 0); }
   }, [lat, lng, radiusKm]);
-  return <div ref={box} className="h-full w-full" data-map-engine="ola" />;
+  return <div ref={box} className="h-full w-full relative isolate z-0" data-map-engine="ola" />;
 }
 
 function Recenter({ lat, lng, radiusKm }: { lat: number; lng: number; radiusKm: number }) { const m = useMap(); useEffect(() => { m.setView([lat, lng], zoomFor(radiusKm), { animate: true }); }, [m, lat, lng, radiusKm]); return null; }
 function StandardPin({ lat, lng, radiusKm, onChange }: { lat: number; lng: number; radiusKm: number; onChange?: (point: { lat: number; lng: number }) => void }) {
-  return <div className="h-full w-full" data-map-engine="standard"><MapContainer center={[lat, lng]} zoom={zoomFor(radiusKm)} scrollWheelZoom={false} style={{ height: "100%", width: "100%" }} attributionControl={false}>
+  return <div className="h-full w-full relative isolate z-0" data-map-engine="standard"><MapContainer center={[lat, lng]} zoom={zoomFor(radiusKm)} scrollWheelZoom={false} style={{ height: "100%", width: "100%" }} attributionControl={false}>
     <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" maxZoom={19} />
     <Recenter lat={lat} lng={lng} radiusKm={radiusKm} />
     {radiusKm > 0 && <Circle center={[lat, lng]} radius={radiusKm * 1000} pathOptions={{ color: "#155F65", weight: 2, fillColor: "#155F65", fillOpacity: 0.08 }} />}
