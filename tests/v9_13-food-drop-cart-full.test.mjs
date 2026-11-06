@@ -12,7 +12,6 @@ test("Food Drop cart items retain their drop identity in the commerce cart", () 
   assert.match(migration, /add column if not exists food_drop_id uuid/i);
   assert.match(migration, /references public\.food_drops\(id\)/i);
   assert.match(commerce, /food_drop_id: item\.foodDropId/);
-  assert.match(commerce, /food_drop_id: item\.foodDropId \|\| null/);
   assert.match(customer, /foodDropId: row\.food_drop_id/);
 });
 

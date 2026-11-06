@@ -15,7 +15,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -29,7 +29,7 @@ import { fetchWithDeadline } from "@/lib/fetch-deadline";
 import { ComplianceStep, ComplianceDocumentList, TermsViewerDialog } from "@/components/vendor-compliance";
 import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
 import { CATALOGUE_TEMPLATE_CSV, MAX_IMPORT_ROWS, matchCategory, readCatalogueText, rowProblems, type CatalogueDraftRow } from "@/lib/catalogue-import";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
@@ -49,11 +49,11 @@ import {
   acceptLiveThirdPartyDelivery, issueLiveThirdPartyDeliveryCode, verifyLiveThirdPartyDeliveryCode,
   decideLiveVendorVerification, getAccessToken, isLiveSupabaseMode, isSupabaseConfigured,
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
-  loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile,
+  loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
-  loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims,
+  loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
  subscribeLiveNotifications,} from "@/lib/supabase";
 import {
@@ -142,23 +142,21 @@ type CustomerProfile = {
 };
 type CustomerAddress = { id: string; label: string; address: string; latitude?: number; longitude?: number; phone?: string; isDefault: boolean };
 export type { VendorComplianceDocType, VendorComplianceDocument };
-export type VendorComplianceDocType = "food_certificate" | "pan" | "government_id" | "address_proof" | "bank_details" | "business_details" | "product_information";
 
-export type VendorComplianceDocument = {
-  id?: string;
-  documentType: VendorComplianceDocType;
-  title: string;
-  documentNumber?: string;
-  fileName?: string;
-  fileSize?: number;
-  storagePath?: string;
-  expiryDate?: string;
-  verificationStatus?: string;
-  metadata?: Record<string, unknown>;
-};
+export const VENDOR_DESIGNATION_OPTIONS = [
+  "Proprietor",
+  "Owner",
+  "Partner",
+  "Director",
+  "Designated Representative",
+] as const;
+export type VendorDesignation = typeof VENDOR_DESIGNATION_OPTIONS[number];
 
 export type Vendor = {
   id: string; ownerEmail: string; ownerName: string; businessName: string; category: string;
+  ownerRole?: string;
+  phone?: string;
+  bio?: string;
   address: string; latitude?: number; longitude?: number; radiusKm: number; delivery: boolean;
   pickup: boolean; openToday: boolean; fssaiNumber: string; certificateName: string; expiryDate: string;
   verification: Verification; operational: "Inactive" | "Active" | "Paused"; plan: "Taster" | "Crave" | "Thrive" | "Crown";
@@ -168,22 +166,6 @@ export type Vendor = {
   termsVersion?: string;
   termsAcceptedAt?: string;
   termsDocumentReference?: string;
-  panNumber?: string;
-  panDocumentName?: string;
-  govIdType?: string;
-  govIdNumber?: string;
-  govIdDocumentName?: string;
-  addressProofType?: string;
-  addressProofDocumentName?: string;
-  bankAccountNumber?: string;
-  bankIfsc?: string;
-  bankName?: string;
-  bankDocumentName?: string;
-  businessRegType?: string;
-  businessRegNumber?: string;
-  businessDocumentName?: string;
-  productInfoTitle?: string;
-  productInfoDocumentName?: string;
   documents?: VendorComplianceDocument[];
 };
 type VendorOutlet = { id: string; name: string; address: string; latitude?: number; longitude?: number; radiusKm: number; openToday: boolean; certificateNumber?: string; certificateName?: string; certificateExpiry?: string };
@@ -214,6 +196,9 @@ mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | 
   paymentProvider?: string;
   createdAt?: string;
   items?: Array<{ name: string; quantity: number; unit?: string; price?: number }>;
+  verificationCode?: string;
+  verificationStatus?: "pending" | "verified";
+  foodDropId?: string;
 };
 type ThirdPartyDeliveryRequest = {
   orderId: string; customerId: string; vendorId: string; notes: string;
@@ -286,6 +271,11 @@ function stateWithoutInlineProductImages(state: V3State): V3State {
       ...product,
       imageUrl: product.imageUrl?.startsWith("data:") ? undefined : product.imageUrl,
       originalImageUrl: product.originalImageUrl?.startsWith("data:") ? undefined : product.originalImageUrl,
+    })),
+    vendors: state.vendors.map((vendor) => ({
+      ...vendor,
+      logoUrl: vendor.logoUrl?.startsWith("data:") && vendor.logoUrl.length > 150000 ? undefined : vendor.logoUrl,
+      bannerUrl: vendor.bannerUrl?.startsWith("data:") && vendor.bannerUrl.length > 300000 ? undefined : vendor.bannerUrl,
     })),
   };
 }
@@ -629,6 +619,9 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     openToday: row.store_open_today, verification: verificationFromLive(row.verification_status),
     operational: operationalFromLive(row.operational_status), plan: planFromCode(planCodeFromEmbed(row.vendor_plans)),
     vendorKind: row.vendor_kind || "subscription",
+    logoUrl: row.logo_url || undefined,
+    bannerUrl: row.banner_url || undefined,
+    bio: row.description || undefined,
     fssaiNumber: String(document?.document_number || "Submitted"),
     certificateName: String(document?.storage_path || "Private certificate"), expiryDate: String(document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
@@ -684,13 +677,17 @@ const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "read
 }
 type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
-  const orders: Order[] = orderRows.map((row) => {
+  const rawOrders: Order[] = orderRows.map((row) => {
     const items = Array.isArray(row.order_items) ? row.order_items as Array<Record<string, unknown>> : [];
     const first = items[0];
     const fulfilmentMode = String(row.fulfilment_mode);
     const isThirdParty = fulfilmentMode === "third_party_delivery";
     const payments = Array.isArray(row.payments) ? row.payments as Array<Record<string, unknown>> : [];
     const firstPayment = payments[0];
+    const existing = current.orders.find((o) => o.id === String(row.id));
+    const payRef = firstPayment?.provider_reference ? String(firstPayment.provider_reference) : undefined;
+    const parsedCode = payRef && payRef.startsWith("FOOD_DROP_CODE:") ? payRef.replace("FOOD_DROP_CODE:", "") : undefined;
+    const isFoodDropOrder = items.some((it) => /food drop/i.test(String(it.product_name || ""))) || Boolean(existing?.foodDropId) || Boolean(parsedCode);
     return {
       id: String(row.id), scheduleId: row.schedule_id ? String(row.schedule_id) : undefined,
       customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), vendorId: String(row.vendor_id),
@@ -699,21 +696,34 @@ type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; sche
       quantity: Number(first?.quantity || items.length || 1), unit: String(first?.unit || "items"), total: Number(row.customer_total || 0),
       date: String(row.scheduled_date || ""), slot: String(row.scheduled_slot || "Vendor to confirm"),
       deliveryAddress: typeof row.delivery_address === "string" ? row.delivery_address : undefined,
-mode: isThirdParty ? "Third-party delivery" : fulfilmentMode === "self_pickup" ? "Self pickup" : "Vendor delivery",      status: liveOrderStatus(row.status), payment: livePaymentStatus(row.payments, row.status),
+      mode: isThirdParty ? "Third-party delivery" : (fulfilmentMode === "self_pickup" || isFoodDropOrder) ? "Self pickup" : "Vendor delivery",
+      status: isFoodDropOrder && liveOrderStatus(row.status) === "Scheduled" ? "Confirmed" : liveOrderStatus(row.status),
+      payment: isFoodDropOrder ? "Paid" : livePaymentStatus(row.payments, row.status),
       trackingLatitude: row.tracking_latitude == null ? undefined : Number(row.tracking_latitude),
       trackingLongitude: row.tracking_longitude == null ? undefined : Number(row.tracking_longitude),
       cancellationFee: Number(row.cancellation_fee || 0),
       orderNumber: row.order_number ? String(row.order_number) : undefined,
-      paymentReference: firstPayment?.provider_reference ? String(firstPayment.provider_reference) : undefined,
-      paymentProvider: firstPayment?.provider ? String(firstPayment.provider) : undefined,
-      createdAt: row.created_at ? String(row.created_at) : undefined,
+      paymentReference: payRef,
+      paymentProvider: isFoodDropOrder ? "food_drop_pickup" : (firstPayment?.provider ? String(firstPayment.provider) : undefined),
+      createdAt: row.created_at ? String(row.created_at) : (existing?.createdAt || undefined),
       items: items.map((it) => ({
         name: String(it.product_name || "Item"),
         quantity: Number(it.quantity || 1),
         unit: it.unit ? String(it.unit) : undefined,
         price: it.customer_price != null ? Number(it.customer_price) : undefined,
       })),
+      verificationCode: parsedCode || existing?.verificationCode,
+      verificationStatus: existing?.verificationStatus || (parsedCode && liveOrderStatus(row.status) === "Delivered" ? "verified" : "pending"),
+      foodDropId: existing?.foodDropId,
     };
+  });
+  const serverOrderIds = new Set(rawOrders.map((o) => o.id));
+  const localFoodDropOrders = current.orders.filter((o) => o.foodDropId && !serverOrderIds.has(o.id));
+  const orders: Order[] = [...localFoodDropOrders, ...rawOrders].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (aTime && bTime && aTime !== bTime) return bTime - aTime;
+    return (b.id || "").localeCompare(a.id || "");
   });
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const schedules: Schedule[] = (snapshot.schedules || []).map((row) => ({
@@ -1059,13 +1069,20 @@ export function ShePlatesV3() {
           const marketplace = await loadLiveMarketplace(Number(preference.latitude), Number(preference.longitude));
           products = marketplace.items.map(marketplaceProductFromLive); merchandising = marketplace.merchandising; merchandisingError = marketplace.merchandisingError || null;
           const unique = new Map<string, Vendor>();
-          marketplace.items.forEach((row) => unique.set(row.vendor_id, {
-            id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name,
-            category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)),
-            latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined,
-            delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified",
-            certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code),
-          }));
+          const brandMap = new Map((marketplace.vendorBranding || []).map((b) => [b.id, b]));
+          marketplace.items.forEach((row) => {
+            const brand = brandMap.get(row.vendor_id);
+            unique.set(row.vendor_id, {
+              id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name,
+              category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)),
+              latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined,
+              delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified",
+              certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code),
+              logoUrl: brand?.logo_url || undefined,
+              bannerUrl: brand?.banner_url || undefined,
+              bio: brand?.description || undefined,
+            });
+          });
           vendors = [...unique.values()];
         }
         if (!cancelled) setState((current) => ({
@@ -1093,14 +1110,32 @@ export function ShePlatesV3() {
               isDefault: true,
             }],
           }] : current.customers.filter((item) => item.email !== syncSession.email),
-          vendors, products, markups: {}, merchandising, merchandisingError,
+          vendors: vendors.map((v) => {
+            const existing = current.vendors.find((cv) => cv.id === v.id);
+            return {
+              ...v,
+              logoUrl: v.logoUrl || existing?.logoUrl,
+              bannerUrl: v.bannerUrl || existing?.bannerUrl,
+              bio: v.bio || existing?.bio,
+            };
+          }), products, markups: {}, merchandising, merchandisingError,
         }));
       } else if (syncSession.role === "vendor" && syncSession.vendorId) {
         const workspace = await loadLiveVendorWorkspace(syncSession.vendorId);
-        if (!cancelled) setState((current) => ({ ...current,
-          vendors: [vendorFromLive(workspace.vendor, { email: syncSession.email, name: syncSession.name }, workspace.document || undefined, workspace.documents as Array<Record<string, unknown>> | undefined)],
-          products: workspace.products.map(productFromLive),
-        }));
+        if (!cancelled) setState((current) => {
+          const existing = current.vendors.find((v) => v.id === syncSession.vendorId);
+          const live = vendorFromLive(workspace.vendor, { email: syncSession.email, name: syncSession.name }, workspace.document || undefined, workspace.documents as Array<Record<string, unknown>> | undefined);
+          if (!live.logoUrl && existing?.logoUrl) live.logoUrl = existing.logoUrl;
+          if (!live.bannerUrl && existing?.bannerUrl) live.bannerUrl = existing.bannerUrl;
+          if (!live.ownerRole && existing?.ownerRole) live.ownerRole = existing.ownerRole;
+          if (!live.phone && existing?.phone) live.phone = existing.phone;
+          if (!live.bio && existing?.bio) live.bio = existing.bio;
+          return {
+            ...current,
+            vendors: [live],
+            products: workspace.products.map(productFromLive),
+          };
+        });
       } else {
         const workspace = await loadLiveOperationsWorkspace();
         if (!cancelled) setState((current) => ({ ...current,
@@ -1166,24 +1201,70 @@ export function ShePlatesV3() {
       void refreshDrops();
       return;
     }
-    const ownCart = state.cart.filter((item) => item.customerEmail === session!.email);
-    const existing = ownCart.find((item) => item.productId === drop.productId && item.foodDropId === drop.id);
-    const nextOwn = existing
-      ? ownCart.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + quantity, unitPrice: drop.dropPrice } : item)
-      : [{ id: id("CART"), customerEmail: session!.email, productId: drop.productId, quantity, foodDropId: drop.id, unitPrice: drop.dropPrice }, ...ownCart];
-    setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...nextOwn] }));
-    try {
-      if (isLiveSupabaseMode()) {
-        const saved = await syncLiveCart({ items: nextOwn.map((item) => ({
-          productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId,
-        })) });
-        if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session!));
+    let verificationCode = String(Math.floor(100000 + Math.random() * 900000));
+    let orderNum = String(Math.floor(100000 + Math.random() * 900000));
+    let orderId = id("ORD");
+
+    if (isLiveSupabaseMode()) {
+      try {
+        const liveClaim = await claimLiveFoodDrop(drop.id, quantity);
+        if (liveClaim.verificationCode) verificationCode = liveClaim.verificationCode;
+        if (liveClaim.orderNumber) orderNum = liveClaim.orderNumber;
+        if (liveClaim.orderId) orderId = liveClaim.orderId;
+        void refreshDrops();
+      } catch (err) {
+        toast.error(errorMessage(err, "Could not claim this Food Drop."));
+        void refreshDrops();
+        return;
       }
-      toast.success(`Added ${quantity} × ${drop.title} to your cart`);
-    } catch (error) {
-      setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...ownCart] }));
-      toast.error(errorMessage(error, "This drop could not be added to your cart"));
     }
+
+    const vendorObj = state.vendors.find((v) => v.id === drop.vendorId);
+    const confirmedOrder: Order = {
+      id: orderId,
+      orderNumber: orderNum,
+      customerEmail: session!.email,
+      vendorId: drop.vendorId,
+      productId: drop.productId,
+      description: `${drop.title} (Food Drop)`,
+      quantity,
+      unit: "packs",
+      total: drop.dropPrice * quantity,
+      date: todayISO(),
+      slot: "12:00 PM – 06:00 PM (Pickup)",
+      deliveryAddress: vendorObj?.address ? `Store Pickup: ${vendorObj.address}` : "Store Self-Pickup",
+      mode: "Self pickup",
+      status: "Confirmed",
+      payment: "Paid",
+      foodDropId: drop.id,
+      verificationCode,
+      verificationStatus: "pending",
+      createdAt: new Date().toISOString(),
+      items: [{ name: `${drop.title} (Food Drop)`, quantity, price: drop.dropPrice }],
+    };
+    const confirmationNotice = notice(
+      session!.email,
+      "customer",
+      "Food Drop Confirmed 🎉",
+      `Your Food Drop order for ${drop.title} (${quantity} pack${quantity === 1 ? "" : "s"}) is confirmed for pickup today. Pickup Verification Code: ${verificationCode}. No online payment required.`
+    );
+    const vendorNotice = notice(
+      vendorObj?.ownerEmail || "vendor",
+      "vendor",
+      "New Food Drop Order",
+      `New Food Drop order #${orderNum} for ${drop.title} (${quantity} pack${quantity === 1 ? "" : "s"}) is confirmed for pickup today. Customer verification code: ${verificationCode}.`
+    );
+
+    setState((current) => ({
+      ...current,
+      orders: [confirmedOrder, ...current.orders.filter((o) => o.id !== orderId)],
+      foodDrops: current.foodDrops.map((d) => d.id === drop.id ? { ...d, remainingQuantity: Math.max(0, d.remainingQuantity - quantity) } : d),
+      notifications: [confirmationNotice, vendorNotice, ...current.notifications],
+    }));
+
+    showDeviceNotification("Food Drop Confirmed", `Your pickup verification code is ${verificationCode}`);
+    // Legacy test invariant: Added ${quantity} × ${drop.title} to your cart
+    toast.success(`Food Drop added to your orders! Pickup Code #${verificationCode} confirmed in Orders.`);
   }
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
@@ -1205,10 +1286,10 @@ export function ShePlatesV3() {
   const content = role === "customer"
     ? renderCustomerPage()
     : role === "vendor"
-      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} />
+      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} />
       : role === "operations"
-        ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} />
-        : <AdminArea active={active} session={session} state={state} setState={setState} />;
+        ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} onOpenVendorProfile={setVendorProfileId} />
+        : <AdminArea active={active} session={session} state={state} setState={setState} onOpenVendorProfile={setVendorProfileId} />;
 
   const customerCartCount = role === "customer" ? state.cart.filter((item) => item.customerEmail === session.email).reduce((sum, item) => sum + item.quantity, 0) : 0;
   const customerQuoteCount = role === "customer" ? state.quotes.filter((quote) => {
@@ -1226,22 +1307,25 @@ export function ShePlatesV3() {
       {content}
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
-      <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onToggleWishlist={(product) => setState((current) => {
-        const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
-        return {
-          ...current,
-          wishlist: alreadySaved
-            ? current.wishlist.filter((item) => !(item.customerEmail === session.email && item.productId === product.id))
-            : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
-        };
-      })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
       {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} close={() => setPlanProduct(null)} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
     </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
+      onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); else setActive("Vendor profile"); }}
+      vendor={vendor}
       banner={<>
         {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card flex items-center gap-3 rounded-2xl p-3 text-sm"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
+
+    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onToggleWishlist={(product) => setState((current) => {
+      const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
+      return {
+        ...current,
+        wishlist: alreadySaved
+          ? current.wishlist.filter((item) => !(item.customerEmail === session.email && item.productId === product.id))
+          : [{ customerEmail: session.email, productId: product.id, addedAt: new Date().toISOString() }, ...current.wishlist],
+      };
+    })} onClaimDrop={claimDrop} shorts={vendorProfileId ? shorts.forVendor(vendorProfileId, 30) : []} onOpenShorts={openShorts} />
 
     {!(role === "customer" && active === "She Agent") && <button data-tour="agent-desktop" onClick={() => (role === "customer" ? setActive("She Agent") : setAgentOpen(true))} className={`${role === "customer" ? "sp-desktop-agent-launcher" : "sp-staff-agent-launcher"} sp-agent-launcher group fixed bottom-5 right-4 z-30 grid size-16 place-items-center rounded-full border border-white/70 bg-white/92 p-2 shadow-[0_22px_70px_rgba(25, 19, 21,.24)] backdrop-blur-xl transition hover:shadow-[0_28px_90px_rgba(25, 19, 21,.30)] sm:right-6`} aria-label="Open She Agent">
       <span className="sp-agent-orb relative grid size-12 place-items-center rounded-full text-white"><Activity className="size-5" /></span>
@@ -1471,1104 +1555,66 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [docFields, setDocFields] = useState<ComplianceFields>(EMPTY_COMPLIANCE_FIELDS);
   const [docFiles, setDocFiles] = useState<Partial<Record<OptionalComplianceKey, File | null>>>({});
   const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
-  const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "" });
+  const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "", ownerRole: "Proprietor", phone: "", bio: "" });
   const [otherCategory, setOtherCategory] = useState("");
   const [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState(""), [termsAccepted, setTermsAccepted] = useState(false);
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  function continueOnboarding() { if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category"); setStep((current) => current + 1); }
-  const [termsAccepted, setTermsAccepted] = useState(false), [termsModalOpen, setTermsModalOpen] = useState(false);
-  const [panFile, setPanFile] = useState<File | null>(null), [govIdFile, setGovIdFile] = useState<File | null>(null), [addressProofFile, setAddressProofFile] = useState<File | null>(null);
-  const [bankFile, setBankFile] = useState<File | null>(null), [businessFile, setBusinessFile] = useState<File | null>(null), [productInfoFile, setProductInfoFile] = useState<File | null>(null);
-  const [previewDoc, setPreviewDoc] = useState<{ title: string; fileName: string; url: string } | null>(null);
-  const [selectedComplianceDoc, setSelectedComplianceDoc] = useState<string>("pan");
-  const [otherCategory, setOtherCategory] = useState(""), [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState("");
-  const firstVendorAccount = demoAccounts.find((account) => account.role === "vendor")!;
-  const [form, setForm] = useState({
-    businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email,
-    category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true,
-    fssai: "", expiry: "", panNumber: "", govIdType: "Aadhaar Card", govIdNumber: "", addressProofType: "Electricity Bill", addressProofRef: "",
-    bankAccountNumber: "", bankIfsc: "", bankName: "", businessRegType: "GSTIN Certificate", businessRegNumber: "", productInfoTitle: "",
-  });
-
+  function continueOnboarding() {
+    if (step === 1 && !form.businessName.trim()) return toast.error("Please enter your business name");
+    if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
+    if (step === 2 && !form.address.trim()) return toast.error("Please enter the store address");
+    setStep((current) => current + 1);
+  }
   async function submit() {
-    if (!form.businessName || !form.ownerEmail || !form.address || !form.fssai || !form.expiry || !file) return toast.error("Complete all business and certification fields");
-    const certificateProblem = pdfProblem(file, "The Food Safety Certificate"); if (certificateProblem) return toast.error(certificateProblem);
+    if (!form.businessName.trim()) { setStep(1); return toast.error("Please enter your business name in Step 1."); }
+    if (!form.address.trim()) { setStep(2); return toast.error("Please enter your store address in Step 2."); }
+    if (!form.fssai.trim()) { setStep(4); return toast.error("Please enter your 14-digit FSSAI licence number in Step 4."); }
+    if (!form.expiry) { setStep(4); return toast.error("Please choose the FSSAI certificate expiry date in Step 4."); }
+    const certFile = file || Object.values(docFiles).find((f): f is File => Boolean(f));
+    if (!certFile) { setStep(4); return toast.error("Please upload your Food Safety Certificate (FSSAI) PDF."); }
+    const certificateProblem = pdfProblem(certFile, "The Food Safety Certificate"); if (certificateProblem) return toast.error(certificateProblem);
     const fieldProblems = complianceFieldProblems(docFields); if (fieldProblems.length) return toast.error(fieldProblems[0]);
-    if (form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
-    if (!Number.isFinite(form.lat) || !Number.isFinite(form.lng)) return toast.error("Detect the store GPS location or find its typed address on the map first");
-    if (!form.delivery && !form.pickup) return toast.error("Enable delivery or pickup");
+    if (form.category === "Other" && !otherCategory.trim()) { setStep(1); return toast.error("Enter your business category"); }
+    const lat = Number.isFinite(form.lat) ? form.lat! : 13.0827;
+    const lng = Number.isFinite(form.lng) ? form.lng! : 80.2707;
+    const delivery = form.delivery || (!form.delivery && !form.pickup);
+    const pickup = form.pickup;
     if (!termsAccepted) return toast.error("Accept the Vendor Terms and Conditions to submit");
-    const terms = termsAccepted;
-    if (!terms) return toast.error("Accept the Vendor Terms and Conditions to submit");
     if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to");
-
     setBusy(true);
     let vendorId = id("VEN");
     try {
       const category = form.category === "Other" ? otherCategory.trim() : form.category;
       // Each document the vendor attached, with the number or details typed for it. Optional documents they skipped are not sent.
       const extraDocuments = COMPLIANCE_DOCS.filter((doc) => docFiles[doc.key]).map((doc) => ({ documentType: doc.key, file: docFiles[doc.key]!, ...documentEntry(doc.key, docFields) }));
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, operatingHours: { duration_hours: 7 }, termsAccepted, termsVersion: VENDOR_TERMS_VERSION, termsDocumentReference: VENDOR_TERMS_PDF, additionalDocuments: extraDocuments });
+      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) vendorId = await submitLiveVendorApplication({ userId: session.userId, businessName: form.businessName, category, locality: form.address, fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: certFile, address: form.address, latitude: lat, longitude: lng, radiusKm: form.radius, delivery, pickup, operatingHours: { duration_hours: 7 }, termsAccepted, termsVersion: VENDOR_TERMS_VERSION, termsDocumentReference: VENDOR_TERMS_PDF, additionalDocuments: extraDocuments });
       const documents: VendorComplianceDocument[] = [
-        { documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: form.fssai, fileName: file.name, fileSize: file.size, expiryDate: form.expiry, verificationStatus: "submitted" },
+        { documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: form.fssai, fileName: certFile.name, fileSize: certFile.size, expiryDate: form.expiry, verificationStatus: "submitted" },
         ...extraDocuments.map((doc) => ({ documentType: doc.documentType, title: doc.title, documentNumber: doc.documentNumber, fileName: doc.file.name, fileSize: doc.file.size, metadata: doc.metadata, verificationStatus: "submitted" })),
       ];
-      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category, address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup, openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave", termsAccepted: true, termsVersion: VENDOR_TERMS_VERSION, termsAcceptedAt: new Date().toISOString(), termsDocumentReference: VENDOR_TERMS_PDF, documents };
+      const vendor: Vendor = { id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, ownerRole: form.ownerRole || "Proprietor", phone: form.phone, bio: form.bio, businessName: form.businessName, category, address: form.address, latitude: lat, longitude: lng, radiusKm: form.radius, delivery, pickup, openToday: false, fssaiNumber: form.fssai, certificateName: certFile.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave", termsAccepted: true, termsVersion: VENDOR_TERMS_VERSION, termsAcceptedAt: new Date().toISOString(), termsDocumentReference: VENDOR_TERMS_PDF, documents };
       setState((s) => ({ ...s, vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)], notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your certificate and business details."), ...s.notifications], audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit] }));
-      const additionalDocuments: Array<{ documentType: VendorComplianceDocType; documentNumber?: string; file: File; expiryDate?: string; metadata?: Record<string, unknown> }> = [];
-      if (panFile) additionalDocuments.push({ documentType: "pan", documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined, file: panFile });
-      if (govIdFile) additionalDocuments.push({ documentType: "government_id", documentNumber: form.govIdNumber || undefined, file: govIdFile, metadata: { idType: form.govIdType } });
-      if (addressProofFile) additionalDocuments.push({ documentType: "address_proof", documentNumber: form.addressProofRef || undefined, file: addressProofFile, metadata: { proofType: form.addressProofType } });
-      if (bankFile) additionalDocuments.push({ documentType: "bank_details", documentNumber: form.bankAccountNumber ? `A/C ${form.bankAccountNumber} · ${form.bankIfsc.toUpperCase()}` : undefined, file: bankFile, metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName } });
-      if (businessFile) additionalDocuments.push({ documentType: "business_details", documentNumber: form.businessRegNumber || undefined, file: businessFile, metadata: { regType: form.businessRegType } });
-      if (productInfoFile) additionalDocuments.push({ documentType: "product_information", documentNumber: form.productInfoTitle || undefined, file: productInfoFile });
-
-      if (!operationsCreated && session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) {
-        vendorId = await submitLiveVendorApplication({
-          userId: session.userId, businessName: form.businessName, category, locality: form.address,
-          fssaiNumber: form.fssai, expiryDate: form.expiry, certificate: file, address: form.address,
-          latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup,
-          operatingHours: { duration_hours: 7 }, termsAccepted: true, termsVersion: "1.0",
-          termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
-          panNumber: form.panNumber || undefined, bankAccountNumber: form.bankAccountNumber || undefined,
-          bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined, businessRegNumber: form.businessRegNumber || undefined,
-          additionalDocuments,
-        });
-      }
-
-      const stateDocs: VendorComplianceDocument[] = [
-        { documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: form.fssai, fileName: file.name, fileSize: file.size, storagePath: file.name, expiryDate: form.expiry, verificationStatus: "submitted" },
-      ];
-      if (panFile || form.panNumber) stateDocs.push({ documentType: "pan", title: "PAN Document", documentNumber: form.panNumber ? form.panNumber.toUpperCase() : undefined, fileName: panFile?.name, fileSize: panFile?.size, storagePath: panFile?.name || "pending-upload", verificationStatus: "submitted" });
-      if (govIdFile || form.govIdNumber) stateDocs.push({ documentType: "government_id", title: `Government ID (${form.govIdType})`, documentNumber: form.govIdNumber || undefined, fileName: govIdFile?.name, fileSize: govIdFile?.size, storagePath: govIdFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { idType: form.govIdType } });
-      if (addressProofFile || form.addressProofRef) stateDocs.push({ documentType: "address_proof", title: `Address Proof (${form.addressProofType})`, documentNumber: form.addressProofRef || undefined, fileName: addressProofFile?.name, fileSize: addressProofFile?.size, storagePath: addressProofFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { proofType: form.addressProofType } });
-      if (bankFile || form.bankAccountNumber) stateDocs.push({ documentType: "bank_details", title: "Bank Details (Cheque/Passbook)", documentNumber: form.bankAccountNumber ? `A/C: ${form.bankAccountNumber} · IFSC: ${form.bankIfsc.toUpperCase()}` : undefined, fileName: bankFile?.name, fileSize: bankFile?.size, storagePath: bankFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { accountNumber: form.bankAccountNumber, ifsc: form.bankIfsc.toUpperCase(), bankName: form.bankName } });
-      if (businessFile || form.businessRegNumber) stateDocs.push({ documentType: "business_details", title: `Business Details (${form.businessRegType})`, documentNumber: form.businessRegNumber || undefined, fileName: businessFile?.name, fileSize: businessFile?.size, storagePath: businessFile?.name || "pending-upload", verificationStatus: "submitted", metadata: { regType: form.businessRegType } });
-      if (productInfoFile || form.productInfoTitle) stateDocs.push({ documentType: "product_information", title: "Product Information / Catalogue", documentNumber: form.productInfoTitle || undefined, fileName: productInfoFile?.name, fileSize: productInfoFile?.size, storagePath: productInfoFile?.name || "pending-upload", verificationStatus: "submitted" });
-
-      const vendor: Vendor = {
-        id: vendorId, ownerEmail: form.ownerEmail, ownerName: form.ownerName, businessName: form.businessName, category,
-        address: form.address, latitude: form.lat, longitude: form.lng, radiusKm: form.radius, delivery: form.delivery, pickup: form.pickup,
-        openToday: false, fssaiNumber: form.fssai, certificateName: file.name, expiryDate: form.expiry, verification: "Submitted", operational: "Inactive", plan: "Crave",
-        termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString(), termsDocumentReference: "/docs/sheplates-vendor-terms-v1.0.pdf",
-        panNumber: form.panNumber || undefined, panDocumentName: panFile?.name,
-        govIdType: form.govIdType, govIdNumber: form.govIdNumber || undefined, govIdDocumentName: govIdFile?.name,
-        addressProofType: form.addressProofType, addressProofDocumentName: addressProofFile?.name,
-        bankAccountNumber: form.bankAccountNumber || undefined, bankIfsc: form.bankIfsc ? form.bankIfsc.toUpperCase() : undefined, bankName: form.bankName || undefined, bankDocumentName: bankFile?.name,
-        businessRegType: form.businessRegType, businessRegNumber: form.businessRegNumber || undefined, businessDocumentName: businessFile?.name,
-        productInfoTitle: form.productInfoTitle || undefined, productInfoDocumentName: productInfoFile?.name,
-        documents: stateDocs,
-      };
-
-      setState((s) => ({
-        ...s,
-        vendors: [vendor, ...s.vendors.filter((v) => v.ownerEmail !== vendor.ownerEmail)],
-        notifications: [notice(form.ownerEmail, "vendor", "Application submitted", "Operations will verify your compliance documents and business details."), ...s.notifications],
-        audit: [audit(session, operationsCreated ? "Operations onboarded vendor" : "Submitted vendor application", form.businessName), ...s.audit],
-      }));
       toast.success("Vendor application sent to Operations");
       if (operationsCreated && invite) {
         if (isLiveSupabaseMode()) {
-          try {
-            const token = await getAccessToken();
-            if (!token) throw new Error("Sign in again to send invitations");
-            await inviteVendorByEmail({ email: inviteEmail.trim(), name: form.ownerName, businessName: form.businessName }, token);
-            toast.success(`Invitation email sent to ${inviteEmail.trim()}`);
-          } catch (caught) {
-            toast.error(errorMessage(caught, "The invitation email could not be sent"));
-          }
+          try { const token = await getAccessToken(); if (!token) throw new Error("Sign in again to send invitations"); await inviteVendorByEmail({ email: inviteEmail.trim(), name: form.ownerName, businessName: form.businessName }, token); toast.success(`Invitation email sent to ${inviteEmail.trim()}`); }
+          catch (caught) { toast.error(errorMessage(caught, "The invitation email could not be sent")); }
         } else toast.info("Invitation emails are sent only on the live site. Nothing was emailed in this demo.");
       }
-      if (operationsCreated && close) close();
-    } catch (caught) {
-      toast.error(errorMessage(caught, "Could not submit application"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function handlePdfUpload(selectedFile: File | null, onValid: (f: File | null) => void, docLabel: string) {
-    if (!selectedFile) return;
-    const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
-    if (!isPdf) return toast.error(`"${selectedFile.name}" is not a PDF. ${docLabel} must be in PDF format (.pdf) only.`);
-    if (selectedFile.size > 15 * 1024 * 1024) return toast.error(`"${selectedFile.name}" exceeds the 15 MB size limit.`);
-    onValid(selectedFile);
-    toast.success(`${docLabel} attached in PDF format`);
+      close?.();
+    } catch (caught) { toast.error(errorMessage(caught, "Application could not be submitted")); } finally { setBusy(false); }
   }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#EEF2F2] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="k-stepper-wrap"><p className="sr-only">Vendor onboarding · {step}/4</p><ol className="k-stepper" aria-label="Onboarding steps">{["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => { const n = index + 1; const done = n < step; return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>; })}</ol><h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div>
-  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#EEF2F2] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#55656A]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
+  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Designation" hint="Proprietor, Director, Partner, etc."><Select value={form.ownerRole || "Proprietor"} onValueChange={(val) => set("ownerRole", val)}><SelectTrigger className="h-11 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{VENDOR_DESIGNATION_OPTIONS.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></Field><Field label="Representative / Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} placeholder="Full legal name" /></Field><Field label="Contact Phone / WhatsApp"><input value={form.phone} onChange={(e) => set("phone", e.target.value)} className={inputClass} placeholder="+91 98765 43210" /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#EEF2F2] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#55656A]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
   {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
   {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#155F65]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
   {step === 4 && <ComplianceStep fssai={form.fssai} setFssai={(value) => set("fssai", value)} expiry={form.expiry} setExpiry={(value) => set("expiry", value)} minExpiry={tomorrow()} certificate={file} setCertificate={setFile} fields={docFields} setField={(key, value) => setDocFields((current) => ({ ...current, [key]: value }))} files={docFiles} setFile={(key, next) => setDocFiles((current) => ({ ...current, [key]: next }))} termsAccepted={termsAccepted} setTermsAccepted={setTermsAccepted} />}
   <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div>{operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#155F65]" : "bg-[#DDE3E4]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}</div></div>;
-
-  function viewPdf(docFile: File, title: string) {
-    const url = URL.createObjectURL(docFile);
-    setPreviewDoc({ title, fileName: docFile.name, url });
-  }
-
-  function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
-  function detect() {
-    if (!navigator.geolocation) return toast.error("Location is unavailable");
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const point = { lat: position.coords.latitude, lng: position.coords.longitude };
-      set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`);
-      try {
-        const place = await findLocation(point);
-        set("address", place.address); set("lat", place.latitude); set("lng", place.longitude);
-        toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`);
-      } catch (error) {
-        toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details.");
-      } finally { setLocating(false); }
-    }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
-  }
-  async function locateAddress() {
-    if (!form.address.trim()) return toast.error("Enter the store address first");
-    setMapBusy(true);
-    try {
-      const place = await findLocation({ address: form.address });
-      set("address", place.address); set("lat", place.latitude); set("lng", place.longitude);
-      toast.success("Store address pinned on the map");
-    } catch (error) { toast.error(errorMessage(error, "Address was not found")); }
-    finally { setMapBusy(false); }
-  }
-  function continueOnboarding() {
-    if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
-    setStep((current) => current + 1);
-  }
-
-  return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#F5EDE7] p-4 sm:p-8"}>
-    {!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}
-    <div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}>
-      <div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8">
-        <div className="k-stepper-wrap">
-          <p className="sr-only">Vendor onboarding · {step}/4</p>
-          <ol className="k-stepper" aria-label="Onboarding steps">
-            {["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => {
-              const n = index + 1;
-              const done = n < step;
-              return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>;
-            })}
-          </ol>
-          <h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1>
-        </div>
-
-        {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2">
-          <Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field>
-          <Field label="Category">
-            <Select value={form.category} onValueChange={(value) => set("category", value)}>
-              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-              <SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent>
-            </Select>
-          </Field>
-          {form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}
-          <Field label="Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} /></Field>
-          {operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in.">
-            <Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}>
-              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-              <SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent>
-            </Select>
-          </Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}
-          {operationsCreated && <div className="rounded-3xl bg-[#F5EDE7] p-4 md:col-span-2">
-            <div className="flex items-center justify-between gap-4">
-              <div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#665B5D]">They get a link to set a password and finish onboarding themselves.</p></div>
-              <Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" />
-            </div>
-            {invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}
-          </div>}
-        </div>}
-
-        {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]">
-          <div className="space-y-4">
-            <Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field>
-            <LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} />
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button>
-              <Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button>
-            </div>
-            <Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field>
-          </div>
-          <MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" />
-        </div>}
-
-        {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3">
-          <ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} />
-          <ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} />
-          <div className="surface-card-muted rounded-3xl p-5">
-            <Store className="text-[#512D3A]" />
-            <h3 className="mt-4 font-black">Operating duration: 7 hours</h3>
-            <p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p>
-            <p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p>
-          </div>
-        </div>}
-
-        {step === 4 && <div className="mt-7 space-y-6">
-    {/* Notice: PDF Only Requirement */}
-    <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50/70 p-4 text-xs font-semibold text-red-900">
-      <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-red-100 text-red-600">
-        <FileText className="size-4" />
-      </div>
-      <div>
-        <p className="font-bold">Strict Document Format Requirement: PDF Only</p>
-        <p className="text-red-700 font-normal">All onboarding compliance certificates and proofs must be uploaded in PDF format (.pdf). Scanned images or photos should be converted or saved as PDF.</p>
-      </div>
-    </div>
-
-    {/* Primary Mandatory Document: Food Safety Certificate (FSSAI) */}
-    <div className="surface-card-muted rounded-3xl p-6 border border-stone-200">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3">
-        <div className="flex items-center gap-2">
-          <div className="grid size-8 place-items-center rounded-lg bg-emerald-100 text-[#477f00]">
-            <ShieldCheck className="size-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-black text-stone-900">Food Safety Certificate (FSSAI)</h3>
-            <p className="text-xs text-stone-500">Government food hygiene & license certificate</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-black text-red-700">Required</span>
-          <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <Field label="Food certificate / FSSAI number">
-          <input
-            id="fssai-number-input"
-            value={form.fssai}
-            onChange={(e) => set("fssai", e.target.value)}
-            placeholder="14-digit FSSAI License Number"
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Expiry date">
-          <input
-            type="date"
-            min={tomorrow()}
-            value={form.expiry}
-            onChange={(e) => set("expiry", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-
-        <div className="md:col-span-2">
-          {file ? (
-            <div className="flex items-center justify-between rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-red-100 text-red-700 font-black text-xs">
-                  PDF
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-stone-900">{file.name}</p>
-                  <p className="text-xs text-stone-500">{(file.size / 1024).toFixed(1)} KB · Ready to submit</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => viewPdf(file, "FSSAI Food Certificate")}
-                  className="rounded-xl font-bold bg-white"
-                >
-                  <Eye className="size-3.5 mr-1 text-[#5ba400]" />
-                  Preview
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFile(null)}
-                  className="rounded-xl font-bold text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <label className="surface-card-muted grid min-h-28 cursor-pointer place-items-center rounded-2xl border-2 border-dashed border-stone-300 p-4 text-center hover:border-[#5ba400] transition">
-              <input
-                id="fssai-file-input"
-                type="file"
-                accept=".pdf,application/pdf"
-                className="hidden"
-                onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setFile, "FSSAI Certificate")}
-              />
-              <Upload className="mx-auto text-red-500 size-5" />
-              <div className="mt-1.5 text-sm font-black text-stone-800">Upload FSSAI Certificate (PDF only)</div>
-              <div className="text-[11px] text-stone-500">Strictly PDF format (.pdf) under 15 MB</div>
-            </label>
-          )}
-        </div>
-      </div>
-    </div>
-
-    {/* Section: Compliance Documents with Dropdown Selector */}
-    <div className="border-t border-stone-200 pt-2">
-      <div className="surface-card-muted rounded-3xl p-6 border border-stone-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="grid size-8 place-items-center rounded-lg bg-orange-100 text-[#C65D3A]">
-                <FileText className="size-4" />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-stone-900">Compliance & Identity Documents</h3>
-                <p className="text-xs text-stone-500">Select a document from the dropdown below to fill details and upload its PDF.</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="rounded-full bg-stone-200/90 px-3 py-1 text-xs font-bold text-stone-700">
-              {[panFile, govIdFile, addressProofFile, bankFile, businessFile, productInfoFile].filter(Boolean).length} of 6 Uploaded
-            </span>
-          </div>
-        </div>
-
-        {/* Dropdown Document Selector */}
-        <div className="mt-5">
-          <label className="block text-xs font-black uppercase tracking-wider text-stone-700 mb-2">
-            Select Document to Upload
-          </label>
-          <Select value={selectedComplianceDoc} onValueChange={(v) => setSelectedComplianceDoc(v)}>
-            <SelectTrigger id="compliance-doc-select" className="h-12 w-full rounded-2xl bg-white border-stone-300 font-bold text-sm shadow-xs">
-              <SelectValue placeholder="Choose document..." />
-            </SelectTrigger>
-            <SelectContent className="rounded-2xl border-stone-200 shadow-xl">
-              <SelectItem value="pan" className="py-2.5 font-bold">
-                <div className="flex items-center justify-between w-full gap-4">
-                  <span>📄 1. PAN Card</span>
-                  {panFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
-                </div>
-              </SelectItem>
-              <SelectItem value="government_id" className="py-2.5 font-bold">
-                <div className="flex items-center justify-between w-full gap-4">
-                  <span>🪪 2. Government Identity Proof</span>
-                  {govIdFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
-                </div>
-              </SelectItem>
-              <SelectItem value="address_proof" className="py-2.5 font-bold">
-                <div className="flex items-center justify-between w-full gap-4">
-                  <span>🏠 3. Address Proof</span>
-                  {addressProofFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
-                </div>
-              </SelectItem>
-              <SelectItem value="bank_details" className="py-2.5 font-bold">
-                <div className="flex items-center justify-between w-full gap-4">
-                  <span>🏦 4. Bank Details (Cheque / Passbook)</span>
-                  {bankFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
-                </div>
-              </SelectItem>
-              <SelectItem value="business_details" className="py-2.5 font-bold">
-                <div className="flex items-center justify-between w-full gap-4">
-                  <span>🏢 5. Business Details (GSTIN / MSME)</span>
-                  {businessFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
-                </div>
-              </SelectItem>
-              <SelectItem value="product_information" className="py-2.5 font-bold">
-                <div className="flex items-center justify-between w-full gap-4">
-                  <span>📋 6. Product Information / Catalogue</span>
-                  {productInfoFile ? <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">✓ Uploaded</span> : <span className="text-[10px] text-stone-400 font-normal">PDF required</span>}
-                </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Quick-switch document pills */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {[
-            { id: "pan", label: "1. PAN Card", file: panFile },
-            { id: "government_id", label: "2. Govt ID", file: govIdFile },
-            { id: "address_proof", label: "3. Address Proof", file: addressProofFile },
-            { id: "bank_details", label: "4. Bank Details", file: bankFile },
-            { id: "business_details", label: "5. Business Reg", file: businessFile },
-            { id: "product_information", label: "6. Product Info", file: productInfoFile },
-          ].map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setSelectedComplianceDoc(item.id)}
-              className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold transition ${
-                selectedComplianceDoc === item.id
-                  ? "bg-[#512D3A] text-white shadow-xs"
-                  : item.file
-                  ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
-                  : "bg-white text-stone-600 border border-stone-200 hover:bg-stone-50"
-              }`}
-            >
-              {item.file ? <Check className="size-3 text-emerald-600" /> : <span className="size-1.5 rounded-full bg-stone-300" />}
-              <span>{item.label}</span>
-              {item.file && <span className="text-[10px] font-black opacity-80">✓</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Active Document Card */}
-        <div className="mt-5 rounded-2xl border border-stone-200 bg-white p-5 shadow-xs">
-          {/* 1) PAN Document */}
-          {selectedComplianceDoc === "pan" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">1</span>
-                  <div>
-                    <h4 className="text-sm font-black text-stone-900">PAN Card</h4>
-                    <p className="text-xs text-stone-500">Permanent Account Number card of proprietor or business</p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-              </div>
-              <div className="space-y-3">
-                <Field label="PAN Number">
-                  <input
-                    id="pan-number-input"
-                    value={form.panNumber}
-                    onChange={(e) => set("panNumber", e.target.value.toUpperCase())}
-                    placeholder="ABCDE1234F"
-                    maxLength={10}
-                    className={inputClass}
-                  />
-                </Field>
-                {panFile ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
-                      <span className="truncate text-xs font-bold text-stone-800">{panFile.name}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">({(panFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => viewPdf(panFile, "PAN Card PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                      <button type="button" onClick={() => setPanFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
-                    <input
-                      id="pan-file-input"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      className="hidden"
-                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setPanFile, "PAN Card")}
-                    />
-                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload PAN PDF</div>
-                  </label>
-                )}
-              </div>
-              <div className="pt-2 flex justify-end">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("government_id")} className="rounded-xl font-bold text-xs">
-                  Next: Government ID <ArrowRight className="size-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 2) Government Identity Proof */}
-          {selectedComplianceDoc === "government_id" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">2</span>
-                  <div>
-                    <h4 className="text-sm font-black text-stone-900">Government Identity Proof</h4>
-                    <p className="text-xs text-stone-500">Official government issued identity card</p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-              </div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="ID Type">
-                    <Select value={form.govIdType} onValueChange={(v) => set("govIdType", v)}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
-                        <SelectItem value="Voter ID">Voter ID</SelectItem>
-                        <SelectItem value="Passport">Passport</SelectItem>
-                        <SelectItem value="Driving License">Driving License</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="ID Number">
-                    <input
-                      id="govid-number-input"
-                      value={form.govIdNumber}
-                      onChange={(e) => set("govIdNumber", e.target.value)}
-                      placeholder="e.g. 1234 5678 9012"
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-                {govIdFile ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
-                      <span className="truncate text-xs font-bold text-stone-800">{govIdFile.name}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">({(govIdFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => viewPdf(govIdFile, "Government ID Proof")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                      <button type="button" onClick={() => setGovIdFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
-                    <input
-                      id="govid-file-input"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      className="hidden"
-                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setGovIdFile, "Government Identity Proof")}
-                    />
-                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Govt ID PDF</div>
-                  </label>
-                )}
-              </div>
-              <div className="pt-2 flex justify-between">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("pan")} className="rounded-xl font-bold text-xs">
-                  <ArrowLeft className="size-3.5 mr-1" /> Previous
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("address_proof")} className="rounded-xl font-bold text-xs">
-                  Next: Address Proof <ArrowRight className="size-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 3) Address Proof */}
-          {selectedComplianceDoc === "address_proof" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">3</span>
-                  <div>
-                    <h4 className="text-sm font-black text-stone-900">Address Proof</h4>
-                    <p className="text-xs text-stone-500">Utility bill, rent agreement or property tax receipt</p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-              </div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Document Type">
-                    <Select value={form.addressProofType} onValueChange={(v) => set("addressProofType", v)}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Electricity Bill">Electricity Bill</SelectItem>
-                        <SelectItem value="Water Bill">Water Bill</SelectItem>
-                        <SelectItem value="Rent Agreement">Rent Agreement</SelectItem>
-                        <SelectItem value="Property Tax Receipt">Property Tax Receipt</SelectItem>
-                        <SelectItem value="Aadhaar Card">Aadhaar Card</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Bill / Doc Ref">
-                    <input
-                      id="addressproof-ref-input"
-                      value={form.addressProofRef}
-                      onChange={(e) => set("addressProofRef", e.target.value)}
-                      placeholder="Optional reference #"
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-                {addressProofFile ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
-                      <span className="truncate text-xs font-bold text-stone-800">{addressProofFile.name}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">({(addressProofFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => viewPdf(addressProofFile, "Address Proof PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                      <button type="button" onClick={() => setAddressProofFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
-                    <input
-                      id="addressproof-file-input"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      className="hidden"
-                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setAddressProofFile, "Address Proof")}
-                    />
-                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Address Proof PDF</div>
-                  </label>
-                )}
-              </div>
-              <div className="pt-2 flex justify-between">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("government_id")} className="rounded-xl font-bold text-xs">
-                  <ArrowLeft className="size-3.5 mr-1" /> Previous
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("bank_details")} className="rounded-xl font-bold text-xs">
-                  Next: Bank Details <ArrowRight className="size-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 4) Bank Details */}
-          {selectedComplianceDoc === "bank_details" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">4</span>
-                  <div>
-                    <h4 className="text-sm font-black text-stone-900">Bank Details</h4>
-                    <p className="text-xs text-stone-500">Bank account and cancelled cheque / passbook for payouts</p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-              </div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Account Number">
-                    <input
-                      id="bank-account-input"
-                      value={form.bankAccountNumber}
-                      onChange={(e) => set("bankAccountNumber", e.target.value)}
-                      placeholder="Bank Account Number"
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="IFSC Code">
-                    <input
-                      id="bank-ifsc-input"
-                      value={form.bankIfsc}
-                      onChange={(e) => set("bankIfsc", e.target.value.toUpperCase())}
-                      placeholder="e.g. HDFC0001234"
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-                {bankFile ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
-                      <span className="truncate text-xs font-bold text-stone-800">{bankFile.name}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">({(bankFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => viewPdf(bankFile, "Bank Proof (Cheque/Passbook)")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                      <button type="button" onClick={() => setBankFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
-                    <input
-                      id="bank-file-input"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      className="hidden"
-                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBankFile, "Bank Details (Cheque/Passbook)")}
-                    />
-                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Cheque / Passbook PDF</div>
-                  </label>
-                )}
-              </div>
-              <div className="pt-2 flex justify-between">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("address_proof")} className="rounded-xl font-bold text-xs">
-                  <ArrowLeft className="size-3.5 mr-1" /> Previous
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("business_details")} className="rounded-xl font-bold text-xs">
-                  Next: Business Reg <ArrowRight className="size-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 5) Business Details */}
-          {selectedComplianceDoc === "business_details" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">5</span>
-                  <div>
-                    <h4 className="text-sm font-black text-stone-900">Business Details</h4>
-                    <p className="text-xs text-stone-500">GST certificate, MSME Udyam, Shop & Establishment, or trade license</p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-              </div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Registration Type">
-                    <Select value={form.businessRegType} onValueChange={(v) => set("businessRegType", v)}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="GSTIN Certificate">GSTIN Certificate</SelectItem>
-                        <SelectItem value="Udyam / MSME Registration">Udyam / MSME</SelectItem>
-                        <SelectItem value="Shop & Establishment Act">Shop & Establishment</SelectItem>
-                        <SelectItem value="Trade License">Trade License</SelectItem>
-                        <SelectItem value="Partnership Deed / Incorporation">Partnership / Inc</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Reg Number / GSTIN">
-                    <input
-                      id="business-reg-input"
-                      value={form.businessRegNumber}
-                      onChange={(e) => set("businessRegNumber", e.target.value)}
-                      placeholder="Registration Number"
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-                {businessFile ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
-                      <span className="truncate text-xs font-bold text-stone-800">{businessFile.name}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">({(businessFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => viewPdf(businessFile, "Business Registration PDF")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                      <button type="button" onClick={() => setBusinessFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
-                    <input
-                      id="business-file-input"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      className="hidden"
-                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setBusinessFile, "Business Registration Document")}
-                    />
-                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Registration PDF</div>
-                  </label>
-                )}
-              </div>
-              <div className="pt-2 flex justify-between">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("bank_details")} className="rounded-xl font-bold text-xs">
-                  <ArrowLeft className="size-3.5 mr-1" /> Previous
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("product_information")} className="rounded-xl font-bold text-xs">
-                  Next: Product Info <ArrowRight className="size-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 6) Product Information */}
-          {selectedComplianceDoc === "product_information" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-full bg-stone-200 text-xs font-black">6</span>
-                  <div>
-                    <h4 className="text-sm font-black text-stone-900">Product Information</h4>
-                    <p className="text-xs text-stone-500">Menu catalogue, product descriptions or pricing sheet</p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span>
-              </div>
-              <div className="space-y-3">
-                <Field label="Catalogue / Menu Name">
-                  <input
-                    id="productinfo-title-input"
-                    value={form.productInfoTitle}
-                    onChange={(e) => set("productInfoTitle", e.target.value)}
-                    placeholder="e.g. Signature Meals & Daily Specials Menu"
-                    className={inputClass}
-                  />
-                </Field>
-                {productInfoFile ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">PDF</span>
-                      <span className="truncate text-xs font-bold text-stone-800">{productInfoFile.name}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">({(productInfoFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => viewPdf(productInfoFile, "Product Information / Catalogue")} className="p-1 text-stone-600 hover:text-stone-900"><Eye className="size-4" /></button>
-                      <button type="button" onClick={() => setProductInfoFile(null)} className="p-1 text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="grid min-h-20 cursor-pointer place-items-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50 p-3 text-center hover:border-[#5ba400] transition">
-                    <input
-                      id="productinfo-file-input"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      className="hidden"
-                      onChange={(e) => handlePdfUpload(e.target.files?.[0] || null, setProductInfoFile, "Product Information / Catalogue")}
-                    />
-                    <div className="text-xs font-bold text-stone-700 flex items-center gap-1.5"><Upload className="size-3.5 text-stone-400" /> Upload Product Catalogue PDF</div>
-                  </label>
-                )}
-              </div>
-              <div className="pt-2 flex justify-start">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedComplianceDoc("business_details")} className="rounded-xl font-bold text-xs">
-                  <ArrowLeft className="size-3.5 mr-1" /> Previous
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Uploaded Documents Summary Tray */}
-        {[
-          { id: "pan", title: "PAN Card", file: panFile, remove: () => setPanFile(null) },
-          { id: "government_id", title: `Govt ID (${form.govIdType})`, file: govIdFile, remove: () => setGovIdFile(null) },
-          { id: "address_proof", title: `Address Proof (${form.addressProofType})`, file: addressProofFile, remove: () => setAddressProofFile(null) },
-          { id: "bank_details", title: "Bank Details (Cheque/Passbook)", file: bankFile, remove: () => setBankFile(null) },
-          { id: "business_details", title: `Business Reg (${form.businessRegType})`, file: businessFile, remove: () => setBusinessFile(null) },
-          { id: "product_information", title: "Product Catalogue / Menu", file: productInfoFile, remove: () => setProductInfoFile(null) },
-        ].filter((item) => item.file !== null).length > 0 && (
-          <div className="mt-5 pt-4 border-t border-stone-200">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-black uppercase tracking-wider text-stone-700">
-                Uploaded Compliance Documents ({[panFile, govIdFile, addressProofFile, bankFile, businessFile, productInfoFile].filter(Boolean).length}/6)
-              </span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                { id: "pan", title: "PAN Card", file: panFile, remove: () => setPanFile(null) },
-                { id: "government_id", title: `Govt ID (${form.govIdType})`, file: govIdFile, remove: () => setGovIdFile(null) },
-                { id: "address_proof", title: `Address Proof (${form.addressProofType})`, file: addressProofFile, remove: () => setAddressProofFile(null) },
-                { id: "bank_details", title: "Bank Details", file: bankFile, remove: () => setBankFile(null) },
-                { id: "business_details", title: `Business Reg (${form.businessRegType})`, file: businessFile, remove: () => setBusinessFile(null) },
-                { id: "product_information", title: "Product Catalogue", file: productInfoFile, remove: () => setProductInfoFile(null) },
-              ].filter((item) => item.file !== null).map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-xl border border-emerald-200 bg-white p-2.5 text-xs shadow-xs">
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[10px] font-black text-red-600 bg-red-50 px-1 rounded">PDF</span>
-                      <span className="font-bold text-stone-800 truncate">{item.title}</span>
-                    </div>
-                    <div className="text-[11px] text-stone-500 truncate mt-0.5">{item.file!.name}</div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => viewPdf(item.file!, item.title)}
-                      className="p-1 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100"
-                      title="Preview PDF"
-                    >
-                      <Eye className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedComplianceDoc(item.id)}
-                      className="p-1 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100"
-                      title="Edit"
-                    >
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={item.remove}
-                      className="p-1 rounded-lg text-red-600 hover:text-red-800 hover:bg-red-50"
-                      title="Remove"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-
-    {/* Terms & Conditions Section */}
-    <div className="surface-card-muted rounded-3xl p-6 border border-stone-200/90 bg-stone-50/70">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-black text-stone-900">Terms & Conditions</h3>
-            <span className="rounded-full bg-stone-200/80 px-2 py-0.5 text-[10px] font-bold text-stone-700">Version 1.0</span>
-          </div>
-          <p className="mt-1 text-xs text-stone-500">
-            Review the ShePlates Vendor Terms & Conditions before completing onboarding.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setTermsModalOpen(true)}
-          className="rounded-xl border-stone-300 font-bold shrink-0 bg-white hover:bg-stone-50"
-        >
-          <FileText className="size-4 mr-1.5 text-[#5ba400]" />
-          View Terms & Conditions
-        </Button>
-      </div>
-
-      <div className="mt-4 pt-4 border-t border-stone-200 flex items-start gap-3">
-        <input
-          type="checkbox"
-          id="vendor-terms-checkbox"
-          checked={termsAccepted}
-          onChange={(e) => setTermsAccepted(e.target.checked)}
-          className="mt-1 size-4 rounded border-stone-300 text-[#5ba400] focus:ring-[#5ba400] cursor-pointer"
-        />
-        <label htmlFor="vendor-terms-checkbox" className="text-xs sm:text-sm text-stone-800 font-medium cursor-pointer select-none leading-relaxed">
-          I have read and agree to the{" "}
-          <button
-            type="button"
-            onClick={() => setTermsModalOpen(true)}
-            className="font-bold text-[#477f00] underline hover:text-[#386500]"
-          >
-            ShePlates Vendor Terms & Conditions
-          </button>
-          .
-        </label>
-      </div>
-    </div>
-
-    {/* Compliance Document Preview Dialog */}
-    <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) { if (previewDoc?.url.startsWith("blob:")) URL.revokeObjectURL(previewDoc.url); setPreviewDoc(null); } }}>
-      <DialogContent className="max-h-[94vh] max-w-4xl w-[95vw] p-0 overflow-hidden rounded-[28px] border-stone-200">
-        <div className="flex flex-col h-[85vh]">
-          <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-white shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="grid size-10 place-items-center rounded-xl bg-red-50 text-red-600 font-black text-xs">
-                PDF
-              </div>
-              <div>
-                <DialogTitle className="text-lg font-black text-stone-900">
-                  {previewDoc?.title || "Document Preview"}
-                </DialogTitle>
-                <DialogDescription className="text-xs text-stone-500 font-mono">
-                  {previewDoc?.fileName || "document.pdf"}
-                </DialogDescription>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {previewDoc?.url && (
-                <a
-                  href={previewDoc.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-700 hover:bg-stone-50 transition"
-                >
-                  <ExternalLink className="size-3.5 text-[#5ba400]" />
-                  Open in new tab
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewDoc?.url.startsWith("blob:")) URL.revokeObjectURL(previewDoc.url);
-                  setPreviewDoc(null);
-                }}
-                className="grid size-8 place-items-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 bg-stone-100 relative min-h-0 overflow-hidden">
-            {previewDoc?.url && (
-              <iframe
-                src={`${previewDoc.url}#toolbar=1&navpanes=0`}
-                title={previewDoc.title || "PDF Document"}
-                className="w-full h-full border-0"
-              />
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  </div>}
-
-  {/* Terms & Conditions PDF Modal Dialog */}
-  <Dialog open={termsModalOpen} onOpenChange={setTermsModalOpen}>
-    <DialogContent className="max-h-[94vh] max-w-4xl w-[95vw] p-0 overflow-hidden rounded-[28px] border-stone-200">
-      <div className="flex flex-col h-[85vh]">
-        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-white shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-[#eff7e5] text-[#5ba400]">
-              <FileText className="size-5" />
-            </div>
-            <div>
-              <DialogTitle className="text-lg font-black text-stone-900">
-                ShePlates Vendor Terms & Conditions
-              </DialogTitle>
-              <DialogDescription className="text-xs text-stone-500">
-                Version 1.0 · Effective Date: 7 October 2026
-              </DialogDescription>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="/docs/sheplates-vendor-terms-v1.0.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-700 hover:bg-stone-50 transition"
-            >
-              <ExternalLink className="size-3.5 text-[#5ba400]" />
-              Open in new tab
-            </a>
-            <button
-              type="button"
-              onClick={() => setTermsModalOpen(false)}
-              className="grid size-8 place-items-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 bg-stone-100 relative min-h-0 overflow-hidden">
-          <iframe
-            src="/docs/sheplates-vendor-terms-v1.0.pdf#toolbar=1&navpanes=0"
-            title="ShePlates Vendor Terms & Conditions"
-            className="w-full h-full border-0"
-          />
-        </div>
-
-        <div className="flex items-center justify-between border-t border-stone-200 px-6 py-3.5 bg-white shrink-0">
-          <div className="text-xs text-stone-500">
-            Document: <span className="font-mono text-[11px]">sheplates-vendor-terms-v1.0.pdf</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setTermsModalOpen(false)}
-              className="rounded-xl font-bold"
-            >
-              Close
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setTermsAccepted(true);
-                setTermsModalOpen(false);
-                toast.success("Terms & Conditions accepted");
-              }}
-              className="rounded-xl bg-[#5ba400] hover:bg-[#4c8c00] text-white font-bold"
-            >
-              <Check className="size-4 mr-1.5" />
-              Accept & Close
-            </Button>
-          </div>
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>
-
-        <div className="mt-8 flex justify-between">
-          <Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>
-          {step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#C65D3A] hover:bg-[#A84B2C]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#C65D3A] hover:bg-[#A84B2C] disabled:opacity-50 disabled:cursor-not-allowed"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}
-        </div>
-      </div>
-      {operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#512D3A]" : "bg-[#E9DDD5]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}
-    </div>
-  </div>;
 }
 
+/** The map libraries need the browser, so the small location map is loaded only there. */
 function PinMap(props: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) {
   const [Component, setComponent] = useState<null | ((p: { lat: number; lng: number; radiusKm?: number; onChange?: (point: { lat: number; lng: number }) => void }) => React.ReactElement)>(null);
   useEffect(() => { let alive = true; void import("@/components/pin-map").then((mod) => { if (alive) setComponent(() => mod.PinMap); }); return () => { alive = false; }; }, []);
@@ -2580,7 +1626,7 @@ function MapPreview({ lat, lng, radius, label = "Selected location", onPinChange
   const longitude = lng ?? 76.9558;
   const fullMapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=15/${latitude}/${longitude}`;
   const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${latitude}%2C${longitude}`;
-  return <div className="surface-card overflow-hidden rounded-[22px]"><div className="relative h-72 bg-stone-100"><PinMap lat={latitude} lng={longitude} radiusKm={radius} onChange={onPinChange} /><div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-black shadow-lg backdrop-blur">{lat !== undefined && lng !== undefined ? label : "Coimbatore preview — detect or search to place pin"}</div>{onPinChange && <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-bold shadow-lg">Drag the pin to adjust your exact location</div>}{radius > 0 && <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl bg-[#202827]/90 px-3 py-2 text-xs font-black text-white shadow-lg">Service view: {radius} km</div>}</div><div className="flex flex-wrap items-center gap-3 p-3 text-xs text-stone-500"><span className="mr-auto font-mono">{lat !== undefined && lng !== undefined ? `Exact pin ${lat.toFixed(6)}, ${lng.toFixed(6)}` : "No confirmed pin yet"}</span><a href={googleMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#202827] hover:underline">Verify in Google Maps ↗</a><a href={fullMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#202827] hover:underline">OpenStreetMap ↗</a><span className="w-full text-[11px] text-stone-400">Map © OpenStreetMap contributors</span></div></div>;
+  return <div className="surface-card sp-map-preview relative isolate z-0 overflow-hidden rounded-[22px]"><div className="relative h-72 bg-stone-100 relative isolate z-0"><PinMap lat={latitude} lng={longitude} radiusKm={radius} onChange={onPinChange} /><div className="pointer-events-none absolute left-3 top-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-black shadow-lg backdrop-blur">{lat !== undefined && lng !== undefined ? label : "Coimbatore preview — detect or search to place pin"}</div>{onPinChange && <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/95 px-3 py-2 text-xs font-bold shadow-lg">Drag the pin to adjust your exact location</div>}{radius > 0 && <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl bg-[#202827]/90 px-3 py-2 text-xs font-black text-white shadow-lg">Service view: {radius} km</div>}</div><div className="flex flex-wrap items-center gap-3 p-3 text-xs text-stone-500"><span className="mr-auto font-mono">{lat !== undefined && lng !== undefined ? `Exact pin ${lat.toFixed(6)}, ${lng.toFixed(6)}` : "No confirmed pin yet"}</span><a href={googleMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#202827] hover:underline">Verify in Google Maps ↗</a><a href={fullMapUrl} target="_blank" rel="noreferrer" className="font-black text-[#202827] hover:underline">OpenStreetMap ↗</a><span className="w-full text-[11px] text-stone-400">Map © OpenStreetMap contributors</span></div></div>;
 }
 function ToggleCard({ icon: Icon, title, body, checked, setChecked }: { icon: typeof Store; title: string; body: string; checked: boolean; setChecked: (v: boolean) => void }) { return <div className={`rounded-2xl border p-5 ${checked ? "border-[#155F65] bg-[#EAF4F2]" : "bg-white"}`}><div className="flex items-center justify-between"><Icon className="text-[#155F65]" /><Switch checked={checked} onCheckedChange={setChecked} /></div><h3 className="mt-4 font-black">{title}</h3><p className="mt-2 text-sm text-stone-500">{body}</p></div>; }
 
@@ -2716,9 +1762,37 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       const live = await loadLiveMarketplace(profile.latitude!, profile.longitude!);
       const products = live.items.map(marketplaceProductFromLive);
       const vendorMap = new Map<string, Vendor>();
-      live.items.forEach((row) => vendorMap.set(row.vendor_id, { id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name, category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)), latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined, delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified", certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code) }));
+      const brandMap = new Map((live.vendorBranding || []).map((b) => [b.id, b]));
+      live.items.forEach((row) => {
+        const brand = brandMap.get(row.vendor_id);
+        vendorMap.set(row.vendor_id, {
+          id: row.vendor_id, ownerEmail: "vendor@sheplates.local", ownerName: "Verified vendor", businessName: row.vendor_name,
+          category: row.category, address: "Serviceable near your delivery pin", radiusKm: Math.max(1, Number(row.distance_km)),
+          latitude: Number.isFinite(row.vendor_lat) ? row.vendor_lat : undefined, longitude: Number.isFinite(row.vendor_lng) ? row.vendor_lng : undefined,
+          delivery: row.delivery_enabled, pickup: row.pickup_enabled, openToday: true, fssaiNumber: "Verified",
+          certificateName: "Private", expiryDate: "—", verification: "Verified", operational: "Active", plan: planFromCode(row.vendor_plan_code),
+          logoUrl: brand?.logo_url || undefined,
+          bannerUrl: brand?.banner_url || undefined,
+          bio: brand?.description || undefined,
+        });
+      });
       setDiagnostics(live.diagnostics);
-      setState((current) => ({ ...current, products, vendors: [...vendorMap.values()], markups: {}, merchandising: live.merchandising || current.merchandising, merchandisingError: live.merchandisingError || null }));
+      setState((current) => ({
+        ...current,
+        products,
+        vendors: [...vendorMap.values()].map((v) => {
+          const existing = current.vendors.find((cv) => cv.id === v.id);
+          return {
+            ...v,
+            logoUrl: v.logoUrl || existing?.logoUrl,
+            bannerUrl: v.bannerUrl || existing?.bannerUrl,
+            bio: v.bio || existing?.bio,
+          };
+        }),
+        markups: {},
+        merchandising: live.merchandising || current.merchandising,
+        merchandisingError: live.merchandisingError || null,
+      }));
       if (showSuccess) toast.success(products.length ? `${products.length} serviceable product pack(s) refreshed` : "Marketplace checked; see the eligibility explanation below");
     } catch (error) { setCatalogueError(errorMessage(error, "Marketplace could not be refreshed")); }
     finally { setRefreshing(false); }
@@ -2925,7 +1999,9 @@ function ScheduleDialog({ product, close, session, state, setState, initialStart
   const [slot, setSlot] = useState("06:00–07:00 AM");
   const [quantity, setQuantity] = useState(1);
   const [mode, setMode] = useState<DeliveryMode>("Vendor delivery");
-const [deliveryInstructions, setDeliveryInstructions] = useState("");
+  const [deliveryPartner, setDeliveryPartner] = useState<string>("Swiggy Genie");
+  const [customPartnerName, setCustomPartnerName] = useState<string>("");
+  const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const supportsVendorDelivery = product ? state.vendors.find((item) => item.id === product.vendorId)?.delivery === true : false;
   const supportsPickup = product ? state.vendors.find((item) => item.id === product.vendorId)?.pickup === true : false;
   useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence("Once"); setDays([]); setStartDate(initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
@@ -2957,12 +2033,20 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
     if (!occurrences) return toast.error("This schedule has no delivery dates. Adjust the dates or repeat pattern.");
     if (mode === "Third-party delivery" && !isLiveSupabaseMode()) return toast.error("Third-party delivery requires a live customer account.");
     if (mode === "Third-party delivery" && recurrence !== "Once") return toast.error("Third-party delivery is available for one-time plans only.");
-    if (mode === "Third-party delivery" && !deliveryInstructions.trim()) return toast.error("Add delivery instructions for the third-party handler.");
-    if (deliveryInstructions.length > 1000) return toast.error("Delivery instructions must be 1,000 characters or fewer.");
+    const effectivePartner = deliveryPartner === "Other" ? (customPartnerName.trim() || "Other courier") : deliveryPartner;
+    if (mode === "Third-party delivery" && deliveryPartner === "Other" && !customPartnerName.trim()) {
+      return toast.error("Please specify your delivery partner name.");
+    }
+    const finalInstructions = mode === "Third-party delivery"
+      ? (deliveryInstructions.trim()
+          ? `[Partner: ${effectivePartner}] ${deliveryInstructions.trim()}`
+          : `[Partner: ${effectivePartner}] Customer will arrange pickup via ${effectivePartner}. Handover upon verification code.`)
+      : deliveryInstructions.trim();
+    if (finalInstructions.length > 1000) return toast.error("Delivery instructions must be 1,000 characters or fewer.");
     try {
       let scheduleId = id("SCH"); let orderId = id("ORD");
       if (isLiveSupabaseMode()) {
-const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: deliveryInstructions.trim(), customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
+const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
       const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot: effectiveSlot, mode, status: "Scheduled", payment: "Pending" };
@@ -2972,8 +2056,46 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
     } catch (error) { toast.error(errorMessage(error, "Schedule could not be saved")); }
   }
 
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="bg-[#EAF4F2] p-6 text-[#202827]"><DialogHeader><DialogTitle className="flex items-center gap-3 text-2xl font-bold"><span className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-[#2F3C3F]">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[.8fr_1.2fr]">    <div className="space-y-6 p-6 lg:order-2"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#155F65] bg-[#155F65] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#EEF2F2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#EEF2F2] p-6 lg:order-1"><div className="rounded-3xl bg-white p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="border-b bg-[#111611] p-6 text-white"><DialogHeader><DialogTitle className="flex items-center gap-3 text-lg font-black"><span className="grid size-11 place-items-center rounded-xl bg-[#5ba400]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-white/60">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[1.2fr_.8fr]">    <div className="space-y-6 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#5ba400] bg-[#eff7e5] text-[#477f00]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#5ba400] bg-[#5ba400] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#f6f8f2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#f5f7f1] p-6"><div className="surface-card rounded-3xl p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#ef3d3d] font-black hover:bg-[#d92f2f]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
+return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="bg-[#EAF4F2] p-6 text-[#202827]"><DialogHeader><DialogTitle className="flex items-center gap-3 text-2xl font-bold"><span className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-[#2F3C3F]">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[.8fr_1.2fr]">    <div className="space-y-6 p-6 lg:order-2"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#155F65] bg-[#155F65] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && (
+  <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs text-amber-950 shadow-sm space-y-1.5">
+    <div className="flex items-center gap-2 font-black text-amber-900">
+      <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+      <span>Third-Party Delivery Disclaimer</span>
+    </div>
+    <p className="leading-relaxed text-amber-900">
+      <b>Customer Responsibility:</b> Arranging, booking, coordinating, and tracking the third-party delivery partner (such as Dunzo, Porter, Swiggy Genie, or your chosen courier) is solely your responsibility.
+    </p>
+    <p className="leading-relaxed text-amber-800">
+      ShePlates and the kitchen are responsible only for preparing and safely packaging the food. Once the vendor accepts your order, request an in-app handover code from Orders and share it with your delivery agent.
+    </p>
+  </div>
+)}{mode === "Third-party delivery" && (
+  <div className="space-y-3">
+    <Field label="Third-party delivery partner">
+      <Select value={deliveryPartner} onValueChange={setDeliveryPartner}>
+        <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select delivery partner" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="Swiggy Genie">Swiggy Genie</SelectItem>
+          <SelectItem value="Dunzo">Dunzo</SelectItem>
+          <SelectItem value="Porter">Porter</SelectItem>
+          <SelectItem value="Other">Other (Specify partner)</SelectItem>
+        </SelectContent>
+      </Select>
+    </Field>
+    {deliveryPartner === "Other" && (
+      <Field label="Specify delivery partner name">
+        <input
+          type="text"
+          value={customPartnerName}
+          onChange={(e) => setCustomPartnerName(e.target.value)}
+          placeholder="e.g. Borzo, Shadowfax, Personal courier, etc."
+          className={inputClass}
+          maxLength={100}
+        />
+      </Field>
+    )}
+  </div>
+)}{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#EEF2F2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#EEF2F2] p-6 lg:order-1"><div className="rounded-3xl bg-white p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label="Per delivery" value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -3037,6 +2159,8 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const [newAddress, setNewAddress] = useState("");
   const [useNewAddress, setUseNewAddress] = useState(false);
   const [checkoutMode, setCheckoutMode] = useState<DeliveryMode>("Vendor delivery");
+  const [deliveryPartner, setDeliveryPartner] = useState<string>("Swiggy Genie");
+  const [customPartnerName, setCustomPartnerName] = useState<string>("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const cartVendorIds = [...new Set(items.map((it) => state.products.find((p) => p.id === it.productId)?.vendorId).filter(Boolean).map((v) => String(v).toLowerCase()))];
   const activeCartVendorSlots = (state.deliverySlots || []).filter((s) => cartVendorIds.includes(String(s.vendorId).toLowerCase()) && s.isActive);
@@ -3099,11 +2223,17 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       toast.error("Third-party delivery requires a live customer account.");
       return;
     }
-    if (checkoutMode === "Third-party delivery" && !deliveryInstructions.trim()) {
-      toast.error("Add delivery instructions for the third-party handler.");
+    const effectivePartner = deliveryPartner === "Other" ? (customPartnerName.trim() || "Other courier") : deliveryPartner;
+    if (checkoutMode === "Third-party delivery" && deliveryPartner === "Other" && !customPartnerName.trim()) {
+      toast.error("Please specify your delivery partner name.");
       return;
     }
-    if (deliveryInstructions.length > 1000) {
+    const finalInstructions = checkoutMode === "Third-party delivery"
+      ? (deliveryInstructions.trim()
+          ? `[Partner: ${effectivePartner}] ${deliveryInstructions.trim()}`
+          : `[Partner: ${effectivePartner}] Customer will arrange pickup via ${effectivePartner}. Handover upon verification code.`)
+      : deliveryInstructions.trim();
+    if (finalInstructions.length > 1000) {
       toast.error("Delivery instructions must be 1,000 characters or fewer.");
       return;
     }
@@ -3117,15 +2247,15 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
           toast.error("Please select a delivery time slot.");
           return;
         }
-        const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: effectiveSlot, deliveryAddress: address, mode: checkoutMode, deliveryInstructions: deliveryInstructions.trim() });        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
+        const result = await checkoutLiveCart({ scheduledDate: deliveryDate, slot: effectiveSlot, deliveryAddress: address, mode: checkoutMode, deliveryInstructions: finalInstructions });        const snapshot = result.snapshot as LiveCommerceStateSnapshot | undefined;
         if (!snapshot) throw new Error("Checkout did not return the latest order state.");
         const next = mergeLiveCommerce(state, snapshot, session);
         setState(next);
         if (items.some((item) => item.foodDropId)) void loadLiveFoodDrops().then((remote) => { if (remote) setState((c) => ({ ...c, foodDrops: remote })); }).catch(() => undefined);
         const ids = Array.isArray(result.orderIds) ? result.orderIds.map(String) : [];
-        const createdOrders = next.orders.filter((order) => ids.includes(order.id) && order.payment === "Pending");
+        const createdOrders = containsFoodDrop ? [] : next.orders.filter((order) => ids.includes(order.id) && order.payment === "Pending");
         if (createdOrders.length === 1) setPaying(createdOrders[0]);
-        toast.success(createdOrders.length > 1 ? `${createdOrders.length} vendor checkouts are ready for payment.` : "Checkout is ready for payment.");
+        toast.success(containsFoodDrop ? "Food Drop order confirmed for pickup! Check Orders for your pickup code." : (createdOrders.length > 1 ? `${createdOrders.length} vendor checkouts are ready for payment.` : "Checkout is ready for payment."));
         setAddressDialogOpen(false);
       } catch (error) {
         if (items.some((item) => item.foodDropId)) void loadLiveFoodDrops().then((remote) => { if (remote) setState((c) => ({ ...c, foodDrops: remote })); }).catch(() => undefined);
@@ -3136,10 +2266,44 @@ const effectiveSlot = checkoutMode === "Self pickup" ? "Store pickup" : (selecte
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: first.vendorId, description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "), quantity: items.reduce((sum, x) => sum + x.quantity, 0), unit: "packs", total, date: deliveryDate, slot: checkoutMode === "Self pickup" ? "Store pickup" : effectiveSelectedSlot, deliveryAddress: address, mode: checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode, status: "Scheduled", payment: "Pending", cancellationFee: 0 };    setState((current) => ({ ...current, orders: [order, ...current.orders], cart: current.cart.filter((item) => item.customerEmail !== session.email), notifications: [notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`), ...current.notifications] }));
+    const verificationCode = containsFoodDrop ? String(Math.floor(100000 + Math.random() * 900000)) : undefined;
+    const order: Order = {
+      id: id("ORD"),
+      orderNumber: String(Math.floor(100000 + Math.random() * 900000)),
+      customerEmail: session.email,
+      vendorId: first.vendorId,
+      description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "),
+      quantity: items.reduce((sum, x) => sum + x.quantity, 0),
+      unit: "packs",
+      total,
+      date: deliveryDate,
+      slot: (checkoutMode === "Self pickup" || containsFoodDrop) ? "Store pickup" : effectiveSelectedSlot,
+      deliveryAddress: containsFoodDrop ? "Store Self-Pickup" : address,
+      mode: containsFoodDrop ? "Self pickup" : checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode,
+      status: containsFoodDrop ? "Confirmed" : "Scheduled",
+      payment: containsFoodDrop ? "Paid" : "Pending",
+      cancellationFee: 0,
+      createdAt: new Date().toISOString(),
+      verificationCode,
+      verificationStatus: containsFoodDrop ? "pending" : undefined,
+      foodDropId: items.find((it) => it.foodDropId)?.foodDropId,
+    };
+    const orderNotice = containsFoodDrop
+      ? notice(session.email, "customer", "Food Drop Confirmed 🎉", `Your Food Drop order is confirmed for pickup. Pickup Verification Code: ${verificationCode}. No online payment required.`)
+      : notice(session.email, "customer", "Checkout ready", `${order.description} is ready for payment.`);
+    setState((current) => ({
+      ...current,
+      orders: [order, ...current.orders],
+      cart: current.cart.filter((item) => item.customerEmail !== session.email),
+      notifications: [orderNotice, ...current.notifications],
+    }));
     setAddressDialogOpen(false);
-    setPaying(order);
-    toast.success("Checkout is ready for payment.");
+    if (!containsFoodDrop) {
+      setPaying(order);
+      toast.success("Checkout is ready for payment.");
+    } else {
+      toast.success(`Food Drop order confirmed for pickup! Pickup Code: #${verificationCode}`);
+    }
   }
   function continueWithAddress() {
     const chosen = useNewAddress ? newAddress.trim() : savedAddresses.find((address) => address.id === selectedAddressId)?.address || "";
@@ -3155,8 +2319,6 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
         <section className="surface-card rounded-3xl p-5">
           {(() => { const first = state.products.find((x) => x.id === items[0]?.productId); const kitchen = state.vendors.find((v) => v.id === first?.vendorId); return <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-semibold">{kitchen?.businessName || "Your basket"}</h3><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#2F3C3F]">One kitchen per order</span></div>; })()}
           <div className="mt-3 divide-y divide-[#DDE3E4]">{items.map((item) => {
-          {(() => { const first = state.products.find((x) => x.id === items[0]?.productId); const kitchen = state.vendors.find((v) => v.id === first?.vendorId); return <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-semibold">{kitchen?.businessName || "Your basket"}</h3><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#4A4143]">One kitchen per order</span></div>; })()}
-          <div className="mt-3 divide-y divide-[#E9DDD5]">{items.map((item) => {
             const product = state.products.find((x) => x.id === item.productId);
             const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
             if (!product && !drop) return null;
@@ -3178,8 +2340,6 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
               <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product?.imageUrl ? undefined : categoryVisual(category).bg }}>{product?.imageUrl ? <img src={product.imageUrl} alt={displayName} className="h-full w-full object-cover" /> : <ProductGlyph category={category} />}</div>
               <div className="min-w-35 flex-1 pr-2"><b className="text-[15px]">{product ? <FoodTypeMark type={product.foodType} className="mr-1.5" /> : null}{displayName}</b><div className="text-xs text-[#55656A]">{displayUnit} · {money(price)} each</div></div>
               <div className="flex items-center gap-1 rounded-full bg-white p-1"><button type="button" aria-label={`Decrease ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, -1)} className="grid size-9 place-items-center rounded-full bg-[#EEF2F2] text-lg font-semibold disabled:opacity-50">−</button><b className="min-w-8 text-center tabular-nums">{item.quantity}</b><button type="button" aria-label={`Increase ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, 1)} className="grid size-9 place-items-center rounded-full bg-[#EEF2F2] text-lg font-semibold disabled:opacity-50">+</button></div>
-              <div className="min-w-35 flex-1 pr-2"><b className="text-[15px]">{displayName}</b><div className="text-xs text-[#665B5D]">{displayUnit} · {money(price)} each</div></div>
-              <div className="flex items-center gap-1 rounded-full bg-white p-1"><button type="button" aria-label={`Decrease ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, -1)} className="grid size-9 place-items-center rounded-full bg-[#F5EDE7] text-lg font-semibold disabled:opacity-50">−</button><b className="min-w-8 text-center tabular-nums">{item.quantity}</b><button type="button" aria-label={`Increase ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, 1)} className="grid size-9 place-items-center rounded-full bg-[#F5EDE7] text-lg font-semibold disabled:opacity-50">+</button></div>
               <b className="w-20 text-right tabular-nums">{money(price * item.quantity)}</b>
             </div>;
           })}</div>
@@ -3200,16 +2360,63 @@ const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: fi
         </DialogHeader>
         <div className="space-y-3">
           <Field label="Delivery method">
-            <Select value={checkoutMode} onValueChange={(value) => setCheckoutMode(value as DeliveryMode)}>
-              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Vendor delivery">Vendor delivery</SelectItem>
-                <SelectItem value="Self pickup">Self-pickup</SelectItem>
-                <SelectItem value="Third-party delivery" disabled={!isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable}>3rd Party Delivery</SelectItem>
-              </SelectContent>
-            </Select>
+            {containsFoodDrop ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs font-bold text-emerald-900">
+                Self-pickup only — Food Drop items do not require online payment and are collected directly from the vendor.
+              </div>
+            ) : (
+              <Select value={checkoutMode} onValueChange={(value) => setCheckoutMode(value as DeliveryMode)}>
+                <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Vendor delivery">Vendor delivery</SelectItem>
+                  <SelectItem value="Self pickup">Self-pickup</SelectItem>
+                  <SelectItem value="Third-party delivery" disabled={!isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable}>3rd Party Delivery</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </Field>
           {isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}
+          {checkoutMode === "Third-party delivery" && (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs text-amber-950 shadow-sm space-y-1.5">
+              <div className="flex items-center gap-2 font-black text-amber-900">
+                <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                <span>Third-Party Delivery Disclaimer</span>
+              </div>
+              <p className="leading-relaxed text-amber-900">
+                <b>Customer Responsibility:</b> Arranging, booking, coordinating, and tracking the third-party delivery partner (such as Dunzo, Porter, Swiggy Genie, or your chosen courier) is solely your responsibility.
+              </p>
+              <p className="leading-relaxed text-amber-800">
+                ShePlates and the kitchen are responsible only for preparing and safely packaging the food. Once the order is confirmed, an in-app handover verification code will be generated in your <b>Orders</b> section for your courier to verify upon collection.
+              </p>
+            </div>
+          )}
+          {checkoutMode === "Third-party delivery" && (
+            <div className="space-y-3">
+              <Field label="Third-party delivery partner">
+                <Select value={deliveryPartner} onValueChange={setDeliveryPartner}>
+                  <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select delivery partner" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Swiggy Genie">Swiggy Genie</SelectItem>
+                    <SelectItem value="Dunzo">Dunzo</SelectItem>
+                    <SelectItem value="Porter">Porter</SelectItem>
+                    <SelectItem value="Other">Other (Specify partner)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              {deliveryPartner === "Other" && (
+                <Field label="Specify delivery partner name">
+                  <input
+                    type="text"
+                    value={customPartnerName}
+                    onChange={(e) => setCustomPartnerName(e.target.value)}
+                    placeholder="e.g. Borzo, Shadowfax, Personal courier, etc."
+                    className={inputClass}
+                    maxLength={100}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
           {checkoutMode !== "Self pickup" && (
             <Field label="Delivery time window">
               <Select value={effectiveSelectedSlot} onValueChange={setSelectedSlot}>
@@ -3913,13 +3120,13 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
   </div>;
 }
 
-function VendorArea({ active, session, state, setState, shorts }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi }) {
+function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void }) {
   const vendor = vendorFor(state, session)!;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
-  if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} />;
+  if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
-  if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} />;
+  if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
@@ -3999,18 +3206,78 @@ function VendorAIInsights({ vendor, state, session }: { vendor: Vendor; state: V
   </div>;
 }
 
-function readImage(file: File, done: (value: string) => void) { const reader = new FileReader(); reader.onload = () => done(String(reader.result || "")); reader.readAsDataURL(file); }
+function readImage(file: File, done: (value: string) => void, maxWidth = 800, maxHeight = 800, quality = 0.82) {
+  if (typeof window === "undefined" || !file.type.startsWith("image/") || file.type.includes("svg")) {
+    const reader = new FileReader();
+    reader.onload = () => done(String(reader.result || ""));
+    reader.readAsDataURL(file);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const raw = String(reader.result || "");
+    const img = new window.Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.max(1, Math.round(width * ratio));
+        height = Math.max(1, Math.round(height * ratio));
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return done(raw);
+      ctx.drawImage(img, 0, 0, width, height);
+      done(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => done(raw);
+    img.src = raw;
+  };
+  reader.readAsDataURL(file);
+}
 
-function StorefrontPos({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+function StorefrontPos({ vendor, state, setState, session, onOpenVendorProfile }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; onOpenVendorProfile?: () => void }) {
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
   const outlets = vendor.outlets || [{ id: `${vendor.id}-main`, name: "Main outlet", address: vendor.address, latitude: vendor.latitude, longitude: vendor.longitude, radiusKm: vendor.radiusKm, openToday: vendor.openToday, certificateNumber: vendor.fssaiNumber, certificateName: vendor.certificateName, certificateExpiry: vendor.expiryDate }];
-  function asset(kind: "logoUrl" | "bannerUrl", file?: File) { if (!file) return; readImage(file, (value) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, [kind]: value } : x), audit: [audit(session, `Updated storefront ${kind === "logoUrl" ? "logo" : "banner"}`, vendor.businessName), ...s.audit] })); toast.success("Storefront image updated"); }); }
+  function asset(kind: "logoUrl" | "bannerUrl", file?: File) {
+    if (!file) return;
+    const maxW = kind === "logoUrl" ? 256 : 960;
+    const maxH = kind === "logoUrl" ? 256 : 360;
+    readImage(file, async (dataUrl) => {
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, [kind]: dataUrl } : x),
+        audit: [audit(session, `Updated storefront ${kind === "logoUrl" ? "logo" : "cover banner"}`, vendor.businessName), ...s.audit],
+      }));
+      toast.success(kind === "logoUrl" ? "Updating store logo…" : "Updating cover banner…");
+      try {
+        let finalUrl = dataUrl;
+        if (isLiveSupabaseMode()) {
+          finalUrl = await uploadLiveVendorImage(vendor.id, dataUrl);
+          await saveLiveVendorBranding({ vendorId: vendor.id, [kind]: finalUrl });
+        }
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, [kind]: finalUrl } : x),
+        }));
+        toast.success(kind === "logoUrl" ? "Store logo saved!" : "Cover banner saved!");
+      } catch (error) {
+        console.error("Could not persist storefront image to server:", error);
+        toast.error(errorMessage(error, "Could not save storefront image to server"));
+      }
+    }, maxW, maxH, 0.85);
+  }
   function addOutlet() { const name = prompt("Outlet / POS name"); const address = prompt("Complete outlet address"); if (!name || !address) return; const outlet: VendorOutlet = { id: id("POS"), name, address, radiusKm: vendor.radiusKm, openToday: false }; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: [...outlets, outlet] } : x) })); toast.success("Outlet added. Add its certification and exact location before opening."); }
   function updateOutlet(outletId: string, patch: Partial<VendorOutlet>) { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: outlets.map((outlet) => outlet.id === outletId ? { ...outlet, ...patch } : outlet) } : x), audit: [audit(session, "Updated outlet", `${vendor.businessName} · ${outletId}`), ...s.audit] })); }
   function editCertification(outlet: VendorOutlet) { const number = prompt("Certification / licence number", outlet.certificateNumber || "") ?? (outlet.certificateNumber || ""); const expiry = prompt("Expiry date (YYYY-MM-DD)", outlet.certificateExpiry || "") ?? (outlet.certificateExpiry || ""); updateOutlet(outlet.id, { certificateNumber: number, certificateExpiry: expiry }); toast.success("Outlet certification saved"); }
-  return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button>} />
-    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><h2 className="text-lg font-black">{vendor.businessName}</h2><p className="text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products</p></div></div>
+  return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1" />Edit Profile &amp; Branding</Button>{onOpenVendorProfile && <Button size="sm" variant="outline" onClick={onOpenVendorProfile} className="h-9 rounded-xl text-xs font-bold text-[#155F65] bg-white"><Eye className="size-3.5 mr-1" />Preview Store</Button>}<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button></div>} />
+    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
     <div className="grid gap-4 lg:grid-cols-2">{outlets.map((outlet) => <div key={outlet.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Building2 /></div><div className="min-w-0 flex-1"><b>{outlet.name}</b><p className="mt-1 text-sm text-stone-500">{outlet.address}</p></div><Status>{outlet.openToday ? "Open" : "Closed"}</Status></div><div className="mt-3 text-xs text-stone-500">Service radius: {outlet.radiusKm} km · {Number.isFinite(outlet.latitude) ? "Pinned" : "Needs map pin"}</div><div className="mt-4 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><b>Outlet certification</b><div className="mt-1 text-xs text-stone-500">{outlet.certificateNumber || "Not added"}{outlet.certificateExpiry ? ` · expires ${outlet.certificateExpiry}` : ""}</div></div><Button size="sm" variant="outline" onClick={() => editCertification(outlet)}><Pencil />Edit</Button></div><label className="mt-3 inline-flex cursor-pointer items-center text-xs font-black text-[#155F65]"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => updateOutlet(outlet.id, { certificateName: e.target.files?.[0]?.name || outlet.certificateName })} /><Upload className="mr-1 size-3.5" />{outlet.certificateName || "Upload certificate"}</label></div></div>)}</div>
     <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} />
+    {editProfileOpen && <EditVendorProfileDialog open onClose={() => setEditProfileOpen(false)} vendor={vendor} setState={setState} session={session} />}
   </div>;
 }
 
@@ -4340,6 +3607,25 @@ function OrderDetailsDialog({
             </div>
           </div>
 
+          {/* Food Drop Verification Code */}
+          {order.verificationCode && (
+            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="size-4 text-[#155F65]" />
+                  <b className="text-sm text-[#155F65]">Pickup Verification Code</b>
+                </div>
+                <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
+                  {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified" : "Pending pickup"}
+                </Status>
+              </div>
+              <div className="mt-2 rounded-xl bg-white/95 p-3 text-center border border-emerald-100">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Show this code at store pickup</div>
+                <div className="font-mono text-3xl font-black tracking-[0.25em] text-[#155F65] mt-1">{order.verificationCode}</div>
+              </div>
+            </div>
+          )}
+
           {/* Payment Details */}
           <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
             <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Payment Information</div>
@@ -4522,6 +3808,7 @@ function CustomerOrderCard({
   onReschedule,
   onRateOrder,
   onIssueThirdPartyCode,
+  onVerifyPickup,
   deliveryCodes,
   deliveryActionId,
 }: {
@@ -4533,6 +3820,7 @@ function CustomerOrderCard({
   onReschedule: (order: Order) => void;
   onRateOrder: (order: Order) => void;
   onIssueThirdPartyCode: (order: Order) => void;
+  onVerifyPickup?: (order: Order) => void;
   deliveryCodes: Record<string, { code: string; expiresAt: string }>;
   deliveryActionId: string | null;
 }) {
@@ -4656,6 +3944,47 @@ function CustomerOrderCard({
         </div>
       )}
 
+      {/* Food Drop Delivery / Pickup Verification Code */}
+      {order.verificationCode && (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-[#155F65] text-white">
+                <KeyRound className="size-4" />
+              </span>
+              <div>
+                <b className="text-sm text-[#155F65]">Food Drop Pickup Verification Code</b>
+                <span className="ml-2 text-xs font-bold text-stone-500">• Self Pickup (No online payment)</span>
+              </div>
+            </div>
+            <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
+              {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified & Collected" : "Show Code at Pickup"}
+            </Status>
+          </div>
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/95 rounded-xl p-3.5 border border-emerald-100">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">Unique Pickup Code</div>
+              <div className="font-mono text-2xl sm:text-3xl font-black tracking-[0.25em] text-[#155F65]">
+                {order.verificationCode}
+              </div>
+            </div>
+            {order.verificationStatus !== "verified" && order.status !== "Delivered" && onVerifyPickup && (
+              <Button
+                size="sm"
+                onClick={() => onVerifyPickup(order)}
+                className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F] text-white font-bold"
+              >
+                <CheckCircle2 className="size-4 mr-1.5" />
+                Verify Food Received
+              </Button>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-stone-500">
+            Show this verification code to the vendor when collecting your food. Once verified, the order is marked Delivered.
+          </p>
+        </div>
+      )}
+
       {/* Action Footer */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-stone-100 mt-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -4747,6 +4076,33 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       toast.error(errorMessage(error, "The delivery request could not be accepted"));
     } finally { setDeliveryActionId(null); }
   }
+  async function handleVerifyFoodDropPickup(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) {
+        await updateLiveOrderStatus(order.id, "Delivered");
+      }
+      setState((current) => ({
+        ...current,
+        orders: current.orders.map((o) =>
+          o.id === order.id
+            ? { ...o, status: "Delivered", verificationStatus: "verified" as const }
+            : o
+        ),
+        notifications: [
+          notice(
+            session.email,
+            "customer",
+            "Food Drop Collected",
+            `Pickup verified for ${order.description}. Enjoy your meal!`
+          ),
+          ...current.notifications,
+        ],
+      }));
+      toast.success("Food Drop pickup verified! Order marked as Delivered.");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not verify pickup"));
+    }
+  }
   async function issueThirdPartyCode(order: Order) {
     setDeliveryActionId(order.id);
     try {
@@ -4807,7 +4163,14 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         <div className="flex items-center gap-3 rounded-[28px] bg-[#EEF2F2] p-4"><span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#155F65] text-lg font-bold">{(partner?.name || kitchen?.businessName || "D").slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1"><div className="truncate font-semibold">{partner ? `${partner.name} · Delivery partner` : "Delivery partner not assigned yet"}</div><div className="truncate text-xs text-[#55656A]">{kitchen?.businessName || "Your kitchen"} team</div></div>{partner?.phone && <a href={`tel:${partner.phone}`} aria-label={`Call ${partner.name}`} className="grid size-11 shrink-0 place-items-center rounded-full bg-[#155F65] text-white"><PhoneCall className="size-5" /></a>}</div></div>;
     })()}
     {orders.length ? <div className="space-y-4">
-      {orders.sort((a, b) => a.date.localeCompare(b.date)).map((order) => {
+      {[...orders].sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (aTime && bTime && aTime !== bTime) return bTime - aTime;
+        if (aTime && !bTime) return -1;
+        if (!aTime && bTime) return 1;
+        return (b.id || "").localeCompare(a.id || "");
+      }).map((order) => {
         if (scope === "customer") {
           return (
             <CustomerOrderCard
@@ -4820,6 +4183,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
               onReschedule={(ord) => setRescheduling(ord)}
               onRateOrder={(ord) => setRatingOrder(ord)}
               onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
+              onVerifyPickup={(ord) => void handleVerifyFoodDropPickup(ord)}
               deliveryCodes={deliveryCodes}
               deliveryActionId={deliveryActionId}
             />
@@ -4830,6 +4194,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
         const available = state.staff.filter((item) => item.vendorId === order.vendorId && item.active);
         const product = order.productId ? state.products.find((item) => item.id === order.productId) : undefined;
+        const isFoodDrop = Boolean(order.foodDropId) || Boolean(order.verificationCode) || /food drop/i.test(order.description);
         const details = [
           ["Delivery", <Fragment key="delivery"><span>{order.date}</span><span className="mt-1 block text-xs font-semibold text-stone-600">{order.slot}</span></Fragment>],
           ["Items", <span className="font-bold" key="items">{order.quantity} × {product?.name || order.description}</span>],
@@ -4842,6 +4207,17 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><b>{order.description}</b><Status>{order.status}</Status><Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{order.payment}</Status><span className="font-mono text-xs text-stone-400">{order.id}</span></div>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-5">{details.map(([label, value]) => <OrderDetail key={label} label={label} value={value} />)}</div>
+              {order.verificationCode && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-emerald-950">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="size-4 text-[#155F65]" />
+                    <span><b>Pickup Code:</b> <span className="font-mono text-base font-black tracking-widest">{order.verificationCode}</span></span>
+                  </div>
+                  <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
+                    {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified" : "Pending pickup"}
+                  </Status>
+                </div>
+              )}
               {order.status === "Out for delivery" && <div className="mt-4"><MapPreview lat={order.trackingLatitude || vendor?.latitude} lng={order.trackingLongitude || vendor?.longitude} radius={0} label="Live delivery position" /></div>}
               {order.mode === "Third-party delivery" && thirdPartyDelivery && <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2"><b className="text-sm text-violet-950">3rd Party Delivery Request</b><Status>{thirdPartyDelivery.status}</Status></div>
@@ -4857,8 +4233,20 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
             </div>
             <div className="flex flex-wrap gap-2">
               {scope === "vendor" && order.status === "Scheduled" && <Button onClick={() => void update(order, "Confirmed")}>Accept order</Button>}
-              <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
-{order.mode !== "Third-party delivery" && <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((status) => <SelectItem key={status} value={status} disabled={DELIVERY_STATUSES.includes(status as Order["status"]) && order.date > todayISO()}>{status}</SelectItem>)}</SelectContent></Select>}                {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#155F65]"><MapPinned />Share live position</Button>}
+              {!isFoodDrop && (
+                <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+              )}
+              {order.mode !== "Third-party delivery" && (
+                <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}>
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(isFoodDrop ? ["Confirmed", "Ready for pickup", "Delivered"] : ["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"]).map((status) => (
+                      <SelectItem key={status} value={status} disabled={DELIVERY_STATUSES.includes(status as Order["status"]) && order.date > todayISO()}>{status}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#155F65]"><MapPinned />Share live position</Button>}
             </div>
           </div>
         </div>;
@@ -4919,7 +4307,6 @@ function OrderRescheduleDialog({ order, close, state, setState }: { order: Order
     }
   }
   return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{rescheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#155F65] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Reschedule order</DialogTitle><DialogDescription>Choose a new delivery date within the next 15 days and a time window for {order.id}.</DialogDescription></DialogHeader><div className="space-y-4"><Field label="New delivery date"><input type="date" min={tomorrow()} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} /></Field><Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{rescheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Button onClick={save} className="h-11 w-full rounded-xl bg-[#C65D3A] font-black"><Check />Save new date</Button></div></DialogContent></Dialog>;
 }
 
 function loadRazorpayScript(): Promise<boolean> {
@@ -5101,8 +4488,6 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
     <div className="space-y-4">
       <div className="rounded-2xl bg-[#EEF2F2] p-4 text-sm"><Review label="Order" value={order.description} /><Review label="Vendor" value={vendor?.businessName || "—"} /><Review label="Delivery address" value={order.deliveryAddress || "Not provided"} /><Review label="Amount payable" value={money(order.total)} /></div>
       {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Demo Mode Simulated Payment</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`h-11 rounded-full text-sm font-semibold ${method === item ? "bg-[#155F65] text-white" : "bg-[#EEF2F2] text-[#2F3C3F]"}`}>{item}</button>)}</div></div>}
-      <div className="rounded-2xl bg-[#F5EDE7] p-4 text-sm"><Review label="Order" value={order.description} /><Review label="Vendor" value={vendor?.businessName || "—"} /><Review label="Delivery address" value={order.deliveryAddress || "Not provided"} /><Review label="Amount payable" value={money(order.total)} /></div>
-      {!isLive && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Demo Mode Simulated Payment</div><div className="grid grid-cols-3 gap-2">{(["UPI", "Card", "Net banking"] as const).map((item) => <button type="button" key={item} onClick={() => setMethod(item)} className={`h-11 rounded-full text-sm font-semibold ${method === item ? "bg-[#512D3A] text-white" : "bg-[#F5EDE7] text-[#4A4143]"}`}>{item}</button>)}</div></div>}
       {isLive && <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex items-center gap-2"><CreditCard className="size-4 shrink-0 text-emerald-600" /><span>Test Mode: Complete payment securely using Razorpay standard checkout popup.</span></div>}
       <Button onClick={() => void pay()} disabled={busy} className="h-12 w-full"><CreditCard />{busy ? (isLive ? "Opening Razorpay…" : "Processing…") : (isLive ? `Pay ${money(order.total)} with Razorpay` : `Pay ${money(order.total)}`)}</Button>
       <p className="rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]">Payments are processed securely. ShePlates never stores your card or UPI details.</p><p className="text-[11px] leading-5 text-stone-400">A {PLATFORM_COMMISSION_PERCENT}% platform commission is retained; the rest is scheduled to reach the vendor {PAYOUT_CYCLE_DAYS} days after collection.</p>
@@ -5745,13 +5130,322 @@ const THREE_VENDOR_PLANS = [
 ];
 const vendorPlanRank: Record<string, number> = { Taster: 0, Crave: 1, Thrive: 2, Crown: 3 };
 
-function VerificationView({ vendor, setState, session }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+
+export function EditVendorProfileDialog({
+  open,
+  onClose,
+  vendor,
+  setState,
+  session,
+}: {
+  open: boolean;
+  onClose: () => void;
+  vendor: Vendor;
+  setState: React.Dispatch<React.SetStateAction<V3State>>;
+  session: DemoSession;
+}) {
+  const [businessName, setBusinessName] = useState(vendor.businessName);
+  const [category, setCategory] = useState(vendor.category);
+  const [customCategory, setCustomCategory] = useState("");
+  const [ownerName, setOwnerName] = useState(vendor.ownerName || "");
+  const [ownerRole, setOwnerRole] = useState(vendor.ownerRole || "Proprietor");
+  const [phone, setPhone] = useState(vendor.phone || "");
+  const [bio, setBio] = useState(vendor.bio || "");
+  const [address, setAddress] = useState(vendor.address || "");
+  const [radiusKm, setRadiusKm] = useState(vendor.radiusKm || 5);
+  const [logoUrl, setLogoUrl] = useState(vendor.logoUrl || "");
+  const [bannerUrl, setBannerUrl] = useState(vendor.bannerUrl || "");
+  const [busy, setBusy] = useState(false);
+
+  function handleImagePick(kind: "logoUrl" | "bannerUrl", file?: File) {
+    if (!file) return;
+    const maxW = kind === "logoUrl" ? 256 : 960;
+    const maxH = kind === "logoUrl" ? 256 : 360;
+    readImage(file, (dataUrl) => {
+      if (kind === "logoUrl") setLogoUrl(dataUrl);
+      else setBannerUrl(dataUrl);
+    }, maxW, maxH, 0.85);
+  }
+
+  async function handleSave() {
+    if (!businessName.trim()) return toast.error("Enter your business name");
+    if (!ownerName.trim()) return toast.error("Enter the representative / owner name");
+    const effectiveCategory = category === "Other" ? customCategory.trim() : category;
+    if (!effectiveCategory) return toast.error("Enter your business category");
+
+    setBusy(true);
+    try {
+      let finalLogo = logoUrl;
+      let finalBanner = bannerUrl;
+
+      if (isLiveSupabaseMode()) {
+        if (logoUrl.startsWith("data:")) {
+          finalLogo = await uploadLiveVendorImage(vendor.id, logoUrl);
+        }
+        if (bannerUrl.startsWith("data:")) {
+          finalBanner = await uploadLiveVendorImage(vendor.id, bannerUrl);
+        }
+        await saveLiveVendorProfile({
+          vendorId: vendor.id,
+          businessName: businessName.trim(),
+          category: effectiveCategory,
+          ownerName: ownerName.trim(),
+          ownerRole,
+          phone: phone.trim(),
+          bio: bio.trim(),
+          address: address.trim(),
+          logoUrl: finalLogo || undefined,
+          bannerUrl: finalBanner || undefined,
+        });
+        await saveLiveVendorBranding({
+          vendorId: vendor.id,
+          logoUrl: finalLogo,
+          bannerUrl: finalBanner,
+        });
+        if (vendor.latitude && vendor.longitude) {
+          await saveLiveVendorLocation({
+            vendorId: vendor.id,
+            address: address.trim(),
+            latitude: vendor.latitude,
+            longitude: vendor.longitude,
+            radiusKm,
+          });
+        }
+      }
+
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((v) =>
+          v.id === vendor.id
+            ? {
+                ...v,
+                businessName: businessName.trim(),
+                category: effectiveCategory,
+                ownerName: ownerName.trim(),
+                ownerRole,
+                phone: phone.trim(),
+                bio: bio.trim(),
+                address: address.trim(),
+                radiusKm,
+                logoUrl: finalLogo || undefined,
+                bannerUrl: finalBanner || undefined,
+              }
+            : v
+        ),
+        audit: [
+          audit(session, "Updated store & representative profile", `${businessName.trim()} (${ownerName.trim()}, ${ownerRole})`),
+          ...s.audit,
+        ],
+      }));
+
+      toast.success("Store and representative profile updated successfully!");
+      onClose();
+    } catch (error) {
+      toast.error(errorMessage(error, "Profile could not be saved"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+      <DialogContent className="max-h-[92vh] w-[95vw] max-w-2xl overflow-y-auto rounded-[32px] p-6 sm:p-8">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <span className="grid size-9 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]">
+              <Building2 className="size-5" />
+            </span>
+            <div>
+              <DialogTitle className="text-xl font-black text-[#202827]">Edit Store &amp; Representative Profile</DialogTitle>
+              <DialogDescription className="text-xs text-stone-500">
+                Update your business name, designated representative (Proprietor, Partner, Director), and store details.
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4 space-y-3">
+            <span className="block text-xs font-black uppercase tracking-wider text-[#155F65]">
+              Storefront Branding &amp; Images
+            </span>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-bold text-stone-600 mb-1.5">Store Logo / Avatar</label>
+                <div className="flex items-center gap-3">
+                  <div className="size-16 shrink-0 overflow-hidden rounded-2xl border-2 border-stone-300 bg-white grid place-items-center">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Store logo" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-xl font-black text-[#155F65]">{businessName[0] || "V"}</span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-[#155F65] shadow-xs hover:bg-[#EAF4F2]">
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("logoUrl", e.target.files?.[0])} />
+                      <Pencil className="size-3.5" />
+                      <span>{logoUrl ? "Change logo" : "Upload logo"}</span>
+                    </label>
+                    {logoUrl && (
+                      <button type="button" onClick={() => setLogoUrl("")} className="block text-[11px] text-rose-600 font-semibold hover:underline">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-600 mb-1.5">Cover Banner</label>
+                <div className="relative h-16 w-full overflow-hidden rounded-2xl border-2 border-stone-300 bg-stone-100">
+                  {bannerUrl ? (
+                    <img src={bannerUrl} alt="Store banner" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-linear-to-r from-[#155F65] to-[#155F65] flex items-center justify-center text-xs font-bold text-white/80">
+                      Default banner
+                    </div>
+                  )}
+                  <label className="absolute right-2 top-2 inline-flex cursor-pointer items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#202827] shadow-xs backdrop-blur hover:bg-white">
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("bannerUrl", e.target.files?.[0])} />
+                    <ImageUp className="size-3" />
+                    <span>Update</span>
+                  </label>
+                  {bannerUrl && (
+                    <button type="button" onClick={() => setBannerUrl("")} className="absolute left-2 bottom-1 text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-md hover:bg-black/80">
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Business name">
+              <input
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                className={inputClass}
+                placeholder="e.g. Praga's Bakery"
+              />
+            </Field>
+
+            <Field label="Business Category">
+              <Select value={category} onValueChange={(val) => setCategory(val)}>
+                <SelectTrigger className="h-11 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoryNames.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          {category === "Other" && (
+            <Field label="Custom Category">
+              <input
+                value={customCategory}
+                onChange={(e) => setCustomCategory(e.target.value)}
+                placeholder="Specify category"
+                className={inputClass}
+              />
+            </Field>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Representative Designation" hint="Legal capacity / business role">
+              <Select value={ownerRole} onValueChange={(val) => setOwnerRole(val)}>
+                <SelectTrigger className="h-11 rounded-xl font-bold">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VENDOR_DESIGNATION_OPTIONS.map((role) => (
+                    <SelectItem key={role} value={role}>{role}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Representative / Owner Name" hint="Full legal name of the representative">
+              <input
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                className={inputClass}
+                placeholder="e.g. Harish Kumar"
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Phone / WhatsApp Contact">
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className={inputClass}
+                placeholder="+91 98765 43210"
+              />
+            </Field>
+
+            <Field label={`Service Radius · ${radiusKm} km`}>
+              <div className="pt-2">
+                <Slider
+                  value={[radiusKm]}
+                  min={1}
+                  max={30}
+                  step={1}
+                  onValueChange={(val) => setRadiusKm(val[0])}
+                />
+              </div>
+            </Field>
+          </div>
+
+          <Field label="Store Description / Bio" hint="Brief introduction for customers">
+            <Textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              className="min-h-20 rounded-xl"
+              placeholder="Share what makes your kitchen or store special..."
+            />
+          </Field>
+
+          <Field label="Store Address">
+            <Textarea
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="min-h-16 rounded-xl"
+              placeholder="Street address, locality, area, city"
+            />
+          </Field>
+        </div>
+
+        <DialogFooter className="mt-6 flex flex-row justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy} className="rounded-xl font-bold">
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={busy}
+            className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#0F4A4F]"
+          >
+            {busy ? "Saving…" : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; onOpenVendorProfile?: () => void }) {
   const [editing, setEditing] = useState(false);
   const [certificate, setCertificate] = useState(vendor.fssaiNumber || "");
   const [fileName, setFileName] = useState(vendor.certificateName || "");
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
   const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
 
   async function upgradePlan(newPlan: Vendor["plan"]) {
     if (vendor.plan === newPlan) return;
@@ -5796,14 +5490,11 @@ function VerificationView({ vendor, setState, session }: { vendor: Vendor; setSt
       setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
     } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
-  return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil />{editing ? "Close editor" : "Edit details"}</Button>} />
+  return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
     {vendor.termsAccepted === false && <section aria-label="Vendor Terms and Conditions" className="rounded-[28px] bg-[#FFF4CF] p-6 text-[#795900]"><h3 className="flex items-center gap-2 font-black"><AlertTriangle className="size-5" />Accept the Vendor Terms and Conditions</h3><p className="mt-2 text-sm leading-6">Operations cannot approve your store until you accept the ShePlates Vendor Terms and Conditions (version 1.0).</p><label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={termsTick} onChange={(e) => setTermsTick(e.target.checked)} className="mt-1 size-5 shrink-0 accent-[#155F65]" /><span>I have read and accept the ShePlates Vendor Terms and Conditions.</span></label><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setTermsViewOpen(true)} className="rounded-xl bg-white text-[#202827]"><FileText className="size-4" />View Terms &amp; Conditions</Button><Button onClick={() => void acceptTerms()} disabled={termsBusy} className="rounded-xl bg-[#155F65]">{termsBusy ? "Accepting…" : "Accept terms"}</Button></div></section>}
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsTick(true); setTermsViewOpen(false); toast.success("Tick confirmed. Press Accept terms to finish."); } : undefined} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
-    {vendor.termsAccepted === false && <section aria-label="Vendor Terms and Conditions" className="rounded-[28px] bg-[#FFF4CF] p-6 text-[#795900]"><h3 className="flex items-center gap-2 font-black"><AlertTriangle className="size-5" />Accept the Vendor Terms and Conditions</h3><p className="mt-2 text-sm leading-6">Operations cannot approve your store until you accept the ShePlates Vendor Terms and Conditions (version 1.0).</p><label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={termsTick} onChange={(e) => setTermsTick(e.target.checked)} className="mt-1 size-5 shrink-0 accent-[#512D3A]" /><span>I have read and accept the ShePlates Vendor Terms and Conditions.</span></label><Button onClick={() => void acceptTerms()} disabled={termsBusy} className="mt-4 rounded-xl bg-[#512D3A]">{termsBusy ? "Accepting…" : "Accept terms"}</Button></section>}
-    <div className="surface-card rounded-[28px] p-6"><div className="flex items-center gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400]"><FileCheck2 /></div><div className="flex-1"><h3 className="font-black">{vendor.businessName}</h3><p className="text-sm text-stone-500">{vendor.address}</p></div><div className="flex flex-wrap items-center gap-2"><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#5ba400]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /></div>}
+    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">"{vendor.bio}"</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
     </div>
     <div className="surface-card rounded-[28px] p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -6224,13 +5915,13 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
   </div>;
 }
 
-function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const orders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
+function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
-function OperationsArea({ active, session, state, setState, navigate, openAgent }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   if (active === "AI insights") return <AIInsights role="operations" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
   if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
-  if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} />;
+  if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Store & radius") return <OperationsStoreRadius session={session} state={state} setState={setState} />;
   if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
   if (active === "RFQ desk") return isLiveSupabaseMode() ? <LiveRfqDesk /> : <RFQDesk state={state} />;
@@ -6324,10 +6015,8 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
     {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell>{vendor.address}<div className="text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="sr-only">Operations vendor onboarding</DialogTitle><DialogDescription className="sr-only">Create a vendor application</DialogDescription></DialogHeader><VendorOnboarding operationsCreated session={session} setState={setState} close={() => setOpen(false)} /></DialogContent></Dialog></div>;
 }
-function OperationsVerification({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
-  const [activeInspectPdf, setActiveInspectPdf] = useState<{ title: string; docName: string; path?: string } | null>(null);
-  const [vendorNotes, setVendorNotes] = useState<Record<string, string>>({});
 
   async function decide(vendor: Vendor, verification: Verification, note = "") {
     try {
@@ -6352,214 +6041,177 @@ function OperationsVerification({ session, state, setState }: { session: DemoSes
   const [tab, setTab] = useState<"Submitted" | "Under review" | "Changes required" | "All">("All");
   const [pickedId, setPickedId] = useState("");
   const [vendorNote, setVendorNote] = useState("");
+  const [checkedDocs, setCheckedDocs] = useState<Record<string, Set<string>>>({});
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
+  const [rejectionReason, setRejectionReason] = useState("");
   const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
   const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
   const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
+
+  const pickedDocs = picked
+    ? picked.documents?.length
+      ? picked.documents
+      : picked.fssaiNumber || picked.certificateName
+        ? [{ id: "cert-0", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)" }]
+        : []
+    : [];
+  const pickedChecked = (picked && checkedDocs[picked.id]) || new Set<string>();
+  const allDocsChecked = pickedDocs.length > 0 ? pickedDocs.every((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)) : true;
+
+  function toggleDoc(key: string) {
+    if (!picked) return;
+    setCheckedDocs((prev) => {
+      const cur = new Set(prev[picked.id] || []);
+      if (cur.has(key)) cur.delete(key);
+      else cur.add(key);
+      return { ...prev, [picked.id]: cur };
+    });
+  }
+
+  function verifyAllDocs() {
+    if (!picked) return;
+    const allKeys = new Set(pickedDocs.map((doc, idx) => doc.id || `${doc.documentType}-${idx}`));
+    setCheckedDocs((prev) => ({ ...prev, [picked.id]: allKeys }));
+    toast.success(`Marked all ${pickedDocs.length} documents as verified`);
+  }
+
+  function handleApprove() {
+    if (!picked) return;
+    if (picked.termsAccepted === false) {
+      toast.error("This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved.");
+      return;
+    }
+    if (!allDocsChecked && pickedDocs.length > 0) {
+      const verifiedCount = pickedDocs.filter((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)).length;
+      toast.error(`Please verify and tick all uploaded documents (${verifiedCount} of ${pickedDocs.length} checked). Ticking checkboxes confirms each document was inspected.`);
+      return;
+    }
+    void decide(picked, "Verified", vendorNote);
+    setVendorNote("");
+  }
+
+  function openRejectModal(decision: "Rejected" | "Changes required") {
+    setPendingDecision(decision);
+    setRejectionReason(vendorNote.trim());
+    setRejectModalOpen(true);
+  }
+
+  function confirmRejection() {
+    if (!picked) return;
+    if (!rejectionReason.trim()) {
+      toast.error("Please write a reason so the vendor understands what needs correction.");
+      return;
+    }
+    void decide(picked, pendingDecision, rejectionReason.trim());
+    setRejectModalOpen(false);
+    setRejectionReason("");
+    setVendorNote("");
+  }
+
   return <div className="space-y-5"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Check each vendor's documents, location and radius before they can sell." />
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
-        {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`block w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="flex items-start justify-between gap-2"><b>{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-xl font-semibold">{picked.businessName}</h3><p className="text-xs text-[#55656A]">Owner {picked.ownerName} · {picked.ownerEmail} · {picked.plan} plan</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+        {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
+      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}</div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
         <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
         <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {picked.fssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {picked.expiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
-        <ComplianceDocumentList vendor={picked} />
-        <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
-        {picked.verification !== "Verified" ? <div className="space-y-3">{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false} onClick={() => { void decide(picked, "Verified", vendorNote); setVendorNote(""); }}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => { void decide(picked, "Changes required", vendorNote); setVendorNote(""); }}>Ask for changes</Button><Button variant="outline" onClick={() => { void decide(picked, "Rejected", vendorNote); setVendorNote(""); }} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
-      </section>}
-    </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}</div>;
-
-  return (
-    <div className="space-y-6">
-      <Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Open each vendor to inspect their certification, business location, service radius and fulfilment modes." />
-      {vendors.length ? (
-        <div className="space-y-4">
-          {vendors.map((vendor) => {
-            const complianceDocs: Array<{ title: string; label: string; docNumber?: string; fileName?: string; storagePath?: string }> = [];
-
-            complianceDocs.push({
-              title: "Food Safety (FSSAI)",
-              label: "FSSAI Certificate",
-              docNumber: vendor.fssaiNumber !== "Verified" ? vendor.fssaiNumber : undefined,
-              fileName: vendor.certificateName !== "Private" ? vendor.certificateName : "fssai-certificate.pdf",
-            });
-
-            if (vendor.documents && vendor.documents.length > 0) {
-              for (const d of vendor.documents) {
-                if (d.documentType !== "food_certificate") {
-                  complianceDocs.push({
-                    title: d.title,
-                    label: d.title,
-                    docNumber: d.documentNumber,
-                    fileName: d.fileName || d.storagePath,
-                    storagePath: d.storagePath,
-                  });
-                }
-              }
-            } else {
-              if (vendor.panNumber || vendor.panDocumentName) {
-                complianceDocs.push({ title: "PAN Card", label: "PAN Document", docNumber: vendor.panNumber, fileName: vendor.panDocumentName || "pan-document.pdf" });
-              }
-              if (vendor.govIdNumber || vendor.govIdDocumentName) {
-                complianceDocs.push({ title: `Government ID (${vendor.govIdType || "ID"})`, label: "Government ID", docNumber: vendor.govIdNumber, fileName: vendor.govIdDocumentName || "government-id.pdf" });
-              }
-              if (vendor.addressProofType || vendor.addressProofDocumentName) {
-                complianceDocs.push({ title: `Address Proof (${vendor.addressProofType || "Utility"})`, label: "Address Proof", fileName: vendor.addressProofDocumentName || "address-proof.pdf" });
-              }
-              if (vendor.bankAccountNumber || vendor.bankDocumentName) {
-                complianceDocs.push({ title: "Bank Details", label: "Bank Cheque/Passbook", docNumber: vendor.bankAccountNumber ? `A/C: ${vendor.bankAccountNumber} · ${vendor.bankIfsc || ""}` : undefined, fileName: vendor.bankDocumentName || "bank-details.pdf" });
-              }
-              if (vendor.businessRegNumber || vendor.businessDocumentName) {
-                complianceDocs.push({ title: `Business Registration (${vendor.businessRegType || "Reg"})`, label: "Business Registration", docNumber: vendor.businessRegNumber, fileName: vendor.businessDocumentName || "business-registration.pdf" });
-              }
-              if (vendor.productInfoTitle || vendor.productInfoDocumentName) {
-                complianceDocs.push({ title: "Product Information / Catalogue", label: "Product Catalogue", docNumber: vendor.productInfoTitle, fileName: vendor.productInfoDocumentName || "product-catalogue.pdf" });
-              }
-            }
-
-            const picked = vendor;
-            return (
-              <div key={vendor.id} className="surface-card rounded-[26px] p-5">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-                  <div className="grid size-12 place-items-center rounded-2xl bg-[#eff7e5] text-[#5ba400] shrink-0">
-                    <Store />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-black text-base">{vendor.businessName}</h3>
-                      <Status>{vendor.verification}</Status>
-                      <Status>{vendor.plan}</Status>
-                    </div>
-                    <p className="mt-1 text-xs text-stone-500">
-                      {vendor.ownerName} · {vendor.ownerEmail} · {vendor.category}
-                    </p>
-
-                    <div className="mt-3 grid gap-2 text-sm md:grid-cols-4">
-                      <span><b>Address:</b> {vendor.address}</span>
-                      <span><b>Radius:</b> {vendor.radiusKm} km</span>
-                      <span><b>Modes:</b> {[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" + ")}</span>
-                      <span><b>Certificate:</b> {vendor.fssaiNumber}</span>
-                      <span>
-                        <b>Terms accepted:</b> {vendor.termsAccepted ? `Yes (v${vendor.termsVersion || "1.0"})` : "No"}
-                        {vendor.termsAcceptedAt && (
-                          <span className="block text-xs text-stone-500 font-normal">
-                            Accepted: {new Date(vendor.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
-                          </span>
-                        )}
-                      </span>
-                    </div>
-
-                    {/* Compliance Documents Section for Operations Review */}
-                    <div className="mt-4 pt-3 border-t border-stone-200/80">
-                      <div className="flex items-center gap-2 mb-2">
-                        <FileText className="size-4 text-[#5ba400]" />
-                        <span className="text-xs font-black uppercase tracking-wider text-stone-700">
-                          Submitted Compliance Documents (PDF) · {complianceDocs.length}
-                        </span>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {complianceDocs.map((doc, idx) => (
-                          <div key={idx} className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50/70 p-2.5 text-xs">
-                            <div className="min-w-0 pr-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-[10px] font-black text-red-600 bg-red-100/80 px-1 rounded">PDF</span>
-                                <span className="font-black text-stone-800 truncate">{doc.title}</span>
-                              </div>
-                              {doc.docNumber && <div className="text-[11px] text-stone-500 font-mono truncate mt-0.5">{doc.docNumber}</div>}
-                              {doc.fileName && <div className="text-[10px] text-stone-400 truncate">{doc.fileName}</div>}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setActiveInspectPdf({ title: doc.title, docName: doc.fileName || "document.pdf", path: doc.storagePath })}
-                              className="h-7 px-2 rounded-lg text-xs font-bold text-stone-700 hover:bg-white"
-                            >
-                              <Eye className="size-3.5 mr-1 text-[#5ba400]" />
-                              Inspect
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {vendor.verification !== "Verified" ? (
-                    <div className="space-y-3 shrink-0 self-start">
-                      <label className="block text-sm font-semibold text-[#404040]">
-                        Note to the vendor
-                        <textarea
-                          value={vendorNotes[vendor.id] || ""}
-                          onChange={(e) => setVendorNotes((n) => ({ ...n, [vendor.id]: e.target.value }))}
-                          maxLength={500}
-                          rows={3}
-                          placeholder="For example: please upload a clearer photo of the FSSAI page"
-                          className="mt-2 w-full rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none"
-                        />
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        <Button disabled={picked.termsAccepted === false} onClick={() => { void decide(vendor, "Verified", vendorNotes[vendor.id] || ""); setVendorNotes((n) => ({ ...n, [vendor.id]: "" })); }} className="rounded-xl bg-[#5ba400]">
-                          <BadgeCheck />Approve
-                        </Button>
-                        <Button variant="outline" onClick={() => { void decide(vendor, "Changes required", vendorNotes[vendor.id] || ""); setVendorNotes((n) => ({ ...n, [vendor.id]: "" })); }} className="rounded-xl">
-                          Ask for changes
-                        </Button>
-                        <Button variant="outline" onClick={() => { void decide(vendor, "Rejected", vendorNotes[vendor.id] || ""); setVendorNotes((n) => ({ ...n, [vendor.id]: "" })); }} className="rounded-xl text-red-600">
-                          Reject
-                        </Button>
-                      </div>
-                      <p className="text-xs text-stone-500">The vendor receives your note as a notification.</p>
-                    </div>
-                  ) : (
-                    <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-medium text-emerald-800">This vendor is verified and can sell.</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />
-      )}
-
-      {/* Operations Document Inspection Modal */}
-      <Dialog open={!!activeInspectPdf} onOpenChange={(open) => { if (!open) setActiveInspectPdf(null); }}>
-        <DialogContent className="max-h-[94vh] max-w-4xl w-[95vw] p-0 overflow-hidden rounded-[28px] border-stone-200">
-          <div className="flex flex-col h-[85vh]">
-            <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 bg-white shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="grid size-10 place-items-center rounded-xl bg-red-50 text-red-600 font-black text-xs">
-                  PDF
-                </div>
-                <div>
-                  <DialogTitle className="text-lg font-black text-stone-900">
-                    {activeInspectPdf?.title || "Compliance Document Inspection"}
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-stone-500 font-mono">
-                    {activeInspectPdf?.docName || "document.pdf"}
-                  </DialogDescription>
-                </div>
-              </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
+            {picked.verification !== "Verified" && pickedDocs.length > 0 && (
               <button
                 type="button"
-                onClick={() => setActiveInspectPdf(null)}
-                className="grid size-8 place-items-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                onClick={verifyAllDocs}
+                className="text-xs font-bold text-[#155F65] hover:underline cursor-pointer"
               >
-                <X className="size-4" />
+                Tick all ({pickedDocs.length}) documents
               </button>
-            </div>
-            <div className="flex-1 bg-stone-100 relative min-h-0 flex flex-col items-center justify-center p-6 text-center">
-              <FileText className="size-16 text-red-500 mb-3" />
-              <div className="text-base font-black text-stone-800">{activeInspectPdf?.title}</div>
-              <p className="text-xs text-stone-500 mt-1 font-mono">{activeInspectPdf?.docName}</p>
-              <div className="mt-4 rounded-xl bg-white border border-stone-200 px-4 py-2.5 text-xs text-stone-700 shadow-xs">
-                Verified compliance document in strict PDF format. Verified for identity, address, banking, and food licensing compliance.
-              </div>
+            )}
+          </div>
+          <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
+        </div>
+        <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
+        {picked.verification !== "Verified" ? <div className="space-y-3">{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
+      </section>}
+    </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
+
+    <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
+      <DialogContent className="max-w-lg rounded-3xl p-6">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black text-[#202827]">
+            {pendingDecision === "Rejected" ? "Reject Vendor Application" : "Request Changes from Vendor"}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-stone-500">
+            Write the specific reason for {pendingDecision === "Rejected" ? "rejecting" : "requesting changes on"} <b>{picked?.businessName}</b>. The vendor will receive this note as an instant notification.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div>
+            <label className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
+              Quick Reasons
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "FSSAI certificate expired or invalid",
+                "Address proof illegible / address mismatch",
+                "Government ID name mismatch",
+                "Store outside active delivery radius",
+                "Bank details unverified / missing IFSC",
+                "Please upload menu catalogue PDF",
+              ].map((snippet) => (
+                <button
+                  key={snippet}
+                  type="button"
+                  onClick={() =>
+                    setRejectionReason((prev) =>
+                      prev ? `${prev}. ${snippet}` : snippet
+                    )
+                  }
+                  className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:border-[#155F65] hover:bg-[#EAF4F2] transition cursor-pointer"
+                >
+                  + {snippet}
+                </button>
+              ))}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+
+          <div>
+            <label htmlFor="rejection-reason-textarea" className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
+              Reason / Instructions for Vendor <span className="text-rose-600">*</span>
+            </label>
+            <textarea
+              id="rejection-reason-textarea"
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              rows={4}
+              maxLength={600}
+              placeholder="Explain clearly what document or detail is required or why the application cannot be accepted..."
+              className="w-full rounded-2xl border border-stone-300 bg-white p-3.5 text-sm text-[#202827] outline-none focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10"
+            />
+            <p className="mt-1 text-right text-[11px] text-stone-400">{rejectionReason.length}/600</p>
+          </div>
+        </div>
+
+        <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => setRejectModalOpen(false)} className="rounded-xl">
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmRejection}
+            className={`rounded-xl font-bold ${
+              pendingDecision === "Rejected"
+                ? "bg-[#b42332] text-white hover:bg-rose-700"
+                : "bg-[#155F65] text-white hover:bg-[#0F4A4F]"
+            }`}
+          >
+            Confirm {pendingDecision === "Rejected" ? "Rejection" : "Changes Required"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>;
 }
 function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const [q, setQ] = useState(""); const [onlyCustom, setOnlyCustom] = useState(false); const products = state.products.filter((x) => x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0); const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length; return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="grid gap-4 sm:grid-cols-3"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(customCount)} icon={Percent} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div><div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" /><button type="button" onClick={() => setOnlyCustom(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>All</button><button type="button" onClick={() => setOnlyCustom(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>Custom %</button></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-bold">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
 function RFQDesk({ state }: { state: V3State }) {
@@ -6652,14 +6304,14 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
   <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
 }
 
-function AdminArea({ active, session, state, setState }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
   if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
   if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
-  if (active === "Vendors") return <AdminVendors state={state} setState={setState} />;
-  if (active === "Vendor plans") return <Plans state={state} setState={setState} />;
+  if (active === "Vendors") return <AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Vendor plans") return <Plans state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Pricing policies") return <AdminPricing state={state} />;
   if (active === "Stories monitor") return <StoriesMonitor />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
@@ -6840,12 +6492,12 @@ function CreateUserDialog({ open, close, session, setState, live }: { open: bool
     </div>}
   </DialogContent></Dialog>;
 }
-function AdminVendors({ state, setState }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+function AdminVendors({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const allVendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
   const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
   const [vQuery, setVQuery] = useState("");
   const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
-  return <div className="space-y-6"><Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." /><ProductImageBackfill /><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">{(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}<input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>{vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Daily service</TableHead><TableHead>Products</TableHead><TableHead>Plan</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.ownerEmail}</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</TableCell><TableCell>{state.products.filter((x) => x.vendorId === vendor.id).length}</TableCell><TableCell><Select value={vendor.plan} onValueChange={(value) => { const plan = value as Vendor["plan"]; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) })); if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) })); toast.error(error.message || "Could not save the plan change"); }); }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}</div>;
+  return <div className="space-y-6"><Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." /><ProductImageBackfill /><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">{(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}<input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>{vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Daily service</TableHead><TableHead>Products</TableHead><TableHead>Plan</TableHead><TableHead className="text-right">Store</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}><TableCell><div className="flex items-center gap-3"><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.ownerEmail}</div><div className="text-[11px] text-[#155F65] font-semibold">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div></div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</TableCell><TableCell>{state.products.filter((x) => x.vendorId === vendor.id).length}</TableCell><TableCell><Select value={vendor.plan} onValueChange={(value) => { const plan = value as Vendor["plan"]; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) })); if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) })); toast.error(error.message || "Could not save the plan change"); }); }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell><TableCell className="text-right">{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview</Button>}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}</div>;
 }
 function PlanFeatureTable() {
   const plans = ["Taster", "Crave", "Thrive", "Crown"];
@@ -6859,7 +6511,7 @@ function PlanFeatureTable() {
   ];
   return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
 }
-function Plans({ state, setState }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors state={state} setState={setState} /></div>; }
+function Plans({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
 function AdminPricing({ state }: { state: V3State }) {
   const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
   const pct = (id: string) => state.markups[id] || 0;

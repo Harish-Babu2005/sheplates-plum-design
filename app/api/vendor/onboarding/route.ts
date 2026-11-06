@@ -128,11 +128,6 @@ export async function POST(request: Request) {
 
     // PAN, bank and registration numbers are kept with their document (vendor_documents: only the vendor and
     // Operations can read it), never as columns on the vendor row that customers can see.
-    // Compliance document fields
-    const panNumber = body.panNumber ? String(body.panNumber).trim().toUpperCase() : null;
-    const bankAccountNumber = body.bankAccountNumber ? String(body.bankAccountNumber).trim() : null;
-    const bankIfsc = body.bankIfsc ? String(body.bankIfsc).trim().toUpperCase() : null;
-    const businessRegNumber = body.businessRegNumber ? String(body.businessRegNumber).trim() : null;
 
     // Optional list of additional compliance documents
     const rawDocuments = Array.isArray(body.documents) ? (body.documents as Array<Record<string, unknown>>) : [];
@@ -197,10 +192,9 @@ export async function POST(request: Request) {
         terms_version: termsVersion,
         terms_accepted_at: serverTimestamp,
         terms_document_reference: termsDocRef,
-        ...(panNumber ? { pan_number: panNumber } : {}),
-        ...(bankAccountNumber ? { bank_account_number: bankAccountNumber } : {}),
-        ...(bankIfsc ? { bank_ifsc: bankIfsc } : {}),
-        ...(businessRegNumber ? { business_registration_number: businessRegNumber } : {}),
+        ...(body.logoUrl ? { logo_url: String(body.logoUrl) } : body.logo_url ? { logo_url: String(body.logo_url) } : {}),
+        ...(body.bannerUrl ? { banner_url: String(body.bannerUrl) } : body.banner_url ? { banner_url: String(body.banner_url) } : {}),
+        ...(body.bio ? { description: String(body.bio) } : body.description ? { description: String(body.description) } : {}),
         ...(body.operatingHours ? { operating_hours: body.operatingHours } : {}),
       })
       .select("id")

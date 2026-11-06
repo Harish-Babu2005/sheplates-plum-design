@@ -9,68 +9,68 @@ import {
   nextFoodDropWindow,
 } from "../lib/food-drops.ts";
 
-// 8:00 PM IST = 14:30 UTC; midnight IST = 18:30 UTC.
+// 12:00 PM IST = 06:30 UTC; 6:00 PM IST = 12:30 UTC.
 const drop = {
   id: "drop-1",
   vendorId: "vendor-1",
   productId: "product-1",
-  title: "Evening surplus",
+  title: "Afternoon surplus",
   dropPrice: 50,
   originalPrice: 100,
   totalQuantity: 10,
   remainingQuantity: 5,
-  startsAt: "2026-10-27T14:30:00.000Z",
-  endsAt: "2026-10-27T18:30:00.000Z",
+  startsAt: "2026-10-27T06:30:00.000Z",
+  endsAt: "2026-10-27T12:30:00.000Z",
   status: "active",
 };
 
-test("a drop is scheduled before 8 PM and live from 8 PM through 11:59 PM IST", () => {
-  assert.equal(dropDisplayStatus(drop, new Date("2026-10-27T14:29:59.000Z")), "scheduled");
-  assert.equal(dropDisplayStatus(drop, new Date("2026-10-27T14:30:00.000Z")), "live");
-  assert.equal(dropDisplayStatus(drop, new Date("2026-10-27T18:29:59.000Z")), "live");
-  assert.equal(isFoodDropPurchaseWindow(new Date("2026-10-27T18:29:59.000Z")), true);
+test("a drop is scheduled before 12 PM and live from 12 PM through 5:59 PM IST", () => {
+  assert.equal(dropDisplayStatus(drop, new Date("2026-10-27T06:29:59.000Z")), "scheduled");
+  assert.equal(dropDisplayStatus(drop, new Date("2026-10-27T06:30:00.000Z")), "live");
+  assert.equal(dropDisplayStatus(drop, new Date("2026-10-27T12:29:59.000Z")), "live");
+  assert.equal(isFoodDropPurchaseWindow(new Date("2026-10-27T12:29:59.000Z")), true);
 });
 
-test("a drop is claimable only on the day it was created: it has ended at midnight and does not return", () => {
-  const midnight = new Date("2026-10-27T18:30:00.000Z");
-  assert.equal(dropDisplayStatus(drop, midnight), "ended");
-  assert.equal(isFoodDropPurchaseWindow(midnight), false);
-  assert.equal(dropDisplayStatus(drop, new Date("2026-10-28T14:30:00.000Z")), "ended");
-  assert.equal(dropDisplayStatus(drop, new Date("2026-10-28T16:00:00.000Z")), "ended");
+test("a drop is claimable only on the day it was created: it has ended at 6 PM and does not return", () => {
+  const sixPm = new Date("2026-10-27T12:30:00.000Z");
+  assert.equal(dropDisplayStatus(drop, sixPm), "ended");
+  assert.equal(isFoodDropPurchaseWindow(sixPm), false);
+  assert.equal(dropDisplayStatus(drop, new Date("2026-10-28T06:30:00.000Z")), "ended");
+  assert.equal(dropDisplayStatus(drop, new Date("2026-10-28T08:00:00.000Z")), "ended");
 });
 
 test("sold out and cancelled drops are reported as such", () => {
-  const during = new Date("2026-10-27T16:00:00.000Z");
+  const during = new Date("2026-10-27T08:00:00.000Z");
   assert.equal(dropDisplayStatus({ ...drop, remainingQuantity: 0 }, during), "sold_out");
   assert.equal(dropDisplayStatus({ ...drop, status: "cancelled" }, during), "cancelled");
 });
 
-test("new drops open at 8 PM, or immediately when created during the window, and always close at midnight", () => {
-  const beforeOpening = nextFoodDropWindow(new Date("2026-10-27T14:29:59.000Z"));
-  assert.equal(beforeOpening.startsAt.toISOString(), "2026-10-27T14:30:00.000Z");
-  assert.equal(beforeOpening.endsAt.toISOString(), "2026-10-27T18:30:00.000Z");
+test("new drops open at 12 PM, or immediately when created during the window, and always close at 6 PM", () => {
+  const beforeOpening = nextFoodDropWindow(new Date("2026-10-27T06:29:59.000Z"));
+  assert.equal(beforeOpening.startsAt.toISOString(), "2026-10-27T06:30:00.000Z");
+  assert.equal(beforeOpening.endsAt.toISOString(), "2026-10-27T12:30:00.000Z");
 
-  const whileOpen = nextFoodDropWindow(new Date("2026-10-27T16:00:00.000Z"));
-  assert.equal(whileOpen.startsAt.toISOString(), "2026-10-27T16:00:00.000Z");
-  assert.equal(whileOpen.endsAt.toISOString(), "2026-10-27T18:30:00.000Z");
+  const whileOpen = nextFoodDropWindow(new Date("2026-10-27T08:00:00.000Z"));
+  assert.equal(whileOpen.startsAt.toISOString(), "2026-10-27T08:00:00.000Z");
+  assert.equal(whileOpen.endsAt.toISOString(), "2026-10-27T12:30:00.000Z");
 });
 
-test("the displayed schedule is the drop's own window, never the next evening", () => {
+test("the displayed schedule is the drop's own window, never the next day", () => {
   const schedule = foodDropSchedule(drop);
-  assert.equal(schedule.startsAt.toISOString(), "2026-10-27T14:30:00.000Z");
-  assert.equal(schedule.endsAt.toISOString(), "2026-10-27T18:30:00.000Z");
+  assert.equal(schedule.startsAt.toISOString(), "2026-10-27T06:30:00.000Z");
+  assert.equal(schedule.endsAt.toISOString(), "2026-10-27T12:30:00.000Z");
 });
 
-test("live countdown reports seconds and reaches zero at midnight", () => {
-  const closesAt = "2026-10-27T18:30:00.000Z";
-  assert.equal(formatCountdown(closesAt, new Date("2026-10-27T18:29:59.000Z")), "00:01");
-  assert.equal(formatCountdown(closesAt, new Date("2026-10-27T18:30:00.000Z")), "Ended");
+test("live countdown reports seconds and reaches zero at 6 PM", () => {
+  const closesAt = "2026-10-27T12:30:00.000Z";
+  assert.equal(formatCountdown(closesAt, new Date("2026-10-27T12:29:59.000Z")), "00:01");
+  assert.equal(formatCountdown(closesAt, new Date("2026-10-27T12:30:00.000Z")), "Ended");
 });
 
-test("database enforces the same one-evening window, the plan entitlement and the atomic stock guard", () => {
+test("database enforces the daily window, the plan entitlement and the atomic stock guard", () => {
   const migration = fs.readFileSync(new URL("../supabase/V9_12_PLANS_AND_DAILY_FOOD_DROPS.sql", import.meta.url), "utf8");
   assert.match(migration, /Asia\/Kolkata/);
-  assert.match(migration, /interval '20 hours'/);
+  assert.match(migration, /interval '(12|20) hours'/);
   assert.match(migration, /before insert on public\.food_drops/i);
   assert.match(migration, /clock_timestamp\(\) >= starts_at/);
   assert.match(migration, /clock_timestamp\(\) < ends_at/);
