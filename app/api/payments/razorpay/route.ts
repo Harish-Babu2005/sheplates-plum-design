@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
+import { calculateBillingSummary } from "@/lib/billing";
+import { loadVendorBillingTerms } from "@/lib/billing-server";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -181,7 +183,7 @@ export async function POST(request: Request) {
       // Retrieve order and verify ownership
       const { data: order, error: orderError } = await admin
         .from("orders")
-        .select("id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,scheduled_date,scheduled_slot,status")
+        .select("id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,scheduled_date,scheduled_slot,status,fulfilment_mode,delivery_address,tracking_latitude,tracking_longitude")
         .eq("id", orderId)
         .eq("customer_id", profile.id)
         .maybeSingle();
@@ -285,6 +287,7 @@ export async function POST(request: Request) {
 
         let calculatedBaseTotal = 0;
         let calculatedCustomerTotal = 0;
+        const billingItems: Array<{ name: string; price: number; quantity: number }> = [];
 
         for (const item of items) {
           const qty = Math.max(0.001, Number(item.quantity || 1));
@@ -293,6 +296,7 @@ export async function POST(request: Request) {
             const unitPrice = Number(item.customer_price);
             calculatedBaseTotal += base * qty;
             calculatedCustomerTotal += unitPrice * qty;
+            billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
             continue;
           }
           // Look up current product and markup
@@ -316,16 +320,54 @@ export async function POST(request: Request) {
           const unitPrice = Math.round(base * (1 + markup / 100) * 100) / 100;
           calculatedBaseTotal += base * qty;
           calculatedCustomerTotal += unitPrice * qty;
+          billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
         }
 
-        totalPayableRupees = Math.round(calculatedCustomerTotal * 100) / 100;
+        // Fetch vendor details for dynamic delivery fee & radius calculation
+        // The delivery fee was measured and fixed when the order was created. Payment only re-prices the items and GST, so the
+        // amount cannot drift between checkout and payment, and the browser can never change what is charged.
+        const terms = await loadVendorBillingTerms(admin, String(order.vendor_id));
+        const billing = calculateBillingSummary({
+          items: billingItems,
+          mode: order.fulfilment_mode || "vendor_delivery",
+          fixedDelivery: { fee: Number(order.delivery_fee || 0), distanceKm: null },
+          serviceRadiusKm: terms.radiusKm,
+          gstMode: terms.gstMode,
+          vendorCategory: terms.category,
+          vendorPlan: terms.plan,
+          commissionPercentOverride: terms.commissionPercent,
+        });
 
-        await admin.from("orders").update({
+        totalPayableRupees = billing.totalAmount;
+
+        const baseUpdatePayload = {
           vendor_base_total: Math.round(calculatedBaseTotal * 100) / 100,
-          markup_total: Math.round(Math.max(0, calculatedCustomerTotal - calculatedBaseTotal) * 100) / 100,
+          markup_total: Math.round(Math.max(0, billing.subtotal - calculatedBaseTotal) * 100) / 100,
+          tax_amount: billing.gstAmount,
+          delivery_fee: billing.deliveryFee,
           customer_total: totalPayableRupees,
           updated_at: new Date().toISOString(),
+        };
+
+        const updateResult = await admin.from("orders").update({
+          ...baseUpdatePayload,
+          subtotal: billing.subtotal,
+          gst_amount: billing.gstAmount,
+          gst_rate: billing.gstRate,
+          discount_amount: billing.discountAmount,
+          total_amount: totalPayableRupees,
+          currency: billing.currency,
+          delivery_distance: billing.deliveryDistanceKm,
+          commission_percent: billing.commissionPercent,
+          commission_amount: billing.commissionAmount,
+          vendor_payout: billing.vendorPayout,
+          invoice_type: billing.invoiceType,
+          gst_mode: billing.gstMode,
         }).eq("id", order.id);
+
+        if (updateResult.error && (updateResult.error.code === "42703" || /column .* does not exist/i.test(updateResult.error.message || ""))) {
+          await admin.from("orders").update(baseUpdatePayload).eq("id", order.id);
+        }
 
         await admin.from("payments").update({
           amount: totalPayableRupees,
@@ -372,7 +414,7 @@ export async function POST(request: Request) {
                   name: profile.full_name || "",
                   email: ctx.user.email || "",
                 },
-                description: `ShePlates Order ${order.order_number}`,
+                description: `Sheplates Order ${order.order_number}`,
               });
             }
           }
@@ -427,7 +469,7 @@ export async function POST(request: Request) {
           name: profile.full_name || "",
           email: ctx.user.email || "",
         },
-        description: `ShePlates Order ${order.order_number}`,
+        description: `Sheplates Order ${order.order_number}`,
       });
     }
 

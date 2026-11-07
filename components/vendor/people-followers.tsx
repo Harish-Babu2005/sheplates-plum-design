@@ -39,7 +39,7 @@ export function VendorPeopleFollowers({ vendor }: { vendor: Vendor }) {
       <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black shadow-sm">{followers.length} follower{followers.length === 1 ? "" : "s"}</span>
     </div>
     {loading && !followers.length ? <p className="text-sm font-bold text-stone-500" role="status">Loading followers…</p>
-      : followers.length ? <div className="space-y-2">{followers.map((person) => <div key={person.id} className="flex items-center gap-3 rounded-2xl border border-stone-200/70 bg-white p-3 shadow-sm"><Avatar name={person.handle} size={44} /><div className="min-w-0"><b className="block truncate text-sm">@{person.handle}</b><span className="block truncate text-xs text-stone-500">{person.bio || "ShePlates customer"}</span></div></div>)}</div>
+      : followers.length ? <div className="space-y-2">{followers.map((person) => <div key={person.id} className="flex items-center gap-3 rounded-2xl border border-stone-200/70 bg-white p-3 shadow-sm"><Avatar name={person.handle} size={44} /><div className="min-w-0"><b className="block truncate text-sm">@{person.handle}</b><span className="block truncate text-xs text-stone-500">{person.bio || "Sheplates customer"}</span></div></div>)}</div>
       : <EmptyState emoji="🫶" title="No customer followers yet" body="Customers who follow your store will appear here." />}
   </div>;
 }

@@ -115,7 +115,7 @@ export function NearbyVendorsMapLeaflet({
   }, [vendors]);
 
   return (
-    <div className="sp-vendor-map relative overflow-hidden rounded-[26px] border border-stone-200/70">
+    <div className="sp-vendor-map relative isolate z-0 overflow-hidden rounded-[26px] border border-stone-200/70">
       <MapContainer center={[customerLat, customerLng]} zoom={zoomForRadius(radiusKm)} scrollWheelZoom zoomControl={false} style={{ height: `${height}px`, width: "100%" }} attributionControl={false}>
         {/* Esri World Street Map: a free, no-API-key raster tile set with the
             clean, colour-coded roads/labels look of a mainstream consumer map

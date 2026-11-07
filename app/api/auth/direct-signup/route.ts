@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   );
 
   if (profile.error) {
-    // Avoid leaving a confirmed Auth user without a ShePlates role profile.
+    // Avoid leaving a confirmed Auth user without a Sheplates role profile.
     await admin.auth.admin.deleteUser(userId);
     return NextResponse.json({ error: profile.error.message }, { status: 500 });
   }

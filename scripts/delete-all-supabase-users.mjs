@@ -49,5 +49,5 @@ while (true) {
   }
 }
 
-process.stdout.write(`ShePlates reset complete: ${deletedUsers} Auth user(s) deleted.\n`);
+process.stdout.write(`Sheplates reset complete: ${deletedUsers} Auth user(s) deleted.\n`);
 process.stdout.write("Next: npm run supabase:create-staff-users\n");

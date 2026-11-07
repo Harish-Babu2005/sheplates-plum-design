@@ -1,8 +1,8 @@
-# ShePlates v6.0.0 — Ultra Modern Mobile-First
+# Sheplates v6.0.0 — Ultra Modern Mobile-First
 
 This build layers a new responsive design system and native-style mobile shell on top of the production-hardened commerce application. See `ULTRA_MODERN_V6_RELEASE_NOTES.md` for the UI changes and `MOBILE_APP_PACKAGING.md` for the later Android/iOS packaging path.
 
-# ShePlates V4.1.1 — Agentic Hyperlocal Commerce
+# Sheplates V4.1.1 — Agentic Hyperlocal Commerce
 
 ## V4.1.1 — She Agent: real intent detection, memory, and photo-backed quality complaints
 
@@ -35,7 +35,7 @@ V3.3.4 isolates browser notifications by both recipient email and role, automati
 
 V3.3.1 hotfix: live Supabase synchronization is non-blocking for cached workspaces, has a 10-second timeout for first-time profiles, and provides Retry/Continue controls instead of leaving the application on an endless loading screen.
 
-V3.3.2 adds a guarded full-development reset that clears all ShePlates tenant data, uploaded test files and Auth users, followed by a staff-only account bootstrap.
+V3.3.2 adds a guarded full-development reset that clears all Sheplates tenant data, uploaded test files and Auth users, followed by a staff-only account bootstrap.
 
 V3.3.3 adds an explicitly enabled, localhost-only customer/vendor signup route that auto-confirms test accounts without email. It is blocked on production hosts.
 
@@ -50,7 +50,7 @@ SHEPLATES_TEST_AUTO_CONFIRM=true
 
 The test route uses `SUPABASE_SERVICE_ROLE_KEY` only on the server, accepts only `customer` or `vendor`, and refuses production or non-local hosts. Remove the flags or set both to `false` before deployment. Existing test emails can be reused if they already have the same customer/vendor role; the route confirms the account, updates its password and signs it in immediately.
 
-An end-to-end, multi-role product model for scheduled local food and grocery commerce. Customers do not buy a ShePlates subscription. Vendor subscriptions and entitlement tiers are included, while prices remain configurable for a later commercial decision.
+An end-to-end, multi-role product model for scheduled local food and grocery commerce. Customers do not buy a Sheplates subscription. Vendor subscriptions and entitlement tiers are included, while prices remain configurable for a later commercial decision.
 
 V3 deliberately starts with **no seeded vendors, products, requirements, quotes, schedules, orders or notifications**. Create the data yourself and test the complete hand-off between roles.
 
@@ -192,7 +192,7 @@ This uses the Supabase Admin API. Do not update `auth.users.encrypted_password` 
 
 ### Full development reset: staff accounts only
 
-This is permanent. First verify that the correct development project is open in Supabase. Run `supabase/V3_FULL_DEVELOPMENT_RESET.sql` in SQL Editor. It deletes all profiles and dependent ShePlates data while preserving the schema, RLS policies, Storage buckets and vendor-plan configuration.
+This is permanent. First verify that the correct development project is open in Supabase. Run `supabase/V3_FULL_DEVELOPMENT_RESET.sql` in SQL Editor. It deletes all profiles and dependent Sheplates data while preserving the schema, RLS policies, Storage buckets and vendor-plan configuration.
 
 Then run these commands in PowerShell or Command Prompt from the extracted project folder:
 
@@ -201,7 +201,7 @@ npm run supabase:delete-all-users -- --confirm=DELETE_ALL_SHEPLATES_DATA
 npm run supabase:create-staff-users
 ```
 
-The first command empties only the two ShePlates upload buckets and deletes every Supabase Auth user. The second command recreates only:
+The first command empties only the two Sheplates upload buckets and deletes every Supabase Auth user. The second command recreates only:
 
 | Role | Email | Password |
 | --- | --- | --- |

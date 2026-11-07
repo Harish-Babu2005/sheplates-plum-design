@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
+import { calculateBillingSummary } from "@/lib/billing";
+import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -139,17 +141,26 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (!ctx) throw new Error("Unauthorised");
   const { admin, profile } = ctx;
   const role = profile.role;
-  const orderQuery = admin.from("orders").select("id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)").order("scheduled_date", { ascending: true }).limit(500);
-  if (role === "customer") orderQuery.eq("customer_id", profile.id);
+  const selectWithBilling = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,subtotal,gst_rate,gst_amount,discount_amount,total_amount,currency,delivery_distance,commission_percent,commission_amount,vendor_payout,invoice_type,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
+  const selectBase = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
+
+  let orderQuery = admin.from("orders").select(selectWithBilling).order("created_at", { ascending: false }).limit(500);
+  if (role === "customer") orderQuery = orderQuery.eq("customer_id", profile.id);
   if (role === "vendor") {
     if (!profile.vendor_id) return { orders: [], schedules: [], staff: [], assignments: [], deliverySlots: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: true };
-    orderQuery.eq("vendor_id", profile.vendor_id);
+    orderQuery = orderQuery.eq("vendor_id", profile.vendor_id);
   }
   const schedulesQuery = admin.from("product_schedules").select("id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at").order("start_date", { ascending: true }).limit(500);
   if (role === "customer") schedulesQuery.eq("customer_id", profile.id);
   if (role === "vendor" && profile.vendor_id) schedulesQuery.eq("vendor_id", profile.vendor_id);
 
-  const [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
+  let [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
+  if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
+    let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
+    if (role === "customer") fallbackOrderQuery = fallbackOrderQuery.eq("customer_id", profile.id);
+    if (role === "vendor" && profile.vendor_id) fallbackOrderQuery = fallbackOrderQuery.eq("vendor_id", profile.vendor_id);
+    orders = (await fallbackOrderQuery) as any;
+  }
   if (orders.error) throw orders.error;
   if (schedules.error) throw schedules.error;
   const orderIds = (orders.data || []).map((order) => String(order.id));
@@ -239,6 +250,20 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * Whether a Food Drop can be bought right now. The drop's own start and end times (set by the database when the drop is
+ * created: 12 PM to 6 PM IST) are the only window; the database repeats this check atomically when the stock is taken.
+ * While a basket is only being saved (isCartSync) the remaining stock is not enforced yet, because it is checked again at payment.
+ */
+function isFoodDropAvailable(drop: Record<string, unknown> | undefined, quantity: number, now: number = Date.now(), isCartSync: boolean = false): boolean {
+  if (!drop || drop.status !== "active") return false;
+  if (!Number.isInteger(quantity) || quantity <= 0) return false;
+  if (!isCartSync && Number(drop.remaining_quantity || 0) < quantity) return false;
+  const start = new Date(String(drop.starts_at || 0)).getTime();
+  const end = new Date(String(drop.ends_at || 0)).getTime();
+  return Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end;
+}
+
 export async function POST(request: Request) {
   const ctx = await identity(request);
   if (!ctx) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
@@ -266,11 +291,7 @@ export async function POST(request: Request) {
         if (!Number.isFinite(quantity) || quantity <= 0) continue;
         if (foodDropId) {
           const drop = dropMap.get(foodDropId);
-          const now = Date.now();
-          if (!drop || String(drop.product_id) !== productId
-            || drop.status !== "active" || now < new Date(String(drop.starts_at)).getTime()
-            || now >= new Date(String(drop.ends_at)).getTime() || Number(drop.remaining_quantity) < quantity
-            || !Number.isInteger(quantity)) {
+          if (!drop || String(drop.product_id) !== productId || !isFoodDropAvailable(drop, quantity, Date.now(), true)) {
             return NextResponse.json({ error: "This Food Drop is no longer available." }, { status: 409 });
           }
           const productResult = row
@@ -335,11 +356,8 @@ export async function POST(request: Request) {
         const drop = foodDropId ? dropMap.get(foodDropId) : undefined;
         if (!product || !product.active) continue;
         if (foodDropId) {
-          const now = Date.now();
           if (!drop || String(drop.product_id) !== String(product.id) || String(drop.vendor_id) !== String(product.vendor_id)
-            || drop.status !== "active" || now < new Date(String(drop.starts_at)).getTime()
-            || now >= new Date(String(drop.ends_at)).getTime() || Number(drop.remaining_quantity) < Number(item.quantity)
-            || !Number.isInteger(Number(item.quantity))) {
+            || !isFoodDropAvailable(drop, Number(item.quantity), Date.now(), false)) {
             return NextResponse.json({ error: "A Food Drop in your cart is no longer available." }, { status: 409 });
           }
         } else if (Number(product.stock_quantity || 0) <= 0) continue;
@@ -375,6 +393,10 @@ export async function POST(request: Request) {
       for (const [vendorId, items] of grouped.entries()) {
         const fulfilmentMode = vendorFulfilments.get(vendorId);
         if (!fulfilmentMode) return NextResponse.json({ error: "This vendor's fulfilment settings could not be loaded." }, { status: 409 });
+
+        const customerCoords = await loadCustomerCoords(admin, profile.id, { latitude: body.customerLatitude, longitude: body.customerLongitude });
+        const terms = await loadVendorBillingTerms(admin, vendorId);
+
         let vendorBaseTotal = 0; let customerTotal = 0;
         const orderItems = items.map((item) => {
           const product = item.product as Record<string, unknown>;
@@ -385,7 +407,54 @@ export async function POST(request: Request) {
           vendorBaseTotal += base * quantity; customerTotal += price * quantity;
           return { product_name: drop ? `${String(drop.title)} — ${String(product.name || "Product")}` : String(product.name || "Product"), quantity, unit: String(item.unit || product.unit || "pack"), vendor_base_price: base, markup_percent: base > 0 ? Math.max(0, ((price / base) - 1) * 100) : 0, customer_price: price };
         });
-        const inserted = await admin.from("orders").insert({ order_number: orderNumber(), customer_id: profile.id, vendor_id: vendorId, vendor_base_total: vendorBaseTotal, markup_total: Math.max(0, customerTotal - vendorBaseTotal), tax_amount: 0, delivery_fee: 0, customer_total: customerTotal, delivery_address: deliveryAddress, fulfilment_mode: fulfilmentMode, scheduled_date: scheduledDate, scheduled_slot: scheduledSlot, status: "awarded" }).select("id,order_number").single();
+
+        const billing = calculateBillingSummary({
+          items: orderItems.map((item) => ({
+            name: item.product_name,
+            price: item.customer_price,
+            quantity: item.quantity,
+          })),
+          mode: fulfilmentMode,
+          customerCoords,
+          vendorCoords: { latitude: terms.latitude, longitude: terms.longitude },
+          serviceRadiusKm: terms.radiusKm,
+          vendorCustomFee: terms.deliveryFeeOverride,
+          gstMode: terms.gstMode,
+          vendorCategory: terms.category,
+          vendorPlan: terms.plan,
+          commissionPercentOverride: terms.commissionPercent,
+        });
+
+        if (!billing.isWithinRadius && fulfilmentMode === "vendor_delivery") {
+          return NextResponse.json({ error: billing.warningMessage || "Delivery address is beyond the vendor's service radius." }, { status: 400 });
+        }
+
+        const baseOrder = {
+          order_number: orderNumber(),
+          customer_id: profile.id,
+          vendor_id: vendorId,
+          vendor_base_total: vendorBaseTotal,
+          markup_total: Math.max(0, billing.subtotal - vendorBaseTotal),
+          tax_amount: billing.gstAmount,
+          delivery_fee: billing.deliveryFee,
+          customer_total: billing.totalAmount,
+          delivery_address: deliveryAddress,
+          fulfilment_mode: fulfilmentMode,
+          scheduled_date: scheduledDate,
+          scheduled_slot: scheduledSlot,
+          status: "awarded",
+        };
+        // The bill breakdown, commission and invoice type are stored when the database has those columns (V9_22). Without
+        // them the order is still created with its totals, so checkout never breaks on a missing migration.
+        const breakdown = {
+          subtotal: billing.subtotal, gst_amount: billing.gstAmount, gst_rate: billing.gstRate, delivery_distance: billing.deliveryDistanceKm,
+          commission_percent: billing.commissionPercent, commission_amount: billing.commissionAmount, vendor_payout: billing.vendorPayout,
+          invoice_type: billing.invoiceType, gst_mode: billing.gstMode, discount_amount: billing.discountAmount, total_amount: billing.totalAmount, currency: billing.currency,
+        };
+        let inserted = await admin.from("orders").insert({ ...baseOrder, ...breakdown }).select("id,order_number").single();
+        if (inserted.error && (inserted.error.code === "42703" || inserted.error.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(inserted.error.message || ""))) {
+          inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
+        }
         if (inserted.error) throw inserted.error;
         orderIds.push(inserted.data.id);
         if (fulfilmentMode === "third_party_delivery") {
@@ -396,9 +465,9 @@ export async function POST(request: Request) {
         }
         const itemInsert = await admin.from("order_items").insert(orderItems.map((item) => ({ order_id: inserted.data.id, ...item })));
         if (itemInsert.error) throw itemInsert.error;
-        const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: customerTotal, status: "pending", provider: "checkout" });
-        if (payment.error) throw payment.error;
-        await admin.from("notifications").insert({ recipient_id: profile.id, kind: "payment", title: "Complete payment", body: `${inserted.data.order_number} is ready for payment.`, entity_type: "order", entity_id: inserted.data.id });
+          const payment = await admin.from("payments").insert({ order_id: inserted.data.id, customer_id: profile.id, amount: billing.totalAmount, status: "pending", provider: "checkout" });
+          if (payment.error) throw payment.error;
+          await admin.from("notifications").insert({ recipient_id: profile.id, kind: "payment", title: "Complete payment", body: `${inserted.data.order_number} is ready for payment.`, entity_type: "order", entity_id: inserted.data.id });
       }
       await admin.from("commerce_carts").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", cartId).eq("customer_id", profile.id);
       return NextResponse.json({ ok: true, orderIds, snapshot: await commerceSnapshot(ctx) });

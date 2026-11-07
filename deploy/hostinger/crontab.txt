@@ -1,0 +1,13 @@
+# Install with:  crontab -e   (as the app user). CRON_SECRET is the same value as in /var/www/sheplates-production/shared/.env
+# Load it once at the top so the jobs below can use it:
+CRON_SECRET=replace-with-the-secret-from-the-env-file
+BASE=https://app.sheplates.com
+
+# Send queued emails (order mails, signing codes, settlements) every minute
+* * * * *   curl -fsS -m 50 -X POST "$BASE/api/cron/email-outbox" -H "x-cron-secret: $CRON_SECRET" >/dev/null 2>&1
+
+# Remove expired customer statuses every hour
+5 * * * *   curl -fsS -m 50 -X POST "$BASE/api/statuses/purge" -H "x-cron-secret: $STATUS_PURGE_SECRET" >/dev/null 2>&1
+
+# Nightly database backup is handled by Supabase (enable Point-in-Time Recovery on the Pro plan); also keep a weekly dump:
+# 30 2 * * 0  pg_dump "$SUPABASE_DB_URL" | gzip > /var/backups/sheplates-$(date +\%F).sql.gz

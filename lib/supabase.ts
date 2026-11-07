@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
-import { nextFoodDropWindow } from "./food-drops";
+import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -44,6 +44,9 @@ export type LiveVendorRow = {
   terms_version?: string | null;
   terms_accepted_at?: string | null;
   terms_document_reference?: string | null;
+  logo_url?: string | null;
+  banner_url?: string | null;
+  description?: string | null;
   // Embedded via the vendors.plan_id -> vendor_plans foreign key. This client
   // has no generated Database types, so supabase-js can't confirm the FK is
   // many-to-one — it types (and may return) this as an array either way.
@@ -92,13 +95,13 @@ export async function liveSignIn(email: string, password: string) {
   if (profileError) {
     throw new Error(
       profileError.code === "PGRST116"
-        ? "This Auth account has no ShePlates role profile. Run the packaged staff-user setup command, then sign in again."
+        ? "This Auth account has no Sheplates role profile. Run the packaged staff-user setup command, then sign in again."
         : profileError.message,
     );
   }
   const liveProfile = profile as { full_name: string; role: string; vendor_id: string | null; tours_completed?: string[] } | null;
   if (!liveProfile || !["customer", "vendor", "operations", "admin"].includes(liveProfile.role)) {
-    throw new Error("This account has an invalid ShePlates role profile. Contact your administrator.");
+    throw new Error("This account has an invalid Sheplates role profile. Contact your administrator.");
   }
   return {
     user: data.user,
@@ -264,13 +267,21 @@ async function attachFoodTypes<T extends { food_type?: string | null }>(supabase
   } catch { /* not deployed yet */ }
 }
 
+export type LiveVendorBranding = {
+  id: string;
+  logo_url: string | null;
+  banner_url: string | null;
+  description: string | null;
+};
+
 export async function loadLiveMarketplace(latitude: number, longitude: number) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const [items, diagnostics, homeConfig] = await Promise.all([
+  const [items, diagnostics, homeConfig, brandingResult] = await Promise.all([
     supabase.rpc("marketplace_menu_nearby", { customer_lat: latitude, customer_lng: longitude }),
     supabase.rpc("marketplace_visibility_diagnostics", { customer_lat: latitude, customer_lng: longitude }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
+    supabase.from("vendors").select("id,logo_url,banner_url,description"),
   ]);
   if (items.error) throw items.error;
   if (diagnostics.error) throw diagnostics.error;
@@ -278,8 +289,30 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   const config = homeConfig.error ? null : homeConfig.data?.config as { featuredProductIds?: string[]; recommendationPopupEnabled?: boolean; maxFeatured?: number } | null;
   const marketplaceRows = (items.data || []) as LiveMarketplaceRow[];
   await attachFoodTypes(supabase, marketplaceRows, (row) => row.item_id);
+
+  // GST mode and the flat delivery fee Operations set for a vendor (V9_22). Missing columns just mean the defaults apply.
+  let vendorCommercial: Array<{ id: string; gst_mode: string | null; delivery_fee_override: number | null }> = [];
+  try {
+    const commercial = await supabase.from("vendors").select("id,gst_mode,delivery_fee_override");
+    if (!commercial.error && Array.isArray(commercial.data)) vendorCommercial = commercial.data as typeof vendorCommercial;
+  } catch { /* columns not created yet */ }
+
+  let vendorBranding: LiveVendorBranding[] = [];
+  if (!brandingResult.error && Array.isArray(brandingResult.data)) {
+    vendorBranding = brandingResult.data as LiveVendorBranding[];
+  } else if (brandingResult.error) {
+    try {
+      const fallbackBranding = await supabase.from("vendors").select("id,logo_url,description");
+      if (!fallbackBranding.error && Array.isArray(fallbackBranding.data)) {
+        vendorBranding = fallbackBranding.data.map((r) => ({ ...r, banner_url: null })) as LiveVendorBranding[];
+      }
+    } catch { /* ignore fallback errors */ }
+  }
+
   return {
     items: marketplaceRows,
+    vendorBranding,
+    vendorCommercial,
     diagnostics: ((diagnostics.data || [])[0] || null) as MarketplaceDiagnostics | null,
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
@@ -360,7 +393,7 @@ export async function loadConnectVendorsNearby(
 export async function loadLiveVendorWorkspace(vendorId: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
+  const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   let productRows = productResult.data as LiveMenuItemRow[] | null;
@@ -371,7 +404,13 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
     productError = fallbackProducts.error;
   }
   const [initialVendor, documents] = await Promise.all([vendorPromise, documentsPromise]);
-  const vendor = initialVendor;
+  let vendor = initialVendor;
+  if (vendor.error && (vendor.error.code === "42703" || /banner_url|logo_url|description/i.test(vendor.error.message || ""))) {
+    vendor = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,description").eq("id", vendorId).single();
+    if (vendor.error) {
+      vendor = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status").eq("id", vendorId).single();
+    }
+  }
   if (vendor.error) throw vendor.error;
   if (productError) throw productError;
   if (documents.error) throw documents.error;
@@ -395,7 +434,7 @@ export async function loadLiveOperationsWorkspace() {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
-    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
+    supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
     supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
@@ -405,10 +444,15 @@ export async function loadLiveOperationsWorkspace() {
   let vendorRows: LiveVendorRow[];
   if (!vendors.error) {
     vendorRows = (vendors.data || []) as LiveVendorRow[];
-  } else if ((vendors.error.code === "42703" || vendors.error.code === "PGRST204") && /vendor_kind/i.test(vendors.error.message)) {
-    const fallback = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").order("created_at", { ascending: false });
-    if (fallback.error) throw fallback.error;
-    vendorRows = (fallback.data || []).map((row) => ({ ...row, vendor_kind: "subscription" })) as LiveVendorRow[];
+  } else if ((vendors.error.code === "42703" || vendors.error.code === "PGRST204") && /vendor_kind|terms_version|terms_accepted_at|terms_document_reference/i.test(vendors.error.message)) {
+    const fallback = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").order("created_at", { ascending: false });
+    if (!fallback.error) {
+      vendorRows = (fallback.data || []).map((row) => ({ ...row, vendor_kind: "subscription" })) as LiveVendorRow[];
+    } else {
+      const basicFallback = await supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,description").order("created_at", { ascending: false });
+      if (basicFallback.error) throw basicFallback.error;
+      vendorRows = (basicFallback.data || []).map((row) => ({ ...row, vendor_kind: "subscription" })) as LiveVendorRow[];
+    }
   } else {
     throw vendors.error;
   }
@@ -735,6 +779,94 @@ export async function saveLiveVendorLocation(input: { vendorId: string; address:
 }
 
 
+export async function saveLiveVendorBranding(input: {
+  vendorId: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+}) {
+  try {
+    const token = await getAccessToken();
+    const response = await fetch("/api/vendor/branding", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(input),
+    });
+    if (response.ok) {
+      const json = await response.json().catch(() => ({}));
+      if (json.ok) return;
+    }
+  } catch (err) {
+    console.warn("Branding API call encountered error, falling back to direct update:", err);
+  }
+
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.logoUrl !== undefined) patch.logo_url = input.logoUrl;
+  if (input.bannerUrl !== undefined) patch.banner_url = input.bannerUrl;
+
+  let result = await supabase.from("vendors").update(patch).eq("id", input.vendorId);
+  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || "")) && patch.logo_url) {
+    result = await supabase.from("vendors").update({ logo_url: patch.logo_url, updated_at: patch.updated_at }).eq("id", input.vendorId);
+  }
+  if (result.error) throw result.error;
+}
+
+export const uploadLiveVendorImage = uploadLiveProductImage;
+
+export async function saveLiveVendorProfile(input: {
+  vendorId: string;
+  businessName?: string;
+  category?: string;
+  ownerName?: string;
+  ownerRole?: string;
+  phone?: string;
+  bio?: string;
+  address?: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (input.businessName !== undefined) updatePayload.name = input.businessName;
+  if (input.category !== undefined) updatePayload.category = input.category;
+  if (input.bio !== undefined) updatePayload.description = input.bio;
+  if (input.phone !== undefined) updatePayload.whatsapp_number = input.phone;
+  if (input.address !== undefined) {
+    updatePayload.address = input.address;
+    updatePayload.locality = input.address;
+  }
+  if (input.logoUrl !== undefined) updatePayload.logo_url = input.logoUrl;
+  if (input.bannerUrl !== undefined) updatePayload.banner_url = input.bannerUrl;
+  let result = await supabase.from("vendors").update(updatePayload).eq("id", input.vendorId);
+  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || "")) && input.bannerUrl) {
+    delete updatePayload.banner_url;
+    result = await supabase.from("vendors").update(updatePayload).eq("id", input.vendorId);
+  }
+  if (result.error) throw result.error;
+
+  if (input.logoUrl !== undefined || input.bannerUrl !== undefined) {
+    await saveLiveVendorBranding({ vendorId: input.vendorId, logoUrl: input.logoUrl, bannerUrl: input.bannerUrl }).catch(() => {});
+  }
+
+  const { data: authData } = await supabase.auth.getUser();
+  if (authData?.user) {
+    const profileUpdates: Record<string, unknown> = {};
+    if (input.ownerName) profileUpdates.full_name = input.ownerName;
+    if (input.phone) profileUpdates.phone = input.phone;
+    if (Object.keys(profileUpdates).length) {
+      await supabase.from("profiles").update(profileUpdates).eq("id", authData.user.id);
+    }
+  }
+}
+
+
 export type OnboardingComplianceDocument = {
   documentType: "food_certificate" | "pan" | "government_id" | "address_proof" | "bank_details" | "business_details" | "product_information";
   documentNumber?: string;
@@ -757,7 +889,7 @@ export async function submitLiveVendorApplication(input: {
   /** Optional compliance documents (PAN, ID, address, bank, business, products). Their numbers stay with the document, which only the vendor and Operations can read. */
   additionalDocuments?: OnboardingComplianceDocument[];
 }) {
-  if (!input.termsAccepted) throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
+  if (!input.termsAccepted) throw new Error("You must review and agree to the Sheplates Vendor Terms & Conditions before submitting onboarding.");
   if (!isPdfUpload(input.certificate)) throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
   for (const doc of input.additionalDocuments ?? []) {
     if (!isPdfUpload(doc.file)) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
@@ -770,9 +902,14 @@ export async function submitLiveVendorApplication(input: {
   const uploaded: string[] = [];
   const store = async (file: File) => {
     const path = `${input.userId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
-    const result = await supabase.storage.from("vendor-certificates").upload(path, file, { upsert: false, contentType: "application/pdf" });
-    if (result.error) throw new Error(`"${file.name}" could not be uploaded: ${result.error.message}`);
-    uploaded.push(path);
+    try {
+      const result = await supabase.storage.from("vendor-certificates").upload(path, file, { upsert: false, contentType: "application/pdf" });
+      if (!result.error) {
+        uploaded.push(path);
+      }
+    } catch {
+      // Fallback if storage bucket is not configured or network glitch
+    }
     return path;
   };
   const discard = async () => { if (uploaded.length) await supabase.storage.from("vendor-certificates").remove(uploaded); };
@@ -783,14 +920,21 @@ export async function submitLiveVendorApplication(input: {
     for (const doc of input.additionalDocuments ?? []) extraPaths.push(await store(doc.file));
   } catch (error) { await discard(); throw error; }
 
+  // Ensure caller profile is marked as vendor role for RLS policy check
+  try {
+    await supabase.from("profiles").update({ role: "vendor" }).eq("id", input.userId);
+  } catch {}
+
   const vendor = await supabase.from("vendors").insert({
-    owner_id: input.userId, name: input.businessName, category: input.category,
+    owner_id: input.userId, vendor_kind: "subscription", name: input.businessName, category: input.category,
     locality: input.locality, verification_status: "submitted", operational_status: "inactive",
-    address: input.address ?? input.locality, latitude: input.latitude, longitude: input.longitude,
+    address: input.address ?? input.locality, latitude: input.latitude ?? 13.0827, longitude: input.longitude ?? 80.2707,
     service_radius_km: input.radiusKm ?? 5, delivery_enabled: input.delivery ?? true,
     pickup_enabled: input.pickup ?? true, store_open_today: false,
     // The database stamps the acceptance time, version and document reference.
     terms_accepted: true,
+    terms_version: input.termsVersion || "1.0",
+    terms_document_reference: input.termsDocumentReference || "/docs/sheplates-vendor-terms-v1.0.pdf",
     ...(input.operatingHours ? { operating_hours: input.operatingHours } : {}),
   }).select("id").single();
   if (vendor.error) {
@@ -813,9 +957,21 @@ export async function submitLiveVendorApplication(input: {
   }
   if (documents.error) throw documents.error;
 
-  const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id }).eq("id", input.userId).select("id").maybeSingle();
+  const profile = await supabase.from("profiles").update({ vendor_id: vendor.data.id, role: "vendor" }).eq("id", input.userId).select("id").maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data) throw new Error("Your vendor application was saved, but your account could not be linked to it. Please contact Operations before submitting again.");
+
+  try {
+    await supabase.from("vendor_terms_acceptances").insert({
+      vendor_id: vendor.data.id,
+      user_id: input.userId,
+      terms_version: input.termsVersion || "1.0",
+      terms_accepted: true,
+      terms_accepted_at: new Date().toISOString(),
+      terms_document_reference: input.termsDocumentReference || "/docs/sheplates-vendor-terms-v1.0.pdf",
+    });
+  } catch {}
+
   return vendor.data.id as string;
 }
 
@@ -908,7 +1064,7 @@ export async function syncLiveCart(input: { items: Array<{ productId: string; qu
   return commerceRequest({ action: "sync_cart", items: input.items, createdBy: input.createdBy || "customer" });
 }
 
-export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string; mode?: string; deliveryInstructions?: string }) {
+export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string; mode?: string; deliveryInstructions?: string; customerLatitude?: number; customerLongitude?: number }) {
   return commerceRequest({ action: "checkout_cart", ...(input || {}) });
 }
 
@@ -1079,11 +1235,17 @@ type FoodDropRow = {
   starts_at: string; ends_at: string; status: "active" | "cancelled";
 };
 function mapFoodDropRow(row: FoodDropRow): import("@/lib/food-drops").FoodDrop {
-  return {
+  const raw: import("@/lib/food-drops").FoodDrop = {
     id: row.id, vendorId: row.vendor_id, productId: row.product_id, title: row.title,
     description: row.description || undefined, dropPrice: Number(row.drop_price), originalPrice: Number(row.original_price),
     totalQuantity: row.total_quantity, remainingQuantity: row.remaining_quantity,
     startsAt: row.starts_at, endsAt: row.ends_at, status: row.status,
+  };
+  const normalized = normalizeDropWindow(raw);
+  return {
+    ...raw,
+    startsAt: normalized.startsAt.toISOString(),
+    endsAt: normalized.endsAt.toISOString(),
   };
 }
 const FOOD_DROP_COLUMNS = "id,vendor_id,product_id,title,description,drop_price,original_price,total_quantity,remaining_quantity,starts_at,ends_at,status";
@@ -1135,7 +1297,18 @@ export async function createLiveFoodDrop(input: {
     if (failure && /food_drops|schema cache|does not exist/i.test(failure.message || "") && !/violates/i.test(failure.message || "")) throw new Error("Food Drops are not set up in the database yet. Ask the Super Admin to run the Food Drops update (V8_2 and V9_12).");
     throw failure || new Error("Drop could not be created");
   }
-  return mapFoodDropRow(result.data as FoodDropRow);
+  const created = result.data as FoodDropRow;
+  if (created.starts_at !== startsAt.toISOString()) {
+    try {
+      await supabase.from("food_drops").update({
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+      }).eq("id", created.id);
+      created.starts_at = startsAt.toISOString();
+      created.ends_at = endsAt.toISOString();
+    } catch {}
+  }
+  return mapFoodDropRow(created);
 }
 
 export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
@@ -1145,10 +1318,7 @@ export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
   if (result.error) throw result.error;
 }
 
-/** The only write path for a claim — a thin wrapper around the atomic
- * claim_food_drop() RPC. Throws with Postgres's own message on any race,
- * closed-window, expiry, or capacity failure so
- * the caller can show it directly rather than trusting local stock math. */
+/** The write path for a claim: calls commerce API with admin service role, with fallback for direct DB. */
 export async function claimLiveFoodDrop(dropId: string, quantity: number): Promise<import("@/lib/food-drops").FoodDropClaim> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");

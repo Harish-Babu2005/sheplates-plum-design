@@ -21,7 +21,7 @@ export async function loginAsCustomer(page: Page) {
   await page.getByLabel("Email").fill(DEMO.customer.email);
   await page.locator('input[type="password"]').fill(DEMO.customer.password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
+  await page.waitForSelector('text=Loading your Sheplates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
 }
 
 export async function loginAsStaff(page: Page, who: "vendor" | "operations" | "admin") {
@@ -33,7 +33,7 @@ export async function loginAsStaff(page: Page, who: "vendor" | "operations" | "a
   await page.getByLabel("Email").fill(DEMO[who].email);
   await page.locator('input[type="password"]').fill(DEMO[who].password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
+  await page.waitForSelector('text=Loading your Sheplates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
 }
 
 /** Signs out via the in-app button (does NOT clear localStorage) and signs
@@ -81,7 +81,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   await emailField.fill(DEMO[who].email);
   await page.locator('input[type="password"]').fill(DEMO[who].password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
+  await page.waitForSelector('text=Loading your Sheplates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
   // Confirm the session is fully established and rendered before reloading —
   // reloading too early can race the Supabase auth write and sign back out.
   if (who === "customer") {
@@ -95,7 +95,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   // local mock-state blob both live in storage that survives it) and matches
   // what a real user gets after any browser refresh.
   await page.reload();
-  await page.waitForSelector('text=Loading your ShePlates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
+  await page.waitForSelector('text=Loading your Sheplates profile', { state: "hidden", timeout: 15_000 }).catch(() => { });
 }
 
 /** Opens the staff sidebar drawer if it's currently a closed hamburger menu

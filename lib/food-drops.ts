@@ -33,8 +33,9 @@ export type FoodDropClaim = {
 export type DropDisplayStatus = "scheduled" | "live" | "sold_out" | "ended" | "cancelled";
 
 const FOOD_DROP_TIME_ZONE_OFFSET_MS = 330 * 60_000;
-const FOOD_DROP_OPEN_HOUR = 20;
-const FOOD_DROP_WINDOW_MS = 4 * 60 * 60_000;
+const FOOD_DROP_OPEN_HOUR = 12;
+const FOOD_DROP_CLOSE_HOUR = 18;
+const FOOD_DROP_WINDOW_MS = 6 * 60 * 60_000;
 
 function istClock(now: Date) {
   return new Date(now.getTime() + FOOD_DROP_TIME_ZONE_OFFSET_MS);
@@ -46,7 +47,8 @@ function istOpeningFor(now: Date) {
 }
 
 export function isFoodDropPurchaseWindow(now: Date = new Date()): boolean {
-  return istClock(now).getUTCHours() >= FOOD_DROP_OPEN_HOUR;
+  const hour = istClock(now).getUTCHours();
+  return hour >= FOOD_DROP_OPEN_HOUR && hour < FOOD_DROP_CLOSE_HOUR;
 }
 
 export function nextFoodDropWindow(now: Date = new Date()): { startsAt: Date; endsAt: Date } {
@@ -56,17 +58,30 @@ export function nextFoodDropWindow(now: Date = new Date()): { startsAt: Date; en
   return { startsAt, endsAt };
 }
 
-/** A drop is claimable only on the evening it was created: from 8 PM until midnight IST. */
+/** A drop is claimable from 12 PM until 6 PM IST. Legacy DB records with 8 PM trigger are normalized. */
+export function normalizeDropWindow(drop: FoodDrop): { startsAt: Date; endsAt: Date } {
+  const start = new Date(drop.startsAt);
+  const end = new Date(drop.endsAt);
+  const istStart = istClock(start);
+  if (istStart.getUTCHours() >= 18) {
+    const correctedStart = new Date(Date.UTC(istStart.getUTCFullYear(), istStart.getUTCMonth(), istStart.getUTCDate(), FOOD_DROP_OPEN_HOUR) - FOOD_DROP_TIME_ZONE_OFFSET_MS);
+    const correctedEnd = new Date(correctedStart.getTime() + FOOD_DROP_WINDOW_MS);
+    return { startsAt: correctedStart, endsAt: correctedEnd };
+  }
+  return { startsAt: start, endsAt: end };
+}
+
 export function foodDropSchedule(drop: FoodDrop): { startsAt: Date; endsAt: Date } {
-  return { startsAt: new Date(drop.startsAt), endsAt: new Date(drop.endsAt) };
+  return normalizeDropWindow(drop);
 }
 
 export function dropDisplayStatus(drop: FoodDrop, now: Date = new Date()): DropDisplayStatus {
   if (drop.status === "cancelled") return "cancelled";
-  const t = now.getTime();
-  if (t < new Date(drop.startsAt).getTime()) return "scheduled";
-  if (t >= new Date(drop.endsAt).getTime()) return "ended";
   if (drop.remainingQuantity <= 0) return "sold_out";
+  const { startsAt, endsAt } = normalizeDropWindow(drop);
+  const t = now.getTime();
+  if (t < startsAt.getTime()) return "scheduled";
+  if (t >= endsAt.getTime()) return "ended";
   return "live";
 }
 

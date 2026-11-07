@@ -35,7 +35,7 @@ async function contrast(page: Page, locator: ReturnType<Page["locator"]>) {
 
 test("landing page secondary buttons are readable", async ({ page }) => {
   await openAs(page, null);
-  for (const name of ["Sign in", "I already have an account", "Try She Agent"]) {
+  for (const name of ["Sign in", "Explore Marketplace", "Try She Agent"]) {
     const button = page.getByRole("button", { name }).first();
     await expect(button).toBeVisible();
     expect(await contrast(page, button), `${name} contrast`).toBeGreaterThan(4.5);
@@ -98,7 +98,7 @@ test("Operations cannot approve a vendor that has not accepted the Vendor Terms"
   await expect(page.getByRole("button", { name: "Ask for changes" })).toBeEnabled();
 });
 
-test("a vendor who has not accepted the terms sees the card on Verification and can accept", async ({ page }) => {
+test("a vendor who has not accepted the terms sees the card on Verification and can sign online", async ({ page }) => {
   const state = buildDemoState();
   state.vendors = state.vendors.map((v) => v.ownerEmail === VENDOR.email ? { ...v, termsAccepted: false } : v);
   await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); }, [state, VENDOR] as const);
@@ -109,9 +109,25 @@ test("a vendor who has not accepted the terms sees the card on Verification and 
   await page.locator("aside.k-side nav").getByRole("button", { name: /^Verification\s*\d*$/ }).click();
   const card = page.getByRole("region", { name: "Vendor Terms and Conditions" });
   await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Accept terms" }).click();
-  await expect(page.getByText("Tick the box to accept").first()).toBeVisible();
-  await card.getByRole("checkbox").check();
-  await card.getByRole("button", { name: "Accept terms" }).click();
+  await card.getByRole("button", { name: "Review and sign" }).click();
+  const dialog = page.getByRole("dialog", { name: "Sign your agreements" });
+  await expect(dialog).toBeVisible();
+  // Nothing can be sent until both documents are opened, a name is typed and a signature is drawn.
+  await expect(dialog.getByRole("button", { name: "Email me a code" })).toBeDisabled();
+  for (let i = 0; i < 2; i++) await dialog.getByRole("button", { name: "Read here" }).first().click(); // each opened document turns its button into "Hide"
+  await dialog.getByLabel("Full name").fill("Meena Devi");
+  const pad = dialog.getByTestId("signature-pad");
+  await pad.scrollIntoViewIfNeeded();
+  const box = (await pad.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + 40); await page.mouse.down();
+  for (let i = 0; i < 20; i++) await page.mouse.move(box.x + 20 + i * 8, box.y + 40 + (i % 5) * 12);
+  await page.mouse.up();
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Email me a code" }).click();
+  await dialog.getByTestId("signing-code").fill("000000");
+  await dialog.getByRole("button", { name: "Sign both documents" }).click();
+  await expect(dialog).toBeVisible(); // a wrong code does not sign
+  await dialog.getByTestId("signing-code").fill("123456");
+  await dialog.getByRole("button", { name: "Sign both documents" }).click();
   await expect(card).toHaveCount(0);
 });

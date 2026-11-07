@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npx vite --port 5174",
-    env: { NEXT_PUBLIC_DEMO_MODE: "true" },
+    env: { NEXT_PUBLIC_DEMO_MODE: "true", NEXT_PUBLIC_BRAND_SPLASH: "off" },
     url: "http://localhost:5174",
     reuseExistingServer: true,
     timeout: 60_000,

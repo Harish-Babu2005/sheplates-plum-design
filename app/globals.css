@@ -266,7 +266,7 @@ html { color-scheme: light; }
 
 
 /* ========================================================================== */
-/* ShePlates v6 — ultra-modern, mobile-first interaction system               */
+/* Sheplates v6 — ultra-modern, mobile-first interaction system               */
 /* ========================================================================== */
 :root {
   --sp-ink: #1b1517;
@@ -729,7 +729,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 /* ========================================================================== */
-/* ShePlates v7 — modern hyperlocal commerce visual system                    */
+/* Sheplates v7 — modern hyperlocal commerce visual system                    */
 /* Visual-only release: no commerce, auth, agent, data, payment or RLS logic. */
 /* ========================================================================== */
 :root {
@@ -1262,7 +1262,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 /* ========================================================================== */
-/* ShePlates v7.1 — adaptive Apple-like glass layer                           */
+/* Sheplates v7.1 — adaptive Apple-like glass layer                           */
 /* Visual-only: preserves every existing route, role, action and data flow.   */
 /* ========================================================================== */
 :root {
@@ -1277,7 +1277,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   --sp71-blur: 28px;
 }
 
-/* Keep the original ShePlates logo untouched; glass is applied around it only. */
+/* Keep the original Sheplates logo untouched; glass is applied around it only. */
 .sp-v7 .sp-app-header,
 .sp-entry .sp-entry-header {
   background: rgba(250,250,249,.67) !important;
@@ -1596,7 +1596,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 /* ========================================================================== */
-/* ShePlates v7.2 — TRUE DESIGN MATCH                                         */
+/* Sheplates v7.2 — TRUE DESIGN MATCH                                         */
 /* Structural visual pass mapped to the approved concept. Logic is untouched. */
 /* ========================================================================== */
 :root {
@@ -2004,6 +2004,44 @@ body {
 /* ========================================================================== */
 /* Interactive nearby-vendors map (Leaflet)                                   */
 /* ========================================================================== */
+.leaflet-container,
+.maplibregl-map,
+.sp-vendor-map,
+[data-map-engine],
+.sp-map-preview {
+  isolation: isolate !important;
+  position: relative !important;
+  z-index: 0 !important;
+}
+
+/* Constrain Leaflet's internal high z-indexes so controls and panes never escape into dialogs */
+.leaflet-pane {
+  z-index: 1 !important;
+}
+.leaflet-tile-pane {
+  z-index: 1 !important;
+}
+.leaflet-overlay-pane {
+  z-index: 2 !important;
+}
+.leaflet-shadow-pane {
+  z-index: 3 !important;
+}
+.leaflet-marker-pane {
+  z-index: 4 !important;
+}
+.leaflet-tooltip-pane {
+  z-index: 5 !important;
+}
+.leaflet-popup-pane {
+  z-index: 6 !important;
+}
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 10 !important;
+}
+
 .sp-vendor-map { box-shadow: 0 20px 60px rgba(35, 28, 30,.10); animation: sp-map-in .38s cubic-bezier(.2,.8,.2,1) both; }
 .sp-vendor-map .leaflet-container { font-family: inherit; background: #eef2ec; }
 .sp-vendor-map .leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 18px 50px rgba(32, 40, 39,.18); animation: sp-map-popup-in .18s ease-out both; }
@@ -2052,4 +2090,37 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .sp-map-you-pulse, .sp-map-vendor-ring, .sp-vendor-map, .sp-map-vendor, .sp-vendor-map .leaflet-popup-content-wrapper { animation: none; }
+}
+
+
+/* ---- Sheplates wordmark and opening animation ---- */
+.sp-wordmark, .sp-splash-mark {
+  display: inline-block;
+  flex: none;
+  -webkit-mask: url("/brand/sheplates-wordmark-mask.png") center / contain no-repeat;
+  mask: url("/brand/sheplates-wordmark-mask.png") center / contain no-repeat;
+}
+.sp-splash {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: grid; place-items: center;
+  background: #155F65;
+  animation: sp-splash-out .45s ease 2.1s both;
+}
+.sp-splash-mark {
+  width: min(70vw, 420px); aspect-ratio: 3.3043 / 1; background-color: #F15B5A;
+  animation: sp-splash-colours 2.05s linear both, sp-splash-pop .6s cubic-bezier(.2,.9,.3,1.2) both;
+}
+@keyframes sp-splash-colours {
+  0%, 14%   { background-color: #FFF4E6; }
+  15%, 29%  { background-color: #F4B942; }
+  30%, 44%  { background-color: #F15B5A; }
+  45%, 59%  { background-color: #8AC43F; }
+  60%, 74%  { background-color: #A78BFA; }
+  75%, 100% { background-color: #F15B5A; }
+}
+@keyframes sp-splash-pop { 0% { transform: scale(.88); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes sp-splash-out { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-splash { animation: sp-splash-out .3s ease .9s both; }
+  .sp-splash-mark { animation: none; background-color: #F15B5A; }
 }

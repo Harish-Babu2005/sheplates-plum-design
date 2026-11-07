@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">ShePlates</string>
-    <string name="title_activity_main">ShePlates</string>
+    <string name="app_name">Sheplates</string>
+    <string name="title_activity_main">Sheplates</string>
     <string name="package_name">com.sheplates.app</string>
     <string name="custom_url_scheme">com.sheplates.app</string>
 </resources>

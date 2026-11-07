@@ -2,6 +2,7 @@
 // Navigation chrome for the customer portal, built from the approved boards (W07 website, C07 phone):
 // a top bar (logo, delivery area, search, She Agent, wishlist, alerts, cart, account), a menu row on
 // desktop/tablet, a floating bottom pill on phones, and a footer with the legal and support details.
+import { Wordmark } from "@/components/brand";
 import { Heart, Bell, ShoppingBag, MapPin, ChevronDown, Search, Sparkles, SlidersHorizontal, Home, Zap, Play, ReceiptText, UserRound, CalendarDays, ClipboardCheck, ListChecks, TicketCheck, HelpCircle, LogOut, Package, HeartPulse, MapPinned, Storefront } from "@/components/icons";
 import type { ComponentType, ReactNode } from "react";
 
@@ -53,7 +54,7 @@ export function CustomerHeader({ active, name, email, area, unread, cartCount, a
   const initials = name.slice(0, 2).toUpperCase();
   return <header className="sh k-head">
     <div className="k-top">
-      <button type="button" className="k-logo" onClick={() => onNavigate("Marketplace")} aria-label="ShePlates home"><img src="/sheplates-logo.png" alt="" />ShePlates</button>
+      <button type="button" className="k-logo" onClick={() => onNavigate("Marketplace")} aria-label="Sheplates home"><Wordmark height={32} /></button>
       <button type="button" data-tour="location-mobile" onClick={onLocation} className="k-loc" aria-label={`Delivery area: ${area}`}><MapPin className="size-5 shrink-0" /><span className="k-loc-t">{area}</span><ChevronDown className="size-4 shrink-0" /></button>
       <button type="button" className="k-search" onClick={() => onNavigate("Search")} aria-label="Search the marketplace"><Search className="size-5 shrink-0" /><span className="grow">Search milk, meals, bakes, kitchens</span><SlidersHorizontal className="size-5 shrink-0" /></button>
       <div className="k-actions">
@@ -94,7 +95,7 @@ export function CustomerBottomNav({ active, onNavigate, onAgent }: { active: str
 
 export function CustomerFooter(): ReactNode {
   return <footer className="sh k-foot">
-    <div className="row g8"><img src="/sheplates-logo.png" alt="" style={{ width: 40, height: 40, borderRadius: "50%" }} /><div><b>ShePlates</b><div className="s" style={{ color: "#D9F5E7" }}>Home meals, made simple</div></div></div>
+    <div className="row g8"><div><Wordmark height={34} /><div className="s" style={{ color: "#D9F5E7", marginTop: 4 }}>Home meals, made simple</div></div></div>
     <div className="fl">
       <span>Terms and Conditions</span>
       <span>Privacy Policy</span>
