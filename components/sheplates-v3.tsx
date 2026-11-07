@@ -30,6 +30,8 @@ import { fetchWithDeadline } from "@/lib/fetch-deadline";
 import { ComplianceStep, ComplianceDocumentList, TermsViewerDialog } from "@/components/vendor-compliance";
 import { CommercialTermsPanel } from "@/components/vendor-commercial";
 import { AgreementSigningDialog } from "@/components/vendor-signing";
+import { WeeklyMenuManager, type PlanPreset } from "@/components/weekly-menu";
+import type { MenuCell } from "@/lib/weekly-menu";
 import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
 import { CATALOGUE_TEMPLATE_CSV, MAX_IMPORT_ROWS, matchCategory, readCatalogueText, rowProblems, type CatalogueDraftRow } from "@/lib/catalogue-import";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -56,7 +58,7 @@ import {
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
-  loadLiveFoodDrops, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
+  loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
  subscribeLiveNotifications,} from "@/lib/supabase";
 import {
@@ -259,6 +261,8 @@ export type V3State = {
   tasteProfiles: TasteProfileRow[]; productAttributes: Record<string, TasteWeights>;
   foodDrops: FoodDrop[]; foodDropClaims: FoodDropClaim[];
   deliverySlots?: VendorDeliverySlot[];
+  /** Home-food weekly menu: dishes per weekday, meal and diet. The plan price lives on the plan product. */
+  weeklyMenus?: MenuCell[];
 };
 
 const EMPTY_STATE: V3State = {
@@ -446,7 +450,7 @@ const navIcons: Record<string, typeof Store> = {
   "Stories monitor": Play,
   Marketplace: ShoppingBag, Cart: ShoppingCart, Wishlist: Heart, "My schedule": CalendarDays, "Monthly requirement": ListChecks, "My quotations": ClipboardCheck,
   Orders: Package, "Profile & food": HeartPulse, Dashboard: LayoutDashboard, "Vendor workspace": LayoutDashboard, "Store & radius": MapPin, "People followers": Users,
-  Verification: BadgeCheck, Catalog: ShoppingBag, "Online shop & POS": Building2, "Food Drops": Zap, "Food Shorts": Clapperboard, "Quote opportunities": ClipboardCheck, "Delivery team": Truck,
+  "Weekly menu": CalendarDays, Verification: BadgeCheck, Catalog: ShoppingBag, "Online shop & POS": Building2, "Food Drops": Zap, "Food Shorts": Clapperboard, "Quote opportunities": ClipboardCheck, "Delivery team": Truck,
   "Command centre": LayoutDashboard, "Vendor onboarding": UserPlus, "Vendor verification": FileCheck2,
   "P0 Connect vendors": MapPinned,
   "Item pricing": Percent, "RFQ desk": ClipboardCheck, Cancellations: RefreshCcw, "Executive view": LayoutDashboard,
@@ -886,6 +890,7 @@ export function SheplatesV3() {
   const [vendorProfileId, setVendorProfileId] = useState<string | null>(null);
   const [locationSignal, setLocationSignal] = useState(0);
   const [planProduct, setPlanProduct] = useState<Product | null>(null);
+  const [planPreset, setPlanPreset] = useState<PlanPreset | undefined>(undefined);
   const social = useSocial({ email: session?.role === "customer" ? session.email : "", name: session?.name ?? "", userId: session?.userId }, state.vendors, state.products);
   // Food Shorts: vendors post, customers see them by distance (the rule lives in lib/food-shorts-rules.ts and the database)
   const shortsVendor = session?.role === "vendor" ? state.vendors.find((v) => v.ownerEmail === session.email) : undefined;
@@ -901,6 +906,10 @@ export function SheplatesV3() {
   const [shortsRadius, setShortsRadiusState] = useState(() => { try { const n = Number(localStorage.getItem("sheplates-shorts-radius")); return n >= 1 && n <= 30 ? n : 5; } catch { return 5; } });
   const setShortsRadius = (km: number) => { setShortsRadiusState(km); try { localStorage.setItem("sheplates-shorts-radius", String(km)); } catch { /* ignore */ } };
   const openShorts = (list: FoodShort[], index: number) => { if (list.length) shortsViewer.open(list, index); };
+  useEffect(() => {
+    if (!isLiveSupabaseMode() || !session) return;
+    void loadLiveWeeklyMenus().then((menus) => { if (menus) setState((current) => ({ ...current, weeklyMenus: menus })); }).catch(() => undefined);
+  }, [session?.userId, session?.email]); // eslint-disable-line react-hooks/exhaustive-deps
   function refreshDrops() {
     return loadLiveFoodDrops().then((remote) => { if (remote) setState((current) => ({ ...current, foodDrops: remote })); }).catch(() => undefined);
   }
@@ -1301,8 +1310,8 @@ export function SheplatesV3() {
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
       {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
-      <ScheduleDialog product={planProduct} close={() => setPlanProduct(null)} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
-    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
+      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
+    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={role === "vendor" && vendor?.category === "Home food" ? nav.vendor.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]) : nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
       onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); else setActive("Vendor profile"); }}
       vendor={vendor}
       banner={<>
@@ -1310,7 +1319,7 @@ export function SheplatesV3() {
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
 
-    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product) => setPlanProduct(product)} onToggleWishlist={(product) => setState((current) => {
+    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
       const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
       return {
         ...current,
@@ -1988,7 +1997,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
 <Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" /></div></div></DialogContent></Dialog>  </div>;
 }
 
-function ScheduleDialog({ product, close, session, state, setState, initialStartDate, onCreated }: { product: Product | null; close: () => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; initialStartDate?: string; onCreated?: () => void }) {
+function ScheduleDialog({ product, preset, close, session, state, setState, initialStartDate, onCreated }: { product: Product | null; preset?: PlanPreset; close: () => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; initialStartDate?: string; onCreated?: () => void }) {
   const [startDate, setStartDate] = useState(tomorrow());
   const [endDate, setEndDate] = useState("");
   const [recurrence, setRecurrence] = useState<Schedule["recurrence"]>("Once");
@@ -2001,7 +2010,7 @@ function ScheduleDialog({ product, close, session, state, setState, initialStart
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const supportsVendorDelivery = product ? state.vendors.find((item) => item.id === product.vendorId)?.delivery === true : false;
   const supportsPickup = product ? state.vendors.find((item) => item.id === product.vendorId)?.pickup === true : false;
-  useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence("Once"); setDays([]); setStartDate(initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
+  useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence(preset?.recurrence ?? "Once"); setDays(preset ? [...preset.weekdays] : []); setStartDate(preset?.startDate && preset.startDate >= tomorrow() ? preset.startDate : initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, preset, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
   const scheduledProduct = product;
   const vendor = state.vendors.find((v) => v.id === scheduledProduct.vendorId)!;
   const activeProductVendorSlots = (state.deliverySlots || []).filter((s) => String(s.vendorId).toLowerCase() === String(scheduledProduct.vendorId).toLowerCase() && s.isActive);
@@ -3268,6 +3277,7 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
+  if (active === "Weekly menu") return <WeeklyMenuManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
   if (active === "Quote opportunities") return isLiveSupabaseMode() ? <LiveVendorRfqs vendor={vendor} /> : <VendorQuotes vendor={vendor} state={state} setState={setState} session={session} />;

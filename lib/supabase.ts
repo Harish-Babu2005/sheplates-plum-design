@@ -1336,3 +1336,34 @@ export async function loadLiveFoodDropClaims(dropIds: string[]): Promise<import(
   if (result.error || !result.data) return [];
   return result.data.map((row) => ({ id: row.id as string, dropId: row.drop_id as string, customerEmail: "", quantity: row.quantity as number, unitPrice: Number(row.unit_price), totalPrice: Number(row.total_price), claimedAt: row.claimed_at as string }));
 }
+
+// ---- Home-food weekly menu (V9_25). Tolerant: when the table is not there yet, the menu simply stays empty. ----
+type MenuRow = { id: string; vendor_id: string; weekday: string; meal: string; diet: string; dishes: string[] | null; is_open: boolean | null };
+const mapMenuRow = (r: MenuRow): import("@/lib/weekly-menu").MenuCell => ({ id: r.id, vendorId: r.vendor_id, weekday: r.weekday as import("@/lib/weekly-menu").Weekday, meal: r.meal as import("@/lib/weekly-menu").Meal, diet: r.diet as import("@/lib/weekly-menu").Diet, dishes: r.dishes || [], open: r.is_open !== false });
+export async function loadLiveWeeklyMenus(vendorId?: string): Promise<import("@/lib/weekly-menu").MenuCell[] | null> {
+  if (!isLiveSupabaseMode()) return null;
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  let query = supabase.from("home_menu_days").select("id,vendor_id,weekday,meal,diet,dishes,is_open");
+  if (vendorId) query = query.eq("vendor_id", vendorId);
+  const result = await query.limit(5000);
+  if (result.error || !result.data) return null;
+  return (result.data as MenuRow[]).map(mapMenuRow);
+}
+export async function saveLiveWeeklyMenuCells(cells: import("@/lib/weekly-menu").MenuCell[]): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  if (!cells.length) return;
+  const rows = cells.map((c) => ({ vendor_id: c.vendorId, weekday: c.weekday, meal: c.meal, diet: c.diet, dishes: c.dishes, is_open: c.open, updated_at: new Date().toISOString() }));
+  const result = await supabase.from("home_menu_days").upsert(rows, { onConflict: "vendor_id,weekday,meal,diet" });
+  if (result.error) throw new Error(/home_menu_days/i.test(result.error.message) ? "The weekly menu is not set up yet. Ask Operations to run the V9_25 database update." : result.error.message);
+}
+
+/** Changes a plan product's flat day price (and whether it is on sale). */
+export async function updateLivePlanProduct(productId: string, patch: { price: number; active: boolean }) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendor_menu_items").update({ vendor_base_price: patch.price, active: patch.active, updated_at: new Date().toISOString() }).eq("id", productId).select("id").maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error("That plan could not be found.");
+}
