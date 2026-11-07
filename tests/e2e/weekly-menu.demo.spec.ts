@@ -79,7 +79,12 @@ test("a customer sees the week, and one day, a weekday, or the whole week open t
   const frequency = schedule.getByText("Frequency", { exact: true }).locator("..");
   await expect(schedule.locator('input[type="date"]').first()).toHaveValue(wednesday);
   await expect(frequency).toContainText("Once");
-  await expect(schedule.getByText("Total to activate schedule", { exact: true }).locator("..")).toContainText("₹150"); // Wednesday costs its own price
+  // Wednesday costs its own price, and the bill adds that delivery's GST and delivery fee on top
+  await expect(schedule.getByText("Product price per delivery", { exact: true }).locator("..")).toContainText("₹150");
+  await expect(schedule.getByText(/^GST/).first()).toBeVisible();
+  await expect(schedule.getByText(/^Delivery fee per delivery/).first()).toBeVisible();
+  const allIncluded = await schedule.getByText("Per delivery, all included", { exact: true }).locator("..").innerText();
+  expect(Number(allIncluded.replace(/[^\d.]/g, "").replace(/^\D*/, "")) ).toBeGreaterThan(150);
   await schedule.getByRole("button", { name: "Close" }).click();
 
   // The same weekday every week.

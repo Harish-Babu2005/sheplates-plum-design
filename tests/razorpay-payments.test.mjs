@@ -21,14 +21,18 @@ test("Razorpay API route creates secure orders using trusted database prices", a
   // Validates ownership of the order
   assert.match(route, /\.from\("orders"\)[\s\S]*?\.eq\("customer_id", profile\.id\)/);
 
-  // Trusted price recalculation using vendor_menu_items and vendor_item_markups
+  // Trusted price recalculation: the schedule total is rebuilt on the server from vendor_menu_items and vendor_item_markups,
+  // delivery by delivery, as product price + GST + delivery fee (lib/schedule-billing.ts), never from what the browser sent.
+  const billing = await readFile(path.join(root, "lib/schedule-billing.ts"), "utf8");
   assert.match(route, /vendor_menu_items/);
-  assert.match(route, /vendor_item_markups/);
-  assert.match(route, /Math\.round\(basePrice \* \(1 \+ markupPercent \/ 100\) \* 100\) \/ 100/);
+  assert.match(route, /priceExistingSchedule\(admin, String\(order\.schedule_id\), dates\)/);
+  assert.match(route, /totalPayableRupees = priced\.total/);
+  assert.match(billing, /vendor_item_markups/);
+  assert.match(billing, /calculateBillingSummary\(/);
+  assert.match(billing, /total: money2\(deliveries\.reduce\(\(sum, d\) => sum \+ d\.billing\.totalAmount, 0\)\)/);
 
   // Multi-delivery occurrences recalculation
   assert.match(route, /scheduleDates\(schedule/);
-  assert.match(route, /Math\.round\(perDeliveryTotal \* occurrences \* 100\) \/ 100/);
 
   // Amount in integer paise
   assert.match(route, /const totalPaise = Math\.round\(totalPayableRupees \* 100\)/);

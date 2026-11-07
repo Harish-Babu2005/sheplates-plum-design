@@ -35,28 +35,4 @@ export async function loadPlanContext(admin: SupabaseClient, vendorId: string, p
   return { ...parsed, cells, fallbackBase };
 }
 
-export type SchedulePricing = { name: string; markupPercent: number; quantity: number; days: (PricedDay & { baseTotal: number; customerTotal: number })[]; skipped: string[]; total: number };
-
-/** Prices the given delivery dates of a plan product. Returns null when the product is not a plan with a weekly menu. */
-export async function planPricing(admin: SupabaseClient, input: { menuItemId: string; vendorId: string; name: string; basePrice: number; quantity: number; dates: string[] }): Promise<SchedulePricing | null> {
-  const ctx = await loadPlanContext(admin, input.vendorId, input.name, input.basePrice);
-  if (!ctx) return null;
-  const markup = await admin.from("vendor_item_markups").select("markup_percent").eq("menu_item_id", input.menuItemId).maybeSingle();
-  const markupPercent = Math.max(0, Number((markup.data as { markup_percent?: number } | null)?.markup_percent || 0));
-  const { days, skipped } = priceDeliveries(input.dates, ctx, input.name, markupPercent);
-  const quantity = Math.max(0.001, input.quantity);
-  const lines = days.map((d) => ({ ...d, baseTotal: Math.round(d.baseUnit * quantity * 100) / 100, customerTotal: Math.round(d.customerUnit * quantity * 100) / 100 }));
-  return { name: input.name, markupPercent, quantity, days: lines, skipped, total: Math.round(lines.reduce((sum, d) => sum + d.customerTotal, 0) * 100) / 100 };
-}
-
-/** Same, for a schedule that already exists. */
-export async function planPricingForSchedule(admin: SupabaseClient, scheduleId: string, dates: string[]): Promise<SchedulePricing | null> {
-  const schedule = await admin.from("product_schedules").select("menu_item_id,quantity").eq("id", scheduleId).maybeSingle();
-  const s = schedule.data as { menu_item_id?: string; quantity?: number } | null;
-  if (!s?.menu_item_id) return null;
-  const item = await admin.from("vendor_menu_items").select("id,vendor_id,name,vendor_base_price").eq("id", s.menu_item_id).maybeSingle();
-  const m = item.data as { id: string; vendor_id: string; name: string; vendor_base_price: number } | null;
-  if (!m) return null;
-  return planPricing(admin, { menuItemId: m.id, vendorId: m.vendor_id, name: m.name, basePrice: Number(m.vendor_base_price), quantity: Number(s.quantity || 1), dates });
-}
 export const MEAL_NAMES = MEAL_LABEL;

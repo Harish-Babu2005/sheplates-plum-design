@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizeGstMode, type GstMode } from "@/lib/billing";
+import { normalizeGstMode, type GstMode } from "./billing.ts";
 
 /** Server-only: the vendor facts the bill depends on, read with the service role. Tolerates a database that does not have the V9_22 columns yet. */
 export type VendorBillingTerms = {

@@ -1,7 +1,10 @@
 name: Deploy to Hostinger VPS
 
-# staging  : every push to the "staging" branch deploys to staging automatically.
-# production: every push to "main" deploys to production, but only after someone approves it
+# NOT ACTIVE YET: the live site is on Render. This workflow only runs when started by hand (Actions > Deploy to Hostinger VPS >
+# Run workflow), so it cannot fail or deploy by accident. When Hostinger is ready, add back the push triggers shown below.
+#   on: { push: { branches: [main, staging] }, workflow_dispatch: ... }
+# staging   : the "staging" branch deploys to staging.
+# production: "main" deploys to production, but only after someone approves it
 #             (GitHub > Settings > Environments > production > Required reviewers).
 # Each environment has its OWN secrets and variables, so staging can never touch production data or payments.
 # Per environment, set these (Settings > Environments):
@@ -10,8 +13,6 @@ name: Deploy to Hostinger VPS
 #             NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_APP_URL
 #   (server-only keys such as SUPABASE_SERVICE_ROLE_KEY, RAZORPAY_*, AWS_* live in the .env file ON the server, never in GitHub.)
 on:
-  push:
-    branches: [main, staging]
   workflow_dispatch:
     inputs:
       rollback_to:
@@ -32,6 +33,9 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npm run build   # two tests read the built app in dist/
+        env:
+          NEXT_PUBLIC_DEMO_MODE: "false"
       - run: node --test tests/*.test.mjs
 
   deploy:

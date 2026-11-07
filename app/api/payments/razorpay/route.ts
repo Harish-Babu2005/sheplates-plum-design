@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { planPricingForSchedule } from "@/lib/menu-pricing";
+import { insertOrderWithBilling, priceExistingSchedule, updateOrderWithBilling } from "@/lib/schedule-billing";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 import { calculateBillingSummary } from "@/lib/billing";
@@ -245,39 +245,19 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "This menu item is no longer available." }, { status: 409 });
         }
 
-        // Fetch operations markup from vendor_item_markups
-        const { data: markupData } = await admin
-          .from("vendor_item_markups")
-          .select("markup_percent")
-          .eq("menu_item_id", menuItem.id)
-          .maybeSingle();
-
-        const basePrice = Math.max(0, Number(menuItem.vendor_base_price || 0));
-        const markupPercent = Math.max(0, Number(markupData?.markup_percent || 0));
-        const customerUnitPrice = Math.round(basePrice * (1 + markupPercent / 100) * 100) / 100;
-        const quantity = Math.max(0.001, Number(schedule.quantity || 1));
-        const perDeliveryTotal = Math.round(customerUnitPrice * quantity * 100) / 100;
-
+        // Markup, GST and the delivery fee are applied by priceExistingSchedule below (lib/schedule-billing.ts).
         const dates = scheduleDates(schedule as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null });
         const occurrences = Math.max(1, dates.length);
 
-        // A home-food plan has its own price on every day, so the total is the sum over the days the chef is cooking.
-        const planned = await planPricingForSchedule(admin, String(order.schedule_id), dates);
-        const own = planned?.days.find((d) => d.date === String(order.scheduled_date));
-        if (planned && !own) return NextResponse.json({ error: `The kitchen changed its weekly menu and is no longer cooking on ${order.scheduled_date}. Please book again.` }, { status: 409 });
+        // Every delivery is billed like a cart order (product price, GST, delivery fee); a home-food plan has its own price per day.
+        // The subscription total is the sum of its deliveries, recalculated here so the browser can never change what is charged.
+        const priced = await priceExistingSchedule(admin, String(order.schedule_id), dates);
+        const own = priced?.deliveries.find((d) => d.date === String(order.scheduled_date));
+        if (!priced || !own) return NextResponse.json({ error: `This schedule can no longer be priced for ${order.scheduled_date}. The kitchen may have changed its weekly menu. Please book again.` }, { status: 409 });
+        totalPayableRupees = priced.total;
 
-        totalPayableRupees = planned ? planned.total : Math.round(perDeliveryTotal * occurrences * 100) / 100;
-
-        // Sync order and payment with trusted recalculated amounts
-        await admin.from("orders").update(own ? {
-          vendor_base_total: own.baseTotal, markup_total: Math.round(Math.max(0, own.customerTotal - own.baseTotal) * 100) / 100, customer_total: own.customerTotal, updated_at: new Date().toISOString(),
-        } : {
-          vendor_base_total: Math.round(basePrice * quantity * 100) / 100,
-          markup_total: Math.round(Math.max(0, perDeliveryTotal - (basePrice * quantity)) * 100) / 100,
-          customer_total: perDeliveryTotal,
-          updated_at: new Date().toISOString(),
-        }).eq("id", order.id);
-        if (own) await admin.from("order_items").update({ product_name: own.label, vendor_base_price: own.baseUnit, markup_percent: planned!.markupPercent, customer_price: own.customerUnit }).eq("order_id", order.id);
+        await updateOrderWithBilling(admin, String(order.id), own);
+        await admin.from("order_items").update({ product_name: own.label || undefined, vendor_base_price: own.baseUnit, markup_percent: priced.markupPercent, customer_price: own.customerUnit }).eq("order_id", order.id);
 
         await admin.from("payments").update({
           amount: totalPayableRupees,
@@ -582,28 +562,21 @@ export async function POST(request: Request) {
         const firstItem = Array.isArray(order.order_items) ? order.order_items[0] : order.order_items;
         const remainingDates = dates.filter((d) => d !== String(order.scheduled_date));
 
-        const plannedLater = await planPricingForSchedule(admin, String(order.schedule_id), remainingDates);
+        // Each later delivery carries its own product price, GST and delivery fee (the whole subscription was paid up front).
+        const pricedLater = await priceExistingSchedule(admin, String(order.schedule_id), remainingDates);
         for (const date of remainingDates) {
-          const day = plannedLater?.days.find((d) => d.date === date);
-          if (plannedLater && !day) continue; // the chef is not cooking that day
+          const day = pricedLater?.deliveries.find((d) => d.date === date);
+          if (pricedLater && !day) continue; // the chef is not cooking that day
           const duplicate = await admin.from("orders").select("id").eq("schedule_id", order.schedule_id).eq("scheduled_date", date).maybeSingle();
           if (duplicate.data?.id) continue;
 
-          const created = await admin.from("orders").insert({
-            order_number: orderNumber(),
-            schedule_id: order.schedule_id,
-            customer_id: order.customer_id,
-            vendor_id: order.vendor_id,
-            vendor_base_total: day ? day.baseTotal : Number(order.vendor_base_total || 0),
-            markup_total: day ? Math.max(0, day.customerTotal - day.baseTotal) : Number(order.markup_total || 0),
-            tax_amount: Number(order.tax_amount || 0),
-            delivery_fee: Number(order.delivery_fee || 0),
-            customer_total: day ? day.customerTotal : Number(order.customer_total || 0),
-            fulfilment_mode: order.fulfilment_mode,
-            scheduled_date: date,
-            scheduled_slot: order.scheduled_slot,
-            status: "confirmed",
-          }).select("id").single();
+          const orderRow = {
+            order_number: orderNumber(), schedule_id: order.schedule_id, customer_id: order.customer_id, vendor_id: order.vendor_id,
+            fulfilment_mode: order.fulfilment_mode, scheduled_date: date, scheduled_slot: order.scheduled_slot, status: "confirmed",
+          };
+          const created = day
+            ? await insertOrderWithBilling(admin, orderRow, day)
+            : await admin.from("orders").insert({ ...orderRow, vendor_base_total: Number(order.vendor_base_total || 0), markup_total: Number(order.markup_total || 0), tax_amount: Number(order.tax_amount || 0), delivery_fee: Number(order.delivery_fee || 0), customer_total: Number(order.customer_total || 0) }).select("id,order_number").single();
 
           if (created.error) throw created.error;
 
@@ -611,11 +584,11 @@ export async function POST(request: Request) {
             const item = firstItem as Record<string, unknown>;
             await admin.from("order_items").insert({
               order_id: created.data.id,
-              product_name: day ? day.label : String(item.product_name || "Scheduled item"),
+              product_name: day?.label || String(item.product_name || "Scheduled item"),
               quantity: Number(item.quantity || 1),
               unit: String(item.unit || "pack"),
               vendor_base_price: day ? day.baseUnit : Number(item.vendor_base_price || 0),
-              markup_percent: day ? plannedLater!.markupPercent : Number(item.markup_percent || 0),
+              markup_percent: day && pricedLater ? pricedLater.markupPercent : Number(item.markup_percent || 0),
               customer_price: day ? day.customerUnit : Number(item.customer_price || 0),
             });
           }

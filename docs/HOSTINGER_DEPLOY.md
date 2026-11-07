@@ -21,7 +21,7 @@ mkdir -p /var/www/sheplates-production/{releases,shared} /var/www/sheplates-stag
 Settings > Environments: create `staging` and `production`. On `production` add **Required reviewers** (you), so nothing goes live without approval. Fill the secrets and variables listed at the top of `.github/workflows/deploy-hostinger.yml`.
 
 ## Daily use
-- Push to `staging` branch: tests run, build, upload, health check, live on staging.
+- (Once the push triggers are switched on, see the top of the workflow file.) Push to the `staging` branch: tests run, build, upload, health check, live on staging.
 - Merge to `main`: same, then waits for your approval, then goes live on production.
 - If the health check (`/api/health`) fails, the pipeline switches back to the previous release by itself.
 - Manual rollback: Actions > *Deploy to Hostinger VPS* > Run workflow > `rollback_to` = a folder name from `/var/www/sheplates-production/releases`.
