@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { planPricingForSchedule } from "@/lib/menu-pricing";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 import { calculateBillingSummary } from "@/lib/billing";
@@ -260,15 +261,23 @@ export async function POST(request: Request) {
         const dates = scheduleDates(schedule as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null });
         const occurrences = Math.max(1, dates.length);
 
-        totalPayableRupees = Math.round(perDeliveryTotal * occurrences * 100) / 100;
+        // A home-food plan has its own price on every day, so the total is the sum over the days the chef is cooking.
+        const planned = await planPricingForSchedule(admin, String(order.schedule_id), dates);
+        const own = planned?.days.find((d) => d.date === String(order.scheduled_date));
+        if (planned && !own) return NextResponse.json({ error: `The kitchen changed its weekly menu and is no longer cooking on ${order.scheduled_date}. Please book again.` }, { status: 409 });
+
+        totalPayableRupees = planned ? planned.total : Math.round(perDeliveryTotal * occurrences * 100) / 100;
 
         // Sync order and payment with trusted recalculated amounts
-        await admin.from("orders").update({
+        await admin.from("orders").update(own ? {
+          vendor_base_total: own.baseTotal, markup_total: Math.round(Math.max(0, own.customerTotal - own.baseTotal) * 100) / 100, customer_total: own.customerTotal, updated_at: new Date().toISOString(),
+        } : {
           vendor_base_total: Math.round(basePrice * quantity * 100) / 100,
           markup_total: Math.round(Math.max(0, perDeliveryTotal - (basePrice * quantity)) * 100) / 100,
           customer_total: perDeliveryTotal,
           updated_at: new Date().toISOString(),
         }).eq("id", order.id);
+        if (own) await admin.from("order_items").update({ product_name: own.label, vendor_base_price: own.baseUnit, markup_percent: planned!.markupPercent, customer_price: own.customerUnit }).eq("order_id", order.id);
 
         await admin.from("payments").update({
           amount: totalPayableRupees,
@@ -573,7 +582,10 @@ export async function POST(request: Request) {
         const firstItem = Array.isArray(order.order_items) ? order.order_items[0] : order.order_items;
         const remainingDates = dates.filter((d) => d !== String(order.scheduled_date));
 
+        const plannedLater = await planPricingForSchedule(admin, String(order.schedule_id), remainingDates);
         for (const date of remainingDates) {
+          const day = plannedLater?.days.find((d) => d.date === date);
+          if (plannedLater && !day) continue; // the chef is not cooking that day
           const duplicate = await admin.from("orders").select("id").eq("schedule_id", order.schedule_id).eq("scheduled_date", date).maybeSingle();
           if (duplicate.data?.id) continue;
 
@@ -582,11 +594,11 @@ export async function POST(request: Request) {
             schedule_id: order.schedule_id,
             customer_id: order.customer_id,
             vendor_id: order.vendor_id,
-            vendor_base_total: Number(order.vendor_base_total || 0),
-            markup_total: Number(order.markup_total || 0),
+            vendor_base_total: day ? day.baseTotal : Number(order.vendor_base_total || 0),
+            markup_total: day ? Math.max(0, day.customerTotal - day.baseTotal) : Number(order.markup_total || 0),
             tax_amount: Number(order.tax_amount || 0),
             delivery_fee: Number(order.delivery_fee || 0),
-            customer_total: Number(order.customer_total || 0),
+            customer_total: day ? day.customerTotal : Number(order.customer_total || 0),
             fulfilment_mode: order.fulfilment_mode,
             scheduled_date: date,
             scheduled_slot: order.scheduled_slot,
@@ -599,12 +611,12 @@ export async function POST(request: Request) {
             const item = firstItem as Record<string, unknown>;
             await admin.from("order_items").insert({
               order_id: created.data.id,
-              product_name: String(item.product_name || "Scheduled item"),
+              product_name: day ? day.label : String(item.product_name || "Scheduled item"),
               quantity: Number(item.quantity || 1),
               unit: String(item.unit || "pack"),
-              vendor_base_price: Number(item.vendor_base_price || 0),
-              markup_percent: Number(item.markup_percent || 0),
-              customer_price: Number(item.customer_price || 0),
+              vendor_base_price: day ? day.baseUnit : Number(item.vendor_base_price || 0),
+              markup_percent: day ? plannedLater!.markupPercent : Number(item.markup_percent || 0),
+              customer_price: day ? day.customerUnit : Number(item.customer_price || 0),
             });
           }
 

@@ -31,7 +31,7 @@ import { ComplianceStep, ComplianceDocumentList, TermsViewerDialog } from "@/com
 import { CommercialTermsPanel } from "@/components/vendor-commercial";
 import { AgreementSigningDialog } from "@/components/vendor-signing";
 import { WeeklyMenuManager, type PlanPreset } from "@/components/weekly-menu";
-import type { MenuCell } from "@/lib/weekly-menu";
+import { dayPrice, isOrderable, orderItemLabel, parsePlanName, weekdayOfDate, withMarkup, type MenuCell } from "@/lib/weekly-menu";
 import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
 import { CATALOGUE_TEMPLATE_CSV, MAX_IMPORT_ROWS, matchCategory, readCatalogueText, rowProblems, type CatalogueDraftRow } from "@/lib/catalogue-import";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -2024,10 +2024,18 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
   const rangeLength = Math.max(1, Math.min(366, Math.floor((endMs - startMs) / 86400000) + 1));
   const rangeDates = Array.from({ length: rangeLength }, (_, index) => addDaysISO(startDate || tomorrow(), index));
   const previewSchedule: Schedule = { id: "preview", customerEmail: session.email, productId: product.id, vendorId: product.vendorId, startDate: startDate || tomorrow(), endDate: effectiveEnd, recurrence, weekdays: days, timeSlot: effectiveSlot, quantity, unit: product.baseUnit, mode, estimatedOccurrences: 0, status: "Active" };
-  const deliveryDates = occurrenceDatesInRange(previewSchedule, rangeDates);
+  // A home-food plan has its own price per weekday and is only delivered on days the chef is cooking; everything else is flat priced.
+  const planKind = parsePlanName(product.name);
+  const planMenus = planKind ? (state.weeklyMenus || []).filter((c) => c.vendorId === product.vendorId && c.meal === planKind.meal && c.diet === planKind.diet) : [];
+  const isMenuPlan = planMenus.length > 0;
+  const planMarkup = state.markups[product.id] || 0;
+  const planCell = (date: string) => planMenus.find((c) => c.weekday === weekdayOfDate(date));
+  const deliveryDates = occurrenceDatesInRange(previewSchedule, rangeDates).filter((date) => !isMenuPlan || isOrderable(planCell(date)));
   const occurrences = deliveryDates.length;
-  const perDelivery = finalPrice(scheduledProduct, state) * quantity;
-  const price = perDelivery * occurrences;
+  const unitOn = (date: string) => isMenuPlan ? withMarkup(dayPrice(planCell(date), product.vendorPrice), planMarkup) : finalPrice(scheduledProduct, state);
+  const perDelivery = (deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state)) * quantity;
+  const price = Math.round(deliveryDates.reduce((sum, date) => sum + unitOn(date) * quantity, 0) * 100) / 100;
+  const firstDishes = isMenuPlan && deliveryDates[0] ? planCell(deliveryDates[0])?.dishes || [] : [];
   const hasNutrition = scheduledProduct.nutritionStatus !== "Pending review" && scheduledProduct.calories > 0;
   const calories = hasNutrition ? Math.round(scheduledProduct.calories * quantity * occurrences) : 0;
 
@@ -2052,10 +2060,10 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
     try {
       let scheduleId = id("SCH"); let orderId = id("ORD");
       if (isLiveSupabaseMode()) {
-const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
+const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
-      const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot: effectiveSlot, mode, status: "Scheduled", payment: "Pending" };
+      const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: firstDishes.length ? `${scheduledProduct.name} · ${weekdayOfDate(deliveryDates[0])}: ${firstDishes.join(", ")}` : scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot: effectiveSlot, mode, status: "Scheduled", payment: "Pending" };
       setState((s) => ({ ...s, schedules: [schedule, ...s.schedules.filter((x) => x.id !== schedule.id)], orders: [order, ...s.orders.filter((x) => x.id !== order.id)], notifications: [notice(session.email, "customer", "Schedule ready for payment", `${scheduledProduct.name} has ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}. Complete payment to activate it.`), ...s.notifications], audit: [audit(session, "Created product schedule", `${scheduledProduct.name} · ${recurrence} · ${occurrences} deliveries`), ...s.audit] }));
       showDeviceNotification("Schedule ready for payment", `${scheduledProduct.name} · ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}`);
       toast.success("Schedule saved. Complete payment to activate it."); close(); onCreated?.();
@@ -3745,7 +3753,7 @@ function OrderDetailsDialog({
               ) : (
                 <div className="flex items-center justify-between py-2 text-sm">
                   <div className="font-bold text-stone-900">
-                    {order.quantity} × {product?.name || order.description} {order.unit ? `(${order.unit})` : ""}
+                    {order.quantity} × {orderItemLabel(product?.name, order.description)} {order.unit ? `(${order.unit})` : ""}
                   </div>
                   <div className="font-mono text-stone-700 font-semibold">{money(order.total)}</div>
                 </div>
@@ -3916,7 +3924,7 @@ function OrderTrackingDialog({
                 <h3 className="font-black text-emerald-950 text-base">{heroTitle}</h3>
                 <p className="mt-0.5 text-xs text-emerald-800 leading-relaxed font-medium">{heroSubtitle}</p>
                 <div className="mt-2 text-xs font-bold text-emerald-900">
-                  {order.quantity} × {product?.name || order.description}
+                  {order.quantity} × {orderItemLabel(product?.name, order.description)}
                 </div>
               </div>
             </div>
@@ -4048,7 +4056,7 @@ function CustomerOrderCard({
           />
           <div className="min-w-0">
             <h4 className="font-black text-stone-900 text-base sm:text-lg truncate">
-              {product?.name || order.description}
+              {orderItemLabel(product?.name, order.description)}
             </h4>
             <p className="text-xs sm:text-sm text-stone-500 font-medium mt-0.5">
               {order.quantity} × {product?.baseUnit || order.unit || "item"}
@@ -4381,7 +4389,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         const isFoodDrop = Boolean(order.foodDropId) || Boolean(order.verificationCode) || /food drop/i.test(order.description);
         const details = [
           ["Delivery", <Fragment key="delivery"><span>{order.date}</span><span className="mt-1 block text-xs font-semibold text-stone-600">{order.slot}</span></Fragment>],
-          ["Items", <span className="font-bold" key="items">{order.quantity} × {product?.name || order.description}</span>],
+          ["Items", <span className="font-bold" key="items">{order.quantity} × {orderItemLabel(product?.name, order.description)}</span>],
           ["Total", money(order.totalAmount ?? order.total)],
           ["Mode", order.mode],
           ...(order.subtotal != null ? [["Subtotal", money(order.subtotal)] as const] : []),

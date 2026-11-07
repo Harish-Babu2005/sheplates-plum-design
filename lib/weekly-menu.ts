@@ -16,7 +16,8 @@ export const MEAL_LABEL: Record<Meal, string> = { breakfast: "Breakfast", lunch:
 export const DIET_LABEL: Record<Diet, string> = { veg: "Veg", non_veg: "Non-veg" };
 export const MAX_DISHES = 12, MAX_DISH_LENGTH = 60;
 
-export type MenuCell = { id?: string; vendorId: string; weekday: Weekday; meal: Meal; diet: Diet; dishes: string[]; open: boolean };
+/** `price` is what the chef earns for that day's plan (before Sheplates adds its markup). */
+export type MenuCell = { id?: string; vendorId: string; weekday: Weekday; meal: Meal; diet: Diet; dishes: string[]; open: boolean; price?: number | null };
 
 /** The catalogue name of the plan product. It is how the plan is found again, so it is always built from this one function. */
 export const planName = (meal: Meal, diet: Diet) => `${DIET_LABEL[diet]} ${MEAL_LABEL[meal].toLowerCase()} plan`;
@@ -69,4 +70,19 @@ export function validateCell(input: { dishes: string[]; open: boolean }): string
 }
 export function validatePlanPrice(price: number): string | null {
   return !Number.isFinite(price) || price < 10 || price > 5000 ? "The plan price must be between ₹10 and ₹5,000." : null;
+}
+
+/** Each day has its own price. A day that is cooking needs a valid one. */
+export function validateDayPrice(price: number): string | null {
+  return !Number.isFinite(price) || price < 10 || price > 5000 ? "enter a price between ₹10 and ₹5,000" : null;
+}
+/** The price a day is sold at: its own price, or the plan's lowest price when the chef has not set one. */
+export function dayPrice(cell: MenuCell | undefined, fallback: number): number { return cell?.price != null && Number.isFinite(Number(cell.price)) ? Number(cell.price) : fallback; }
+export const withMarkup = (base: number, markupPercent: number) => Math.round(base * (1 + Math.max(0, markupPercent) / 100) * 100) / 100;
+
+const PLAN_ORDER_LABEL = /^(Veg|Non-veg) (breakfast|lunch|dinner) plan · (Mon|Tue|Wed|Thu|Fri|Sat|Sun): /i;
+/** What to print for an order's item: a home-food plan order carries that day's dishes, everything else keeps the product name. */
+export function orderItemLabel(productName: string | undefined, description: string | undefined): string {
+  if (description && PLAN_ORDER_LABEL.test(description)) return description;
+  return productName || description || "Item";
 }

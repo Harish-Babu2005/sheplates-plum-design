@@ -59,3 +59,11 @@ test("validation", () => {
   for (const bad of [0, 9, 5001, NaN, -5]) assert.ok(validatePlanPrice(bad), String(bad));
   for (const ok of [10, 120, 5000]) assert.equal(validatePlanPrice(ok), null);
 });
+
+import { orderItemLabel } from "../lib/weekly-menu.ts";
+test("an order for a plan shows that day's dishes; other orders keep the product name", () => {
+  assert.equal(orderItemLabel("Veg lunch plan", "Veg lunch plan · Wed: Chapati, Dal"), "Veg lunch plan · Wed: Chapati, Dal");
+  assert.equal(orderItemLabel("Veg lunch plan", "Veg lunch plan"), "Veg lunch plan");
+  assert.equal(orderItemLabel("Idli", "Idli, Vada"), "Idli");
+  assert.equal(orderItemLabel(undefined, "Weekly groceries"), "Weekly groceries");
+});

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { planPricing } from "@/lib/menu-pricing";
 import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 import { calculateBillingSummary } from "@/lib/billing";
@@ -496,6 +497,11 @@ export async function POST(request: Request) {
       if (!isFutureDate(startDate)) return NextResponse.json({ error: "Choose a first delivery date after today." }, { status: 400 });
       if (!withinOrderWindow(startDate)) return NextResponse.json({ error: `The first delivery can be at most ${ORDER_WINDOW_DAYS} days from today.` }, { status: 400 });
       if (endDate && (!isFutureDate(endDate) || endDate < startDate)) return NextResponse.json({ error: "Choose an end date on or after the first delivery date." }, { status: 400 });
+      // Home-food plans are priced day by day from the chef's weekly menu on the server, whatever the browser sent.
+      const weekdayNumbers: number[] = Array.isArray(body.weekdays) ? body.weekdays.map((d) => weekdayMap[String(d)]).filter((n) => Number.isInteger(n)) : [];
+      const planned = await planPricing(admin, { menuItemId: product.id, vendorId: product.vendor_id, name: product.name, basePrice: Number(product.vendor_base_price), quantity, dates: scheduleDates({ start_date: startDate, end_date: endDate || null, recurrence: requestedRecurrence, weekdays: weekdayNumbers }) });
+      if (planned && (!planned.days.length || planned.days[0].date !== startDate)) return NextResponse.json({ error: "The kitchen is not cooking on that day. Choose a day shown on its weekly menu." }, { status: 409 });
+      const firstDay = planned?.days[0];
       const scheduleInsert = await admin.from("product_schedules").insert({
         customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
         start_date: startDate, end_date: endDate || null,
@@ -508,8 +514,8 @@ export async function POST(request: Request) {
       if (scheduleInsert.error) throw scheduleInsert.error;
       const orderInsert = await admin.from("orders").insert({
         order_number: orderNumber(), schedule_id: scheduleInsert.data.id, customer_id: profile.id, vendor_id: product.vendor_id,
-        vendor_base_total: Number(product.vendor_base_price) * quantity, markup_total: Math.max(0, customerPrice - Number(product.vendor_base_price)) * quantity,
-        tax_amount: 0, delivery_fee: 0, customer_total: Number(body.perDeliveryTotal || customerPrice * quantity),
+        vendor_base_total: firstDay ? planned!.days[0].baseTotal : Number(product.vendor_base_price) * quantity, markup_total: firstDay ? Math.max(0, planned!.days[0].customerTotal - planned!.days[0].baseTotal) : Math.max(0, customerPrice - Number(product.vendor_base_price)) * quantity,
+        tax_amount: 0, delivery_fee: 0, customer_total: firstDay ? planned!.days[0].customerTotal : Number(body.perDeliveryTotal || customerPrice * quantity),
         fulfilment_mode: fulfilmentMode, scheduled_date: startDate,
         scheduled_slot: String(body.slot || "Vendor to confirm"), status: "awarded",
       }).select("id,order_number").single();
@@ -521,12 +527,12 @@ export async function POST(request: Request) {
         if (requestInsert.error) throw requestInsert.error;
       }
       const itemInsert = await admin.from("order_items").insert({
-        order_id: orderInsert.data.id, product_name: product.name, quantity, unit: String(body.unit || product.unit),
-        vendor_base_price: Number(product.vendor_base_price), markup_percent: Number(product.vendor_base_price) > 0 ? Math.max(0, ((customerPrice / Number(product.vendor_base_price)) - 1) * 100) : 0,
-        customer_price: customerPrice,
+        order_id: orderInsert.data.id, product_name: firstDay ? firstDay.label : product.name, quantity, unit: String(body.unit || product.unit),
+        vendor_base_price: firstDay ? firstDay.baseUnit : Number(product.vendor_base_price), markup_percent: firstDay ? planned!.markupPercent : Number(product.vendor_base_price) > 0 ? Math.max(0, ((customerPrice / Number(product.vendor_base_price)) - 1) * 100) : 0,
+        customer_price: firstDay ? firstDay.customerUnit : customerPrice,
       });
       if (itemInsert.error) throw itemInsert.error;
-      await admin.from("payments").insert({ order_id: orderInsert.data.id, customer_id: profile.id, amount: Number(body.total || customerPrice * quantity), status: "pending", provider: "checkout" });
+      await admin.from("payments").insert({ order_id: orderInsert.data.id, customer_id: profile.id, amount: planned ? planned.total : Number(body.total || customerPrice * quantity), status: "pending", provider: "checkout" });
       await admin.from("notifications").insert({ recipient_id: profile.id, kind: "payment", title: "Complete payment", body: `${product.name} is reserved for ${startDate}. Complete payment to send the order to the vendor.`, entity_type: "order", entity_id: orderInsert.data.id });
       await admin.from("communication_outbox").insert({ recipient_id: profile.id, channel: "in_app", template_key: "payment_reminder", payload: { orderId: orderInsert.data.id, orderNumber: orderInsert.data.order_number }, scheduled_for: new Date(Date.now() + 30 * 60 * 1000).toISOString() });
       return NextResponse.json({ ok: true, scheduleId: scheduleInsert.data.id, orderId: orderInsert.data.id, orderNumber: orderInsert.data.order_number });

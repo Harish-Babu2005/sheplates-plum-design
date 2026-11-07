@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { enqueueEmail } from "@/lib/email/outbox";
+import { planPricingForSchedule } from "@/lib/menu-pricing";
 
 /**
  * Confirms a paid order: marks the payment paid, confirms the order, starts its schedule (creating the remaining delivery
@@ -53,16 +54,20 @@ export async function confirmPaidOrder(admin: SupabaseClient, input: { razorpayO
   if (order.schedule_id) await admin.from("product_schedules").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", String(order.schedule_id)).eq("status", "awaiting_payment");
   if (rawSchedule && order.schedule_id) {
     const firstItem = (Array.isArray(order.order_items) ? order.order_items[0] : order.order_items) as Record<string, unknown> | undefined;
-    for (const date of scheduleDates(rawSchedule).filter((d) => d !== String(order.scheduled_date))) {
+    const remaining = scheduleDates(rawSchedule).filter((d) => d !== String(order.scheduled_date));
+    const plannedLater = await planPricingForSchedule(admin, String(order.schedule_id), remaining); // home-food plans: price and dishes per day
+    for (const date of remaining) {
+      const day = plannedLater?.days.find((d) => d.date === date);
+      if (plannedLater && !day) continue; // the chef is not cooking that day
       const duplicate = await admin.from("orders").select("id").eq("schedule_id", String(order.schedule_id)).eq("scheduled_date", date).maybeSingle();
       if (duplicate.data?.id) continue;
       const created = await admin.from("orders").insert({
         order_number: orderNumber(), schedule_id: order.schedule_id, customer_id: order.customer_id, vendor_id: order.vendor_id,
-        vendor_base_total: Number(order.vendor_base_total || 0), markup_total: Number(order.markup_total || 0), tax_amount: Number(order.tax_amount || 0), delivery_fee: Number(order.delivery_fee || 0),
-        customer_total: Number(order.customer_total || 0), fulfilment_mode: order.fulfilment_mode, scheduled_date: date, scheduled_slot: order.scheduled_slot, status: "confirmed",
+        vendor_base_total: day ? day.baseTotal : Number(order.vendor_base_total || 0), markup_total: day ? Math.max(0, day.customerTotal - day.baseTotal) : Number(order.markup_total || 0), tax_amount: Number(order.tax_amount || 0), delivery_fee: Number(order.delivery_fee || 0),
+        customer_total: day ? day.customerTotal : Number(order.customer_total || 0), fulfilment_mode: order.fulfilment_mode, scheduled_date: date, scheduled_slot: order.scheduled_slot, status: "confirmed",
       }).select("id").single();
       if (created.error) throw created.error;
-      if (firstItem) await admin.from("order_items").insert({ order_id: created.data.id, product_name: String(firstItem.product_name || "Scheduled item"), quantity: Number(firstItem.quantity || 1), unit: String(firstItem.unit || "pack"), vendor_base_price: Number(firstItem.vendor_base_price || 0), markup_percent: Number(firstItem.markup_percent || 0), customer_price: Number(firstItem.customer_price || 0) });
+      if (firstItem) await admin.from("order_items").insert({ order_id: created.data.id, product_name: day ? day.label : String(firstItem.product_name || "Scheduled item"), quantity: Number(firstItem.quantity || 1), unit: String(firstItem.unit || "pack"), vendor_base_price: day ? day.baseUnit : Number(firstItem.vendor_base_price || 0), markup_percent: day ? plannedLater!.markupPercent : Number(firstItem.markup_percent || 0), customer_price: day ? day.customerUnit : Number(firstItem.customer_price || 0) });
       await admin.from("payments").insert({ order_id: created.data.id, customer_id: payment.customer_id, amount: 0, status: "paid", provider: "schedule_prepaid", provider_reference: `COVERED-${orderId}` });
     }
   }

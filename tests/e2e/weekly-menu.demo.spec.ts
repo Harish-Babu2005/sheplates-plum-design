@@ -23,18 +23,25 @@ test("a home kitchen prices a plan, writes each day's dishes and saves; other ve
   await openAs(page, VENDOR);
   await openNav(page, "Weekly menu");
   await expect(page.getByRole("heading", { name: "Weekly menu" })).toBeVisible();
-  await page.getByRole("button", { name: "Save Veg lunch plan" }).click();
-  await expect(page.getByText("The plan price must be between").first()).toBeVisible();
-  await page.getByLabel("Plan price per day").fill("120");
   await page.getByLabel("Monday dishes").fill("Rice\nSambar\nCurd\nRice");
   await page.getByRole("button", { name: "Save Veg lunch plan" }).click();
-  await expect(page.getByText(/Veg lunch plan saved: 1 day/).first()).toBeVisible();
-  // the saved plan stays when the vendor switches meals and comes back
+  await expect(page.getByText(/Monday: enter a price between/).first()).toBeVisible(); // a cooking day needs its own price
+  await page.getByLabel("Monday price").fill("120");
+  await page.getByLabel("Tuesday dishes").fill("Chapati\nDal");
+  await page.getByLabel("Tuesday price").fill("150");
+  await page.getByRole("button", { name: "Save Veg lunch plan" }).click();
+  await expect(page.getByText(/Veg lunch plan saved: 2 days/).first()).toBeVisible();
+  // the saved plan, with each day's own price, stays when the vendor switches meals and comes back
   await page.getByRole("button", { name: "Dinner", exact: true }).click();
   await expect(page.getByLabel("Monday dishes")).toHaveValue("");
   await page.getByRole("button", { name: "Lunch", exact: true }).click();
   await expect(page.getByLabel("Monday dishes")).toHaveValue("Rice\nSambar\nCurd");
-  await expect(page.getByLabel("Plan price per day")).toHaveValue("120");
+  await expect(page.getByLabel("Monday price")).toHaveValue("120");
+  await expect(page.getByLabel("Tuesday price")).toHaveValue("150");
+  // one price for all days, still adjustable per day
+  await page.getByLabel("Same price for all days").fill("99");
+  await page.getByRole("button", { name: "Apply" }).click();
+  await expect(page.getByLabel("Tuesday price")).toHaveValue("99");
 });
 
 test("a bakery does not get the weekly menu", async ({ page }) => {
@@ -47,11 +54,11 @@ test("a bakery does not get the weekly menu", async ({ page }) => {
 
 test("a customer sees the week, and one day, a weekday, or the whole week open the order dialog with the right dates", async ({ page }) => {
   await openAs(page, CUSTOMER, (state) => {
-    const plan = { id: "plan-veg-lunch", vendorId: "v-meena", name: "Veg lunch plan", category: "Home food", emoji: "🍱", baseUnit: "meal", quantityStep: 1, vendorPrice: 120, stock: 999, active: true, calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0, dietaryTags: [], nutritionStatus: "Pending review", foodType: "veg" };
+    const plan = { id: "plan-veg-lunch", vendorId: "v-meena", name: "Veg lunch plan", category: "Home food", emoji: "🍱", baseUnit: "meal", quantityStep: 1, vendorPrice: 100, stock: 999, active: true, calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0, dietaryTags: [], nutritionStatus: "Pending review", foodType: "veg" };
     (state.products as unknown[]).push(plan);
     (state as unknown as { weeklyMenus: unknown[] }).weeklyMenus = [
-      { vendorId: "v-meena", weekday: "Mon", meal: "lunch", diet: "veg", dishes: ["Rice", "Sambar"], open: true },
-      { vendorId: "v-meena", weekday: "Wed", meal: "lunch", diet: "veg", dishes: ["Chapati", "Dal"], open: true },
+      { vendorId: "v-meena", weekday: "Mon", meal: "lunch", diet: "veg", dishes: ["Rice", "Sambar"], open: true, price: 100 },
+      { vendorId: "v-meena", weekday: "Wed", meal: "lunch", diet: "veg", dishes: ["Chapati", "Dal"], open: true, price: 150 },
       { vendorId: "v-meena", weekday: "Fri", meal: "lunch", diet: "veg", dishes: ["Pulao"], open: false },
     ];
   });
@@ -60,8 +67,10 @@ test("a customer sees the week, and one day, a weekday, or the whole week open t
   await dialog.getByRole("tab", { name: "Weekly menu" }).click();
   await expect(dialog.getByText("Chapati · Dal")).toBeVisible();
   await expect(dialog.getByText("Pulao")).toHaveCount(0); // switched off by the chef
+  await expect(dialog.getByText("₹100", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("₹150", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Order this day/ })).toHaveCount(2);
-  await expect(dialog.getByRole("button", { name: /Subscribe to the whole week \(2 days\)/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Subscribe to the whole week \(2 days\) · ₹250 a week/ })).toBeVisible();
 
   // One day: a single delivery on the next Wednesday, never today.
   const wednesday = nextDateForWeekday("Wed", isoDay(1));
@@ -70,6 +79,7 @@ test("a customer sees the week, and one day, a weekday, or the whole week open t
   const frequency = schedule.getByText("Frequency", { exact: true }).locator("..");
   await expect(schedule.locator('input[type="date"]').first()).toHaveValue(wednesday);
   await expect(frequency).toContainText("Once");
+  await expect(schedule.getByText("Total to activate schedule", { exact: true }).locator("..")).toContainText("₹150"); // Wednesday costs its own price
   await schedule.getByRole("button", { name: "Close" }).click();
 
   // The same weekday every week.
@@ -84,4 +94,14 @@ test("a customer sees the week, and one day, a weekday, or the whole week open t
   const week = page.getByRole("dialog").last();
   await expect(week.locator('input[type="date"]').first()).toHaveValue(first);
   await expect(week.getByText("Frequency", { exact: true }).locator("..")).toContainText("Custom");
+  await expect(week.getByText("Total to activate schedule", { exact: true }).locator("..")).toContainText("₹"); // sum of each cooking day, within the 30 day window
+});
+
+test("the vendor's order screen shows the dishes promised for that day", async ({ page }) => {
+  await openAs(page, VENDOR, (state) => {
+    const base = state.orders.find((o) => o.vendorId === "v-meena")!;
+    (state.orders as unknown[]).unshift({ ...base, id: "ORD-PLAN-1", orderNumber: "SP-PLAN1", description: "Veg lunch plan · Wed: Chapati, Dal", productId: undefined, status: "Confirmed", payment: "Paid" });
+  });
+  await openNav(page, "Orders");
+  await expect(page.getByText("Veg lunch plan · Wed: Chapati, Dal").first()).toBeVisible();
 });
