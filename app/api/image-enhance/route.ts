@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   form.append("image", new Blob([bytes], { type: mime }), "product-upload.png");
   form.append("size", "1024x1024");
   form.append("quality", "medium");
-  form.append("prompt", `Create a polished marketplace product photo for ShePlates from this vendor-uploaded image. Product: ${body.productName || "food product"}. Category: ${body.category || "food"}. Preserve the actual product identity, pack, ingredients and visible quantity. Improve lighting, framing, sharpness and background only. Use a clean premium food-commerce aesthetic with natural realistic colors, soft daylight, uncluttered neutral background and no text overlays, fake labels, extra ingredients, people or misleading quantity changes. The result must still honestly represent the uploaded product.`);
+  form.append("prompt", `Create a polished marketplace product photo for Sheplates from this vendor-uploaded image. Product: ${body.productName || "food product"}. Category: ${body.category || "food"}. Preserve the actual product identity, pack, ingredients and visible quantity. Improve lighting, framing, sharpness and background only. Use a clean premium food-commerce aesthetic with natural realistic colors, soft daylight, uncluttered neutral background and no text overlays, fake labels, extra ingredients, people or misleading quantity changes. The result must still honestly represent the uploaded product.`);
 
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",

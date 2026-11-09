@@ -50,4 +50,4 @@ for (const account of accounts) {
   process.stdout.write(`Created/updated ${account.email} as ${account.role}\n`);
 }
 
-process.stdout.write("ShePlates V3 test identities are ready. No vendor, product, order, quote or schedule data was seeded.\n");
+process.stdout.write("Sheplates V3 test identities are ready. No vendor, product, order, quote or schedule data was seeded.\n");

@@ -73,6 +73,8 @@ test("the vendor-terms trigger only blocks when a vendor is created or its statu
   assert.match(data, /export async function acceptLiveVendorTerms/);
   const app = await read("components/sheplates-v3.tsx");
   assert.match(app, /if \(!termsAccepted\) return toast\.error\("Accept the Vendor Terms and Conditions to submit"\)/);
-  assert.match(app, /disabled=\{picked\.termsAccepted === false\}/, "Operations cannot approve a vendor who has not accepted");
-  assert.match(app, /vendor\.termsAccepted === false && <section aria-label="Vendor Terms and Conditions"/);
+  assert.match(app, /disabled=\{picked\.termsAccepted === false \|\|/, "Operations cannot approve a vendor who has not accepted or signed");
+  const signing = await read("components/vendor-signing.tsx");
+  assert.match(signing, /<section aria-label="Vendor Terms and Conditions"/, "the vendor sees the sign card until both documents are done");
+  assert.match(app, /<AgreementPanel /);
 });

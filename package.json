@@ -20,6 +20,7 @@
     "db:generate": "npx drizzle-kit generate"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1164.0",
     "@base-ui/react": "^1.7.0",
     "@hookform/resolvers": "^5.7.1",
     "@shadcn/react": "^0.3.0",
@@ -37,6 +38,7 @@
     "maplibre-gl": "^5.24.0",
     "next": "16.2.6",
     "next-themes": "^0.4.6",
+    "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
     "radix-ui": "^1.6.7",
     "razorpay": "^2.9.8",

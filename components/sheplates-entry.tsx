@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
+import { Wordmark } from "@/components/brand";
 import { useEffect, useMemo, useState } from "react";
 import type * as React from "react";
 import {
@@ -134,7 +135,7 @@ function authErrorMessage(caught: unknown) {
   return "Unable to continue. Please contact your administrator if you need team access.";
 }
 
-export function ShePlatesEntry({ onLogin }: { onLogin: (session: DemoSession) => void }) {
+export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) => void }) {
   const [authAudience, setAuthAudience] = useState<Audience | null>(null);
   const [location, setLocation] = useState("Ganapathy, Coimbatore");
   const [locating, setLocating] = useState(false);
@@ -145,7 +146,7 @@ export function ShePlatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
   // A vendor's QR code links to "<origin>/?vendor=<id>". There's no path
   // router in this app, so signed-out visitors land here first; prompt
   // sign-in immediately instead of leaving them on the generic landing page.
-  // ShePlatesV3 re-reads the same param after login to jump into that
+  // SheplatesV3 re-reads the same param after login to jump into that
   // vendor's shop, so it's intentionally left in the URL here.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -198,49 +199,49 @@ export function ShePlatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
 
   const openCustomer = () => setAuthAudience("customer");
   const steps: [string, string][] = [
-    ["Find kitchens near you", "Set your delivery pin and see verified kitchens, bakers and farms within their service radius."],
-    ["Pick one kitchen, plan ahead", "One kitchen per order. Choose a date from tomorrow, or set a daily or weekly subscription."],
-    ["Track it to your door", "Pay securely, then follow your order from the kitchen to the delivery person."],
+    ["Discover businesses near you", "Explore verified local food businesses and shops in your neighbourhood."],
+    ["Explore products and order", "Browse catalogues, discover offerings and place orders with local vendors."],
+    ["Choose how you receive your order", "Delivery or Pickup. Your Choice."],
   ];
   const tiles: [string, typeof Soup][] = [["Home food", Soup], ["Milk and dairy", Milk], ["Bakery", ShoppingBag], ["Vegetables", Activity], ["Fish and meat", Sparkles]];
   return (
     <div className="sh e-page sp-entry">
       <Toaster position="top-center" richColors />
       <header className="e-head">
-        <button type="button" className="e-logo" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><img src="/sheplates-logo.png" alt="" />ShePlates</button>
+        <button type="button" className="e-logo" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><Wordmark height={34} /></button>
         <nav className="e-nav" aria-label="Site">
-          <button type="button" onClick={openCustomer}>Browse kitchens</button>
-          <button type="button" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}>How it works</button>
-          <button type="button" onClick={() => setAuthAudience("team")}>Vendor / Team</button>
+          <button type="button" onClick={openCustomer}>Explore Marketplace</button>
+          <button type="button" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}>How It Works</button>
+          <button type="button" onClick={() => setAuthAudience("team")}>Vendors &amp; Team</button>
         </nav>
         <button type="button" className="btn sm sec e-vendor" onClick={() => setAuthAudience("team")}>Vendor</button>
-        <button type="button" className="btn sm sec" onClick={openCustomer}>Sign in</button>
-        <button type="button" className="btn sm" onClick={openCustomer}>Get started</button>
+        <button type="button" className="btn sm sec" onClick={openCustomer}>Sign In</button>
+        <button type="button" className="btn sm" onClick={openCustomer}>Get Started</button>
       </header>
 
       <section className="e-hero">
         <div className="e-hero-copy">
-          <span className="pill o"><BadgeCheck className="size-4" />Verified home chefs, bakers and local shops</span>
-          <h1>Home-cooked food, from your own neighbourhood</h1>
-          <p>Order from verified home chefs, bakers and local shops. Plan a week ahead or order for tomorrow.</p>
-          <div className="e-cta"><button type="button" className="btn" onClick={openCustomer}>Get started</button><button type="button" className="btn sec" onClick={openCustomer}>I already have an account</button><button type="button" className="btn sec" onClick={() => setAgentOpen(true)}><Sparkles className="size-5" />Try She Agent</button></div>
-          <div className="s m">Sign in to see kitchens near you and to order.</div>
+          <span className="pill o"><BadgeCheck className="size-4" />Verified local food businesses near you</span>
+          <h1>Your neighbourhood marketplace for everything food.</h1>
+          <p>Discover home chefs, bakers, grocery stores, meat shops, fresh produce and more. Explore local businesses and order everything you need from your neighbourhood.</p>
+          <div className="e-cta"><button type="button" className="btn" onClick={openCustomer}>Explore Marketplace</button><button type="button" className="btn sec" onClick={openCustomer}>Sign In</button><button type="button" className="btn sec" onClick={() => setAgentOpen(true)}><Sparkles className="size-5" />Try She Agent</button></div>
+          <div className="s m">Sign in to discover businesses, explore products and place orders near you.</div>
         </div>
         <div className="e-hero-card">
           <div className="e-hero-tiles"><span><Soup className="size-9" /></span><span><ShoppingBag className="size-9" /></span><span><Milk className="size-9" /></span></div>
-          <div><div className="h3">Meena&apos;s Home Kitchen</div><div className="s">Mini Meals, rice, two curries, poriyal · ₹120</div></div>
+          <div><div className="h3">Everything Local. All in One Place.</div><div className="e-hero-cats">Home Chefs · Grocers · Fresh Produce · Meat &amp; Fish · Local Dairies</div><div className="s">Discover businesses around you and explore local favourites and everyday essentials on Sheplates.</div></div>
         </div>
       </section>
 
       <section id="how-it-works" className="e-band">
-        <h2 className="h3">How ShePlates works</h2>
-        <div className="e-steps">{steps.map(([title, body], i) => <div key={title} className="e-step"><span className="e-num">{i + 1}</span><h3>{title}</h3><p>{body}</p></div>)}</div>
+        <h2 className="h3">How Sheplates Works</h2>
+        <div className="e-steps">{steps.map(([title, body], i) => <div key={title} className="e-step"><span className="e-num">{String(i + 1).padStart(2, "0")}</span><h3>{title}</h3><p>{body}</p></div>)}</div>
         <h2 className="h3 e-cat-h">Browse by category</h2>
         <div className="e-tiles">{tiles.map(([label, Icon]) => <button type="button" key={label} onClick={openCustomer}><Icon className="size-8" />{label}</button>)}</div>
       </section>
 
       <footer className="sh k-foot">
-        <div className="row g8"><img src="/sheplates-logo.png" alt="" style={{ width: 40, height: 40, borderRadius: "50%" }} /><div><b>ShePlates</b><div className="s" style={{ color: "#B6C0C2" }}>Home meals, made simple</div></div></div>
+        <div className="row g8"><div><Wordmark height={34} /><div className="s" style={{ color: "#B6C0C2", marginTop: 4 }}>Home meals, made simple</div></div></div>
         <div className="fl"><span>Terms and Conditions</span><span>Privacy Policy</span><a href="tel:+919600037836">Support: 9600037836</a><a href="mailto:support@sheplates.com">support@sheplates.com</a><span>Every day, 9:30 AM to 7 PM</span></div>
       </footer>
 
@@ -434,7 +435,7 @@ await sendPasswordResetEmail(
     } finally { setBusy(false); }
   }
 
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><img src="/sheplates-logo.png" alt="" />ShePlates</div><DialogHeader><DialogTitle className="text-lg font-black">{audience === "customer" ? (mode === "forgot" ? "Reset password" : "Customer access") : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div><div className="k-auth-form p-6">
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{audience === "customer" ? (mode === "forgot" ? "Reset password" : "Customer access") : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div><div className="k-auth-form p-6">
     {audience === "customer" && mode !== "forgot" && <div className="grid grid-cols-2 rounded-2xl bg-stone-100 p-1"><button onClick={() => { setMode("login"); setError(""); }} className={`rounded-xl py-2.5 text-sm font-black ${mode === "login" ? "bg-white shadow-sm" : "text-stone-500"}`}>Sign in</button><button onClick={() => { setMode("create"); setError(""); }} className={`rounded-xl py-2.5 text-sm font-black ${mode === "create" ? "bg-white shadow-sm" : "text-stone-500"}`}>Create account</button></div>}
     
     {mode === "forgot" ? (
@@ -446,7 +447,7 @@ await sendPasswordResetEmail(
               <div>
                 <h3 className="text-sm font-black text-emerald-950">Password reset link sent!</h3>
                 <p className="mt-1 text-xs leading-5 text-emerald-800">
-                  If <b>{email}</b> is registered with ShePlates, you will receive a password reset link shortly. Please check your inbox.
+                  If <b>{email}</b> is registered with Sheplates, you will receive a password reset link shortly. Please check your inbox.
                 </p>
                 <p className="mt-2 text-[11px] text-emerald-700">
                   Didn't see it? Check your spam or promotions folder.
@@ -474,7 +475,7 @@ await sendPasswordResetEmail(
       ) : (
         <form onSubmit={submit} className="sp-auth-form mt-2 space-y-4">
           <p className="text-xs leading-5 text-stone-600">
-            Enter the email address associated with your ShePlates account. We will send you a secure link to reset your password.
+            Enter the email address associated with your Sheplates account. We will send you a secure link to reset your password.
           </p>
           <InputField label="Registered Email">
             <input
@@ -556,4 +557,4 @@ function AgentPreview({ open, close, login }: { open: boolean; close: () => void
 
 function InputField({ label, rightAction, children }: { label: string; rightAction?: React.ReactNode; children: React.ReactNode }) { return <label className="block"><div className="mb-2 flex items-center justify-between"><span className="block text-xs font-black uppercase tracking-wider text-stone-500">{label}</span>{rightAction}</div>{children}</label>; }
 
-function Brand({ dark = false }: { dark?: boolean }) { return <div className="flex min-w-0 items-center gap-2.5 sm:gap-3"><div className={`grid size-10 shrink-0 place-items-center rounded-[14px] sm:size-12 sm:rounded-2xl ${dark ? "surface-card-muted" : "border border-white/10 bg-white/10"}`}><img src="/sheplates-logo.png" alt="ShePlates" className="size-8 rounded-full object-contain sm:size-10" /></div><div className="min-w-0"><div className={`truncate text-lg font-black tracking-[-.03em] sm:text-xl ${dark ? "text-[#202827]" : "text-white"}`}>ShePlates</div><div className={`hidden text-[9px] font-black uppercase tracking-[.18em] min-[390px]:block sm:text-[10px] ${dark ? "text-[#155F65]" : "text-white/65"}`}>Agentic local commerce</div></div></div>; }
+function Brand({ dark = false }: { dark?: boolean }) { return <Wordmark height={dark ? 34 : 38} />; }

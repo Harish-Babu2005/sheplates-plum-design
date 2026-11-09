@@ -1,4 +1,4 @@
-/* ShePlates 2.0 design kit: the class vocabulary of the approved boards (.sh scope). Generated from the design gallery stylesheet. */
+/* Sheplates 2.0 design kit: the class vocabulary of the approved boards (.sh scope). Generated from the design gallery stylesheet. */
 :root{
   /* Brand, surface and text tokens come from theme-2.css (loaded after this file). Only kit-specific names live here. */
   --ink2:var(--text-body); --s:var(--surface-soft); --s2:var(--surface-soft-2); --w:#FFFFFF;

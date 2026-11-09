@@ -1,5 +1,5 @@
 "use client";
-// The ShePlates map on Ola Maps (MapLibre). Same props, same pins and the same controls as the standard map.
+// The Sheplates map on Ola Maps (MapLibre). Same props, same pins and the same controls as the standard map.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -24,7 +24,7 @@ function iconEl(html: string, size: number, label?: string) {
   return d;
 }
 
-/** ShePlates look on top of Ola's "default light" style: warm background, soft water and greens, and none of Ola's
+/** Sheplates look on top of Ola's "default light" style: warm background, soft water and greens, and none of Ola's
  * own shop and brand markers, so our vendor pins are the only ones on the map. Layers are matched by the ids
  * this style uses; anything that is not found is left as Ola draws it. */
 function brand(map: maplibregl.Map) {

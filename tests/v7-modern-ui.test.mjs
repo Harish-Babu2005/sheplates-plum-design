@@ -11,7 +11,7 @@ test('v7 is a visual-only modern UI release', () => {
   assert.equal(pkg.version, '7.2.0');
   assert.match(app, /sp-v7/);
   assert.match(entry, /sp-entry/);
-  assert.match(css, /ShePlates v7 — modern hyperlocal commerce visual system/);
+  assert.match(css, /Sheplates v7 — modern hyperlocal commerce visual system/);
 });
 
 test('customer marketplace has modern semantic styling hooks', () => {

@@ -12,10 +12,10 @@ const pkg = JSON.parse(read('package.json'));
 
 test('v7.2 is the true design-match visual release', () => {
   assert.equal(pkg.version, '7.2.0');
-  assert.match(entry, /Home-cooked food, from your own neighbourhood/);
+  assert.match(entry, /Your neighbourhood marketplace for everything food/);
   assert.match(entry, /e-hero-card/);
   assert.match(entry, /e-steps/);
-  assert.match(css, /ShePlates v7\.2 — TRUE DESIGN MATCH/);
+  assert.match(css, /Sheplates v7\.2 — TRUE DESIGN MATCH/);
 });
 
 test('public entry uses the approved light editorial visual system', () => {

@@ -2,6 +2,7 @@
 // Vendor onboarding, step 4: the Food Safety Certificate, six optional compliance documents (PDF only), and the Terms &
 // Conditions with a built-in viewer. Also exports the viewer and a PDF preview so the vendor's Verification page can reuse them.
 import { useEffect, useState, type ReactNode } from "react";
+import { AGREEMENT_DOCUMENTS } from "@/lib/agreements";
 import { toast } from "sonner";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Eye, FileText, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,10 +42,10 @@ export function TermsViewerDialog({ open, onClose, onAccept }: { open: boolean; 
       <div className="flex h-[85vh] flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4 pr-14">
           <div className="flex min-w-0 items-center gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><FileText className="size-5" /></div>
-            <div className="min-w-0"><DialogTitle className="text-lg font-black text-[#202827]">ShePlates Vendor Terms & Conditions</DialogTitle><DialogDescription className="text-xs text-stone-500">Version {VENDOR_TERMS_VERSION} · Effective Date: {VENDOR_TERMS_EFFECTIVE}</DialogDescription></div></div>
+            <div className="min-w-0"><DialogTitle className="text-lg font-black text-[#202827]">Sheplates Vendor Terms & Conditions</DialogTitle><DialogDescription className="text-xs text-stone-500">Version {VENDOR_TERMS_VERSION} · Effective Date: {VENDOR_TERMS_EFFECTIVE}</DialogDescription></div></div>
           <a href={VENDOR_TERMS_PDF} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-3 py-1.5 text-xs font-bold text-[#202827] hover:bg-stone-50"><ExternalLink className="size-3.5 text-[#155F65]" />Open in new tab</a>
         </div>
-        <div className="min-h-0 flex-1 bg-stone-100"><iframe src={`${VENDOR_TERMS_PDF}#toolbar=1&navpanes=0`} title="ShePlates Vendor Terms & Conditions" className="h-full w-full border-0" /></div>
+        <div className="min-h-0 flex-1 bg-stone-100"><iframe src={`${VENDOR_TERMS_PDF}#toolbar=1&navpanes=0`} title="Sheplates Vendor Terms & Conditions" className="h-full w-full border-0" /></div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-200 bg-white px-5 py-3">
           <span className="text-xs text-stone-500">Document: <span className="font-mono text-[11px]">sheplates-vendor-terms-v1.0.pdf</span></span>
           <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-xl font-bold">Close</Button>
@@ -107,7 +108,7 @@ export function ComplianceStep(p: ComplianceStepProps) {
   return <div className="mt-7 space-y-6">
     <div className="flex items-start gap-3 rounded-2xl border border-[#C5E3E4] bg-[#EAF4F2] p-4 text-xs font-semibold text-[#202827]">
       <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-white text-[#155F65]"><FileText className="size-4" /></div>
-      <div><p className="font-bold">Strict Document Format Requirement: PDF Only</p><p className="font-normal text-[#55656A]">All onboarding certificates and proofs must be uploaded as a PDF (.pdf). Save scanned images or photos as a PDF first. Documents are private: only you and ShePlates Operations can open them.</p></div>
+      <div><p className="font-bold">Strict Document Format Requirement: PDF Only</p><p className="font-normal text-[#55656A]">All onboarding certificates and proofs must be uploaded as a PDF (.pdf). Save scanned images or photos as a PDF first. Documents are private: only you and Sheplates Operations can open them.</p></div>
     </div>
 
     <section aria-label="Food Safety Certificate" className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
@@ -265,12 +266,16 @@ export function ComplianceStep(p: ComplianceStepProps) {
 
     <section aria-label="Terms and Conditions" className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div><div className="flex items-center gap-2"><h3 className="text-base font-black text-[#202827]">Terms &amp; Conditions</h3><span className="rounded-full bg-stone-200/80 px-2 py-0.5 text-[10px] font-bold text-stone-700">Version {VENDOR_TERMS_VERSION}</span></div><p className="mt-1 text-xs text-stone-500">Review the ShePlates Vendor Terms &amp; Conditions before completing onboarding.</p></div>
+        <div><div className="flex items-center gap-2"><h3 className="text-base font-black text-[#202827]">Terms &amp; Conditions</h3><span className="rounded-full bg-stone-200/80 px-2 py-0.5 text-[10px] font-bold text-stone-700">Version {VENDOR_TERMS_VERSION}</span></div><p className="mt-1 text-xs text-stone-500">Review the Sheplates Vendor Terms &amp; Conditions before completing onboarding.</p></div>
         <Button type="button" variant="outline" size="sm" onClick={() => setTermsOpen(true)} className="shrink-0 rounded-xl border-stone-300 bg-white font-bold"><FileText className="size-4 text-[#155F65]" />View Terms &amp; Conditions</Button>
       </div>
       <div className="mt-4 flex items-start gap-3 border-t border-stone-200 pt-4">
         <input type="checkbox" id="vendor-terms-checkbox" checked={p.termsAccepted} onChange={(event) => p.setTermsAccepted(event.target.checked)} className="mt-1 size-5 shrink-0 cursor-pointer rounded accent-[#155F65]" />
-        <label htmlFor="vendor-terms-checkbox" className="cursor-pointer select-none text-sm font-medium leading-relaxed text-[#202827]">I have read and agree to the <button type="button" onClick={(event) => { event.preventDefault(); setTermsOpen(true); }} className="font-bold text-[#155F65] underline hover:text-[#0F4A4F]">ShePlates Vendor Terms &amp; Conditions</button>. I understand my application is reviewed by Operations before my store goes live.</label>
+        <label htmlFor="vendor-terms-checkbox" className="cursor-pointer select-none text-sm font-medium leading-relaxed text-[#202827]">I have read and agree to the <button type="button" onClick={(event) => { event.preventDefault(); setTermsOpen(true); }} className="font-bold text-[#155F65] underline hover:text-[#0F4A4F]">Sheplates Vendor Terms &amp; Conditions</button>. I understand my application is reviewed by Operations before my store goes live.</label>
+      </div>
+      <div className="mt-4 rounded-2xl bg-[#EEF7F4] p-4 text-sm leading-6 text-[#2F3C3F]" data-testid="agreement-next-step">
+        <b>Next: sign your Partnership Agreement.</b> After you submit, you will sign the Vendor Partnership Agreement and these Terms from your Verification page, either <b>online</b> (two minutes) or by <b>downloading, signing by hand and uploading</b> a scan or photo. Operations approves your store once both are signed.
+        <div className="mt-2 flex flex-wrap gap-3 text-xs font-bold text-[#155F65]"><a href={AGREEMENT_DOCUMENTS[0].url} target="_blank" rel="noreferrer" className="underline">Read the Vendor Partnership Agreement</a><a href={AGREEMENT_DOCUMENTS[0].url} download className="underline">Download it</a></div>
       </div>
     </section>
 

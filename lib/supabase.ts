@@ -95,13 +95,13 @@ export async function liveSignIn(email: string, password: string) {
   if (profileError) {
     throw new Error(
       profileError.code === "PGRST116"
-        ? "This Auth account has no ShePlates role profile. Run the packaged staff-user setup command, then sign in again."
+        ? "This Auth account has no Sheplates role profile. Run the packaged staff-user setup command, then sign in again."
         : profileError.message,
     );
   }
   const liveProfile = profile as { full_name: string; role: string; vendor_id: string | null; tours_completed?: string[] } | null;
   if (!liveProfile || !["customer", "vendor", "operations", "admin"].includes(liveProfile.role)) {
-    throw new Error("This account has an invalid ShePlates role profile. Contact your administrator.");
+    throw new Error("This account has an invalid Sheplates role profile. Contact your administrator.");
   }
   return {
     user: data.user,
@@ -290,6 +290,13 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   const marketplaceRows = (items.data || []) as LiveMarketplaceRow[];
   await attachFoodTypes(supabase, marketplaceRows, (row) => row.item_id);
 
+  // GST mode and the flat delivery fee Operations set for a vendor (V9_22). Missing columns just mean the defaults apply.
+  let vendorCommercial: Array<{ id: string; gst_mode: string | null; delivery_fee_override: number | null }> = [];
+  try {
+    const commercial = await supabase.from("vendors").select("id,gst_mode,delivery_fee_override");
+    if (!commercial.error && Array.isArray(commercial.data)) vendorCommercial = commercial.data as typeof vendorCommercial;
+  } catch { /* columns not created yet */ }
+
   let vendorBranding: LiveVendorBranding[] = [];
   if (!brandingResult.error && Array.isArray(brandingResult.data)) {
     vendorBranding = brandingResult.data as LiveVendorBranding[];
@@ -305,6 +312,7 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   return {
     items: marketplaceRows,
     vendorBranding,
+    vendorCommercial,
     diagnostics: ((diagnostics.data || [])[0] || null) as MarketplaceDiagnostics | null,
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
@@ -881,7 +889,7 @@ export async function submitLiveVendorApplication(input: {
   /** Optional compliance documents (PAN, ID, address, bank, business, products). Their numbers stay with the document, which only the vendor and Operations can read. */
   additionalDocuments?: OnboardingComplianceDocument[];
 }) {
-  if (!input.termsAccepted) throw new Error("You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding.");
+  if (!input.termsAccepted) throw new Error("You must review and agree to the Sheplates Vendor Terms & Conditions before submitting onboarding.");
   if (!isPdfUpload(input.certificate)) throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
   for (const doc of input.additionalDocuments ?? []) {
     if (!isPdfUpload(doc.file)) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
@@ -1311,7 +1319,7 @@ export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
 }
 
 /** The write path for a claim: calls commerce API with admin service role, with fallback for direct DB. */
-export async function claimLiveFoodDrop(dropId: string, quantity: number): Promise<import("@/lib/food-drops").FoodDropClaim & { orderId?: string; orderNumber?: string; verificationCode?: string; remainingQuantity?: number }> {
+export async function claimLiveFoodDrop(dropId: string, quantity: number): Promise<import("@/lib/food-drops").FoodDropClaim> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   try {
@@ -1363,4 +1371,36 @@ export async function loadLiveFoodDropClaims(dropIds: string[]): Promise<import(
   const result = await supabase.from("food_drop_claims").select("id,drop_id,customer_id,quantity,unit_price,total_price,claimed_at").in("drop_id", dropIds).order("claimed_at", { ascending: false });
   if (result.error || !result.data) return [];
   return result.data.map((row) => ({ id: row.id as string, dropId: row.drop_id as string, customerEmail: "", quantity: row.quantity as number, unitPrice: Number(row.unit_price), totalPrice: Number(row.total_price), claimedAt: row.claimed_at as string }));
+}
+
+// ---- Home-food weekly menu (V9_25). Tolerant: when the table is not there yet, the menu simply stays empty. ----
+type MenuRow = { id: string; vendor_id: string; weekday: string; meal: string; diet: string; dishes: string[] | null; is_open: boolean | null; price?: number | string | null };
+const mapMenuRow = (r: MenuRow): import("@/lib/weekly-menu").MenuCell => ({ id: r.id, vendorId: r.vendor_id, weekday: r.weekday as import("@/lib/weekly-menu").Weekday, meal: r.meal as import("@/lib/weekly-menu").Meal, diet: r.diet as import("@/lib/weekly-menu").Diet, dishes: r.dishes || [], open: r.is_open !== false, price: r.price == null ? null : Number(r.price) });
+export async function loadLiveWeeklyMenus(vendorId?: string): Promise<import("@/lib/weekly-menu").MenuCell[] | null> {
+  if (!isLiveSupabaseMode()) return null;
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const run = (columns: string) => { let q = supabase.from("home_menu_days").select(columns); if (vendorId) q = q.eq("vendor_id", vendorId); return q.limit(5000); };
+  let result = await run("id,vendor_id,weekday,meal,diet,dishes,is_open,price");
+  if (result.error && /price/i.test(result.error.message || "")) result = await run("id,vendor_id,weekday,meal,diet,dishes,is_open"); // V9_26 not applied yet
+  if (result.error || !result.data) return null;
+  return (result.data as unknown as MenuRow[]).map(mapMenuRow);
+}
+export async function saveLiveWeeklyMenuCells(cells: import("@/lib/weekly-menu").MenuCell[]): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  if (!cells.length) return;
+  const rows = cells.map((c) => ({ vendor_id: c.vendorId, weekday: c.weekday, meal: c.meal, diet: c.diet, dishes: c.dishes, is_open: c.open, price: c.price ?? null, updated_at: new Date().toISOString() }));
+  const result = await supabase.from("home_menu_days").upsert(rows, { onConflict: "vendor_id,weekday,meal,diet" });
+  if (result.error && /price/i.test(result.error.message || "")) throw new Error("Day prices need the V9_26 database update. Ask Operations to run it, then save again.");
+  if (result.error) throw new Error(/home_menu_days/i.test(result.error.message) ? "The weekly menu is not set up yet. Ask Operations to run the V9_25 database update." : result.error.message);
+}
+
+/** Changes a plan product's flat day price (and whether it is on sale). */
+export async function updateLivePlanProduct(productId: string, patch: { price: number; active: boolean }) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const result = await supabase.from("vendor_menu_items").update({ vendor_base_price: patch.price, active: patch.active, updated_at: new Date().toISOString() }).eq("id", productId).select("id").maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error("That plan could not be found.");
 }

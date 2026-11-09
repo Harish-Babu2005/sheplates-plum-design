@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     const termsAccepted = body.termsAccepted === true;
     if (!termsAccepted) {
       return NextResponse.json(
-        { error: "You must review and agree to the ShePlates Vendor Terms & Conditions before submitting onboarding." },
+        { error: "You must review and agree to the Sheplates Vendor Terms & Conditions before submitting onboarding." },
         { status: 400 }
       );
     }
