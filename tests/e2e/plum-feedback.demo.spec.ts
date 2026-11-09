@@ -131,3 +131,30 @@ test("a vendor who has not accepted the terms sees the card on Verification and 
   await dialog.getByRole("button", { name: "Sign both documents" }).click();
   await expect(card).toHaveCount(0);
 });
+
+test("a vendor can also sign by hand: download both documents, upload a signed copy, and see it wait for Operations", async ({ page }) => {
+  const state = buildDemoState();
+  state.vendors = state.vendors.map((v) => v.ownerEmail === VENDOR.email ? { ...v, termsAccepted: false } : v);
+  await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); }, [state, VENDOR] as const);
+  await page.goto("/");
+  await page.waitForSelector(".k-app", { timeout: 30_000 });
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^Verification\s*\d*$/ }).click();
+  const card = page.getByRole("region", { name: "Vendor Terms and Conditions" });
+  await card.getByRole("button", { name: "Sign by hand and upload" }).click();
+  const dialog = page.getByRole("dialog", { name: "Sign your agreements" });
+  await expect(dialog.getByRole("tab", { name: "Sign by hand and upload" })).toHaveAttribute("aria-selected", "true");
+  const manual = dialog.getByTestId("manual-signing");
+  // both documents can be downloaded, and nothing can be uploaded until a file is chosen
+  await expect(manual.getByRole("link", { name: "Download to sign" })).toHaveCount(2);
+  await expect(manual.getByRole("link", { name: "Download to sign" }).first()).toHaveAttribute("href", /partnership-agreement/);
+  await expect(manual.getByRole("button", { name: "Upload signed copy" }).first()).toBeDisabled();
+  await manual.getByLabel("Signed Vendor Partnership Agreement").setInputFiles({ name: "agreement-signed.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 signed") });
+  await manual.getByRole("button", { name: "Upload signed copy" }).first().click();
+  await expect(manual.getByText("Uploaded, waiting for Operations")).toHaveCount(1);
+  // the other document is still to do, and the online route is one click away
+  await expect(manual.getByText("Not signed")).toHaveCount(1);
+  await dialog.getByRole("tab", { name: "Sign online" }).click();
+  await expect(dialog.getByRole("button", { name: "Email me a code" })).toBeDisabled();
+});

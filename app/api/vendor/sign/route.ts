@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { AGREEMENT_DOCUMENTS, CONSENT_TEXT, OTP_MAX_SENDS_PER_HOUR, OTP_MAX_TRIES, OTP_MINUTES, SIGNATURE_MAX_BYTES, signatoryForSheplates } from "@/lib/agreements";
 import { buildSignedPdf, codeMatches, decodeSignaturePng, hashCode, newCode, sha256Hex } from "@/lib/signing";
+import { clientIp, isStaff, ownVendor, signContext } from "@/lib/sign-auth";
+import { agreementComplete, documentStatuses } from "@/lib/agreement-status";
 import { enqueueEmail } from "@/lib/email/outbox";
 import { renderEmail } from "@/lib/email/templates";
 import { getTransport } from "@/lib/email/transport";
@@ -18,44 +19,34 @@ import { getTransport } from "@/lib/email/transport";
 export const dynamic = "force-dynamic";
 const BUCKET = "signed-agreements";
 
-async function context(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL, anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !anon || !service) return { error: NextResponse.json({ error: "Online signing is not available in this deployment." }, { status: 503 }) } as const;
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!token) return { error: NextResponse.json({ error: "Please sign in first." }, { status: 401 }) } as const;
-  const caller = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } });
-  const { data } = await caller.auth.getUser(token);
-  if (!data.user) return { error: NextResponse.json({ error: "Please sign in again." }, { status: 401 }) } as const;
-  const { data: profile } = await caller.from("profiles").select("role,full_name").eq("id", data.user.id).maybeSingle();
-  const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
-  return { admin, user: data.user, role: String((profile as { role?: string } | null)?.role || ""), profileName: (profile as { full_name?: string } | null)?.full_name || "" } as const;
-}
-
-async function ownVendor(admin: SupabaseClient, vendorId: string, userId: string) {
-  const { data } = await admin.from("vendors").select("id,name,owner_id").eq("id", vendorId).maybeSingle();
-  const v = data as { id: string; name: string; owner_id: string } | null;
-  return v && v.owner_id === userId ? v : null;
-}
 const readDoc = (file: string) => readFile(path.join(process.cwd(), "public", "docs", file));
-const clientIp = (r: Request) => (r.headers.get("x-forwarded-for") || "").split(",")[0].trim() || r.headers.get("x-real-ip") || "";
 
 export async function GET(request: Request) {
-  const ctx = await context(request); if ("error" in ctx) return ctx.error;
+  const ctx = await signContext(request); if ("error" in ctx) return ctx.error;
   const vendorId = new URL(request.url).searchParams.get("vendorId") || "";
-  const staff = ["operations", "admin"].includes(ctx.role);
+  const staff = isStaff(ctx.role);
   if (!vendorId || (!staff && !(await ownVendor(ctx.admin, vendorId, ctx.user.id)))) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
-  const rows = await ctx.admin.from("vendor_signatures").select("document_id,document_version,signer_name,signed_at,signed_pdf_path,reference").eq("vendor_id", vendorId);
-  const signed = (rows.data || []) as { document_id: string; document_version: string; signer_name: string; signed_at: string; signed_pdf_path: string; reference: string }[];
+  const [sigRows, uploadRows] = await Promise.all([
+    ctx.admin.from("vendor_signatures").select("document_id,document_version,signer_name,signed_at,signed_pdf_path,reference").eq("vendor_id", vendorId),
+    ctx.admin.from("vendor_signature_uploads").select("id,document_id,document_version,file_name,uploaded_at,status,review_note,file_path").eq("vendor_id", vendorId).order("uploaded_at", { ascending: false }),
+  ]);
+  const signed = (sigRows.data || []) as { document_id: string; document_version: string; signer_name: string; signed_at: string; signed_pdf_path: string; reference: string }[];
+  const uploads = (uploadRows.error ? [] : uploadRows.data || []) as { id: string; document_id: string; document_version: string; file_name: string; uploaded_at: string; status: "pending" | "accepted" | "rejected"; review_note: string | null; file_path: string }[];
+  const states = documentStatuses(signed, uploads);
   const documents = await Promise.all(AGREEMENT_DOCUMENTS.map(async (doc) => {
     const row = signed.find((r) => r.document_id === doc.id && r.document_version === doc.version);
     const link = row ? (await ctx.admin.storage.from(BUCKET).createSignedUrl(row.signed_pdf_path, 120)).data?.signedUrl : undefined;
-    return { id: doc.id, title: doc.title, version: doc.version, url: doc.url, signed: Boolean(row), signedBy: row?.signer_name, signedAt: row?.signed_at, reference: row?.reference, signedPdfUrl: link };
+    const state = states.find((x) => x.id === doc.id)!;
+    const latest = uploads.find((u) => u.document_id === doc.id && u.document_version === doc.version);
+    const uploadLink = latest ? (await ctx.admin.storage.from(BUCKET).createSignedUrl(latest.file_path, 120)).data?.signedUrl : undefined;
+    return { id: doc.id, title: doc.title, version: doc.version, url: doc.url, signed: Boolean(row), signedBy: row?.signer_name, signedAt: row?.signed_at, reference: row?.reference, signedPdfUrl: link,
+      state: state.state, note: state.note, upload: latest ? { id: latest.id, fileName: latest.file_name, uploadedAt: latest.uploaded_at, status: latest.status, note: latest.review_note, url: uploadLink } : undefined };
   }));
-  return NextResponse.json({ documents, allSigned: documents.every((d) => d.signed) });
+  return NextResponse.json({ documents, allSigned: agreementComplete(states), allDone: agreementComplete(states) });
 }
 
 export async function POST(request: Request) {
-  const ctx = await context(request); if ("error" in ctx) return ctx.error;
+  const ctx = await signContext(request); if ("error" in ctx) return ctx.error;
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid request." }, { status: 400 }); }
   const vendor = await ownVendor(ctx.admin, String(body.vendorId || ""), ctx.user.id);

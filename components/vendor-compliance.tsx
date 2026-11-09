@@ -2,6 +2,7 @@
 // Vendor onboarding, step 4: the Food Safety Certificate, six optional compliance documents (PDF only), and the Terms &
 // Conditions with a built-in viewer. Also exports the viewer and a PDF preview so the vendor's Verification page can reuse them.
 import { useEffect, useState, type ReactNode } from "react";
+import { AGREEMENT_DOCUMENTS } from "@/lib/agreements";
 import { toast } from "sonner";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Eye, FileText, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -271,6 +272,10 @@ export function ComplianceStep(p: ComplianceStepProps) {
       <div className="mt-4 flex items-start gap-3 border-t border-stone-200 pt-4">
         <input type="checkbox" id="vendor-terms-checkbox" checked={p.termsAccepted} onChange={(event) => p.setTermsAccepted(event.target.checked)} className="mt-1 size-5 shrink-0 cursor-pointer rounded accent-[#155F65]" />
         <label htmlFor="vendor-terms-checkbox" className="cursor-pointer select-none text-sm font-medium leading-relaxed text-[#202827]">I have read and agree to the <button type="button" onClick={(event) => { event.preventDefault(); setTermsOpen(true); }} className="font-bold text-[#155F65] underline hover:text-[#0F4A4F]">Sheplates Vendor Terms &amp; Conditions</button>. I understand my application is reviewed by Operations before my store goes live.</label>
+      </div>
+      <div className="mt-4 rounded-2xl bg-[#EEF7F4] p-4 text-sm leading-6 text-[#2F3C3F]" data-testid="agreement-next-step">
+        <b>Next: sign your Partnership Agreement.</b> After you submit, you will sign the Vendor Partnership Agreement and these Terms from your Verification page, either <b>online</b> (two minutes) or by <b>downloading, signing by hand and uploading</b> a scan or photo. Operations approves your store once both are signed.
+        <div className="mt-2 flex flex-wrap gap-3 text-xs font-bold text-[#155F65]"><a href={AGREEMENT_DOCUMENTS[0].url} target="_blank" rel="noreferrer" className="underline">Read the Vendor Partnership Agreement</a><a href={AGREEMENT_DOCUMENTS[0].url} download className="underline">Download it</a></div>
       </div>
     </section>
 

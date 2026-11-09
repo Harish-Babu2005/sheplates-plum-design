@@ -5,7 +5,7 @@
  */
 export type EmailTemplate =
   | "order_confirmed" | "order_status" | "order_cancelled" | "payment_failed" | "refund_issued"
-  | "vendor_new_order" | "vendor_decision" | "agreement_signed" | "subscription_reminder" | "settlement_statement" | "staff_account" | "signing_code";
+  | "vendor_new_order" | "vendor_decision" | "agreement_signed" | "agreement_uploaded" | "agreement_review" | "subscription_reminder" | "settlement_statement" | "staff_account" | "signing_code";
 
 export type Rendered = { subject: string; html: string; text: string };
 
@@ -67,6 +67,12 @@ export function renderEmail(template: EmailTemplate, d: Data): Rendered {
     }
     case "agreement_signed":
       return { subject: "Your signed Sheplates agreement", html: layout("Agreement signed", p(`${escapeHtml(s(d.vendorName))} signed the Vendor Partnership Agreement and Terms &amp; Conditions on ${escapeHtml(s(d.signedAt))}.`) + table(row("Signed by", escapeHtml(s(d.signerName))) + row("Agreement version", escapeHtml(s(d.version))) + row("Document fingerprint", `<span style="font-family:monospace;font-size:11px">${escapeHtml(s(d.hash).slice(0, 24))}…</span>`)) + p("The signed copy with its audit page is attached. Keep it for your records."), `Questions? Write to ${BRAND.partnerSupport}.`), text: `The Vendor Partnership Agreement was signed on ${s(d.signedAt)} by ${s(d.signerName)}. The signed copy is attached.` };
+    case "agreement_uploaded":
+      return { subject: `${s(d.vendorName)} uploaded a signed ${s(d.documentTitle)}`, html: layout("A signed document needs your review", p(`<b>${escapeHtml(s(d.vendorName))}</b> signed the ${escapeHtml(s(d.documentTitle))} by hand and uploaded <i>${escapeHtml(s(d.fileName))}</i>. Open Vendor verification to read it and accept or reject it.`) + (d.link ? button("Open Sheplates", s(d.link)) : ""), `Questions? Write to ${BRAND.partnerSupport}.`), text: `${s(d.vendorName)} uploaded a signed ${s(d.documentTitle)}. Review it in Vendor verification.` };
+    case "agreement_review": {
+      const ok = s(d.decision) === "accepted";
+      return { subject: ok ? `Your signed ${s(d.documentTitle)} was accepted` : `Please upload your ${s(d.documentTitle)} again`, html: layout(ok ? "Your signed document was accepted" : "Your upload needs a fix", p(ok ? `Operations accepted the signed ${escapeHtml(s(d.documentTitle))} for <b>${escapeHtml(s(d.vendorName))}</b>.` : `Operations could not accept the signed ${escapeHtml(s(d.documentTitle))} for <b>${escapeHtml(s(d.vendorName))}</b>.`) + (d.note ? p(`<b>Note from Operations:</b><br>${nl2br(s(d.note))}`) : "") + (!ok && d.link ? button("Upload again", s(d.link)) : ""), `Questions? Write to ${BRAND.partnerSupport}.`), text: ok ? `Your signed ${s(d.documentTitle)} was accepted.` : `Your signed ${s(d.documentTitle)} was not accepted. ${s(d.note)}` };
+    }
     case "signing_code":
       return { subject: `Your Sheplates signing code: ${s(d.code)}`, html: layout("Your signing code", p("Use this code to confirm that you are signing the Sheplates agreement. It works for 10 minutes.") + `<p style="font-size:32px;letter-spacing:8px;font-weight:bold;margin:16px 0">${escapeHtml(s(d.code))}</p>` + p("If you did not ask for this, ignore this email and do not share the code."), `Questions? Write to ${BRAND.partnerSupport}.`), text: `Your Sheplates signing code is ${s(d.code)}. It works for 10 minutes.` };
     case "subscription_reminder": {

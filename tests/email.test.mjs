@@ -69,9 +69,9 @@ test("enqueue: bad addresses are refused, and the same event is never queued twi
 });
 
 test("worker sends due mail once, retries temporary failures with a wait, and stops at a permanent failure", async () => {
-  const admin = fakeAdmin(); const now = new Date("2026-11-07T10:00:00Z");
-  await enqueueEmail(admin, { to: "a@b.co", template: "payment_failed", data: { orderNumber: "SP-1" }, dedupeKey: "a", sendAfter: new Date("2026-11-07T09:00:00Z") });
-  await enqueueEmail(admin, { to: "later@b.co", template: "payment_failed", data: {}, dedupeKey: "later", sendAfter: new Date("2026-11-08T09:00:00Z") });
+  const admin = fakeAdmin(); const now = new Date(Date.now() + 3_600_000); // an hour from now, so rows created "now" are due
+  await enqueueEmail(admin, { to: "a@b.co", template: "payment_failed", data: { orderNumber: "SP-1" }, dedupeKey: "a", sendAfter: new Date(now.getTime() - 3_600_000) });
+  await enqueueEmail(admin, { to: "later@b.co", template: "payment_failed", data: {}, dedupeKey: "later", sendAfter: new Date(now.getTime() + 86_400_000) });
   const t = okTransport();
   assert.deepEqual(await processOutbox(admin, t, { now }), { picked: 1, sent: 1, retried: 0, failed: 0, suppressed: 0 });
   assert.equal(t.sent.length, 1); assert.equal(admin.tables.email_outbox[0].status, "sent");

@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { Wordmark } from "@/components/brand";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { createPortal } from "react-dom";
 import type * as React from "react";
@@ -29,7 +29,7 @@ import { FOOD_TYPES, normalizeFoodType, type FoodType } from "@/lib/food-type";
 import { fetchWithDeadline } from "@/lib/fetch-deadline";
 import { ComplianceStep, ComplianceDocumentList, TermsViewerDialog } from "@/components/vendor-compliance";
 import { CommercialTermsPanel } from "@/components/vendor-commercial";
-import { AgreementSigningDialog } from "@/components/vendor-signing";
+import { AgreementPanel, OpsAgreementPanel } from "@/components/vendor-signing";
 import { WeeklyMenuManager, type PlanPreset } from "@/components/weekly-menu";
 import { dayPrice, isOrderable, orderItemLabel, parsePlanName, weekdayOfDate, withMarkup, type MenuCell } from "@/lib/weekly-menu";
 import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
@@ -5726,8 +5726,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
     } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
-    {vendor.termsAccepted === false && <section aria-label="Vendor Terms and Conditions" className="rounded-[28px] bg-[#FFF4CF] p-6 text-[#795900]"><h3 className="flex items-center gap-2 font-black"><AlertTriangle className="size-5" />Sign your Partnership Agreement and Terms</h3><p className="mt-2 text-sm leading-6">Operations cannot approve your store until you read and sign the Sheplates Vendor Partnership Agreement and Terms &amp; Conditions online. It takes two minutes and you get a signed copy by email.</p><div className="mt-4 flex flex-wrap gap-2"><Button onClick={() => setSignOpen(true)} className="rounded-xl bg-[#155F65]"><FileText className="size-4" />Review and sign</Button><Button type="button" variant="outline" onClick={() => setTermsViewOpen(true)} className="rounded-xl bg-white text-[#202827]"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></section>}
-    <AgreementSigningDialog open={signOpen} onClose={() => setSignOpen(false)} vendorId={vendor.id} vendorName={vendor.businessName} defaultName={vendor.ownerName} defaultRole={vendor.ownerRole || "Proprietor"} live={isLiveSupabaseMode()} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
+    <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
     <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">"{vendor.bio}"</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
       {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
@@ -6253,6 +6252,9 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
 }
 function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+  // Live only: null = not known yet (or not live), so nothing is blocked; false = the agreement is not fully signed.
+  const [agreement, setAgreement] = useState<{ vendorId: string; done: boolean | null } | null>(null);
+  const reportAgreement = useCallback((vendorId: string, done: boolean | null) => setAgreement({ vendorId, done }), []);
 
   async function decide(vendor: Vendor, verification: Verification, note = "") {
     try {
@@ -6284,6 +6286,7 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
   const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
   const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
   const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
+  const agreementDone = picked && agreement?.vendorId === picked.id ? agreement.done : null; // for the vendor shown now; null until it is known
 
   const pickedDocs = picked
     ? picked.documents?.length
@@ -6316,6 +6319,10 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     if (!picked) return;
     if (picked.termsAccepted === false) {
       toast.error("This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved.");
+      return;
+    }
+    if (isLiveSupabaseMode() && agreementDone === false) {
+      toast.error("The Partnership Agreement and Terms are not fully signed yet. Accept a hand-signed upload, or wait for the vendor to sign online.");
       return;
     }
     if (!allDocsChecked && pickedDocs.length > 0) {
@@ -6366,10 +6373,11 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
             )}
           </div>
           <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
+          <OpsAgreementPanel key={picked.id} vendorId={picked.id} live={isLiveSupabaseMode()} onComplete={reportAgreement} />
           <CommercialTermsPanel vendor={picked} live={isLiveSupabaseMode()} onSaved={(terms) => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === picked.id ? { ...x, ...terms } : x), audit: [audit(session, "Set commercial terms", picked.businessName), ...s.audit] }))} />
         </div>
         <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
-        {picked.verification !== "Verified" ? <div className="space-y-3">{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
+        {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
       </section>}
     </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
 

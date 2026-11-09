@@ -96,6 +96,7 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
     await expect(page.getByText("vendor-pan-card.pdf")).toBeVisible();
 
     // 3. 2) Government Identity Proof
+    await page.getByRole("button", { name: "Govt ID", exact: true }).click(); // one document form is shown at a time
     await page.locator("#govid-number-input").fill("9876 5432 1098");
     const govIdChooserPromise = page.waitForEvent("filechooser");
     await page.locator("#govid-file-input").evaluate((el: HTMLInputElement) => el.click());
@@ -108,6 +109,7 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
     await expect(page.getByText("aadhaar-card-proof.pdf")).toBeVisible();
 
     // 4. 3) Address Proof
+    await page.getByRole("button", { name: "Address Proof", exact: true }).click(); // one document form is shown at a time
     await page.locator("#addressproof-ref-input").fill("EB-BILL-442299");
     const addressChooserPromise = page.waitForEvent("filechooser");
     await page.locator("#addressproof-file-input").evaluate((el: HTMLInputElement) => el.click());
@@ -120,6 +122,7 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
     await expect(page.getByText("electricity-bill.pdf")).toBeVisible();
 
     // 5. 4) Bank Details
+    await page.getByRole("button", { name: "Bank Details", exact: true }).click(); // one document form is shown at a time
     await page.locator("#bank-account-input").fill("50100234567890");
     await page.locator("#bank-ifsc-input").fill("HDFC0001234");
     const bankChooserPromise = page.waitForEvent("filechooser");
@@ -133,6 +136,7 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
     await expect(page.getByText("cancelled-cheque.pdf")).toBeVisible();
 
     // 6. 5) Business Details
+    await page.getByRole("button", { name: "Business Reg", exact: true }).click(); // one document form is shown at a time
     await page.locator("#business-reg-input").fill("33AAAAA0000A1Z5");
     const businessChooserPromise = page.waitForEvent("filechooser");
     await page.locator("#business-file-input").evaluate((el: HTMLInputElement) => el.click());
@@ -145,6 +149,7 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
     await expect(page.getByText("gst-registration.pdf")).toBeVisible();
 
     // 7. 6) Product Information
+    await page.getByRole("button", { name: "Product Info", exact: true }).click(); // one document form is shown at a time
     await page.locator("#productinfo-title-input").fill("Artisan Sourdough & Pastry Catalogue");
     const productChooserPromise = page.waitForEvent("filechooser");
     await page.locator("#productinfo-file-input").evaluate((el: HTMLInputElement) => el.click());
@@ -197,6 +202,6 @@ test.describe("Vendor Onboarding - 6 Compliance Documents (PDF only)", () => {
     // Verify inspection modal opens
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByText(/Uploaded files are kept on the live site only/i)).toBeVisible();
-    await expect(page.getByText(/Verified compliance document in strict PDF format/i)).toBeVisible();
+    await expect(page.getByRole("dialog").getByText("Food Safety Certificate (FSSAI)").first()).toBeVisible();
   });
 });
