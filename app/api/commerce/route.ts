@@ -155,12 +155,13 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (role === "customer") schedulesQuery.eq("customer_id", profile.id);
   if (role === "vendor" && profile.vendor_id) schedulesQuery.eq("vendor_id", profile.vendor_id);
 
-  let [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
+  let orders = (await orderQuery) as Awaited<typeof orderQuery>;
+  const schedules = await schedulesQuery;
   if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
     let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
     if (role === "customer") fallbackOrderQuery = fallbackOrderQuery.eq("customer_id", profile.id);
     if (role === "vendor" && profile.vendor_id) fallbackOrderQuery = fallbackOrderQuery.eq("vendor_id", profile.vendor_id);
-    orders = (await fallbackOrderQuery) as any;
+    orders = (await fallbackOrderQuery) as Awaited<typeof orders>;
   }
   if (orders.error) throw orders.error;
   if (schedules.error) throw schedules.error;
@@ -514,6 +515,7 @@ export async function POST(request: Request) {
         if (claims.error) return NextResponse.json({ error: claims.error.message || "Food Drops could not be reserved." }, { status: 409 });
       }
       const orderIds: string[] = [];
+      let customerTotal = 0;
       for (const [vendorId, items] of grouped.entries()) {
         const isFoodDrop = items.some((item) => Boolean(item.food_drop_id));
         const fulfilmentMode = isFoodDrop ? "self_pickup" : vendorFulfilments.get(vendorId);
@@ -522,7 +524,7 @@ export async function POST(request: Request) {
         const customerCoords = await loadCustomerCoords(admin, profile.id, { latitude: body.customerLatitude, longitude: body.customerLongitude });
         const terms = await loadVendorBillingTerms(admin, vendorId);
 
-        let vendorBaseTotal = 0; let customerTotal = 0;
+        let vendorBaseTotal = 0;
         const orderItems = items.map((item) => {
           const product = item.product as Record<string, unknown>;
           const drop = item.drop as Record<string, unknown> | undefined;
@@ -615,7 +617,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Enter delivery instructions (up to 1,000 characters) for third-party delivery." }, { status: 400 });
       }
       const quantity = Math.max(0.001, Number(body.quantity || 1));
-      const customerPrice = Math.max(0, Number(body.customerPrice || product.vendor_base_price));
+      Math.max(0, Number(body.customerPrice || product.vendor_base_price));
       const startDate = String(body.startDate || "");
       const endDate = body.endDate ? String(body.endDate) : "";
       if (!isFutureDate(startDate)) return NextResponse.json({ error: "Choose a first delivery date after today." }, { status: 400 });

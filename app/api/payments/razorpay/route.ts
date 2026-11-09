@@ -247,8 +247,6 @@ export async function POST(request: Request) {
 
         // Markup, GST and the delivery fee are applied by priceExistingSchedule below (lib/schedule-billing.ts).
         const dates = scheduleDates(schedule as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null });
-        const occurrences = Math.max(1, dates.length);
-
         // Every delivery is billed like a cart order (product price, GST, delivery fee); a home-food plan has its own price per day.
         // The subscription total is the sum of its deliveries, recalculated here so the browser can never change what is charged.
         const priced = await priceExistingSchedule(admin, String(order.schedule_id), dates);
@@ -275,7 +273,6 @@ export async function POST(request: Request) {
         }
 
         let calculatedBaseTotal = 0;
-        let calculatedCustomerTotal = 0;
         const billingItems: Array<{ name: string; price: number; quantity: number }> = [];
 
         for (const item of items) {
@@ -284,7 +281,6 @@ export async function POST(request: Request) {
             const base = Number(item.vendor_base_price ?? 0);
             const unitPrice = Number(item.customer_price);
             calculatedBaseTotal += base * qty;
-            calculatedCustomerTotal += unitPrice * qty;
             billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
             continue;
           }
@@ -308,7 +304,6 @@ export async function POST(request: Request) {
           }
           const unitPrice = Math.round(base * (1 + markup / 100) * 100) / 100;
           calculatedBaseTotal += base * qty;
-          calculatedCustomerTotal += unitPrice * qty;
           billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
         }
 
