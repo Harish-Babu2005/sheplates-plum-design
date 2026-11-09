@@ -1,4 +1,4 @@
-# ShePlates for Android and iPhone: release guide
+# Sheplates for Android and iPhone: release guide
 
 The apps are a native shell (Capacitor 8) around the hosted product at **https://app.sheplates.com**. The screens,
 features and look are the website's, so every web release reaches both apps without a store update. A new store build is
@@ -7,7 +7,7 @@ only needed when something native changes (icon, permissions, plugins, version n
 | | Android | iPhone |
 |---|---|---|
 | Bundle / package id | `com.sheplates.app` | `com.sheplates.app` |
-| Display name | ShePlates | ShePlates |
+| Display name | Sheplates | Sheplates |
 | Version | 1.0.0 (code 1) | 1.0.0 (build 1) |
 | Minimum OS | Android 7 (API 24), target API 36 | iOS 15 |
 | Devices | phones, portrait | iPhone only, portrait |
@@ -85,7 +85,7 @@ cd android && ./gradlew bundleRelease
 # result: android/app/build/outputs/bundle/release/app-release.aab
 ```
 
-**Upload:** Play Console > Create app (name ShePlates, App, Free) > Production (or Internal/Closed testing) > Create release,
+**Upload:** Play Console > Create app (name Sheplates, App, Free) > Production (or Internal/Closed testing) > Create release,
 turn on **Play App Signing**, upload the `.aab`.
 
 **Store listing:** text below; icon `store-assets/play-store/icon-512.png`; feature graphic `feature-graphic-1024x500.png`;
@@ -100,7 +100,7 @@ screenshots `store-assets/android-phone/*`.
 - Purpose: app functionality and account management. Not used for advertising or analytics sold to others.
 - Shared: payment processing with Razorpay; hosting and database with Supabase (service providers).
 - Encrypted in transit: Yes. Users can request deletion: Yes (once account deletion above is built).
-- Card and bank details are entered on Razorpay's screen and are not stored by ShePlates.
+- Card and bank details are entered on Razorpay's screen and are not stored by Sheplates.
 
 Permissions the app asks for: location (delivery pin, nearby kitchens) and camera (photos and videos for statuses, Food Shorts,
 products, certificates). Both are requested only when the feature is used.
@@ -137,12 +137,12 @@ Already set in the project: usage descriptions for location, camera, microphone 
 
 ## 4. Store listing text
 
-**Name:** ShePlates
+**Name:** Sheplates
 **Subtitle (iOS, 30):** Home food from your area
 **Short description (Play, 80):** Order home-cooked meals and fresh essentials from verified kitchens near you.
 
 **Full description:**
-ShePlates brings home-cooked food, bakes, groceries and daily essentials from verified kitchens in your neighbourhood.
+Sheplates brings home-cooked food, bakes, groceries and daily essentials from verified kitchens in your neighbourhood.
 
 - Order for tomorrow or plan up to 15 days ahead, with delivery time slots you choose
 - Food Drops: surplus meals from nearby kitchens, every evening at a better price
@@ -158,7 +158,7 @@ Home meals, made simple.
 **Keywords (iOS, 100):** home food,tiffin,bakery,groceries,milk,meal plan,local kitchens,food drops,subscription
 **Category:** Food & Drink. **Support:** support@sheplates.com, 9600037836 (every day, 9:30 AM to 7 PM).
 
-**Review notes (paste and fill in):** "ShePlates is a hosted app with accounts. Customer: EMAIL / PASSWORD. Vendor: EMAIL /
+**Review notes (paste and fill in):** "Sheplates is a hosted app with accounts. Customer: EMAIL / PASSWORD. Vendor: EMAIL /
 PASSWORD. Payments use Razorpay in test mode for these accounts. Location is used to find kitchens near the delivery pin."
 
 ---

@@ -1,16 +1,16 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * ShePlates apps for Android and iPhone.
+ * Sheplates apps for Android and iPhone.
  * The apps are a native shell around the hosted product at https://app.sheplates.com, so the screens, features and
  * look are exactly the website's and every web release reaches the apps without a store update.
  */
 const config: CapacitorConfig = {
   appId: "com.sheplates.app",
-  appName: "ShePlates",
+  appName: "Sheplates",
   webDir: "www",
   backgroundColor: "#FFFFFF",
-  appendUserAgent: "ShePlatesApp/1.0",
+  appendUserAgent: "SheplatesApp/1.0",
   server: {
     url: "https://app.sheplates.com",
     androidScheme: "https",

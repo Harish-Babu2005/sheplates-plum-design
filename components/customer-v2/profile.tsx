@@ -11,6 +11,8 @@ import { FoodTypeMark } from "@/components/food-type-mark";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
 import type { Product, V3State } from "@/components/sheplates-v3";
+import { WeeklyMenuTab, type PlanPreset } from "@/components/weekly-menu";
+import { plansOffered } from "@/lib/weekly-menu";
 import type { SocialApi } from "@/lib/social";
 import { Avatar, EmptyState, PhotoTile, SegTabs, Stars, money, priceOf, shortArea, useTicker, vendorPhoto, vendorRating } from "./kit";
 import { vendorDistanceKm } from "./discover";
@@ -90,13 +92,13 @@ export function ProfileTab({ session, state, setState, social, people, statuses,
     </section>
     {editing && <EditProfileDialog open onClose={() => setEditing(false)} social={social} name={session.name} />}
     <FollowListDialog open={list !== null} kind={list || "followers"} onClose={() => setList(null)} people={people} />
-    <Dialog open={vendorListOpen} onOpenChange={(value) => !value && setVendorListOpen(false)}><DialogContent className="max-h-[85vh] overflow-y-auto rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Vendors I follow</DialogTitle><DialogDescription>The stores you follow on ShePlates appear here.</DialogDescription></DialogHeader>{social.followed.length ? <div className="space-y-2">{social.followed.map((vendorId) => { const vendor = state.vendors.find((item) => item.id === vendorId); if (!vendor) return null; return <button key={vendorId} type="button" onClick={() => { setVendorListOpen(false); onOpenVendor(vendorId); }} className="flex w-full items-center gap-3 rounded-2xl border border-stone-200/70 bg-white p-3 text-left transition hover:bg-stone-50"><span className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-sm font-black text-[#155F65]">{vendor.businessName.slice(0, 1)}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{vendor.businessName}</b><span className="block truncate text-xs text-stone-500">{vendor.category}</span></span><span className="text-xs font-black text-[#155F65]">View</span></button>; })}</div> : <EmptyState emoji="🏪" title="No followed vendors yet" body="Open a vendor profile from Marketplace and tap Follow to save a store here." />}</DialogContent></Dialog>
+    <Dialog open={vendorListOpen} onOpenChange={(value) => !value && setVendorListOpen(false)}><DialogContent className="max-h-[85vh] overflow-y-auto rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Vendors I follow</DialogTitle><DialogDescription>The stores you follow on Sheplates appear here.</DialogDescription></DialogHeader>{social.followed.length ? <div className="space-y-2">{social.followed.map((vendorId) => { const vendor = state.vendors.find((item) => item.id === vendorId); if (!vendor) return null; return <button key={vendorId} type="button" onClick={() => { setVendorListOpen(false); onOpenVendor(vendorId); }} className="flex w-full items-center gap-3 rounded-2xl border border-stone-200/70 bg-white p-3 text-left transition hover:bg-stone-50"><span className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-sm font-black text-[#155F65]">{vendor.businessName.slice(0, 1)}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{vendor.businessName}</b><span className="block truncate text-xs text-stone-500">{vendor.category}</span></span><span className="text-xs font-black text-[#155F65]">View</span></button>; })}</div> : <EmptyState emoji="🏪" title="No followed vendors yet" body="Open a vendor profile from Marketplace and tap Follow to save a store here." />}</DialogContent></Dialog>
   </div>;
 }
 
 /* ---------- Public vendor profile ---------- */
 
-const VENDOR_TABS = ["Menu", "New Products", "Subscriptions", "Food Drops", "About", "Shorts", "Reviews"] as const;
+const VENDOR_TABS = ["Menu", "Weekly menu", "New Products", "Subscriptions", "Food Drops", "About", "Shorts", "Reviews"] as const;
 type VendorTabKey = (typeof VENDOR_TABS)[number];
 
 function ProductRow({ product, state, customerEmail, onAdd, onPlan, onToggleWishlist, isNew, planLabel = "Plan" }: { product: Product; state: V3State; customerEmail: string; onAdd: (p: Product) => void; onPlan: (p: Product) => void; onToggleWishlist: (p: Product) => void; isNew?: boolean; planLabel?: string }) {
@@ -121,10 +123,11 @@ function VendorDropRow({ drop, onClaim }: { drop: FoodDrop; onClaim: (d: FoodDro
     <div className="text-right"><div className="font-black">{money(drop.dropPrice)}</div><button type="button" aria-label="Add to cart" disabled={busy || status !== "live" || drop.remainingQuantity <= 0} onClick={async () => { setBusy(true); try { await onClaim(drop, 1); } finally { setBusy(false); } }} className={`mt-1 rounded-full px-4 py-1.5 text-xs font-black text-white disabled:cursor-not-allowed ${status === "live" ? "bg-[#155F65]" : "bg-[#E1AE9B]"}`}>{busy ? "Adding…" : status === "live" ? "Add to orders" : "Available at 12 PM"}</button></div></div>;
 }
 
-export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, social, profile, onAdd, onPlan, onToggleWishlist, onClaimDrop, onFollowed, shorts = [], onOpenShorts, cartLines = [], onViewCart }: {
+export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, social, profile, onAdd, onPlan, onToggleWishlist, onClaimDrop, onFollowed, shorts = [], onOpenShorts, cartLines = [], onViewCart, tomorrow = "" }: {
+  tomorrow?: string;
   cartLines?: { id: string; name: string; quantity: number; total: number }[]; onViewCart?: () => void; shorts?: FoodShort[]; onOpenShorts?: (list: FoodShort[], index: number) => void;
   vendorId: string | null; onClose: () => void; state: V3State; customerEmail: string; social: SocialApi; profile: Coords;
-  onAdd: (p: Product) => void; onPlan: (p: Product) => void; onToggleWishlist: (p: Product) => void; onClaimDrop: (d: FoodDrop, q: number) => Promise<void>; onFollowed?: (vendor: V3State["vendors"][number]) => void;
+  onAdd: (p: Product) => void; onPlan: (p: Product, preset?: PlanPreset) => void; onToggleWishlist: (p: Product) => void; onClaimDrop: (d: FoodDrop, q: number) => Promise<void>; onFollowed?: (vendor: V3State["vendors"][number]) => void;
 }) {
   const [tab, setTab] = useState<VendorTabKey>("Menu");
   const vendor = vendorId ? state.vendors.find((v) => v.id === vendorId) : undefined;
@@ -151,9 +154,10 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
         <span className="text-stone-500">Radius: <span className="font-semibold text-stone-700">{vendor.radiusKm} km</span></span>
       </div>
       <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]"><div className="min-w-0">
-        <SegTabs tabs={(shorts.length ? VENDOR_TABS : VENDOR_TABS.filter((t) => t !== "Shorts")) as readonly VendorTabKey[]} value={tab} onChange={setTab} className="mt-4" />
+        <SegTabs tabs={VENDOR_TABS.filter((t) => (t !== "Shorts" || shorts.length > 0) && (t !== "Weekly menu" || plansOffered(state.weeklyMenus || [], vendor.id).length > 0)) as readonly VendorTabKey[]} value={tab} onChange={setTab} className="mt-4" />
         <div className="mt-4 space-y-2.5">
           {tab === "Menu" && (products.length ? <><h3 className="text-sm font-black">Today&apos;s Menu ({products.length})</h3>{products.map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={onAdd} onPlan={onPlan} onToggleWishlist={onToggleWishlist} />)}</> : <EmptyState emoji="🍽️" title="Nothing on the menu today" body="This vendor hasn&apos;t published any items right now." />)}
+          {tab === "Weekly menu" && <WeeklyMenuTab vendor={vendor} state={state} tomorrow={tomorrow} onPlan={onPlan} />}
           {tab === "New Products" && (products.length ? products.slice(0, 4).map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={onAdd} onPlan={onPlan} onToggleWishlist={onToggleWishlist} isNew />) : <EmptyState emoji="✨" title="No new products" body="Newly added items appear here first." />)}
           {tab === "Subscriptions" && (products.length ? <><p className="text-xs font-bold text-stone-500">Pick any item and set how often you want it — daily, weekly or on custom days.</p>{products.map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={onAdd} onPlan={onPlan} onToggleWishlist={onToggleWishlist} planLabel="Subscribe" />)}</> : <EmptyState emoji="🔁" title="No subscription items" body="Items you can subscribe to appear here." />)}
           {tab === "Food Drops" && (drops.length ? drops.map((d) => <VendorDropRow key={d.id} drop={d} onClaim={onClaimDrop} />) : <EmptyState emoji="⚡" title="No drops scheduled" body="Follow this vendor to hear first when they post surplus or a limited batch." />)}

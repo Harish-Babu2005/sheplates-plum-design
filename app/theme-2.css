@@ -1,5 +1,5 @@
 /*
- * ShePlates theme: Outfit, peacock teal identity and actions on white cards, near-black text, fresh green and mint accents, light-grey neutrals,
+ * Sheplates theme: Outfit, peacock teal identity and actions on white cards, near-black text, fresh green and mint accents, light-grey neutrals,
  * flat surfaces, pill controls, 24px cards.
  * Loaded last, so it re-points every earlier colour family (--sp-*, --sp7-*, --sp71-*, --sp72-*) at the semantic tokens below
  * and flattens the older glass, gradient and shadow treatments. One look for all four roles.

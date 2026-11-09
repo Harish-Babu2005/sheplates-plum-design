@@ -89,7 +89,7 @@ test.describe("Vendor Onboarding Terms & Conditions Integration", () => {
 
     // 1. Verify Terms & Conditions Section Heading & Description
     await expect(page.getByRole("heading", { name: "Terms & Conditions" })).toBeVisible();
-    await expect(page.getByText(/Review the ShePlates Vendor Terms & Conditions/i)).toBeVisible();
+    await expect(page.getByText(/Review the Sheplates Vendor Terms & Conditions/i)).toBeVisible();
 
     // 2. Verify Checkbox is UNCHECKED by default
     const termsCheckbox = page.locator("#vendor-terms-checkbox");
@@ -106,7 +106,7 @@ test.describe("Vendor Onboarding Terms & Conditions Integration", () => {
     await viewTermsBtn.click();
 
     // Verify Terms Modal is open with Title, Version 1.0, and iframe pointing to PDF
-    await expect(page.getByRole("heading", { name: "ShePlates Vendor Terms & Conditions" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sheplates Vendor Terms & Conditions" })).toBeVisible();
     await expect(page.getByText(/Version 1\.0 · Effective Date: 7 October 2026/i)).toBeVisible();
     const pdfIframe = page.locator("iframe[src*='sheplates-vendor-terms-v1.0.pdf']");
     await expect(pdfIframe).toBeVisible();
@@ -120,7 +120,7 @@ test.describe("Vendor Onboarding Terms & Conditions Integration", () => {
     await acceptCloseBtn.click();
 
     // Modal should close and checkbox should now be CHECKED
-    await expect(page.getByRole("heading", { name: "ShePlates Vendor Terms & Conditions" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Sheplates Vendor Terms & Conditions" })).toHaveCount(0);
     await expect(termsCheckbox).toBeChecked();
 
     // 5. Submit button should now be ENABLED

@@ -16,7 +16,7 @@ test("both apps use one app id, the hosted address and portrait phone settings",
   assert.match(config, /errorPath: "offline\.html"/);
   assert.match(config, /allowNavigation:[^\]]*razorpay/);
   assert.match(await read("mobile/android/app/build.gradle"), /applicationId "com\.sheplates\.app"/);
-  assert.match(await read("mobile/android/app/src/main/res/values/strings.xml"), /<string name="app_name">ShePlates<\/string>/);
+  assert.match(await read("mobile/android/app/src/main/res/values/strings.xml"), /<string name="app_name">Sheplates<\/string>/);
   const pbx = await read("mobile/ios/App/App.xcodeproj/project.pbxproj");
   assert.equal((pbx.match(/PRODUCT_BUNDLE_IDENTIFIER = com\.sheplates\.app;/g) || []).length, 2, "debug and release");
   assert.equal((pbx.match(/TARGETED_DEVICE_FAMILY = 1;/g) || []).length, 2, "iPhone only");

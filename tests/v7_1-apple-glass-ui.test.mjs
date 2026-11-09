@@ -8,7 +8,7 @@ const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.ur
 
 test('v7.1 is the adaptive glass visual release', () => {
   assert.equal(pkg.version, '7.2.0');
-  assert.match(css, /ShePlates v7\.1 — adaptive Apple-like glass layer/);
+  assert.match(css, /Sheplates v7\.1 — adaptive Apple-like glass layer/);
 });
 
 test('She Agent uses a modern orbital visual mark without changing agent flow', () => {

@@ -21,7 +21,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = { title: "ShePlates update", body: "Your order or schedule has an update.", url: "/" };
+  let payload = { title: "Sheplates update", body: "Your order or schedule has an update.", url: "/" };
   try { payload = { ...payload, ...event.data.json() }; } catch { /* safe defaults */ }
   event.waitUntil(self.registration.showNotification(payload.title, {
     body: payload.body,

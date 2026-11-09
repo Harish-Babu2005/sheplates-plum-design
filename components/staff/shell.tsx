@@ -2,6 +2,7 @@
 // Shell for the vendor, operations and super admin portals, built from the approved boards (V/O/A website, MV/MO/MA phone):
 // a white sidebar with an orange active pill on a light-grey page on the website, and on phones a top bar,
 // a four-tab bottom bar plus "More", and a full-screen menu.
+import { Wordmark } from "@/components/brand";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { Bell, HelpCircle, LogOut, Menu, X, LayoutDashboard, Eye, Store, MapPin, BadgeCheck } from "@/components/icons";
 
@@ -231,8 +232,7 @@ export function StaffShell({
         >
           {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
         </button>
-        <img src="/sheplates-logo.png" alt="" className="k-mlogo" />
-        <div className="k-mttl">ShePlates</div>
+        <span className="k-mttl"><Wordmark height={26} /></span>
         <span className="k-role k-role-m" data-label={roleLabel} aria-hidden="true" />
         <button
           type="button"
@@ -262,9 +262,8 @@ export function StaffShell({
 
       <aside className="k-side">
         <div className="k-brand">
-          <img src="/sheplates-logo.png" alt="" />
           <div>
-            <b>ShePlates</b>
+            <Wordmark height={30} />
             <span>{roleLabel}</span>
           </div>
         </div>

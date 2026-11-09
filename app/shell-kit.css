@@ -199,3 +199,5 @@ html .sp-auth-dialog .sp-auth-hero { background: var(--selected) !important; col
   .e-head { gap: 6px; padding: 10px 10px; }
   .e-head .btn.sm { padding: 0 11px; }
 }
+
+.e-hero-cats { font: 600 15px "Outfit", sans-serif; color: #D9F5E7; margin: 6px 0 8px; line-height: 1.4; }
