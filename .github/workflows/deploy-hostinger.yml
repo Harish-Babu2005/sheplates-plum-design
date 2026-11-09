@@ -1,0 +1,100 @@
+name: Deploy to Hostinger VPS
+
+# NOT ACTIVE YET: the live site is on Render. This workflow only runs when started by hand (Actions > Deploy to Hostinger VPS >
+# Run workflow), so it cannot fail or deploy by accident. When Hostinger is ready, add back the push triggers shown below.
+#   on: { push: { branches: [main, staging] }, workflow_dispatch: ... }
+# staging   : the "staging" branch deploys to staging.
+# production: "main" deploys to production, but only after someone approves it
+#             (GitHub > Settings > Environments > production > Required reviewers).
+# Each environment has its OWN secrets and variables, so staging can never touch production data or payments.
+# Per environment, set these (Settings > Environments):
+#   secrets   SSH_HOST, SSH_USER, SSH_PRIVATE_KEY
+#   variables APP_DIR (e.g. /var/www/sheplates-production), APP_PORT (3000 or 3001), HEALTH_URL (e.g. https://app.sheplates.com/api/health),
+#             NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_APP_URL
+#   (server-only keys such as SUPABASE_SERVICE_ROLE_KEY, RAZORPAY_*, AWS_* live in the .env file ON the server, never in GitHub.)
+on:
+  workflow_dispatch:
+    inputs:
+      rollback_to:
+        description: "Release folder name to roll back to (leave empty for a normal deploy)"
+        required: false
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: ${{ github.event.inputs.rollback_to == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build   # two tests read the built app in dist/
+        env:
+          NEXT_PUBLIC_DEMO_MODE: "false"
+      - run: node --test tests/*.test.mjs
+
+  deploy:
+    needs: [test]
+    if: ${{ always() && (needs.test.result == 'success' || github.event.inputs.rollback_to != '') }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    env:
+      APP_DIR: ${{ vars.APP_DIR }}
+      APP_PORT: ${{ vars.APP_PORT }}
+      HEALTH_URL: ${{ vars.HEALTH_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event.inputs.rollback_to == '' }}
+      - uses: actions/setup-node@v4
+        if: ${{ github.event.inputs.rollback_to == '' }}
+        with: { node-version: 22, cache: npm }
+      - name: Build
+        if: ${{ github.event.inputs.rollback_to == '' }}
+        run: |
+          npm ci
+          npm run build
+        env:
+          NEXT_PUBLIC_DEMO_MODE: "false"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+      - name: Upload release
+        if: ${{ github.event.inputs.rollback_to == '' }}
+        run: |
+          RELEASE="$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "RELEASE=$RELEASE" >> "$GITHUB_ENV"
+          SSH="ssh -i ~/.ssh/id_deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+          $SSH "mkdir -p $APP_DIR/releases/$RELEASE"
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude .git --exclude node_modules --exclude test-results --exclude playwright-report --exclude mobile --exclude qa-screenshots \
+            ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:$APP_DIR/releases/$RELEASE/"
+          $SSH "cd $APP_DIR/releases/$RELEASE && ln -sfn $APP_DIR/shared/.env .env && npm ci --omit=dev --no-audit --no-fund"
+      - name: Switch to the new release (or the rollback target)
+        run: |
+          TARGET="${{ github.event.inputs.rollback_to }}"; TARGET="${TARGET:-$RELEASE}"
+          SSH="ssh -i ~/.ssh/id_deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+          $SSH "set -e; cd $APP_DIR; test -d releases/$TARGET; PREV=\$(readlink current || true); ln -sfn $APP_DIR/releases/$TARGET current; echo \$PREV > previous_release; \
+                cd current && APP_CURRENT=$APP_DIR/current PORT=$APP_PORT pm2 startOrRestart deploy/hostinger/ecosystem.config.cjs --update-env && pm2 save"
+      - name: Health check, roll back if it fails
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_URL" || true)
+            [ "$code" = "200" ] && echo "healthy" && exit 0
+            sleep 3
+          done
+          echo "Health check failed, rolling back"
+          ssh -i ~/.ssh/id_deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd $APP_DIR; PREV=\$(cat previous_release); [ -n \"\$PREV\" ] && ln -sfn \$PREV current && cd current && APP_CURRENT=$APP_DIR/current PORT=$APP_PORT pm2 startOrRestart deploy/hostinger/ecosystem.config.cjs --update-env"
+          exit 1
+      - name: Keep the last 5 releases
+        if: success()
+        run: ssh -i ~/.ssh/id_deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd $APP_DIR/releases && ls -1t | tail -n +6 | xargs -r rm -rf"

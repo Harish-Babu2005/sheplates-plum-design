@@ -32,7 +32,7 @@ test("vendor order details use aligned responsive cards with consistent field ty
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
   assert.match(ui, /function OrderDetail[\s\S]*?h-full min-h-20 min-w-0 flex-col items-start gap-2 rounded-2xl/);
   assert.match(ui, /text-\[11px\] font-black uppercase tracking-wide text-stone-500/);
-  assert.match(ui, /\["Delivery", <Fragment key="delivery">[\s\S]*?\["Items", <span className="font-bold" key="items">\{order\.quantity\} \u00d7 \{product\?\.name \|\| order\.description\}<\/span>\]/);
+  assert.match(ui, /\["Delivery", <Fragment key="delivery">[\s\S]*?\["Items", <span className="font-bold" key="items">\{order\.quantity\} \u00d7 \{orderItemLabel\(product\?\.name, order\.description\)\}<\/span>\]/);
   assert.match(ui, /details\.map\(\(\[label, value\]\) => <OrderDetail key=\{label\} label=\{label\} value=\{value\} \/>/);
   assert.match(ui, /<div className="flex flex-col gap-4">[\s\S]*?grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-5/);
   assert.match(ui, /className="mt-1 block break-all text-xs font-semibold text-stone-600"/);

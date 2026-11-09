@@ -86,12 +86,21 @@ export function detectDelimiter(text: string): string {
   return best;
 }
 
+/** Western (1,200) or Indian (1,20,000) thousands grouping. Any other use of a comma, such as 49,50, is not a number. */
+const GROUPED_NUMBER = /^(\d{1,3}(,\d{3})+|\d{1,2}(,\d{2})+,\d{3})(\.\d+)?$/;
+
 export function parseNumber(value: string): number | null {
-  const cleaned = clean(value).replace(/[₹,]/g, "").replace(/^(rs\.?|inr)\s*/i, "").replace(/\/-$/, "").trim();
-  if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
-  const number = Number(cleaned);
+  const cleaned = clean(value).replace(/^[₹]\s*/, "").replace(/^(rs\.?|inr)\s*/i, "").replace(/\/-$/, "").trim();
+  if (cleaned.includes(",")) { if (!GROUPED_NUMBER.test(cleaned)) return null; }
+  const plain = cleaned.replace(/,/g, "");
+  if (!/^\d+(\.\d+)?$/.test(plain)) return null;
+  const number = Number(plain);
   return Number.isFinite(number) ? number : null;
 }
+
+/** The largest values the database can hold: price is numeric(12,2), stock is a whole number of packs. */
+export const MAX_PRICE = 9_999_999_999.99;
+export const MAX_STOCK = 999_999_999;
 
 const UNIT_CELL = /^\d+(\.\d+)?\s*(kg|kgs|g|gm|gms|gram|grams|l|ltr|litre|litres|liter|liters|ml|pc|pcs|piece|pieces|pack|packs|packet|dozen|nos|unit|units|plate|plates|portion|portions|meal|meals|bottle|box|bag|tray)\b/i;
 const UNIT_ONLY = /^(kg|g|gm|gram|l|ltr|litre|liter|ml|pc|pcs|piece|pack|packet|dozen|nos|unit|plate|portion|meal|bottle|box|bag|tray)$/i;
@@ -132,16 +141,24 @@ export function readFoodType(value: string): FoodType | undefined {
   return undefined;
 }
 
-function finish(row: Omit<CatalogueDraftRow, "problems">): CatalogueDraftRow {
+function problemsFor(row: { name: string; price: number; stock: number }): string[] {
   const problems: string[] = [];
   if (!row.name) problems.push("Add a name");
   if (!(row.price > 0)) problems.push("Add a price");
+  else if (row.price > MAX_PRICE) problems.push("The price is too large");
+  else if (Math.abs(Math.round(row.price * 100) - row.price * 100) > 1e-6) problems.push("The price can have at most 2 decimal places");
   if (!(row.stock > 0)) problems.push("Add the pack stock");
-  return { ...row, problems };
+  else if (!Number.isInteger(row.stock)) problems.push("Stock must be a whole number of packs");
+  else if (row.stock > MAX_STOCK) problems.push("The stock is too large");
+  return problems;
+}
+
+function finish(row: Omit<CatalogueDraftRow, "problems">): CatalogueDraftRow {
+  return { ...row, problems: problemsFor(row) };
 }
 
 export function rowProblems(row: Pick<CatalogueDraftRow, "name" | "price" | "stock">): string[] {
-  return finish({ name: clean(row.name), category: "", pack: "", price: Number(row.price), stock: Number(row.stock) }).problems;
+  return problemsFor({ name: clean(row.name), price: Number(row.price), stock: Number(row.stock) });
 }
 
 export function readCatalogueText(text: string, options: { categories: string[]; defaultCategory: string }): CatalogueReading {
@@ -170,9 +187,12 @@ export function readCatalogueText(text: string, options: { categories: string[];
       const stockCell = at("stock");
       // A quantity column that holds "5 kg" is really the pack size, not the stock count.
       const stockNumber = parseNumber(stockCell);
-      const pack = packCell || (stockNumber === null && stockCell ? stockCell : "");
+      const stockIsPack = stockNumber === null && UNIT_CELL.test(stockCell);
+      const pack = packCell || (stockIsPack ? stockCell : "");
+      // No stock column at all means 1 pack, as for a plain list. A stock cell that is blank or not a number is missing stock.
+      const stock = stockIsPack || mapping.stock === undefined ? 1 : stockNumber ?? 0;
       if (price > 0) sawPrice = true;
-      rows.push(finish({ name, category: matchCategory(at("category"), categories, fallbackCategory), pack: pack || "1 pack", price, stock: stockNumber ?? 1, foodType: readFoodType(at("foodType")) }));
+      rows.push(finish({ name, category: matchCategory(at("category"), categories, fallbackCategory), pack: pack || "1 pack", price, stock, foodType: readFoodType(at("foodType")) }));
       continue;
     }
     // No header: the first cell is the name; other cells are recognised by what they look like.

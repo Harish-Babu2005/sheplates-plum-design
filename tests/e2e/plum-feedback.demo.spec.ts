@@ -35,7 +35,7 @@ async function contrast(page: Page, locator: ReturnType<Page["locator"]>) {
 
 test("landing page secondary buttons are readable", async ({ page }) => {
   await openAs(page, null);
-  for (const name of ["Sign in", "I already have an account", "Try She Agent"]) {
+  for (const name of ["Sign in", "Explore Marketplace", "Try She Agent"]) {
     const button = page.getByRole("button", { name }).first();
     await expect(button).toBeVisible();
     expect(await contrast(page, button), `${name} contrast`).toBeGreaterThan(4.5);
@@ -98,7 +98,7 @@ test("Operations cannot approve a vendor that has not accepted the Vendor Terms"
   await expect(page.getByRole("button", { name: "Ask for changes" })).toBeEnabled();
 });
 
-test("a vendor who has not accepted the terms sees the card on Verification and can accept", async ({ page }) => {
+test("a vendor who has not accepted the terms sees the card on Verification and can sign online", async ({ page }) => {
   const state = buildDemoState();
   state.vendors = state.vendors.map((v) => v.ownerEmail === VENDOR.email ? { ...v, termsAccepted: false } : v);
   await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); }, [state, VENDOR] as const);
@@ -109,9 +109,52 @@ test("a vendor who has not accepted the terms sees the card on Verification and 
   await page.locator("aside.k-side nav").getByRole("button", { name: /^Verification\s*\d*$/ }).click();
   const card = page.getByRole("region", { name: "Vendor Terms and Conditions" });
   await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Accept terms" }).click();
-  await expect(page.getByText("Tick the box to accept").first()).toBeVisible();
-  await card.getByRole("checkbox").check();
-  await card.getByRole("button", { name: "Accept terms" }).click();
+  await card.getByRole("button", { name: "Review and sign" }).click();
+  const dialog = page.getByRole("dialog", { name: "Sign your agreements" });
+  await expect(dialog).toBeVisible();
+  // Nothing can be sent until both documents are opened, a name is typed and a signature is drawn.
+  await expect(dialog.getByRole("button", { name: "Email me a code" })).toBeDisabled();
+  for (let i = 0; i < 2; i++) await dialog.getByRole("button", { name: "Read here" }).first().click(); // each opened document turns its button into "Hide"
+  await dialog.getByLabel("Full name").fill("Meena Devi");
+  const pad = dialog.getByTestId("signature-pad");
+  await pad.scrollIntoViewIfNeeded();
+  const box = (await pad.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + 40); await page.mouse.down();
+  for (let i = 0; i < 20; i++) await page.mouse.move(box.x + 20 + i * 8, box.y + 40 + (i % 5) * 12);
+  await page.mouse.up();
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Email me a code" }).click();
+  await dialog.getByTestId("signing-code").fill("000000");
+  await dialog.getByRole("button", { name: "Sign both documents" }).click();
+  await expect(dialog).toBeVisible(); // a wrong code does not sign
+  await dialog.getByTestId("signing-code").fill("123456");
+  await dialog.getByRole("button", { name: "Sign both documents" }).click();
   await expect(card).toHaveCount(0);
+});
+
+test("a vendor can also sign by hand: download both documents, upload a signed copy, and see it wait for Operations", async ({ page }) => {
+  const state = buildDemoState();
+  state.vendors = state.vendors.map((v) => v.ownerEmail === VENDOR.email ? { ...v, termsAccepted: false } : v);
+  await page.addInitScript(([s, u]) => { localStorage.clear(); localStorage.setItem("sheplates-v3-state", JSON.stringify(s)); localStorage.setItem("sheplates-v3-session", JSON.stringify(u)); }, [state, VENDOR] as const);
+  await page.goto("/");
+  await page.waitForSelector(".k-app", { timeout: 30_000 });
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  if ((await toggle.isVisible().catch(() => false)) && !(await page.locator(".k-app.menu-open").count())) await toggle.click();
+  await page.locator("aside.k-side nav").getByRole("button", { name: /^Verification\s*\d*$/ }).click();
+  const card = page.getByRole("region", { name: "Vendor Terms and Conditions" });
+  await card.getByRole("button", { name: "Sign by hand and upload" }).click();
+  const dialog = page.getByRole("dialog", { name: "Sign your agreements" });
+  await expect(dialog.getByRole("tab", { name: "Sign by hand and upload" })).toHaveAttribute("aria-selected", "true");
+  const manual = dialog.getByTestId("manual-signing");
+  // both documents can be downloaded, and nothing can be uploaded until a file is chosen
+  await expect(manual.getByRole("link", { name: "Download to sign" })).toHaveCount(2);
+  await expect(manual.getByRole("link", { name: "Download to sign" }).first()).toHaveAttribute("href", /partnership-agreement/);
+  await expect(manual.getByRole("button", { name: "Upload signed copy" }).first()).toBeDisabled();
+  await manual.getByLabel("Signed Vendor Partnership Agreement").setInputFiles({ name: "agreement-signed.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 signed") });
+  await manual.getByRole("button", { name: "Upload signed copy" }).first().click();
+  await expect(manual.getByText("Uploaded, waiting for Operations")).toHaveCount(1);
+  // the other document is still to do, and the online route is one click away
+  await expect(manual.getByText("Not signed")).toHaveCount(1);
+  await dialog.getByRole("tab", { name: "Sign online" }).click();
+  await expect(dialog.getByRole("button", { name: "Email me a code" })).toBeDisabled();
 });

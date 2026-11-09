@@ -1,252 +1,124 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
 import {
-  DEFAULT_DELIVERY_PRICING,
-  CATEGORY_GST_RATES,
-  DEFAULT_GST_RATE,
-  haversineDistanceKm,
-  calculateDeliveryFee,
-  calculateBillingSummary,
+  DELIVERY_SLABS, MIN_DELIVERY_FEE, deliveryFeeForDistance, haversineDistanceKm, calculateDeliveryFee, calculateBillingSummary,
+  commissionPercentFor, COMMISSION_BY_CATEGORY, defaultGstMode, invoiceTypeFor, settlementFor, fulfilmentKind,
 } from "../lib/billing.ts";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+const store = { latitude: 11.0183, longitude: 76.9725 };
+const north = (km) => ({ latitude: store.latitude + km / 111.19492664, longitude: store.longitude });
 
-test("Haversine distance calculation handles valid and invalid coordinates", () => {
-  // Coords ~1.5 km apart in Chennai / Dindigul
-  const dist = haversineDistanceKm(10.3624, 77.9695, 10.3700, 77.9800);
-  assert.ok(dist !== null && dist > 1 && dist < 2, `Expected ~1.4 km, got ${dist}`);
-
-  // Exactly identical coords -> 0 km
-  assert.equal(haversineDistanceKm(12.9716, 77.5946, 12.9716, 77.5946), 0);
-
-  // Missing or null coordinates
-  assert.equal(haversineDistanceKm(null, 77.5946, 12.9716, 77.5946), null);
-  assert.equal(haversineDistanceKm(12.9716, undefined, 12.9716, 77.5946), null);
-  assert.equal(haversineDistanceKm(NaN, 77.5946, 12.9716, 77.5946), null);
+test("delivery fee: never below Rs 20, and the slab edges belong to the lower slab", () => {
+  assert.equal(MIN_DELIVERY_FEE, 20);
+  const table = [[0, 20], [0.5, 20], [2, 20], [2.0001, 25], [3.5, 25], [3.5001, 30], [5, 30], [5.0001, 40], [6.5, 40], [6.5001, 50], [8, 50]];
+  for (const [km, fee] of table) assert.equal(deliveryFeeForDistance(km), fee, `${km} km`);
+  assert.ok(DELIVERY_SLABS.every((slab) => slab.fee >= MIN_DELIVERY_FEE));
 });
 
-test("Dynamic delivery fee adheres to Swiggy-like distance pricing tiers", () => {
-  // Vendor coords (e.g., store center)
-  const vendorCoords = { latitude: 10.3624, longitude: 77.9695 };
-
-  // Tier 1: 0–2 km -> ₹20
-  // ~1 km away
-  const tier1Coords = { latitude: 10.368, longitude: 77.974 };
-  const tier1Result = calculateDeliveryFee({
-    mode: "Vendor delivery",
-    customerCoords: tier1Coords,
-    vendorCoords,
-    serviceRadiusKm: 8,
-  });
-  assert.equal(tier1Result.fee, 20);
-  assert.equal(tier1Result.isWithinRadius, true);
-  assert.equal(tier1Result.isPickup, false);
-
-  // Tier 2: >2 km and up to 5 km -> ₹35
-  // ~3.5 km away
-  const tier2Coords = { latitude: 10.385, longitude: 77.990 };
-  const tier2Result = calculateDeliveryFee({
-    mode: "Vendor delivery",
-    customerCoords: tier2Coords,
-    vendorCoords,
-    serviceRadiusKm: 8,
-  });
-  assert.equal(tier2Result.fee, 35);
-  assert.equal(tier2Result.isWithinRadius, true);
-
-  // Tier 3: >5 km and up to 8 km -> ₹50
-  // ~6.5 km away
-  const tier3Coords = { latitude: 10.410, longitude: 78.010 };
-  const tier3Result = calculateDeliveryFee({
-    mode: "Vendor delivery",
-    customerCoords: tier3Coords,
-    vendorCoords,
-    serviceRadiusKm: 8,
-  });
-  assert.equal(tier3Result.fee, 50);
-  assert.equal(tier3Result.isWithinRadius, true);
-
-  // Beyond vendor service radius (e.g. 8 km limit): delivery unavailable
-  // ~15 km away
-  const outOfRadiusCoords = { latitude: 10.500, longitude: 78.050 };
-  const outOfRadiusResult = calculateDeliveryFee({
-    mode: "Vendor delivery",
-    customerCoords: outOfRadiusCoords,
-    vendorCoords,
-    serviceRadiusKm: 8,
-  });
-  assert.equal(outOfRadiusResult.isWithinRadius, false);
-  assert.ok(outOfRadiusResult.message && outOfRadiusResult.message.includes("exceeds"));
+test("delivery fee beyond 8 km: Rs 10 more for every further started 1.5 km", () => {
+  const table = [[8.0001, 60], [9.5, 60], [9.5001, 70], [11, 70], [11.0001, 80], [12.5, 80], [14, 90], [20, 50 + Math.ceil(12 / 1.5) * 10]];
+  for (const [km, fee] of table) assert.equal(deliveryFeeForDistance(km), fee, `${km} km`);
 });
 
-test("Self-pickup and third-party delivery always incur ₹0 delivery fee", () => {
-  const vendorCoords = { latitude: 10.3624, longitude: 77.9695 };
-  const customerCoords = { latitude: 10.500, longitude: 78.050 }; // 15 km away
-
-  // Self pickup
-  const pickup = calculateDeliveryFee({
-    mode: "Self pickup",
-    customerCoords,
-    vendorCoords,
-    serviceRadiusKm: 5,
-  });
-  assert.equal(pickup.fee, 0);
-  assert.equal(pickup.isPickup, true);
-  assert.equal(pickup.isWithinRadius, true);
-
-  // Third party delivery
-  const thirdParty = calculateDeliveryFee({
-    mode: "Third-party delivery",
-    customerCoords,
-    vendorCoords,
-    serviceRadiusKm: 5,
-  });
-  assert.equal(thirdParty.fee, 0);
-  assert.equal(thirdParty.isThirdParty, true);
-  assert.equal(thirdParty.isWithinRadius, true);
+test("the fee comes from the real distance between the two pins, with exact slab edges", () => {
+  const inside = calculateDeliveryFee({ mode: "Vendor delivery", customerCoords: north(1.999), vendorCoords: store, serviceRadiusKm: 10 });
+  const outside = calculateDeliveryFee({ mode: "Vendor delivery", customerCoords: north(2.01), vendorCoords: store, serviceRadiusKm: 10 });
+  assert.equal(inside.fee, 20);
+  assert.equal(outside.fee, 25);
+  assert.ok(inside.distanceKnown && Math.abs(inside.distanceKm - 2) < 0.01);
+  assert.equal(haversineDistanceKm(null, 1, 1, 1), null);
+  assert.equal(haversineDistanceKm(11, "", 11, 77), null);
+  assert.equal(haversineDistanceKm(11, 77, 11, 77), 0);
 });
 
-test("Vendor custom delivery fee overrides distance tier when specified", () => {
-  const vendorCoords = { latitude: 10.3624, longitude: 77.9695 };
-  const customerCoords = { latitude: 10.368, longitude: 77.974 }; // 1 km -> default is ₹20
+test("outside the vendor's radius there is no delivery; a measured distance just inside the radius is accepted", () => {
+  const far = calculateDeliveryFee({ mode: "Vendor delivery", customerCoords: north(6), vendorCoords: store, serviceRadiusKm: 5 });
+  assert.equal(far.isWithinRadius, false);
+  assert.match(far.message, /beyond the vendor's 5 km delivery radius/);
+  const edge = calculateDeliveryFee({ mode: "Vendor delivery", customerCoords: north(4.9999), vendorCoords: store, serviceRadiusKm: 5 });
+  assert.equal(edge.isWithinRadius, true);
+  assert.equal(edge.fee, 30);
+});
 
-  const customFeeResult = calculateDeliveryFee({
-    mode: "Vendor delivery",
-    customerCoords,
-    vendorCoords,
-    serviceRadiusKm: 8,
-    vendorCustomFee: 45,
+test("pickups and third-party options carry no delivery fee; there are four options", () => {
+  assert.equal(fulfilmentKind("Vendor delivery"), "vendor_delivery");
+  assert.equal(fulfilmentKind("Self pickup"), "self_pickup");
+  assert.equal(fulfilmentKind("third_party_delivery"), "third_party_customer");
+  assert.equal(fulfilmentKind("Third-party pickup by vendor"), "third_party_vendor");
+  for (const mode of ["Self pickup", "third_party_delivery", "Third-party pickup by vendor"]) {
+    assert.equal(calculateDeliveryFee({ mode, customerCoords: north(6), vendorCoords: store, serviceRadiusKm: 5 }).fee, 0, mode);
+  }
+});
+
+test("a flat fee set by Operations replaces the slabs but never goes below Rs 20; unknown distance charges the minimum", () => {
+  assert.equal(calculateDeliveryFee({ mode: "Vendor delivery", customerCoords: north(7), vendorCoords: store, serviceRadiusKm: 10, vendorCustomFee: 35 }).fee, 35);
+  assert.equal(calculateDeliveryFee({ mode: "Vendor delivery", customerCoords: north(7), vendorCoords: store, serviceRadiusKm: 10, vendorCustomFee: 5 }).fee, 20);
+  const unknown = calculateDeliveryFee({ mode: "Vendor delivery", serviceRadiusKm: 10 });
+  assert.equal(unknown.fee, 20);
+  assert.equal(unknown.distanceKnown, false);
+});
+
+test("commission follows the vendor's category, a per-vendor rate wins, and Taster pays none", () => {
+  const expected = { "Home food": 10, Bakery: 10, Snacks: 10, Vegetables: 5, Fruits: 5, "Meat & fish": 5, "Milk & dairy": 5, Groceries: 3, "Rice & staples": 3 };
+  for (const [category, percent] of Object.entries(expected)) assert.equal(commissionPercentFor(category), percent, category);
+  assert.equal(commissionPercentFor("Groceries", 4.5), 4.5);
+  assert.equal(commissionPercentFor("Groceries", 120), 3, "an impossible override is ignored");
+  assert.equal(commissionPercentFor("Home food", 12, "Taster"), 0);
+  assert.ok(Object.values(COMMISSION_BY_CATEGORY).every((n) => n >= 0 && n <= 100));
+});
+
+test("GST: by item, by who is liable, and the document the customer receives", () => {
+  assert.equal(defaultGstMode("Home food"), "platform");
+  assert.equal(defaultGstMode("Vegetables"), "none");
+  assert.equal(defaultGstMode("Bakery"), "vendor");
+  const homeChef = calculateBillingSummary({ items: [{ name: "Meal", price: 100, quantity: 2 }], vendorCategory: "Home food", mode: "Self pickup" });
+  assert.equal(homeChef.gstAmount, 10);
+  assert.equal(homeChef.invoiceType, "section_9_5");
+  assert.equal(homeChef.totalAmount, 210);
+  const greens = calculateBillingSummary({ items: [{ name: "Tomato", price: 40, quantity: 1, category: "Vegetables" }], vendorCategory: "Vegetables", mode: "Self pickup" });
+  assert.equal(greens.gstAmount, 0);
+  assert.equal(greens.invoiceType, "bill_of_supply");
+  const oil = calculateBillingSummary({ items: [{ name: "Oil", price: 200, quantity: 1, category: "Groceries" }], vendorCategory: "Groceries", mode: "Self pickup" });
+  assert.equal(oil.gstAmount, 10);
+  assert.equal(oil.invoiceType, "tax_invoice");
+  const notRegistered = calculateBillingSummary({ items: [{ name: "Cake", price: 500, quantity: 1 }], vendorCategory: "Bakery", gstMode: "none", mode: "Self pickup" });
+  assert.equal(notRegistered.gstAmount, 0);
+  assert.equal(notRegistered.invoiceType, "bill_of_supply");
+  const ownRate = calculateBillingSummary({ items: [{ name: "Paneer", price: 100, quantity: 1, gstRate: 12 }], vendorCategory: "Milk & dairy", gstMode: "vendor", mode: "Self pickup" });
+  assert.equal(ownRate.gstAmount, 12);
+  assert.equal(invoiceTypeFor("vendor", 0), "bill_of_supply");
+});
+
+test("the bill has no platform fee; the vendor keeps the whole delivery fee; commission is on the food total only", () => {
+  const bill = calculateBillingSummary({
+    items: [{ name: "Veg meal", price: 100, quantity: 3 }], mode: "Vendor delivery", customerCoords: north(3), vendorCoords: store, serviceRadiusKm: 8,
+    vendorCategory: "Home food", gstMode: "platform", vendorPlan: "Crave",
   });
-  assert.equal(customFeeResult.fee, 45);
+  assert.equal(bill.subtotal, 300);
+  assert.equal(bill.deliveryFee, 25);
+  assert.equal(bill.gstAmount, 15);
+  assert.equal(bill.totalAmount, 340, "300 food + 15 GST + 25 delivery, nothing else");
+  assert.equal(bill.commissionPercent, 10);
+  assert.equal(bill.commissionAmount, 30, "10% of 300, not of the delivery fee or GST");
+  assert.equal(bill.vendorPayout, 295, "300 + 25 delivery - 30 commission; GST is Sheplates' to pay under 9(5)");
+  const vendorLiable = calculateBillingSummary({ items: [{ name: "Oil", price: 200, quantity: 1, category: "Groceries" }], vendorCategory: "Groceries", mode: "Self pickup", gstMode: "vendor" });
+  assert.equal(vendorLiable.vendorPayout, 200 + 10 - 6, "GST collected for the vendor is paid to the vendor; commission 3% of 200");
 });
 
-test("GST rates apply accurately across product categories without double taxation", () => {
-  // Test prepared food category: 5% GST
-  const foodSummary = calculateBillingSummary({
-    items: [
-      { name: "South Indian Thali", price: 150, quantity: 2, category: "Meals" }, // 300 * 5% = 15
-      { name: "Masala Chai", price: 20, quantity: 2, category: "Beverages" },    // 40 * 5% = 2
-    ],
-    mode: "Self pickup",
-  });
-  assert.equal(foodSummary.subtotal, 340);
-  assert.equal(foodSummary.gstRate, 5);
-  assert.equal(foodSummary.gstAmount, 17); // 340 * 0.05
-  assert.equal(foodSummary.deliveryFee, 0);
-  assert.equal(foodSummary.totalAmount, 357);
-
-  // Test grocery/fresh produce category: 0% GST (nil rated)
-  const grocerySummary = calculateBillingSummary({
-    items: [
-      { name: "Fresh Country Eggs (6 pcs)", price: 60, quantity: 2, category: "Eggs" },      // 120 * 0% = 0
-      { name: "Organic Brown Rice (1 kg)", price: 90, quantity: 1, category: "Rice & staples" }, // 90 * 0% = 0
-    ],
-    mode: "Self pickup",
-  });
-  assert.equal(grocerySummary.subtotal, 210);
-  assert.equal(grocerySummary.gstRate, 0);
-  assert.equal(grocerySummary.gstAmount, 0);
-  assert.equal(grocerySummary.totalAmount, 210);
-
-  // Mixed cart: items with 5% GST and items with 0% GST
-  const mixedSummary = calculateBillingSummary({
-    items: [
-      { name: "Meals combo", price: 200, quantity: 1, category: "Meals" },      // 200 @ 5% = 10
-      { name: "Eggs pack", price: 100, quantity: 1, category: "Eggs" },         // 100 @ 0% = 0
-    ],
-    mode: "Self pickup",
-  });
-  assert.equal(mixedSummary.subtotal, 300);
-  assert.equal(mixedSummary.gstAmount, 10);
-  assert.equal(mixedSummary.totalAmount, 310);
+test("payment re-prices items and GST but keeps the delivery fee fixed at checkout", () => {
+  const bill = calculateBillingSummary({ items: [{ name: "Meal", price: 100, quantity: 1 }], mode: "Vendor delivery", fixedDelivery: { fee: 40, distanceKm: 5.5 }, vendorCategory: "Home food" });
+  assert.equal(bill.deliveryFee, 40);
+  assert.equal(bill.deliveryDistanceKm, 5.5);
+  assert.equal(calculateBillingSummary({ items: [{ name: "Meal", price: 100, quantity: 1 }], mode: "Self pickup", fixedDelivery: { fee: 40 }, vendorCategory: "Home food" }).deliveryFee, 0);
 });
 
-test("Complete billing summary integrates subtotal, delivery fee, GST, and discounts", () => {
-  const vendorCoords = { latitude: 10.3624, longitude: 77.9695 };
-  const customerCoords = { latitude: 10.368, longitude: 77.974 }; // 1 km -> Tier 1: ₹20
-
-  const summary = calculateBillingSummary({
-    items: [
-      { name: "Butter Croissant", price: 80, quantity: 2, category: "Bakery" }, // 160 @ 5% = 8
-    ],
-    mode: "Vendor delivery",
-    customerCoords,
-    vendorCoords,
-    serviceRadiusKm: 5,
-    discountAmount: 20,
-  });
-
-  assert.equal(summary.subtotal, 160);
-  assert.equal(summary.deliveryFee, 20);
-  assert.equal(summary.gstAmount, 8);
-  assert.equal(summary.discountAmount, 20);
-  // Total = 160 + 20 + 8 - 20 = 168
-  assert.equal(summary.totalAmount, 168);
-});
-
-test("Razorpay integration calculates integer paise from total payable and rejects < ₹1.00", () => {
-  const totalRupees = 168.50;
-  const totalPaise = Math.round(totalRupees * 100);
-  assert.equal(totalPaise, 16850);
-  assert.equal(Number.isInteger(totalPaise), true);
-
-  const minimumValidPaise = Math.round(1.00 * 100);
-  assert.equal(minimumValidPaise >= 100, true);
-
-  const invalidPaise = Math.round(0.50 * 100);
-  assert.equal(invalidPaise < 100, true);
-});
-
-test("Database migration creates required billing columns on public.orders with backfill", async () => {
-  const migration = await readFile(path.join(root, "supabase/migrations/20261106000100_gst_and_dynamic_delivery_fee.sql"), "utf8");
-
-  assert.match(migration, /subtotal/);
-  assert.match(migration, /gst_rate/);
-  assert.match(migration, /gst_amount/);
-  assert.match(migration, /discount_amount/);
-  assert.match(migration, /total_amount/);
-  assert.match(migration, /currency/);
-  assert.match(migration, /delivery_distance/);
-  assert.match(migration, /ALTER TABLE public\.orders/);
-  assert.match(migration, /UPDATE public\.orders/);
-});
-
-test("Commerce API route and Razorpay route validate distance, radius, GST and total backend-side", async () => {
-  const commerceRoute = await readFile(path.join(root, "app/api/commerce/route.ts"), "utf8");
-  const razorpayRoute = await readFile(path.join(root, "app/api/payments/razorpay/route.ts"), "utf8");
-
-  // Commerce checkout uses calculateBillingSummary and validates vendor radius
-  assert.match(commerceRoute, /calculateBillingSummary/);
-  assert.match(commerceRoute, /!billing\.isWithinRadius/);
-  assert.match(commerceRoute, /gst_amount: billing\.gstAmount/);
-  assert.match(commerceRoute, /delivery_fee: billing\.deliveryFee/);
-  assert.match(commerceRoute, /subtotal: billing\.subtotal/);
-
-  // Razorpay order creation recalculates total using trusted billing engine
-  assert.match(razorpayRoute, /calculateBillingSummary/);
-  assert.match(razorpayRoute, /const totalPaise = Math\.round\(totalPayableRupees \* 100\)/);
-  assert.match(razorpayRoute, /total_amount: totalPayableRupees/);
-});
-
-test("Frontend components present the itemized billing breakdown", async () => {
-  const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
-
-  // CartView imports and calculates billingSummary
-  assert.match(ui, /calculateBillingSummary/);
-  assert.match(ui, /billingSummary/);
-  assert.match(ui, /Item subtotal/);
-  assert.match(ui, /Delivery fee/);
-  assert.match(ui, /Taxes \(GST/);
-
-  // PaymentDialog displays billing breakdown
-  assert.match(ui, /Review label="Item subtotal"/);
-  assert.match(ui, /Review label="Amount payable"/);
-
-  // OrderDetailsDialog displays billing breakdown
-  assert.match(ui, /Item Subtotal/);
-  assert.match(ui, /Taxes \(GST/);
+test("settlement: every Wednesday, for the Monday to Sunday week before", () => {
+  // 2 Nov 2026 is a Monday.
+  assert.deepEqual(settlementFor("2026-11-02"), { weekStart: "2026-11-02", weekEnd: "2026-11-08", payoutDate: "2026-11-11" });
+  assert.equal(settlementFor("2026-11-05").payoutDate, "2026-11-11");
+  assert.equal(settlementFor("2026-11-08").payoutDate, "2026-11-11", "Sunday still belongs to its own week");
+  assert.equal(settlementFor("2026-11-09").payoutDate, "2026-11-18", "the next Monday starts the next week");
+  assert.equal(new Date("2026-11-11T12:00:00Z").getUTCDay(), 3, "the payout day is a Wednesday");
+  assert.equal(settlementFor("2026-12-28").payoutDate, "2027-01-06", "across the year end");
 });

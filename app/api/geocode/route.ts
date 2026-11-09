@@ -10,7 +10,7 @@ type NominatimPlace = {
 const headers = {
   Accept: "application/json",
   "Accept-Language": "en-IN,en;q=0.9",
-  "User-Agent": "ShePlates/3.1 (hyperlocal-commerce; contact: support@sheplates.com)",
+  "User-Agent": "Sheplates/3.1 (hyperlocal-commerce; contact: support@sheplates.com)",
 };
 
 export async function GET(request: Request) {

@@ -28,6 +28,10 @@ export type FoodDropClaim = {
   unitPrice: number;
   totalPrice: number;
   claimedAt: string;
+  orderId?: string;
+  orderNumber?: string;
+  verificationCode?: string;
+  remainingQuantity?: number;
 };
 
 export type DropDisplayStatus = "scheduled" | "live" | "sold_out" | "ended" | "cancelled";

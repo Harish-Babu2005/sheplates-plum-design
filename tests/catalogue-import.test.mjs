@@ -101,3 +101,24 @@ test("the downloadable template reads back into its own four rows with no proble
   assert.equal(result.rows.length, 4);
   assert.ok(result.rows.every((r) => r.problems.length === 0 && r.foodType));
 });
+
+test("numbers: only whole packs, at most 2 price decimals, real thousands grouping, and the database limits", async () => {
+  const { readCatalogueText, parseNumber, rowProblems, MAX_PRICE, MAX_STOCK } = await load();
+  assert.equal(parseNumber("1,200"), 1200);
+  assert.equal(parseNumber("12,00,000"), 1200000, "Indian grouping");
+  assert.equal(parseNumber("₹120"), 120);
+  assert.equal(parseNumber("150/-"), 150);
+  assert.equal(parseNumber("49,50"), null, "a comma that is not thousands grouping is not a number");
+  assert.equal(parseNumber("1 200"), null);
+  assert.equal(parseNumber("1e3"), null);
+  assert.deepEqual(rowProblems({ name: "x", price: 49.999, stock: 5 }), ["The price can have at most 2 decimal places"]);
+  assert.deepEqual(rowProblems({ name: "x", price: 49.5, stock: 2.5 }), ["Stock must be a whole number of packs"]);
+  assert.deepEqual(rowProblems({ name: "x", price: MAX_PRICE + 1, stock: 1 }), ["The price is too large"]);
+  assert.deepEqual(rowProblems({ name: "x", price: MAX_PRICE, stock: MAX_STOCK }), []);
+  assert.deepEqual(rowProblems({ name: "x", price: 0.01, stock: 1 }), []);
+  const bad = readCatalogueText("Name,Price,Stock\nNegative stock,20,-3\nText stock,20,many\nBlank stock,20,\nUnit in stock column,20,5 kg\n", opts);
+  assert.deepEqual(bad.rows.map((r) => r.problems.length === 0), [false, false, false, true]);
+  assert.equal(bad.rows[3].pack, "5 kg", "a quantity such as 5 kg is still read as the pack size");
+  const noColumn = readCatalogueText("Name,Price\nNo stock column,20\n", opts);
+  assert.equal(noColumn.rows[0].stock, 1, "no stock column at all means 1 pack");
+});

@@ -53,7 +53,7 @@ export function PromoBanner({ onShop }: { onShop: () => void }) {
   return <div className="sh"><section className="promo k-promo" style={{ padding: "18px 22px" }}>
     <div className="col" style={{ gap: 6 }}>
       <span className="pill dark" style={{ width: "max-content" }}><Zap className="size-4" />Food Drops</span>
-      <h2 className="h2" style={{ fontSize: 24 }}>Todayy 12 PM to 6 PM</h2>
+      <h2 className="h2" style={{ fontSize: 24 }}>Today, 12 PM to 6 PM</h2>
       <div className="s">Surplus meals from nearby kitchens at up to 50% off</div>
       <button type="button" onClick={onShop} className="btn xs accent" style={{ width: "max-content", marginTop: 6 }}>See today&apos;s drops</button>
     </div>
@@ -84,10 +84,10 @@ export function VendorCard({ state, vendor, profile, onOpen, compact = false, co
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor);
   const connectNumber = connectVendor?.whatsapp_number ? normalizeWhatsAppNumber(connectVendor.whatsapp_number) : null;
   return <div className={`flex items-center gap-3 rounded-[22px] border border-stone-200/70 bg-white p-3 shadow-sm ${compact ? "" : "sm:p-4"}`}>
-    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
+    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="size-18 shrink-0 rounded-2xl" emojiSize={30} />
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5"><span className="truncate font-black">{vendor.businessName}</span>{vendor.verification === "Verified" && <BadgeCheck className="size-4 shrink-0 text-emerald-600" aria-label="Verified" />}</div>
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-bold text-stone-500">{rating ? <span className="flex items-center gap-1 text-amber-600"><Stars value={rating.average} size={12} />{rating.average.toFixed(1)} <span className="text-stone-400">({rating.count})</span></span> : <span>New on ShePlates</span>}{distance !== null && <span>· {distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</span>}<span>· {shortArea(vendor.address)}</span></div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-bold text-stone-500">{rating ? <span className="flex items-center gap-1 text-amber-600"><Stars value={rating.average} size={12} />{rating.average.toFixed(1)} <span className="text-stone-400">({rating.count})</span></span> : <span>New on Sheplates</span>}{distance !== null && <span>· {distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</span>}<span>· {shortArea(vendor.address)}</span></div>
       <div className="mt-1.5 flex flex-wrap gap-1.5"><span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">{vendor.category}</span>{vendor.delivery && <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">Delivery</span>}{vendor.pickup && <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">Pickup</span>}</div>
     </div>
     <div className="flex shrink-0 flex-col items-end gap-2">{vendor.openToday ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Open Now</span> : <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-black text-stone-500">Closed</span>}
@@ -120,7 +120,7 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
     : null;
   const durationHours = vendor.operating_hours?.duration_hours;
   const whatsappUrl = whatsappNumber
-    ? `https://wa.me/${whatsappNumber.slice(1)}?text=${encodeURIComponent(`Hi ${vendor.vendor_name}, I found your business on ShePlates and would like to enquire.`)}`
+    ? `https://wa.me/${whatsappNumber.slice(1)}?text=${encodeURIComponent(`Hi ${vendor.vendor_name}, I found your business on Sheplates and would like to enquire.`)}`
     : null;
   return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-3xl bg-white p-4 ring-2 ring-[#155F65] sm:p-5">
     <div className="flex items-start gap-3">
@@ -131,11 +131,11 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
         <p className="mt-1 text-xs text-stone-500">{vendor.address || vendor.locality || "Address unavailable"}</p>
       </div>
     </div>
-    <div className="mt-3 flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]"><BadgeCheck className="size-4" />Verified by ShePlates</span>{typeof durationHours === "number" && Number.isFinite(durationHours) && <span className="rounded-full bg-[#EEF2F2] px-3 py-1 text-xs font-semibold">Open about {durationHours} hours a day</span>}</div>
+    <div className="mt-3 flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]"><BadgeCheck className="size-4" />Verified by Sheplates</span>{typeof durationHours === "number" && Number.isFinite(durationHours) && <span className="rounded-full bg-[#EEF2F2] px-3 py-1 text-xs font-semibold">Open about {durationHours} hours a day</span>}</div>
     {vendor.description && <p className="mt-3 text-sm leading-6 text-stone-600">{vendor.description}</p>}
     {typeof durationHours === "number" && Number.isFinite(durationHours) && <p className="mt-2 text-xs text-stone-500">Operating duration: {durationHours} hours (schedule not specified)</p>}
     {whatsappUrl && <button type="button" disabled={contactPending} onClick={() => onContact(vendor, source)} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2.5 text-[15px] font-bold text-[#202827] transition hover:bg-[#1fb957] disabled:cursor-wait disabled:opacity-70"><MessageCircle className="size-5" />{contactPending ? "Opening WhatsApp…" : "Contact on WhatsApp"}</button>}
-    <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">This kitchen takes orders directly on WhatsApp. These orders are arranged with the kitchen and are not paid through ShePlates.</p>
+    <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">This kitchen takes orders directly on WhatsApp. These orders are arranged with the kitchen and are not paid through Sheplates.</p>
   </section>;
 }
 
@@ -346,7 +346,7 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
       toast.error("This vendor does not have a valid WhatsApp number.");
       return;
     }
-    const message = `Hi ${vendor.vendor_name}, I found your business on ShePlates and would like to enquire.`;
+    const message = `Hi ${vendor.vendor_name}, I found your business on Sheplates and would like to enquire.`;
     const whatsappUrl = `https://wa.me/${normalizedNumber.slice(1)}?text=${encodeURIComponent(message)}`;
     const destination = window.open("about:blank", "_blank");
     if (!destination) {

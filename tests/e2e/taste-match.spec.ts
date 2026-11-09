@@ -31,7 +31,7 @@ test.describe("Taste Match", () => {
     // Taste Match badges persist across a reload (state is saved locally and
     // mirrored to Supabase best-effort, not recomputed from scratch).
     await page.reload();
-    await page.waitForSelector("text=Loading your ShePlates profile", { state: "hidden", timeout: 15_000 }).catch(() => {});
+    await page.waitForSelector("text=Loading your Sheplates profile", { state: "hidden", timeout: 15_000 }).catch(() => {});
     await expect(grid).toBeVisible({ timeout: 15_000 });
     await expect(banner).toBeHidden();
     await expect(grid.getByRole("button", { name: /% Taste Match/ }).first()).toBeVisible({ timeout: 20_000 });

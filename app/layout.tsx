@@ -5,6 +5,7 @@ import "./design-kit.css";
 import "./shell-kit.css";
 import "./staff-kit.css";
 import { TableLabels } from "@/components/table-labels";
+import { BrandSplash } from "@/components/brand";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -14,13 +15,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: { default: "ShePlates", template: "%s · ShePlates" },
+  title: { default: "Sheplates", template: "%s · Sheplates" },
   description: "Local food and essentials, planned around you.",
-  applicationName: "ShePlates",
+  applicationName: "Sheplates",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "ShePlates",
+    title: "Sheplates",
     statusBarStyle: "black-translucent",
   },
   formatDetection: { telephone: false },
@@ -40,7 +41,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">{children}<TableLabels /></body>
+      <body className="antialiased"><BrandSplash />{children}<TableLabels /></body>
     </html>
   );
 }

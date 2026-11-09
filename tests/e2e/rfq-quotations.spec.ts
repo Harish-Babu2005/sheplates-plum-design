@@ -74,7 +74,7 @@ async function signIn(browser: Browser, who: "customer" | Acct): Promise<Page> {
   await page.getByLabel("Email").fill(who === "customer" ? DEMO.customer.email : who.email);
   await page.getByLabel("Password").fill(who === "customer" ? DEMO.customer.password : PASSWORD);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
-  await page.waitForSelector("text=Loading your ShePlates profile", { state: "hidden", timeout: 15_000 }).catch(() => undefined);
+  await page.waitForSelector("text=Loading your Sheplates profile", { state: "hidden", timeout: 15_000 }).catch(() => undefined);
   await dismissTourIfOpen(page);
   return page;
 }

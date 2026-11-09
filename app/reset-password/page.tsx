@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
+import { Wordmark } from "@/components/brand";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -199,7 +200,7 @@ setResetAudience(
       // Live Supabase Auth password update
 await updatePassword(password);
 
-// Notify the original ShePlates tab
+// Notify the original Sheplates tab
 const audience =
   new URLSearchParams(window.location.search).get("audience") === "team"
     ? "team"
@@ -241,15 +242,11 @@ setPageState("success");
       <header className="mx-auto flex h-20 max-w-370 items-center justify-between px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-3">
           <div className="grid size-11 place-items-center rounded-2xl border border-stone-200 bg-white shadow-xs">
-            <img
-              src="/sheplates-logo.png"
-              alt="ShePlates"
-              className="size-8 rounded-full object-contain"
-            />
+            <Wordmark height={24} />
           </div>
           <div>
             <div className="text-xl font-black tracking-[-.03em] text-[#202827]">
-              ShePlates
+              Sheplates
             </div>
             <div className="text-[10px] font-black uppercase tracking-[.18em] text-[#155F65]">
               Agentic local commerce
@@ -298,7 +295,7 @@ setPageState("success");
                   Verifying your reset link…
                 </p>
                 <p className="mt-1 text-xs text-stone-400">
-                  Checking security credentials with ShePlates
+                  Checking security credentials with Sheplates
                 </p>
               </div>
             )}
@@ -499,7 +496,7 @@ setPageState("success");
         {/* Security badge footer */}
         <div className="mt-6 flex items-center justify-center gap-2 text-xs font-bold text-stone-400">
           <ShieldCheck className="size-4 text-[#155F65]" />
-          <span>Secured with ShePlates Authentication</span>
+          <span>Secured with Sheplates Authentication</span>
         </div>
       </main>
     </div>

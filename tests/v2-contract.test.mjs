@@ -32,7 +32,7 @@ test("ships the public marketplace and consolidated authentication entries", asy
   assert.match(entry, /Customer login/i);
   assert.match(entry, /Vendor \/ Team/i);
   assert.match(entry, /navigator\.geolocation/i);
-  assert.match(entry, /Browse kitchens/i);
+  assert.match(entry, /Explore Marketplace/i);
   assert.match(entry, /She Agent/i);
   assert.match(entry, /Be part of our vendor team/i);
   assert.doesNotMatch(entry, /teamDemos\.map/);
@@ -100,7 +100,7 @@ test("surfaces staff authentication failures clearly", async () => {
   assert.match(entry, /authErrorMessage/);
   assert.doesNotMatch(entry, /supabase:create-staff-users/);
   assert.match(entry, /contact your administrator/i);
-  assert.match(auth, /no ShePlates role profile/);
+  assert.match(auth, /no Sheplates role profile/);
 });
 
 test("keeps agentic cancellation advisory and operations controlled", async () => {

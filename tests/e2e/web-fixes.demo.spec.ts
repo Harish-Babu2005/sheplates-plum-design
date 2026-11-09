@@ -123,7 +123,7 @@ test.describe("Food Drops: a vendor can create one", () => {
     await page.getByRole("combobox").click();
     await page.getByRole("option", { name: "Curd Rice" }).click();
     await page.getByRole("button", { name: /Schedule drop/ }).click();
-    await expect(page.getByText(/Food Drop (is live|scheduled for 8:00 PM)/)).toBeVisible();
+    await expect(page.getByText(/Food Drop (is live|scheduled for 12:00 PM)/)).toBeVisible();
     await expect(page.getByRole("heading", { name: /Curd Rice — flash drop/ })).toBeVisible();
   });
 

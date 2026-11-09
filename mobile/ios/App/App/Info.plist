@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>ShePlates</string>
+        <string>Sheplates</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,13 +25,13 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>ShePlates uses your location to find kitchens near you and to set your delivery pin.</string>
+	<string>Sheplates uses your location to find kitchens near you and to set your delivery pin.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>ShePlates uses the camera so you can add photos and videos to your status, Food Shorts and products.</string>
+	<string>Sheplates uses the camera so you can add photos and videos to your status, Food Shorts and products.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>ShePlates uses the microphone when you record a video with sound for a status or Food Short.</string>
+	<string>Sheplates uses the microphone when you record a video with sound for a status or Food Short.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>ShePlates lets you choose photos and videos for your profile, status, Food Shorts, products and certificates.</string>
+	<string>Sheplates lets you choose photos and videos for your profile, status, Food Shorts, products and certificates.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>upi</string>
