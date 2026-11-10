@@ -8,6 +8,7 @@
 //            fresh install from looking empty; they never reach the database.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient, isLiveSupabaseMode } from "@/lib/supabase";
+import { startAutoRefresh } from "@/lib/auto-refresh";
 import { MAX_SHORTS_PER_DAY, checkVideoDuration, checkVideoFile, defaultReachKm, haversineKm, shortVisibleAtDistance, type ShortStatus } from "@/lib/food-shorts-rules";
 import { deleteLocalVideo, loadLocalVideoUrl, saveLocalVideo } from "@/lib/food-shorts-media";
 
@@ -127,15 +128,7 @@ export function useFoodShorts(user: ShortsUser, vendors: ShortsVendor[], viewer:
 
   useEffect(() => {
     if (mode !== "remote" || (role !== "customer" && role !== "vendor")) return;
-    const refreshOnFocus = () => { if (document.visibilityState === "visible") void refresh(); };
-    const interval = window.setInterval(() => void refresh(), 30_000);
-    window.addEventListener("focus", refreshOnFocus);
-    document.addEventListener("visibilitychange", refreshOnFocus);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshOnFocus);
-      document.removeEventListener("visibilitychange", refreshOnFocus);
-    };
+    return startAutoRefresh(refresh);
   }, [mode, role, refresh]);
 
   useEffect(() => {

@@ -89,6 +89,7 @@ import { recordCampaignEvent, useCampaignViewCounter, useCustomerCampaigns, type
 import { usePeople, type PeopleApi } from "@/lib/people";
 import { useStatuses } from "@/lib/statuses";
 import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts";
+import { AUTO_REFRESH_INTERVAL_MS, startAutoRefresh } from "@/lib/auto-refresh";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
 import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
 
@@ -902,8 +903,6 @@ export function SheplatesV3() {
   const [liveSyncError, setLiveSyncError] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
   const [tourOpen, setTourOpen] = useState<null | "customer" | "vendor">(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const pullStartY = useRef<number | null>(null);
   const initializedNavigationKey = useRef("");
   const skipNavigationSync = useRef(false);
   const lastAlertedNotification = useRef<string>("");
@@ -1006,40 +1005,6 @@ export function SheplatesV3() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, [hydrated, navigationKey, session]);
-
-  useEffect(() => {
-    const onManualRefresh = () => {
-      setIsRefreshing(true);
-      if (session?.role === "customer") void refreshDrops();
-      window.setTimeout(() => setIsRefreshing(false), 700);
-    };
-    window.addEventListener("sheplates:manual-refresh", onManualRefresh);
-    return () => window.removeEventListener("sheplates:manual-refresh", onManualRefresh);
-  }, [session?.role]);
-
-  useEffect(() => {
-    const handleTouchStart = (event: TouchEvent) => {
-      if (window.scrollY > 0 || event.touches.length === 0) return;
-      pullStartY.current = event.touches[0].clientY;
-    };
-    const handleTouchMove = (event: TouchEvent) => {
-      if (pullStartY.current === null || window.scrollY > 0) return;
-      const delta = event.touches[0].clientY - pullStartY.current;
-      if (delta > 80) {
-        window.dispatchEvent(new CustomEvent("sheplates:manual-refresh"));
-        pullStartY.current = null;
-      }
-    };
-    const handleTouchEnd = () => { pullStartY.current = null; };
-    document.addEventListener("touchstart", handleTouchStart, { passive: true });
-    document.addEventListener("touchmove", handleTouchMove, { passive: true });
-    document.addEventListener("touchend", handleTouchEnd, { passive: true });
-    return () => {
-      document.removeEventListener("touchstart", handleTouchStart);
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [session?.role]);
 
   useEffect(() => {
     try {
@@ -1314,6 +1279,11 @@ export function SheplatesV3() {
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
+  useEffect(() => {
+    if (!hydrated || !syncSession || !isLiveSupabaseMode() || liveSync === "loading") return;
+    return startAutoRefresh(() => setSyncVersion((version) => version + 1), AUTO_REFRESH_INTERVAL_MS);
+  }, [hydrated, syncSession, liveSync]);
+
   async function signOut() { await liveSignOut(); setSession(null); setActive("Marketplace"); toast.success("Signed out"); }
   function finishTour(skipped: boolean) {
     const key = tourOpen === "customer" ? CUSTOMER_TOUR_KEY : VENDOR_TOUR_KEY;
@@ -1346,7 +1316,6 @@ export function SheplatesV3() {
 
   const unread = state.notifications.filter((item) => notificationBelongsToSession(item, session) && !item.read).length;
   const hasPin = Boolean(customer && Number.isFinite(customer.latitude) && Number.isFinite(customer.longitude));
-  const mobileRefresh = isRefreshing ? <div className="fixed left-1/2 top-4 z-[90] -translate-x-1/2 rounded-full border border-[#155F65]/20 bg-white px-3 py-1.5 text-[11px] font-black uppercase tracking-[.16em] text-[#155F65] shadow-lg">Refreshing…</div> : null;
   async function claimDrop(drop: FoodDrop, quantity: number) {
     if (!Number.isInteger(quantity) || quantity <= 0 || quantity > drop.remainingQuantity || dropDisplayStatus(drop) !== "live") {
       toast.error("This Food Drop is no longer available.");
@@ -1454,7 +1423,6 @@ export function SheplatesV3() {
     {role === "customer" && <CustomerHeader active={active} name={session.name} email={session.email} area={shortArea(customer?.address)} unread={unread} cartCount={customerCartCount} accountOpen={customerMenuOpen} onToggleAccount={() => setCustomerMenuOpen((value) => !value)} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} onNotifications={() => setActive("Notifications")} onLocation={() => { setActive("Marketplace"); setLocationSignal((n) => n + 1); }} onReplayTour={() => { replayTour(); setCustomerMenuOpen(false); }} onSignOut={signOut} />}
 
     {role === "customer" ? <><main className="sp-customer-main mx-auto min-w-0 max-w-385 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-8 lg:pb-28">
-      {mobileRefresh}
       {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card mb-4 flex items-center gap-3 rounded-2xl border border-sky-200/70 bg-sky-50/90 p-3 text-sm text-sky-900"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
       {isLiveSupabaseMode() && liveSync === "error" && <div className="surface-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200/70 bg-amber-50/90 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)} className="rounded-lg"><RefreshCcw />Retry</Button></div>}
       {content}
