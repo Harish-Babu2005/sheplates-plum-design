@@ -13,8 +13,8 @@ test("customer commerce uses a model-driven business-tool loop", () => {
   assert.match(runtime, /name: "get_order_status"/);
   assert.match(runtime, /name: "build_cart"/);
   assert.match(runtime, /tool_choice: "auto"/);
-  assert.match(runtime, /type: "function_call_output"/);
-  assert.match(runtime, /previous_response_id/);
+  assert.match(runtime, /tool_calls: calls\.map/);
+  assert.match(runtime, /role: "tool"/);
 });
 
 test("natural discovery is delegated to the model rather than phrase routing", () => {
@@ -25,10 +25,10 @@ test("natural discovery is delegated to the model rather than phrase routing", (
   assert.match(runtime, /search_catalogue/);
 });
 
-test("raw Responses API output is parsed from message output items", () => {
+test("chat-completions output is parsed from message content and tool calls", () => {
   assert.match(runtime, /function extractOutputText/);
-  assert.match(runtime, /content\.type === "output_text"/);
-  assert.match(runtime, /content\.text/);
+  assert.match(runtime, /typeof message\?\.content === "string"/);
+  assert.match(runtime, /Array\.isArray\(message\?\.content\)/);
   assert.match(runtime, /function extractRefusal/);
 });
 

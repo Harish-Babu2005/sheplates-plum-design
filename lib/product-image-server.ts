@@ -10,6 +10,10 @@ export class ImageError extends Error {
 export type ImageResult = { imageUrl: string; source: "cache" | "generated" };
 type Fetch = typeof fetch;
 
+const apiBase = () => (process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "");
+
+const apiKey = () => process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || "";
+
 export const DAILY_LIMIT = () => Math.max(0, Number(process.env.AI_IMAGE_DAILY_LIMIT ?? 60));
 export const VENDOR_DAILY_LIMIT = () => Math.max(0, Number(process.env.AI_IMAGE_VENDOR_DAILY_LIMIT ?? 15));
 
@@ -36,7 +40,7 @@ export async function callerFromRequest(request: Request): Promise<{ id: string;
 /** Asks the image model for one picture. Retries once without the format options for models that reject them. */
 export async function requestAiImage(input: { apiKey: string; model: string; prompt: string; fetchImpl?: Fetch }): Promise<Uint8Array> {
   const doFetch = input.fetchImpl ?? fetch;
-  const call = async (extra: Record<string, unknown>) => doFetch("https://api.openai.com/v1/images/generations", {
+  const call = async (extra: Record<string, unknown>) => doFetch(`${apiBase()}/images/generations`, {
     method: "POST",
     headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: input.model, prompt: input.prompt, size: "1024x1024", quality: "medium", n: 1, ...extra }),
@@ -56,10 +60,10 @@ export async function requestAiImage(input: { apiKey: string; model: string; pro
 
 async function nameIsAllowed(apiKey: string, name: string, fetchImpl?: Fetch): Promise<boolean> {
   try {
-    const response = await (fetchImpl ?? fetch)("https://api.openai.com/v1/moderations", {
+    const response = await (fetchImpl ?? fetch)(`${apiBase()}/moderations`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "omni-moderation-latest", input: name }),
+      body: JSON.stringify({ model: process.env.AI_MODERATION_MODEL || process.env.URUV_MODERATION_MODEL || "uruv-moderate", input: name }),
     });
     if (!response.ok) return true;
     const json = await response.json() as { results?: Array<{ flagged?: boolean }> };
@@ -114,13 +118,13 @@ export async function ensureConceptImage(admin: SupabaseClient, input: { name: s
   if (usage.total >= DAILY_LIMIT()) throw new ImageError(429, "The daily limit for AI product images has been reached. It resets tomorrow.");
   if (input.vendorId && usage.mine >= VENDOR_DAILY_LIMIT()) throw new ImageError(429, "Your store has used its AI images for today. Try again tomorrow or upload a photo.");
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new ImageError(503, "AI images are temporarily unavailable.");
-  if (!(await nameIsAllowed(apiKey, clean, input.fetchImpl))) throw new ImageError(422, "That name cannot be illustrated.");
+  const apiKeyValue = apiKey();
+  if (!apiKeyValue) throw new ImageError(503, "AI images are temporarily unavailable.");
+  if (!(await nameIsAllowed(apiKeyValue, clean, input.fetchImpl))) throw new ImageError(422, "That name cannot be illustrated.");
 
-  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
+  const model = process.env.AI_IMAGE_MODEL || process.env.URUV_IMAGE_MODEL || "uruv-image";
   const prompt = buildProductImagePrompt(clean, input.category);
-  const bytes = await requestAiImage({ apiKey, model, prompt, fetchImpl: input.fetchImpl });
+  const bytes = await requestAiImage({ apiKey: apiKeyValue, model, prompt, fetchImpl: input.fetchImpl });
   const { mime, ext } = detectImageType(bytes);
 
   await ensureBucket(admin);

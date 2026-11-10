@@ -13,9 +13,11 @@ async function authoriseVendorOrAdmin(request: Request) {
   return profile?.role === "vendor" || profile?.role === "admin";
 }
 
+const apiBase = () => (process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "");
+
 export async function POST(request: Request) {
   if (!(await authoriseVendorOrAdmin(request))) return NextResponse.json({ error: "Vendor or Super Admin access is required." }, { status: 403 });
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "Image enhancement is temporarily unavailable." }, { status: 503 });
 
   const body = await request.json() as { imageDataUrl?: string; productName?: string; category?: string };
@@ -27,13 +29,13 @@ export async function POST(request: Request) {
   if (bytes.length > 10 * 1024 * 1024) return NextResponse.json({ error: "Image must be under 10 MB." }, { status: 413 });
 
   const form = new FormData();
-  form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
+  form.append("model", process.env.AI_IMAGE_MODEL || process.env.URUV_IMAGE_MODEL || "uruv-image");
   form.append("image", new Blob([bytes], { type: mime }), "product-upload.png");
   form.append("size", "1024x1024");
   form.append("quality", "medium");
   form.append("prompt", `Create a polished marketplace product photo for Sheplates from this vendor-uploaded image. Product: ${body.productName || "food product"}. Category: ${body.category || "food"}. Preserve the actual product identity, pack, ingredients and visible quantity. Improve lighting, framing, sharpness and background only. Use a clean premium food-commerce aesthetic with natural realistic colors, soft daylight, uncluttered neutral background and no text overlays, fake labels, extra ingredients, people or misleading quantity changes. The result must still honestly represent the uploaded product.`);
 
-  const response = await fetch("https://api.openai.com/v1/images/edits", {
+  const response = await fetch(`${apiBase()}/images/edits`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
   const json = await response.json() as { data?: Array<{ b64_json?: string; url?: string }>; error?: { message?: string } };
   if (!response.ok) return NextResponse.json({ error: json.error?.message || "Image enhancement failed." }, { status: response.status });
   const item = json.data?.[0];
-  if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}`, source: "openai" });
-  if (item?.url) return NextResponse.json({ imageUrl: item.url, source: "openai" });
+  if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}`, source: "uruv" });
+  if (item?.url) return NextResponse.json({ imageUrl: item.url, source: "uruv" });
   return NextResponse.json({ error: "Image enhancement returned no image." }, { status: 502 });
 }
