@@ -1,6 +1,6 @@
 # ShePlates v4.6.0 — Agentic Marketplace Release
 
-This release restructures the customer experience around a clean marketplace and upgrades She Agent into an OpenAI-first, Supabase-grounded commerce copilot with controlled durable preference memory.
+This release restructures the customer experience around a clean marketplace and upgrades She Agent into a URUV-compatible, Supabase-grounded commerce copilot with controlled durable preference memory.
 
 ## Customer marketplace
 
@@ -8,16 +8,16 @@ This release restructures the customer experience around a clean marketplace and
 - Account / Profile & Food, Orders, My Schedule, Monthly Requirement and Ticket Centre are grouped under the customer account menu in the top bar.
 - My Quotations, Notifications and Cart are top-bar icons with counters.
 - Replaced the large marketplace hero banner with a dismissible recommendation panel.
-- The recommendation panel asks She Agent for grounded OpenAI recommendations and revalidates returned product IDs against the currently serviceable marketplace before display. If OpenAI is unavailable, a deterministic grounded fallback is used.
+- The recommendation panel asks She Agent for grounded AI recommendations and revalidates returned product IDs against the currently serviceable marketplace before display. If the AI service is unavailable, a deterministic grounded fallback is used.
 - Marketplace KPIs were removed from the shopping screen and customer order KPIs are kept in Orders.
 - Search now supports product, category, vendor and dietary terms.
 - Filters include planning start date, planning period (1 / 7 / 14 / 30 days), max budget, max calories per pack, minimum protein, dietary tags and sorting by recommendation, price, protein, calories or distance.
 - Product cards expose price, serving pack, nutrition, distance, cart and scheduling actions.
 - Super Admin featured products can appear before algorithmic recommendations.
 
-## She Agent / OpenAI grounding
+## She Agent / AI grounding
 
-- Natural-language shopping is OpenAI-first for recommendations and planning.
+- Natural-language shopping is AI-first for recommendations and planning.
 - Live requests are grounded from the signed-in user's RLS-authorised Supabase context rather than trusting browser-supplied tenant data.
 - Customer context includes profile preferences, durable She Agent memory, schedules, orders, RFQs and the live `marketplace_menu_nearby` catalogue.
 - Vendor context includes only the signed-in vendor, its catalogue, fulfilments, delivery staff and RLS-visible RFQ opportunities.
@@ -38,15 +38,15 @@ This release restructures the customer experience around a clean marketplace and
 
 - Customer: personalised marketplace recommendations + natural She Agent.
 - Vendor: new **AI insights** workspace for stock, fulfilment, delivery and RFQ priorities.
-- Vendor catalogue: OpenAI nutrition estimation remains vendor-reviewed.
-- Vendor product media: upload a real product photo, optionally use OpenAI image enhancement, review the result, then publish it.
+- Vendor catalogue: AI nutrition estimation remains vendor-reviewed.
+- Vendor product media: upload a real product photo, optionally use AI image enhancement, review the result, then publish it.
 - Operations: AI insights across authorised operational signals.
 - Super Admin: executive AI insights, homepage merchandising and AI-assisted campaign strategy.
 
 ## Vendor product image flow
 
 - Added product image upload support.
-- Added `/api/image-enhance` for vendor/admin-authorised OpenAI image enhancement.
+- Added `/api/image-enhance` for vendor/admin-authorised AI image enhancement.
 - Enhancement prompt is constrained to preserve actual product identity, pack, visible quantity and truthfulness; it should improve only presentation such as lighting, framing and background.
 - In live mode the selected/enhanced image is uploaded into a `product-images` Supabase Storage bucket and only the URL is stored on `vendor_menu_items.image_url`.
 - The vendor must review the image before publishing.
@@ -84,12 +84,12 @@ NEXT_PUBLIC_DEMO_MODE=false
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5-mini
-OPENAI_IMAGE_MODEL=gpt-image-2
+URUV_API_KEY=...
+AI_MODEL=uruv-chat
+AI_IMAGE_MODEL=uruv-image
 ```
 
-Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `OPENAI_API_KEY` to browser code.
+Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `URUV_API_KEY` to browser code.
 
 ## Validation performed in this environment
 

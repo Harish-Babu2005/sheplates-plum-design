@@ -35,9 +35,10 @@ test("She Agent: every model call has a deadline, the written analysis falls bac
   assert.match(route, /if \(body\.task === "business_insights"\) return businessSnapshot\(body\)/);
   assert.match(route, /function compactContext\(/);
   assert.match(route, /Authorised context: \$\{compactContext\(effectiveContext\)\}/);
-  assert.match(route, /reasoning: \{ effort: "low" \}/);
+  assert.doesNotMatch(route, /reasoning\s*:\s*\{\s*effort\s*:\s*"low"\s*\}/);
   const runtime = await read("lib/she-agent-commerce-runtime.ts");
   assert.equal((runtime.match(/signal: AbortSignal\.timeout\(MODEL_CALL_TIMEOUT_MS\)/g) || []).length, 2, "both the plain and the streaming model call");
+  assert.doesNotMatch(runtime, /reasoning\s*:\s*\{\s*effort\s*:\s*"low"\s*\}/);
   const app = await read("components/sheplates-v3.tsx");
   assert.match(app, /const deadline = window\.setTimeout\(\(\) => controller\.abort\(\), 90000\)/, "the chat window gives up too");
   assert.equal((app.match(/fetchWithDeadline\("\/api\/agent"/g) || []).length >= 4, true, "insights, narrative, campaigns and nutrition");

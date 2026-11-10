@@ -5425,7 +5425,7 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
     <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
-      <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
+      <div className="surface-card min-w-0 max-w-full overflow-hidden space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
         <Field label="Full store address"><Textarea value={address} onChange={(event) => setAddress(event.target.value)} className="min-h-24 rounded-xl" /></Field>
         <LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} />
         <div className="flex flex-wrap gap-2">

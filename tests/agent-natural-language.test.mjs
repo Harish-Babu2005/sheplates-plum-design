@@ -33,6 +33,6 @@ test("product-facing copy does not expose implementation brands or developer con
   const entry = await readFile(path.join(root, "components/sheplates-entry.tsx"), "utf8");
 
   for (const source of [ui, entry]) {
-    assert.doesNotMatch(source, /Supabase sync|saved to Supabase|RLS-protected|with OpenAI|OpenAI analyses|OPENAI_API_KEY|gpt-/i);
+    assert.doesNotMatch(source, /Supabase sync|saved to Supabase|RLS-protected|with OpenAI|OpenAI analyses|OPENAI_API_KEY|gpt-|omni-moderation|api.openai.com/i);
   }
 });

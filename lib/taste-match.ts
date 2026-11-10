@@ -114,7 +114,7 @@ export function weightsFromSetupChoices(choices: string[]): TasteWeights {
 }
 
 // --- Deterministic fallback attribute inference -----------------------
-// Used when the AI classification route is unavailable (no OPENAI_API_KEY,
+// Used when the AI classification route is unavailable (no AI API key,
 // or the call fails) so a product always has *some* reasonable attributes
 // rather than none. Keyword-matched against the product's own name/category
 // — no network call, same result every time for the same input.
