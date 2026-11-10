@@ -11,6 +11,7 @@
 // mode; local mode mirrors the same numbers so behaviour matches.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient, isLiveSupabaseMode } from "@/lib/supabase";
+import { startAutoRefresh } from "@/lib/auto-refresh";
 
 const SOCIAL_INITIAL_TIME = Date.now();
 
@@ -179,6 +180,38 @@ export function useSocial(user: SocialUser, vendors: SeedVendor[], products: See
     })().catch(() => { if (!cancelled) setMode("local"); });
     return () => { cancelled = true; };
   }, [user.email, user.name, userId]);
+
+  const refreshRemote = useCallback(async () => {
+    if (mode !== "remote" || !userId) return;
+    const sb = getSupabaseBrowserClient();
+    if (!sb) return;
+    try {
+      const [posts, likes, saves, follows] = await Promise.all([
+        sb.from("posts").select(POST_COLUMNS).order("created_at", { ascending: false }).limit(80),
+        sb.from("post_likes").select("post_id").eq("user_id", userId),
+        sb.from("post_saves").select("post_id").eq("user_id", userId),
+        sb.from("vendor_follows").select("vendor_id").eq("follower_id", userId),
+      ]);
+      const failure = posts.error || likes.error || saves.error || follows.error;
+      if (failure) {
+        console.error("Social data refresh failed:", failure);
+        return;
+      }
+      setRemotePosts(((posts.data || []) as unknown as RemotePostRow[]).map(mapRemote));
+      setMe((current) => ({
+        ...current,
+        liked: (likes.data || []).map((row) => row.post_id as string),
+        saved: (saves.data || []).map((row) => row.post_id as string),
+        followed: (follows.data || []).map((row) => row.vendor_id as string),
+      }));
+    } catch (error) {
+      console.error("Social data refresh failed:", error);
+    }
+  }, [mode, userId]);
+  useEffect(() => {
+    if (mode !== "remote") return;
+    return startAutoRefresh(refreshRemote);
+  }, [mode, refreshRemote]);
 
   const samples = useMemo(() => (mode === "local" ? sampleFeed(vendors, products) : []), [mode, vendors, products]);
   const posts = useMemo(() => {

@@ -39,6 +39,22 @@ test("the monitor page, the report button and the menus are wired", async () => 
   assert.match(viewer, /Report this status/);
 });
 
+test("Food Shorts monitor cards wrap content and keep moderation controls in one mobile row", async () => {
+  const page = await read("components/staff/stories-monitor.tsx");
+  assert.match(page, /surface-card flex flex-col overflow-hidden rounded-3xl/);
+  assert.match(page, /style=\{\{ height: "11rem", flex: "0 0 11rem"/);
+  assert.match(page, /relative z-10 min-w-0 flex-1 space-y-2 bg-white p-4 pt-5/);
+  assert.match(page, /WebkitTextFillColor: "#155F65"/, "the shop name has explicit Safari-safe text color");
+  assert.match(page, /<p className="m-0 min-w-0 break-words \[overflow-wrap:anywhere\] text-sm font-bold leading-5 text-\[#155F65\]"/);
+  assert.match(page, /whitespace-pre-wrap break-words \[overflow-wrap:anywhere\]/);
+  assert.match(page, /grid min-w-0 grid-cols-3 gap-2/);
+  assert.match(page, /h-11 min-w-0 whitespace-nowrap/);
+  assert.match(page, />Hide<\/button>/);
+  assert.match(page, />Remove<\/button>/);
+  assert.match(page, />Open<\/a>/);
+  assert.match(page, /return startAutoRefresh\(refresh\)/);
+});
+
 test("V9_14 SQL is staff-only and the app wires the three audit and note features", async () => {
   const { readFileSync } = await import("node:fs");
   const sql = readFileSync(new URL("../supabase/V9_14_AUDIT_VIEWS_AND_VENDOR_NOTES.sql", import.meta.url), "utf8");
