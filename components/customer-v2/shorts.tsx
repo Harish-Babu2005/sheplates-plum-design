@@ -103,12 +103,30 @@ export function ShortsViewer({ shorts, startIndex, onClose, liked, onLike, onVie
       {shorts.map((s, i) => <section key={s.id} ref={(el) => { slides.current[i] = el; }} data-index={i} aria-label={`${s.title}, ${s.vendorName}`} className="relative flex h-[100dvh] snap-start items-center justify-center">
         <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-stone-900">
           {(() => {
-            let shopHref: string | undefined;
-            try {
-              const url = new URL(s.shopLink || "");
-              if (url.protocol === "https:" || url.protocol === "http:") shopHref = url.href;
-            } catch { /* Hide malformed links from older or externally written records. */ }
-            return shopHref && <a href={shopHref} target="_blank" rel="noopener noreferrer" className="absolute right-4 bottom-32 z-10 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-black text-stone-900 shadow-lg transition hover:bg-stone-100"><ShoppingBag className="size-4" />Shop now</a>;
+            const targetVendorId = s.vendorId || (() => {
+              if (!s.shopLink) return "";
+              try {
+                const u = new URL(s.shopLink, typeof window !== "undefined" ? window.location.origin : "https://sheplates.com");
+                return u.searchParams.get("vendor") || "";
+              } catch {
+                return "";
+              }
+            })();
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenVendor?.(targetVendorId);
+                }}
+                data-testid="short-shop-link"
+                aria-label={`Shop from ${s.vendorName}`}
+                className="absolute right-4 bottom-32 z-10 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-black text-stone-900 shadow-lg transition hover:bg-stone-100 active:scale-95"
+              >
+                <ShoppingBag className="size-4 text-[#155F65]" />
+                Shop now
+              </button>
+            );
           })()}
           {s.videoUrl
             ? <video ref={(el) => { videos.current[i] = el; }} src={s.videoUrl} poster={s.thumbUrl} muted={muted} loop playsInline preload={Math.abs(i - active) <= 1 ? "auto" : "metadata"} onTimeUpdate={(e) => { if (i === active) setProgress(e.currentTarget.duration ? e.currentTarget.currentTime / e.currentTarget.duration : 0); }} className="h-full w-full object-cover" />

@@ -909,28 +909,49 @@ export function SheplatesV3() {
   const [vendorProfileId, setVendorProfileIdState] = useState<string | null>(null);
 
   const handleOpenVendor = useCallback((id: string | null) => {
-    setVendorProfileIdState(id);
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const currentVendor = params.get("vendor");
     if (id) {
-      if (currentVendor !== id) {
-        params.set("vendor", id);
-        const next = `${window.location.pathname}?${params.toString()}`;
-        window.history.pushState({ page: active, vendor: id }, "", next);
+      const vendor = state.vendors.find((v) => v.id === id);
+      if (!vendor) {
+        toast.error("That vendor's store is not available right now.");
+        setVendorProfileIdState(null);
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          if (params.has("vendor")) {
+            params.delete("vendor");
+            const query = params.toString();
+            const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+            window.history.replaceState({ page: active }, "", next);
+          }
+        }
+        return;
+      }
+      setVendorProfileIdState(id);
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const currentVendor = params.get("vendor");
+        if (currentVendor !== id) {
+          params.set("vendor", id);
+          const next = `${window.location.pathname}?${params.toString()}`;
+          window.history.pushState({ page: active, vendor: id }, "", next);
+        }
       }
     } else {
+      setVendorProfileIdState(null);
       try {
         sessionStorage.removeItem("sheplates_pending_vendor");
       } catch {}
-      if (currentVendor) {
-        params.delete("vendor");
-        const query = params.toString();
-        const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
-        window.history.pushState({ page: active }, "", next);
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const currentVendor = params.get("vendor");
+        if (currentVendor) {
+          params.delete("vendor");
+          const query = params.toString();
+          const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+          window.history.pushState({ page: active }, "", next);
+        }
       }
     }
-  }, [active]);
+  }, [active, state.vendors]);
   const setVendorProfileId = handleOpenVendor;
 
   const qrVendorAttempted = useRef(false);
@@ -3634,7 +3655,7 @@ function StorefrontPos({ vendor, state, setState, session, onOpenVendorProfile }
   return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1" />Edit Profile &amp; Branding</Button>{onOpenVendorProfile && <Button size="sm" variant="outline" onClick={onOpenVendorProfile} className="h-9 rounded-xl text-xs font-bold text-[#155F65] bg-white"><Eye className="size-3.5 mr-1" />Preview Store</Button>}<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button></div>} />
     <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
     <div className="grid gap-4 lg:grid-cols-2">{outlets.map((outlet) => <div key={outlet.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Building2 /></div><div className="min-w-0 flex-1"><b>{outlet.name}</b><p className="mt-1 text-sm text-stone-500">{outlet.address}</p></div><Status>{outlet.openToday ? "Open" : "Closed"}</Status></div><div className="mt-3 text-xs text-stone-500">Service radius: {outlet.radiusKm} km · {Number.isFinite(outlet.latitude) ? "Pinned" : "Needs map pin"}</div><div className="mt-4 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><b>Outlet certification</b><div className="mt-1 text-xs text-stone-500">{outlet.certificateNumber || "Not added"}{outlet.certificateExpiry ? ` · expires ${outlet.certificateExpiry}` : ""}</div></div><Button size="sm" variant="outline" onClick={() => editCertification(outlet)}><Pencil />Edit</Button></div><label className="mt-3 inline-flex cursor-pointer items-center text-xs font-black text-[#155F65]"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => updateOutlet(outlet.id, { certificateName: e.target.files?.[0]?.name || outlet.certificateName })} /><Upload className="mr-1 size-3.5" />{outlet.certificateName || "Upload certificate"}</label></div></div>)}</div>
-    <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} />
+    <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} vendor={vendor} />
     {editProfileOpen && <EditVendorProfileDialog open onClose={() => setEditProfileOpen(false)} vendor={vendor} setState={setState} session={session} />}
   </div>;
 }
