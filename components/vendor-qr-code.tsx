@@ -2,9 +2,12 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import QRCode from "qrcode";
 import Image from "next/image";
-import { QrCode, Download, Copy, Check, Sparkles, BadgeCheck } from "@/components/icons";
+import { QrCode, Download, Copy, Check, Sparkles, BadgeCheck, Store, MapPin } from "@/components/icons";
 import { toast } from "sonner";
 import type { Vendor } from "@/components/sheplates-v3";
+
+/** Official approved tagline for ShePlates promotional materials */
+export const SHEPLATES_BROCHURE_TAGLINE = "ShePlates — Fresh Home Meals & Local Kitchens, Made Simple";
 
 /** Helper to safely load an image for canvas drawing with cross-origin fallback */
 function loadImage(src: string): Promise<HTMLImageElement | null> {
@@ -60,36 +63,173 @@ function drawRoundedRect(
   ctx.restore();
 }
 
-/** Helper to wrap text cleanly on canvas */
-function drawWrappedText(
+/** Helper to draw 4 corner brackets around the QR code on canvas */
+function drawCornerBrackets(
   ctx: CanvasRenderingContext2D,
-  text: string,
   x: number,
   y: number,
-  maxWidth: number,
-  lineHeight: number
+  width: number,
+  height: number,
+  armLength: number,
+  lineWidth: number,
+  strokeColor: string,
+  radius = 12
 ) {
-  const words = text.split(" ");
-  let line = "";
-  const lines: string[] = [];
-  for (let n = 0; n < words.length; n++) {
-    const testLine = line + words[n] + " ";
-    const metrics = ctx.measureText(testLine);
-    if (metrics.width > maxWidth && n > 0) {
-      lines.push(line.trim());
-      line = words[n] + " ";
-    } else {
-      line = testLine;
-    }
-  }
-  lines.push(line.trim());
-  for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], x, y + i * lineHeight);
-  }
-  return lines.length * lineHeight;
+  ctx.save();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Top-Left ┌
+  ctx.beginPath();
+  ctx.moveTo(x, y + armLength);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.lineTo(x + armLength, y);
+  ctx.stroke();
+
+  // Top-Right ┐
+  ctx.beginPath();
+  ctx.moveTo(x + width - armLength, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + armLength);
+  ctx.stroke();
+
+  // Bottom-Left └
+  ctx.beginPath();
+  ctx.moveTo(x, y + height - armLength);
+  ctx.lineTo(x, y + height - radius);
+  ctx.quadraticCurveTo(x, y + height, x + radius, y + height);
+  ctx.lineTo(x + armLength, y + height);
+  ctx.stroke();
+
+  // Bottom-Right ┘
+  ctx.beginPath();
+  ctx.moveTo(x + width - armLength, y + height);
+  ctx.lineTo(x + width - radius, y + height);
+  ctx.quadraticCurveTo(x + width, y + height, x + width, y + height - radius);
+  ctx.lineTo(x + width, y + height - armLength);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
-/** Generates a high-resolution (1200x1600) promotional brochure PNG on canvas */
+/** Helper to draw verified checkmark badge on canvas */
+function drawVerifiedBadge(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  badgeColor = "#7CEB71"
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fillStyle = badgeColor;
+  ctx.fill();
+
+  ctx.strokeStyle = "#FFFFFF";
+  ctx.lineWidth = Math.max(2.5, radius * 0.22);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(centerX - radius * 0.45, centerY);
+  ctx.lineTo(centerX - radius * 0.1, centerY + radius * 0.35);
+  ctx.lineTo(centerX + radius * 0.45, centerY - radius * 0.35);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Helper to draw a pin icon on canvas */
+function drawMapPinIcon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  color = "#7CEB71"
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.6, size * 0.5, 0, Math.PI, true);
+  ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#0A3833";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.6, size * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Helper to draw a storefront icon on canvas */
+function drawStorefrontIcon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  color = "#FFFFFF"
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(2, size * 0.08);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Awning top
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.45, -size * 0.15);
+  ctx.lineTo(-size * 0.35, -size * 0.45);
+  ctx.lineTo(size * 0.35, -size * 0.45);
+  ctx.lineTo(size * 0.45, -size * 0.15);
+  ctx.closePath();
+  ctx.stroke();
+
+  // Awning bottom line
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.45, -size * 0.15);
+  ctx.lineTo(size * 0.45, -size * 0.15);
+  ctx.stroke();
+
+  // Body walls & door
+  ctx.strokeRect(-size * 0.38, -size * 0.15, size * 0.76, size * 0.6);
+  ctx.fillRect(-size * 0.14, size * 0.05, size * 0.28, size * 0.4);
+  ctx.restore();
+}
+
+/** Helper to draw leaf icon on canvas */
+function drawLeafIcon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  color = "#7CEB71"
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, size);
+  ctx.bezierCurveTo(size * 0.1, size * 0.4, size * 0.4, 0, size, 0);
+  ctx.bezierCurveTo(size, size * 0.6, size * 0.6, size * 0.9, 0, size);
+  ctx.fill();
+
+  ctx.strokeStyle = "#08332E";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(0, size);
+  ctx.quadraticCurveTo(size * 0.4, size * 0.5, size * 0.8, size * 0.2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Generates a high-resolution (1200x1600) promotional brochure PNG matching the approved design */
 async function generateStoreBrochurePng({
   vendorName,
   vendorCategory,
@@ -111,61 +251,97 @@ async function generateStoreBrochurePng({
   const ctx = canvas.getContext("2d");
   if (!ctx) return qrDataUrl;
 
-  // 1. Clean, white light background (premium print-ready food brand aesthetic)
-  ctx.fillStyle = "#FFFFFF";
+  // 1. Deep Emerald Base Background & Organic Waves
+  const bgGrad = ctx.createLinearGradient(0, 0, 1200, 1600);
+  bgGrad.addColorStop(0, "#08332E");
+  bgGrad.addColorStop(0.45, "#0A3B35");
+  bgGrad.addColorStop(1, "#052622");
+  ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, 1200, 1600);
 
-  // Outer decorative border
-  drawRoundedRect(ctx, 24, 24, 1152, 1552, 32, "#FFFFFF", "rgb(226, 236, 233)", 4);
-  drawRoundedRect(ctx, 36, 36, 1128, 1528, 24, undefined, "rgb(240, 246, 245)", 2);
-
-  // 2. Top Header - ShePlates Brand Bar
-  drawRoundedRect(ctx, 48, 48, 1104, 130, 24, "#155F65");
-
-  // Load ShePlates Logo/Wordmark
-  const sheplatesWordmark = await loadImage("/brand/sheplates-wordmark-coral.png");
-  if (sheplatesWordmark) {
-    const logoH = 50;
-    const logoW = Math.round(logoH * 3.304);
-    ctx.drawImage(sheplatesWordmark, 80, 88, logoW, logoH);
-  } else {
-    ctx.fillStyle = "rgb(241, 91, 90)";
-    ctx.font = "bold 44px sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("ShePlates", 80, 128);
-  }
-
-  // Tagline next to wordmark
-  ctx.fillStyle = "rgb(189, 225, 227)";
-  ctx.font = "bold 15px sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillText("HYPERLOCAL FOOD & KITCHEN NETWORK", 270, 123);
-
-  // Verified Partner Pill
-  drawRoundedRect(ctx, 880, 85, 230, 48, 24, "rgb(14, 67, 71)", "rgb(29, 117, 124)", 1.5);
-  ctx.fillStyle = "rgb(138, 196, 63)";
-  ctx.font = "bold 15px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("★ VERIFIED PARTNER", 880 + 115, 115);
-
-  // 3. Vendor Hero Spotlight Card
-  drawRoundedRect(ctx, 80, 205, 1040, 310, 28, "rgb(247, 250, 249)", "rgb(223, 237, 233)", 2);
-
-  const avatarCenterX = 600;
-  const avatarCenterY = 285;
-  const avatarRadius = 56;
-
-  // Outer rings for avatar
+  // Top-Right Flowing Waves
+  ctx.save();
+  ctx.fillStyle = "rgba(18, 92, 83, 0.42)";
   ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarRadius + 6, 0, Math.PI * 2);
-  ctx.fillStyle = "#155F65";
+  ctx.moveTo(1200, 0);
+  ctx.lineTo(420, 0);
+  ctx.bezierCurveTo(760, 140, 960, 360, 1200, 490);
+  ctx.closePath();
   ctx.fill();
 
+  ctx.fillStyle = "rgba(23, 115, 104, 0.26)";
   ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarRadius + 3, 0, Math.PI * 2);
+  ctx.moveTo(1200, 0);
+  ctx.lineTo(660, 0);
+  ctx.bezierCurveTo(910, 110, 1060, 250, 1200, 360);
+  ctx.closePath();
+  ctx.fill();
+
+  // Bottom-Left Flowing Waves
+  ctx.fillStyle = "rgba(18, 92, 83, 0.42)";
+  ctx.beginPath();
+  ctx.moveTo(0, 1600);
+  ctx.lineTo(0, 1200);
+  ctx.bezierCurveTo(220, 1260, 480, 1410, 640, 1600);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(23, 115, 104, 0.26)";
+  ctx.beginPath();
+  ctx.moveTo(0, 1600);
+  ctx.lineTo(0, 1370);
+  ctx.bezierCurveTo(160, 1420, 330, 1500, 460, 1600);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Top Header - ShePlates Script Wordmark + Divider + Tagline
+  const sheplatesWordmark = await loadImage("/brand/sheplates-wordmark-coral.png");
+  const logoH = 54;
+  const logoW = Math.round(logoH * 3.304); // ~178px
+  const headerTotalW = logoW + 32 + 2 + 32 + 380;
+  const headerStartX = Math.round((1200 - headerTotalW) / 2);
+  const headerY = 82;
+
+  if (sheplatesWordmark) {
+    ctx.drawImage(sheplatesWordmark, headerStartX, headerY - 6, logoW, logoH);
+  } else {
+    ctx.fillStyle = "#FF6551";
+    ctx.font = "italic bold 44px cursive, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("ShePlates", headerStartX, headerY + 36);
+  }
+
+  // Vertical Divider |
+  ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+  ctx.fillRect(headerStartX + logoW + 28, headerY - 2, 2, 50);
+
+  // Tagline Lines
+  ctx.fillStyle = "#FFFFFF";
+  ctx.textAlign = "left";
+  ctx.font = "900 17px sans-serif";
+  ctx.fillText("HYPERLOCAL", headerStartX + logoW + 58, headerY + 18);
+  ctx.fillText("FOOD & KITCHEN NETWORK", headerStartX + logoW + 58, headerY + 42);
+
+  // 3. Vendor Section: Circular Photo/Logo with Lime Green Border
+  const avatarCenterX = 600;
+  const avatarCenterY = 280;
+  const avatarRadius = 96;
+  const borderThickness = 12;
+
+  // Outer vibrant lime green ring
+  ctx.beginPath();
+  ctx.arc(avatarCenterX, avatarCenterY, avatarRadius + borderThickness, 0, Math.PI * 2);
+  ctx.fillStyle = "#7CEB71";
+  ctx.fill();
+
+  // Inner clean white background
+  ctx.beginPath();
+  ctx.arc(avatarCenterX, avatarCenterY, avatarRadius, 0, Math.PI * 2);
   ctx.fillStyle = "#FFFFFF";
   ctx.fill();
 
+  // Vendor photo or initial
   let vendorImg: HTMLImageElement | null = null;
   if (vendorLogoUrl) {
     vendorImg = await loadImage(vendorLogoUrl);
@@ -185,113 +361,194 @@ async function generateStoreBrochurePng({
     );
     ctx.restore();
   } else {
-    ctx.beginPath();
-    ctx.arc(avatarCenterX, avatarCenterY, avatarRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "#EAF4F2";
-    ctx.fill();
-    ctx.fillStyle = "#155F65";
-    ctx.font = "bold 52px sans-serif";
+    ctx.fillStyle = "#0A3833";
+    ctx.font = "900 84px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText((vendorName[0] || "S").toUpperCase(), avatarCenterX, avatarCenterY);
   }
 
-  // Vendor Name
-  ctx.fillStyle = "#202827";
-  ctx.font = "900 38px sans-serif";
-  ctx.textAlign = "center";
+  // Reset baseline
   ctx.textBaseline = "alphabetic";
-  ctx.fillText(vendorName, 600, 385);
 
-  // Category & Locality
-  ctx.fillStyle = "#155F65";
-  ctx.font = "bold 20px sans-serif";
-  const subtitle = [vendorCategory, vendorAddress].filter(Boolean).join(" · ");
-  ctx.fillText(subtitle, 600, 422);
+  // Vendor Name + Verified Badge
+  ctx.font = "900 46px sans-serif";
+  const nameMetrics = ctx.measureText(vendorName);
+  const badgeGap = 16;
+  const badgeRadius = 16;
+  const combinedNameWidth = nameMetrics.width + badgeGap + badgeRadius * 2;
+  const nameStartX = 600 - combinedNameWidth / 2;
 
-  // Service Highlights Badges
-  const badgeY = 458;
-  const badgeH = 36;
-  const badges = [
-    { label: "🍲 Cooked Fresh Daily", width: 220 },
-    { label: "⚡ Instant Ordering", width: 200 },
-    { label: "🛡️ 100% Certified", width: 190 },
-  ];
-  const totalBadgesWidth = badges.reduce((sum, b) => sum + b.width, 0) + 24;
-  let startX = 600 - totalBadgesWidth / 2;
-  for (const b of badges) {
-    drawRoundedRect(ctx, startX, badgeY, b.width, badgeH, 18, "#EAF4F2", "rgb(205, 229, 225)", 1);
-    ctx.fillStyle = "#155F65";
-    ctx.font = "bold 15px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(b.label, startX + b.width / 2, badgeY + 23);
-    startX += b.width + 12;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.textAlign = "left";
+  ctx.fillText(vendorName, nameStartX, 442);
+
+  // Draw verified checkmark badge right after the name
+  drawVerifiedBadge(ctx, nameStartX + nameMetrics.width + badgeGap + badgeRadius, 428, badgeRadius, "#7CEB71");
+
+  // Category and Address Row
+  const rawAddressText = [vendorCategory, vendorAddress].filter(Boolean).join(" · ");
+  let displayAddress = rawAddressText;
+  ctx.font = "500 19px sans-serif";
+  const maxAddressWidth = 920;
+  if (ctx.measureText(displayAddress).width > maxAddressWidth) {
+    while (displayAddress.length > 10 && ctx.measureText(displayAddress + "…").width > maxAddressWidth) {
+      displayAddress = displayAddress.slice(0, -1);
+    }
+    displayAddress += "…";
   }
 
-  // 4. Promotional Dialogue Section
-  drawRoundedRect(ctx, 80, 540, 1040, 140, 24, "rgb(255, 251, 245)", "rgb(247, 232, 214)", 2);
+  const pinSize = 16;
+  const addrMetrics = ctx.measureText(displayAddress);
+  const addrTotalW = pinSize + 10 + addrMetrics.width;
+  const addrStartX = 600 - addrTotalW / 2;
 
-  ctx.fillStyle = "rgb(212, 107, 40)";
-  ctx.font = "bold 16px sans-serif";
+  drawMapPinIcon(ctx, addrStartX + 6, 486, pinSize, "#7CEB71");
+  ctx.fillStyle = "#C7E8DC";
+  ctx.textAlign = "left";
+  ctx.fillText(displayAddress, addrStartX + pinSize + 10, 488);
+
+  // 4. Promotional Dialogue Section (Clean & Minimal)
+  // Line 1: "Your favourite local kitchen"
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "900 42px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("✦ FRESH FROM OUR KITCHEN TO YOUR TABLE ✦", 600, 574);
+  ctx.fillText("Your favourite local kitchen", 600, 565);
 
-  ctx.fillStyle = "rgb(74, 59, 50)";
-  ctx.font = "italic 20px sans-serif";
-  const promoDialogue =
-    "“Handcrafted with authentic flavours and fresh ingredients. Scan our QR code to explore today's live menu, daily food drops, and order freshly prepared meals delivered straight to your door!”";
-  drawWrappedText(ctx, promoDialogue, 600, 610, 920, 28);
+  // Line 2: "is just a " (white) + "scan away." (light green)
+  const part1 = "is just a ";
+  const part2 = "scan away.";
+  const wPart1 = ctx.measureText(part1).width;
+  const wPart2 = ctx.measureText(part2).width;
+  const line2TotalW = wPart1 + wPart2;
+  const line2StartX = 600 - line2TotalW / 2;
 
-  // 5. QR Code Showcase Card (Center Stage)
-  drawRoundedRect(ctx, 160, 705, 880, 650, 32, "#FFFFFF", "#155F65", 4);
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillText(part1, line2StartX, 620);
+  ctx.fillStyle = "#7CEB71";
+  ctx.fillText(part2, line2StartX + wPart1, 620);
 
-  // Call to action banner inside QR card
-  ctx.fillStyle = "#155F65";
-  ctx.font = "900 32px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("SCAN. EXPLORE. ORDER FRESH!", 600, 762);
+  // 5. QR Code Card Section (Big White Rounded Card)
+  const cardX = 90;
+  const cardY = 700;
+  const cardW = 1020;
+  const cardH = 580;
+  const cardRadius = 38;
 
-  ctx.fillStyle = "#55656A";
-  ctx.font = "bold 18px sans-serif";
-  ctx.fillText("Point your phone camera to open our store directly", 600, 796);
+  // Drop shadow for card
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.2)";
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 12;
+  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, cardRadius, "#FFFFFF");
+  ctx.restore();
 
-  // Load and draw the QR code
+  // Left Column: QR Code + 4 Dark Green Corner Brackets
+  const qrSize = 340;
+  const qrX = cardX + 75;
+  const qrY = cardY + Math.round((cardH - qrSize) / 2);
+
+  // Corner brackets around the QR code
+  const bracketPad = 22;
+  drawCornerBrackets(
+    ctx,
+    qrX - bracketPad,
+    qrY - bracketPad,
+    qrSize + bracketPad * 2,
+    qrSize + bracketPad * 2,
+    48,
+    6,
+    "#0A3833",
+    12
+  );
+
+  // Load and draw the sharp QR code
   const qrImg = await loadImage(qrDataUrl);
   if (qrImg) {
-    ctx.drawImage(qrImg, 380, 825, 440, 440);
+    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
   }
 
-  // Direct URL bar inside QR card
-  drawRoundedRect(ctx, 220, 1285, 760, 44, 22, "rgb(244, 248, 247)", "rgb(221, 236, 233)", 1.5);
-  ctx.fillStyle = "#155F65";
-  ctx.font = "bold 16px sans-serif";
-  ctx.textAlign = "center";
-  const displayUrl = shopUrl.length > 60 ? `${shopUrl.slice(0, 57)}…` : shopUrl;
-  ctx.fillText(`Direct link: ${displayUrl}`, 600, 1313);
+  // Right Column: Heading, Guidance & "Visit Store Now →" Button
+  const rightX = cardX + 475;
 
-  // 6. Footer / Brand Tagline
-  ctx.fillStyle = "#155F65";
-  ctx.font = "bold 22px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("ShePlates — Fresh Home Meals & Local Kitchens, Made Simple", 600, 1420);
+  ctx.fillStyle = "#0A3833";
+  ctx.font = "900 46px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Scan. Explore.", rightX, cardY + 160);
+  ctx.fillText("Order Fresh!", rightX, cardY + 220);
 
-  ctx.fillStyle = "#55656A";
-  ctx.font = "17px sans-serif";
-  ctx.fillText("Empowering authentic home chefs & independent kitchens in your neighbourhood", 600, 1455);
+  ctx.fillStyle = "#4B605B";
+  ctx.font = "500 22px sans-serif";
+  ctx.fillText("Point your phone camera to", rightX, cardY + 280);
+  ctx.fillText("open this store directly.", rightX, cardY + 312);
 
-  ctx.fillStyle = "rgb(120, 144, 156)";
-  ctx.font = "bold 15px sans-serif";
-  ctx.fillText("Available on Web, Android & iPhone · Share on WhatsApp · Print for Counter", 600, 1490);
+  // "Visit Store Now →" Pill Button
+  const btnX = rightX;
+  const btnY = cardY + 360;
+  const btnW = 380;
+  const btnH = 68;
+  const btnRadius = 34;
+  drawRoundedRect(ctx, btnX, btnY, btnW, btnH, btnRadius, "#0A3833");
+
+  // Storefront icon inside button
+  drawStorefrontIcon(ctx, btnX + 46, btnY + 34, 26, "#FFFFFF");
+
+  // Button text
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "900 23px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Visit Store Now →", btnX + 78, btnY + 43);
+
+  // 6. Bottom Footer - Tagline & Local Community Support
+  const footerY = 1480;
+
+  // Left tagline
+  ctx.font = "900 20px sans-serif";
+  const brandW = ctx.measureText("ShePlates").width;
+  ctx.font = "600 18px sans-serif";
+  const tagW = ctx.measureText(" — Fresh Home Meals & Local Kitchens, Made Simple").width;
+  const footerLeftW = brandW + tagW;
+
+  ctx.font = "600 18px sans-serif";
+  const supp1 = "Support Local Kitchens";
+  const supp2 = "in Your Neighbourhood";
+  const suppW = Math.max(ctx.measureText(supp1).width, ctx.measureText(supp2).width) + 36;
+
+  const footerTotalW = footerLeftW + 40 + 2 + 40 + suppW;
+  const footerStartX = Math.round((1200 - footerTotalW) / 2);
+
+  // Draw ShePlates in light green
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#7CEB71";
+  ctx.font = "900 20px sans-serif";
+  ctx.fillText("ShePlates", footerStartX, footerY);
+
+  // Draw the rest in white
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "600 18px sans-serif";
+  ctx.fillText(" — Fresh Home Meals & Local Kitchens, Made Simple", footerStartX + brandW, footerY);
+
+  // Vertical divider |
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.fillRect(footerStartX + footerLeftW + 30, footerY - 26, 2, 38);
+
+  // Right: Leaf icon + Support local text
+  const leafX = footerStartX + footerLeftW + 56;
+  drawLeafIcon(ctx, leafX, footerY - 22, 26, "#7CEB71");
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "600 16px sans-serif";
+  ctx.fillText(supp1, leafX + 38, footerY - 10);
+  ctx.fillText(supp2, leafX + 38, footerY + 12);
 
   return canvas.toDataURL("image/png");
 }
 
-/** Scanning this opens Sheplates directly at this vendor's shop (see the
- * "?vendor=" query-param handling in sheplates-entry.tsx / sheplates-v3.tsx —
- * there's no path router in this app, so a query param is the deep link). A
- * signed-out scan is prompted to sign in first; an already signed-in
- * customer lands straight in Marketplace filtered to this vendor, ready to
- * Add to Cart or Schedule. */
+/** Scanning this QR code or clicking "Visit Store Now →" opens ShePlates
+ * directly at this vendor's shop (via "?vendor=VENDOR_ID" query param).
+ * The brochure preview and downloaded PNG match the approved ShePlates
+ * premium brand standard. */
 export function VendorQrCode({
   vendorId,
   vendorName,
@@ -300,6 +557,7 @@ export function VendorQrCode({
   vendorCategory,
   vendorAddress,
   vendorBio,
+  onOpenStore,
 }: {
   vendorId: string;
   vendorName: string;
@@ -308,6 +566,7 @@ export function VendorQrCode({
   vendorCategory?: string;
   vendorAddress?: string;
   vendorBio?: string;
+  onOpenStore?: ((vendorId: string) => void) | (() => void);
 }) {
   const [dataUrl, setDataUrl] = useState("");
   const [brochureUrl, setBrochureUrl] = useState("");
@@ -316,7 +575,7 @@ export function VendorQrCode({
   const [generating, setGenerating] = useState(true);
 
   const resolvedLogo = vendor?.logoUrl || vendorLogo || "";
-  const resolvedCategory = vendor?.category || vendorCategory || "Fresh Kitchen";
+  const resolvedCategory = vendor?.category || vendorCategory || "Bakery";
   const resolvedAddress = vendor?.address || vendorAddress || "";
 
   useEffect(() => {
@@ -328,10 +587,10 @@ export function VendorQrCode({
     setGenerating(true);
 
     QRCode.toDataURL(url, {
-      width: 500,
+      width: 600,
       margin: 2,
       errorCorrectionLevel: "H",
-      color: { dark: "#155F65", light: "#ffffff" },
+      color: { dark: "#0A3833", light: "#ffffff" },
     })
       .then(async (qrData) => {
         if (!isMounted) return;
@@ -385,6 +644,14 @@ export function VendorQrCode({
     }
   }, [shopUrl]);
 
+  const handleVisitStore = useCallback(() => {
+    if (onOpenStore) {
+      (onOpenStore as (id: string) => void)(vendorId);
+    } else if (shopUrl) {
+      window.location.href = shopUrl;
+    }
+  }, [onOpenStore, vendorId, shopUrl]);
+
   const fileSlug = vendorName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
   return (
@@ -393,143 +660,103 @@ export function VendorQrCode({
         <div>
           <div className="flex items-center gap-2 text-[#202827]">
             <QrCode className="size-5 text-[#155F65]" />
-            <h3 className="text-lg font-black tracking-[-.02em]">Your shop QR code &amp; promotional brochure</h3>
+            <h3 className="text-lg font-black tracking-[-.02em]">Store QR code</h3>
           </div>
           <p className="mt-1 text-xs text-stone-500 sm:text-sm">
-            Generate and download a print-ready, high-resolution promotional brochure. Customers scan the QR code to open your store directly.
+            Point your phone camera to open this store directly. Customers can scan this QR code or use the direct link.
           </p>
         </div>
         <div className="flex items-center gap-1.5 rounded-full bg-[#EAF4F2] px-3 py-1 text-xs font-bold text-[#155F65]">
-          <Sparkles className="size-3.5" /> Ready for WhatsApp &amp; Print
+          <Sparkles className="size-3.5" /> Direct Store Access
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
-        {/* Left: Responsive Live Brochure Preview Card */}
-        <div className="overflow-hidden rounded-3xl border-2 border-[#155F65]/20 bg-white shadow-md transition hover:shadow-lg">
-          {/* Top Brand Banner */}
-          <div className="bg-[#155F65] p-3 text-white">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-black tracking-wider text-rose-500">ShePlates</span>
-              <span className="rounded-full bg-[#0F4A4F] px-2 py-0.5 text-[9px] font-black uppercase text-emerald-400">
-                ★ Verified Partner
-              </span>
-            </div>
+      <div className="mt-6 flex flex-col md:flex-row items-center md:items-start gap-6">
+        {/* Simple QR Code Display */}
+        <div className="flex flex-col items-center shrink-0">
+          <div className="relative flex size-48 items-center justify-center rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+            {/* Simple corner accents */}
+            <div className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 rounded-tl border-l-2 border-t-2 border-[#155F65]" />
+            <div className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 rounded-tr border-r-2 border-t-2 border-[#155F65]" />
+            <div className="pointer-events-none absolute bottom-2 left-2 h-3.5 w-3.5 rounded-bl border-b-2 border-l-2 border-[#155F65]" />
+            <div className="pointer-events-none absolute bottom-2 right-2 h-3.5 w-3.5 rounded-br border-b-2 border-r-2 border-[#155F65]" />
+
+            {dataUrl ? (
+              <Image
+                src={dataUrl}
+                alt={`QR code for ${vendorName}`}
+                width={160}
+                height={160}
+                unoptimized
+                className="size-full object-contain"
+              />
+            ) : (
+              <span className="text-xs text-stone-400">Generating QR…</span>
+            )}
           </div>
-
-          <div className="p-4 text-center">
-            {/* Vendor Avatar */}
-            <div className="mx-auto mb-2.5 size-16 overflow-hidden rounded-2xl border-2 border-[#155F65] bg-[#EAF4F2] shadow-sm">
-              {resolvedLogo ? (
-                <img src={resolvedLogo} alt={vendorName} className="h-full w-full object-cover" />
-              ) : (
-                <div className="grid h-full w-full place-items-center text-xl font-black text-[#155F65]">
-                  {vendorName[0] || "S"}
-                </div>
-              )}
-            </div>
-
-            <h4 className="text-base font-black text-stone-900">{vendorName}</h4>
-            <p className="text-[11px] font-bold text-[#155F65]">{resolvedCategory}</p>
-
-            {/* Promotional Dialogue */}
-            <div className="my-3 rounded-2xl border border-amber-200/70 bg-amber-50/60 p-2.5 text-center">
-              <p className="text-[11px] italic leading-snug text-stone-700">
-                “Handcrafted with authentic flavours. Scan our QR code to explore today&apos;s live menu, food drops &amp; order fresh!”
-              </p>
-            </div>
-
-            {/* QR Code Container */}
-            <div className="mx-auto my-2 grid size-44 place-items-center overflow-hidden rounded-2xl border-2 border-[#155F65] bg-white p-2 shadow-inner">
-              {dataUrl ? (
-                <Image
-                  src={dataUrl}
-                  alt={`QR code for ${vendorName}`}
-                  width={160}
-                  height={160}
-                  unoptimized
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <span className="text-xs text-stone-400">Generating QR…</span>
-              )}
-            </div>
-
-            <p className="mt-2 text-xs font-black tracking-wide text-[#155F65]">
-              SCAN. EXPLORE. ORDER FRESH!
-            </p>
-            <p className="text-[10px] text-stone-500">Point your camera to order directly</p>
-
-            <div className="mt-3 border-t border-stone-100 pt-2 text-[10px] font-semibold text-stone-400">
-              ShePlates · Fresh Home Meals &amp; Local Kitchens
-            </div>
-          </div>
+          <p className="mt-2 text-xs font-semibold text-stone-500">Scan to visit store</p>
         </div>
 
-        {/* Right: Actions & Sharing Options */}
-        <div className="flex flex-col justify-between space-y-5">
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-sm font-black text-stone-800">Shareable Store Brochure &amp; Standee</h4>
-              <p className="mt-1 text-xs leading-relaxed text-stone-500">
-                This brochure is created dynamically with your store branding, official verification badge, promotional dialogues, and a high-resolution QR code.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-stone-600">Your Direct Store Link</label>
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1 overflow-hidden truncate rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-700">
-                  {shopUrl || "Generating store link…"}
-                </div>
-                <button
-                  type="button"
-                  onClick={copyLink}
-                  aria-label="Copy store link"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
-                >
-                  {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
-                  {copied ? "Copied" : "Copy"}
-                </button>
+        {/* Link, Guidance & Download Buttons */}
+        <div className="flex-1 w-full space-y-4">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-stone-600">Direct Store Link</label>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 overflow-hidden truncate rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-700">
+                {shopUrl || "Generating store link…"}
               </div>
-            </div>
-
-            <div className="rounded-2xl border border-emerald-100 bg-[#EAF4F2]/60 p-3.5">
-              <h5 className="flex items-center gap-1.5 text-xs font-black text-[#155F65]">
-                <Sparkles className="size-3.5" /> Best Ways to Use Your Brochure
-              </h5>
-              <ul className="mt-1.5 space-y-1 text-xs text-stone-600">
-                <li>• <b>WhatsApp Stories &amp; Chat:</b> Share the downloaded brochure with customers.</li>
-                <li>• <b>Counter Standee:</b> Print on A5 or cardstock for your counter or register.</li>
-                <li>• <b>Packaging Insert:</b> Slip a mini printout into every order bag for repeat orders.</li>
-              </ul>
+              <button
+                type="button"
+                onClick={copyLink}
+                aria-label="Copy store link"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
+              >
+                {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                {copied ? "Copied" : "Copy"}
+              </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 pt-3">
-            {/* Primary Download: Full High-Res Promotional Brochure */}
-            {brochureUrl && (
-              <a
-                href={brochureUrl}
-                download={`${fileSlug}-store-brochure.png`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#155F65] px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0F4A4F]"
-              >
-                <Download className="size-4" />
-                Download QR Brochure (PNG)
-              </a>
-            )}
+          <div className="rounded-2xl border border-stone-200/70 bg-stone-50/70 p-3.5 text-xs text-stone-600 space-y-1">
+            <p className="font-bold text-stone-700">How customers use your QR code:</p>
+            <p>Scanning this QR code with a phone camera automatically opens your live store profile with all products, tabs, and cart.</p>
+          </div>
 
-            {/* Secondary Download: Standalone Square QR Code */}
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            {/* Primary Action: Download QR Code Only */}
             {dataUrl && (
               <a
                 href={dataUrl}
                 download={`${fileSlug}-qr.png`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#155F65] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#0F4A4F]"
               >
-                <QrCode className="size-4" />
+                <Download className="size-3.5" />
                 Download QR Code Only
               </a>
             )}
+
+            {/* Optional Promotional Brochure PNG Download */}
+            {brochureUrl && (
+              <a
+                href={brochureUrl}
+                download={`${fileSlug}-store-brochure.png`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
+              >
+                <Download className="size-3.5" />
+                Download QR Brochure (PNG)
+              </a>
+            )}
+
+            {/* Visit Store Button */}
+            <button
+              type="button"
+              onClick={handleVisitStore}
+              data-testid="brochure-visit-store-btn"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#155F65]/30 bg-[#EAF4F2] px-4 py-2.5 text-xs font-black text-[#155F65] transition hover:bg-[#d6ece8]"
+            >
+              <Store className="size-3.5" />
+              <span>Visit Store Now →</span>
+            </button>
           </div>
         </div>
       </div>
