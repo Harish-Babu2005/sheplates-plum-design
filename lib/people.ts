@@ -6,6 +6,7 @@
 //            migration is not applied or in demo mode.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient, isLiveSupabaseMode } from "@/lib/supabase";
+import { startAutoRefresh } from "@/lib/auto-refresh";
 import { coarsePin, distanceKm, halfKm, handleMatches, searchReady, MAX_FOLLOWING, type Pin } from "@/lib/people-rules";
 import { toast } from "sonner";
 
@@ -110,6 +111,43 @@ export function usePeople(user: PeopleUser, viewer: { latitude?: number; longitu
     })().catch(() => { if (!cancelled) setMode("local"); });
     return () => { cancelled = true; };
   }, [email, userId, role, loadCounts]);
+
+  const refreshRemote = useCallback(async () => {
+    if (mode !== "remote" || !userId) return;
+    const sb = getSupabaseBrowserClient();
+    if (!sb) return;
+    try {
+      const [following, me, privacy, incoming, outgoing] = await Promise.all([
+        sb.rpc("list_people", { p_kind: "following" }),
+        sb.rpc("my_discoverable"),
+        sb.rpc("my_private_account"),
+        sb.rpc("list_follow_requests"),
+        sb.rpc("list_outgoing_follow_requests"),
+      ]);
+      const failure = following.error || privacy.error || incoming.error || outgoing.error;
+      if (failure) throw new Error(failure.message);
+      let discoverableNow: boolean;
+      if (me.error) {
+        const profile = await sb.from("social_profiles").select("discoverable").eq("user_id", userId).maybeSingle();
+        if (profile.error) throw new Error(profile.error.message);
+        discoverableNow = Boolean(profile.data?.discoverable);
+      } else {
+        discoverableNow = me.data === true;
+      }
+      await loadCounts();
+      setRemoteFollowing(new Set(((following.data || []) as Remote[]).map((row) => row.user_id)));
+      setRemotePrivateAccount(privacy.data === true);
+      setRequests(((incoming.data || []) as Array<{ user_id: string; handle: string; bio: string }>).map((row) => ({ id: row.user_id, handle: row.handle, bio: row.bio || "" })));
+      setRemoteRequested(new Set(((outgoing.data || []) as Array<{ user_id: string }>).map((row) => row.user_id)));
+      setRemoteDiscoverable(discoverableNow);
+    } catch (error) {
+      console.error("People data refresh failed:", error);
+    }
+  }, [mode, userId, loadCounts]);
+  useEffect(() => {
+    if (mode !== "remote") return;
+    return startAutoRefresh(refreshRemote);
+  }, [mode, refreshRemote]);
 
   const persist = useCallback((next: LocalPeople) => { setLocal(next); writeLocal(email, next); }, [email]);
 

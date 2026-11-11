@@ -89,6 +89,7 @@ import { recordCampaignEvent, useCampaignViewCounter, useCustomerCampaigns, type
 import { usePeople, type PeopleApi } from "@/lib/people";
 import { useStatuses } from "@/lib/statuses";
 import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts";
+import { AUTO_REFRESH_INTERVAL_MS, startAutoRefresh } from "@/lib/auto-refresh";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
 import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
 
@@ -484,7 +485,18 @@ const unitsByCategory: Record<string, SellingSpec[]> = {
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
 
-function id(prefix: string) { return `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+let nextSequenceValue = 0;
+function nextSequenceToken() {
+  nextSequenceValue += 1;
+  return nextSequenceValue;
+}
+function id(prefix: string) {
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${nextSequenceToken().toString(36).toUpperCase().padStart(4, "0")}`;
+}
+function sixDigitCode() {
+  const base = Number(String(Date.now()).slice(-6)) + nextSequenceToken();
+  return String((base % 900000) + 100000);
+}
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
@@ -609,7 +621,10 @@ function writeLocalStaffAccounts(list: (StaffAccount & { password: string })[]) 
 function generatePassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
   let out = "";
-  for (let i = 0; i < 12; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 12; i++) {
+    const index = (Date.now() + nextSequenceToken() + i) % chars.length;
+    out += chars[index];
+  }
   return out;
 }
 function verificationFromLive(value: string): Verification {
@@ -827,11 +842,11 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [dismissed, setDismissed] = useState("");
   useEffect(() => {
-    setSuggestions([]);
     if (trimmed.length < 3 || trimmed === dismissed) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
+        setSuggestions([]);
         const response = await fetch(`/api/geocode?q=${encodeURIComponent(trimmed)}&suggest=1`);
         const data = await response.json() as { suggestions?: PlaceSuggestion[] };
         if (!cancelled) setSuggestions(data.suggestions || []);
@@ -842,19 +857,21 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const visibleSuggestions = trimmed.length >= 3 && trimmed !== dismissed ? suggestions : [];
   if (!visibleSuggestions.length) return null;
   return (
-    <div className="relative z-10 -mt-2 min-w-0 max-w-full space-y-1 overflow-hidden rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-lg backdrop-blur">
-      {visibleSuggestions.map((item, index) => {
-        const [primary, ...rest] = item.address.split(",");
-        return (
-          <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(item.address); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#EAF4F2]">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-[#155F65]" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-stone-800">{primary.trim()}</span>
-              <span className="block truncate text-xs text-stone-500">{rest.join(",").trim()}</span>
-            </span>
-          </button>
-        );
-      })}
+    <div className="relative z-30 mt-2 w-full">
+      <div className="absolute inset-x-0 top-full z-50 mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-[0_18px_40px_rgba(32,40,39,0.12)] backdrop-blur">
+        {visibleSuggestions.map((item, index) => {
+          const [primary, ...rest] = item.address.split(",");
+          return (
+            <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(item.address); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#EAF4F2]">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-[#155F65]" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-stone-800">{primary.trim()}</span>
+                <span className="block truncate text-xs text-stone-500">{rest.join(",").trim()}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -886,6 +903,8 @@ export function SheplatesV3() {
   const [liveSyncError, setLiveSyncError] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
   const [tourOpen, setTourOpen] = useState<null | "customer" | "vendor">(null);
+  const initializedNavigationKey = useRef("");
+  const skipNavigationSync = useRef(false);
   const lastAlertedNotification = useRef<string>("");
   const [vendorProfileId, setVendorProfileId] = useState<string | null>(null);
   const [locationSignal, setLocationSignal] = useState(0);
@@ -937,6 +956,55 @@ export function SheplatesV3() {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, session?.email, session?.role]);
+
+  const navigationKey = session ? `${session.role}:${session.email.toLowerCase()}` : "";
+  useEffect(() => {
+    if (!hydrated || !session || initializedNavigationKey.current === navigationKey) return;
+    const validPages = nav[session.role] ?? [];
+    const parameters = new URLSearchParams(window.location.search);
+    const requested = parameters.get("view");
+    const initialPage = requested && validPages.includes(requested)
+      ? requested
+      : validPages.includes(active)
+        ? active
+        : validPages[0];
+    if (initialPage !== active) setActive(initialPage);
+    parameters.delete("view");
+    if (initialPage !== validPages[0]) parameters.set("view", initialPage);
+    const target = `${window.location.pathname}${parameters.toString() ? `?${parameters.toString()}` : ""}`;
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (current !== target) window.history.replaceState({ page: initialPage }, "", target);
+    initializedNavigationKey.current = navigationKey;
+    skipNavigationSync.current = true;
+  }, [active, hydrated, navigationKey, session]);
+
+  useEffect(() => {
+    if (!hydrated || !session || initializedNavigationKey.current !== navigationKey) return;
+    if (skipNavigationSync.current) {
+      skipNavigationSync.current = false;
+      return;
+    }
+    const validPages = nav[session.role] ?? [];
+    const parameters = new URLSearchParams(window.location.search);
+    const currentPage = parameters.get("view") || validPages[0];
+    if (currentPage === active) return;
+    parameters.delete("view");
+    if (active !== validPages[0]) parameters.set("view", active);
+    const target = `${window.location.pathname}${parameters.toString() ? `?${parameters.toString()}` : ""}`;
+    window.history.pushState({ page: active }, "", target);
+  }, [active, hydrated, navigationKey, session]);
+
+  useEffect(() => {
+    if (!hydrated || !session) return;
+    const validPages = nav[session.role] ?? [];
+    const onPopState = () => {
+      const parameters = new URLSearchParams(window.location.search);
+      const requested = parameters.get("view");
+      setActive(requested && validPages.includes(requested) ? requested : validPages[0]);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [hydrated, navigationKey, session]);
 
   useEffect(() => {
     try {
@@ -1211,6 +1279,11 @@ export function SheplatesV3() {
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
+  useEffect(() => {
+    if (!hydrated || !syncSession || !isLiveSupabaseMode() || liveSync === "loading") return;
+    return startAutoRefresh(() => setSyncVersion((version) => version + 1), AUTO_REFRESH_INTERVAL_MS);
+  }, [hydrated, syncSession, liveSync]);
+
   async function signOut() { await liveSignOut(); setSession(null); setActive("Marketplace"); toast.success("Signed out"); }
   function finishTour(skipped: boolean) {
     const key = tourOpen === "customer" ? CUSTOMER_TOUR_KEY : VENDOR_TOUR_KEY;
@@ -1249,8 +1322,8 @@ export function SheplatesV3() {
       void refreshDrops();
       return;
     }
-    let verificationCode = String(Math.floor(100000 + Math.random() * 900000));
-    let orderNum = String(Math.floor(100000 + Math.random() * 900000));
+    let verificationCode = sixDigitCode();
+    let orderNum = sixDigitCode();
     let orderId = id("ORD");
 
     if (isLiveSupabaseMode()) {
@@ -2270,6 +2343,10 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       customerCoords: { latitude: custLat, longitude: custLng },
       vendorCoords: { latitude: cartVendor?.latitude, longitude: cartVendor?.longitude },
       serviceRadiusKm: cartVendor?.radiusKm,
+<<<<<<<<< Temporary merge branch 1
+    });
+  }, [items, state.products, state.foodDrops, containsFoodDrop, checkoutMode, custLat, custLng, cartVendor?.latitude, cartVendor?.longitude, cartVendor?.radiusKm, state]);
+=========
       vendorCustomFee: cartVendor?.deliveryFeeOverride,
       gstMode: cartVendor?.gstMode,
       vendorCategory: cartVendor?.category,
@@ -2277,6 +2354,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       commissionPercentOverride: cartVendor?.commissionPercent,
     });
   }, [items, state.products, state.foodDrops, containsFoodDrop, checkoutMode, custLat, custLng, cartVendor?.latitude, cartVendor?.longitude, cartVendor?.radiusKm, cartVendor?.deliveryFeeOverride, cartVendor?.gstMode, cartVendor?.category, cartVendor?.plan, cartVendor?.commissionPercent, state]);
+>>>>>>>>> Temporary merge branch 2
 
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
     setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));
@@ -2386,10 +2464,10 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-    const verificationCode = containsFoodDrop ? String(Math.floor(100000 + Math.random() * 900000)) : undefined;
+    const verificationCode = containsFoodDrop ? sixDigitCode() : undefined;
     const order: Order = {
       id: id("ORD"),
-      orderNumber: String(Math.floor(100000 + Math.random() * 900000)),
+      orderNumber: sixDigitCode(),
       customerEmail: session.email,
       vendorId: first.vendorId,
       description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "),
@@ -2521,7 +2599,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
         <p className="text-xs text-[#55656A]" data-testid="invoice-type">You will receive a {INVOICE_LABELS[billingSummary.invoiceType]}.{billingSummary.warningMessage && billingSummary.isWithinRadius ? ` ${billingSummary.warningMessage}` : ""}</p>
         {!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery" && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-700">
-            Delivery unavailable: Address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor's {billingSummary.serviceRadiusKm} km service limit. Switch to Self-pickup or 3rd Party Delivery.
+            Delivery unavailable: Address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor&apos;s {billingSummary.serviceRadiusKm} km service limit. Switch to Self-pickup or 3rd Party Delivery.
           </div>
         )}
         <Button
@@ -2651,7 +2729,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
             </div>
             {!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery" && (
               <p className="mt-1 font-bold text-red-600">
-                Delivery address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor's {billingSummary.serviceRadiusKm} km service limit.
+                Delivery address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor&apos;s {billingSummary.serviceRadiusKm} km service limit.
               </p>
             )}
           </div>
@@ -5354,7 +5432,7 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
     <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
-      <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
+      <div className="surface-card min-w-0 max-w-full overflow-hidden space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
         <Field label="Full store address"><Textarea value={address} onChange={(event) => setAddress(event.target.value)} className="min-h-24 rounded-xl" /></Field>
         <LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} />
         <div className="flex flex-wrap gap-2">
@@ -6293,7 +6371,25 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
   return <div className="space-y-6"><Heading eyebrow="ASSISTED ONBOARDING" title="Create a vendor from Operations" body="Assign every vendor to an existing vendor login. After submission, the record stays visible below and appears to that exact vendor account." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><UserPlus />Start onboarding</Button>} />
     <div className="surface-card rounded-[22px] border border-sky-200/70 bg-sky-50/85 p-4 text-sm leading-6 text-sky-900"><b>Testing rule:</b> choose either <code>vendor@sheplates.demo</code> or <code>newvendor@sheplates.demo</code> in the onboarding form. Sign in with the selected account to see that vendor. The vendor remains unavailable to customers until Operations verifies it, the vendor opens the store, and at least one product is active.</div>
-    {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell>{vendor.address}<div className="text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
+    {vendors.length ? <>
+      <div className="space-y-3 lg:hidden">{vendors.map((vendor) => {
+        const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length;
+        const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
+        const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0;
+        return <article key={vendor.id} className="surface-card min-w-0 space-y-4 rounded-3xl p-4">
+          <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.id}</div></div>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Assigned login</div><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="h-auto min-h-11 w-full min-w-0 rounded-xl py-2 text-left"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 break-words text-xs text-stone-500">Sign in with this exact vendor account</div></div>
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Location</div><div className="break-words text-sm">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></div>
+          </div>
+          <div className="grid min-w-0 gap-3 border-t border-[#DDE3E4] pt-3 sm:grid-cols-2">
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Status</div><Status>{vendor.verification}</Status></div>
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Customer visibility</div>{visible ? <span className="break-words text-sm font-black text-[#202827]">Eligible by store status</span> : <span className="break-words text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</div>
+          </div>
+        </article>;
+      })}</div>
+      <div className="surface-card hidden overflow-x-auto rounded-[28px] md:block"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell className="max-w-sm"><div className="break-words">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div>
+    </> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="sr-only">Operations vendor onboarding</DialogTitle><DialogDescription className="sr-only">Create a vendor application</DialogDescription></DialogHeader><VendorOnboarding operationsCreated session={session} setState={setState} close={() => setOpen(false)} /></DialogContent></Dialog></div>;
 }
 function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
@@ -6788,7 +6884,39 @@ function AdminVendors({ state, setState, onOpenVendorProfile }: { state: V3State
   const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
   const [vQuery, setVQuery] = useState("");
   const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
-  return <div className="space-y-6"><Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." /><ProductImageBackfill /><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">{(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}<input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>{vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Daily service</TableHead><TableHead>Products</TableHead><TableHead>Plan</TableHead><TableHead className="text-right">Store</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}><TableCell><div className="flex items-center gap-3"><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.ownerEmail}</div><div className="text-[11px] text-[#155F65] font-semibold">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div></div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</TableCell><TableCell>{state.products.filter((x) => x.vendorId === vendor.id).length}</TableCell><TableCell><Select value={vendor.plan} onValueChange={(value) => { const plan = value as Vendor["plan"]; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) })); if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) })); toast.error(error.message || "Could not save the plan change"); }); }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell><TableCell className="text-right">{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview</Button>}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}</div>;
+  return <div className="space-y-6">
+    <Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." />
+    <ProductImageBackfill />
+    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">
+      {(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}
+      <input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" />
+    </div>
+    {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]">
+      <Table>
+        <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Products &amp; store</TableHead><TableHead>Plan</TableHead></TableRow></TableHeader>
+        <TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}>
+          <TableCell><div className="flex items-center gap-3">
+            <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2]">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-black text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div>
+            <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.ownerEmail}</div><div className="break-words text-[11px] font-semibold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div>
+          </div></TableCell>
+          <TableCell><Status>{vendor.verification}</Status></TableCell>
+          <TableCell><div className="flex min-w-32 flex-col items-start gap-1">
+            <span className="text-sm font-semibold">{state.products.filter((x) => x.vendorId === vendor.id).length} products</span>
+            <span className="text-xs text-stone-500">{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</span>
+            {onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="mt-1 h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="mr-1 size-3.5 text-[#155F65]" />Preview</Button>}
+          </div></TableCell>
+          <TableCell><Select value={vendor.plan} onValueChange={(value) => {
+            const plan = value as Vendor["plan"];
+            setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) }));
+            if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => {
+              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) }));
+              toast.error(error.message || "Could not save the plan change");
+            });
+          }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    </div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}
+  </div>;
 }
 function PlanFeatureTable() {
   const plans = ["Taster", "Crave", "Thrive", "Crown"];

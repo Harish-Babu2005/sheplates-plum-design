@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { insertOrderWithBilling, priceExistingSchedule, updateOrderWithBilling } from "@/lib/schedule-billing";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
+import { calculateBillingSummary } from "@/lib/billing";
+<<<<<<<<< Temporary merge branch 1
+=========
+import { loadVendorBillingTerms } from "@/lib/billing-server";
+>>>>>>>>> Temporary merge branch 2
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -245,8 +250,6 @@ export async function POST(request: Request) {
 
         // Markup, GST and the delivery fee are applied by priceExistingSchedule below (lib/schedule-billing.ts).
         const dates = scheduleDates(schedule as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null });
-        const occurrences = Math.max(1, dates.length);
-
         // Every delivery is billed like a cart order (product price, GST, delivery fee); a home-food plan has its own price per day.
         // The subscription total is the sum of its deliveries, recalculated here so the browser can never change what is charged.
         const priced = await priceExistingSchedule(admin, String(order.schedule_id), dates);
@@ -273,7 +276,6 @@ export async function POST(request: Request) {
         }
 
         let calculatedBaseTotal = 0;
-        let calculatedCustomerTotal = 0;
         const billingItems: Array<{ name: string; price: number; quantity: number }> = [];
 
         for (const item of items) {
@@ -282,7 +284,6 @@ export async function POST(request: Request) {
             const base = Number(item.vendor_base_price ?? 0);
             const unitPrice = Number(item.customer_price);
             calculatedBaseTotal += base * qty;
-            calculatedCustomerTotal += unitPrice * qty;
             billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
             continue;
           }
@@ -307,17 +308,79 @@ export async function POST(request: Request) {
           const unitPrice = Math.round(base * (1 + markup / 100) * 100) / 100;
           calculatedBaseTotal += base * qty;
           calculatedCustomerTotal += unitPrice * qty;
+          billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
         }
 
-        totalPayableRupees = Math.round(calculatedCustomerTotal * 100) / 100;
+        // Fetch vendor details for dynamic delivery fee & radius calculation
+<<<<<<<<< Temporary merge branch 1
+        const { data: vendorRow } = await admin
+          .from("vendors")
+          .select("id,latitude,longitude,radius_km,delivery_fee")
+          .eq("id", order.vendor_id)
+          .maybeSingle();
 
-        await admin.from("orders").update({
+        const { data: customerProfile } = await admin
+          .from("profiles")
+          .select("latitude,longitude")
+          .eq("id", profile.id)
+          .maybeSingle();
+
+        const custLat = order.tracking_latitude != null ? Number(order.tracking_latitude) : customerProfile?.latitude;
+        const custLng = order.tracking_longitude != null ? Number(order.tracking_longitude) : customerProfile?.longitude;
+
+        const billing = calculateBillingSummary({
+          items: billingItems,
+          mode: order.fulfilment_mode || "vendor_delivery",
+          customerCoords: { latitude: custLat, longitude: custLng },
+          vendorCoords: { latitude: vendorRow?.latitude, longitude: vendorRow?.longitude },
+          serviceRadiusKm: vendorRow?.radius_km,
+          vendorCustomFee: vendorRow?.delivery_fee,
+        });
+
+=========
+        // The delivery fee was measured and fixed when the order was created. Payment only re-prices the items and GST, so the
+        // amount cannot drift between checkout and payment, and the browser can never change what is charged.
+        const terms = await loadVendorBillingTerms(admin, String(order.vendor_id));
+        const billing = calculateBillingSummary({
+          items: billingItems,
+          mode: order.fulfilment_mode || "vendor_delivery",
+          fixedDelivery: { fee: Number(order.delivery_fee || 0), distanceKm: null },
+          serviceRadiusKm: terms.radiusKm,
+          gstMode: terms.gstMode,
+          vendorCategory: terms.category,
+          vendorPlan: terms.plan,
+          commissionPercentOverride: terms.commissionPercent,
+        });
+
+>>>>>>>>> Temporary merge branch 2
+        totalPayableRupees = billing.totalAmount;
+
+        const baseUpdatePayload = {
           vendor_base_total: Math.round(calculatedBaseTotal * 100) / 100,
           markup_total: Math.round(Math.max(0, billing.subtotal - calculatedBaseTotal) * 100) / 100,
           tax_amount: billing.gstAmount,
           delivery_fee: billing.deliveryFee,
           customer_total: totalPayableRupees,
           updated_at: new Date().toISOString(),
+        };
+
+        const updateResult = await admin.from("orders").update({
+          ...baseUpdatePayload,
+          subtotal: billing.subtotal,
+          gst_amount: billing.gstAmount,
+          gst_rate: billing.gstRate,
+          discount_amount: billing.discountAmount,
+          total_amount: totalPayableRupees,
+          currency: billing.currency,
+          delivery_distance: billing.deliveryDistanceKm,
+<<<<<<<<< Temporary merge branch 1
+=========
+          commission_percent: billing.commissionPercent,
+          commission_amount: billing.commissionAmount,
+          vendor_payout: billing.vendorPayout,
+          invoice_type: billing.invoiceType,
+          gst_mode: billing.gstMode,
+>>>>>>>>> Temporary merge branch 2
         }).eq("id", order.id);
 
         if (updateResult.error && (updateResult.error.code === "42703" || /column .* does not exist/i.test(updateResult.error.message || ""))) {

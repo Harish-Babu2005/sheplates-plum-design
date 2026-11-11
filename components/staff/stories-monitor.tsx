@@ -1,9 +1,10 @@
 "use client";
 // Stories monitor (O14): reported customer statuses and vendor Food Shorts in one place for Operations and Super Admin.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { toast } from "sonner";
 import { isLiveSupabaseMode } from "@/lib/supabase";
+import { startAutoRefresh } from "@/lib/auto-refresh";
 import { Play, Eye, X } from "@/components/icons";
 import { keepMonitorStatus, loadMonitorShorts, loadMonitorStatuses, loadMonitorSummary, removeMonitorStatus, setMonitorShortStatus, type MonitorFilter, type MonitorShort, type MonitorStatus, type MonitorSummary } from "@/lib/stories-monitor";
 
@@ -27,17 +28,26 @@ export function StoriesMonitor() {
   const [removing, setRemoving] = useState<MonitorStatus | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const hasLoaded = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!live) return;
-    setLoading(true); setError("");
+    if (!hasLoaded.current) setLoading(true);
+    setError("");
     try {
       const [sum, list, clips] = await Promise.all([loadMonitorSummary(), loadMonitorStatuses(filter), loadMonitorShorts()]);
       setSummary(sum); setStatuses(list); setShorts(clips);
     } catch (e) { setError(errorMessage(e, "The Stories monitor could not be loaded")); }
-    finally { setLoading(false); }
+    finally { hasLoaded.current = true; setLoading(false); }
   }, [live, filter]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const initial = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(initial);
+  }, [refresh]);
+  useEffect(() => {
+    if (!live) return;
+    return startAutoRefresh(refresh);
+  }, [live, refresh]);
 
   async function confirmRemove() {
     if (!removing) return;
@@ -74,15 +84,35 @@ export function StoriesMonitor() {
           {item.thumbUrl || (item.kind === "photo" && item.mediaUrl) ? <img src={item.thumbUrl || item.mediaUrl} alt="" className="h-full w-full object-cover" /> : <Play className="size-10 text-[#55656A]" />}
           {item.reportCount > 0 && <span className="absolute left-3 top-3 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#b42332]">{item.reportCount} report{item.reportCount === 1 ? "" : "s"}</span>}
         </div>
-        <div className="space-y-2 p-4"><div className="text-sm font-semibold">@{item.authorHandle} · {ago(item.createdAt)}</div>{item.caption && <p className="text-xs text-[#2F3C3F]">&ldquo;{item.caption}&rdquo;</p>}{item.lastReason && <p className="text-xs text-[#b42332]">Reported: {item.lastReason}</p>}<div className="flex items-center gap-1 text-xs text-[#55656A]"><Eye className="size-4" />Viewed {item.viewCount} times · expires {ago(item.expiresAt).replace(" ago", "")}</div>
-          <div className="flex flex-wrap gap-2 pt-1"><button type="button" onClick={() => { setRemoving(item); setReason(item.lastReason || ""); }} className="h-9 rounded-full bg-white px-4 text-sm font-semibold text-[#b42332] ring-1 ring-[#f0c3c9]">Remove</button>{item.reportCount > 0 && <button type="button" onClick={() => void keep(item)} className="h-9 rounded-full bg-white px-4 text-sm font-semibold ring-1 ring-[#DDE3E4]">Keep</button>}<a href={item.mediaUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-full bg-white px-4 text-sm font-semibold ring-1 ring-[#DDE3E4]">Open</a></div></div>
+          <div className="min-w-0 space-y-2 p-4">
+            <div className="break-words text-sm font-semibold">@{item.authorHandle} <span className="text-xs font-normal text-[#55656A]">· {ago(item.createdAt)}</span></div>
+            {item.caption && <p className="break-words text-xs text-[#2F3C3F]">&ldquo;{item.caption}&rdquo;</p>}
+            {item.lastReason && <p className="break-words text-xs text-[#b42332]">Reported: {item.lastReason}</p>}
+            <div className="flex min-w-0 items-start gap-1 text-xs text-[#55656A]"><Eye className="mt-0.5 size-4 shrink-0" /><span className="min-w-0 break-words">Viewed {item.viewCount} times · expires {ago(item.expiresAt).replace(" ago", "")}</span></div>
+            <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:flex-wrap">
+              <button type="button" onClick={() => { setRemoving(item); setReason(item.lastReason || ""); }} className="h-9 min-w-0 rounded-full bg-white px-3 text-xs font-semibold text-[#b42332] ring-1 ring-[#f0c3c9] sm:px-4 sm:text-sm">Remove</button>
+              {item.reportCount > 0 && <button type="button" onClick={() => void keep(item)} className="h-9 min-w-0 rounded-full bg-white px-3 text-xs font-semibold ring-1 ring-[#DDE3E4] sm:px-4 sm:text-sm">Keep</button>}
+              <a href={item.mediaUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 min-w-0 items-center justify-center rounded-full bg-white px-3 text-xs font-semibold ring-1 ring-[#DDE3E4] sm:px-4 sm:text-sm">Open</a>
+            </div>
+          </div>
       </article>)}</div> : <p className="rounded-3xl bg-white p-6 text-sm text-[#55656A]">{live ? (filter === "reported" ? "No reported statuses right now." : "No live statuses.") : "No statuses to show in demo mode."}</p>}
     </>}
 
-    {tab === "shorts" && (loading ? <p role="status" className="text-sm text-[#55656A]">Loading Food Shorts…</p> : shorts.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{shorts.map((item, index) => <article key={item.id} className="surface-card overflow-hidden rounded-3xl">
-      <div className="relative grid h-44 place-items-center" style={{ background: item.thumbUrl ? undefined : TILE[index % TILE.length] }}>{item.thumbUrl ? <img src={item.thumbUrl} alt="" className="h-full w-full object-cover" /> : <Play className="size-10 text-[#55656A]" />}<span className="absolute bottom-3 left-3 rounded-full bg-[#202827]/80 px-3 py-1 text-xs font-semibold text-white">0:{String(Math.round(item.durationS)).padStart(2, "0")}</span>{item.status === "hidden" && <span className="absolute left-3 top-3 rounded-full bg-[#FFF4CF] px-3 py-1 text-xs font-semibold text-[#795900]">Hidden</span>}</div>
-      <div className="space-y-2 p-4"><div className="text-sm font-semibold">{item.vendorName} · {item.title}</div>{item.caption && <p className="text-xs text-[#2F3C3F]">&ldquo;{item.caption}&rdquo;</p>}<div className="text-xs text-[#55656A]">Viewed {item.viewCount} times · {ago(item.createdAt)}</div>
-        <div className="flex flex-wrap gap-2 pt-1">{item.status === "hidden" ? <button type="button" onClick={() => void setShort(item, "active")} className="h-9 rounded-full bg-[#155F65] px-4 text-sm font-bold text-white">Show again</button> : <button type="button" onClick={() => void setShort(item, "hidden")} className="h-9 rounded-full bg-white px-4 text-sm font-semibold ring-1 ring-[#DDE3E4]">Hide</button>}<button type="button" onClick={() => void setShort(item, "removed")} className="h-9 rounded-full bg-white px-4 text-sm font-semibold text-[#b42332] ring-1 ring-[#f0c3c9]">Remove</button><a href={item.videoUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-full bg-white px-4 text-sm font-semibold ring-1 ring-[#DDE3E4]">Open</a></div></div>
+    {tab === "shorts" && (loading ? <p role="status" className="text-sm text-[#55656A]">Loading Food Shorts…</p> : shorts.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{shorts.map((item, index) => <article key={item.id} className="surface-card flex flex-col overflow-hidden rounded-3xl">
+      <div className="relative isolate grid h-44 w-full shrink-0 place-items-center overflow-hidden" style={{ height: "11rem", flex: "0 0 11rem", background: item.thumbUrl ? undefined : TILE[index % TILE.length] }}>{item.thumbUrl ? <img src={item.thumbUrl} alt="" className="h-full w-full object-cover" /> : <Play className="size-10 text-[#55656A]" />}<span className="absolute bottom-3 left-3 rounded-full bg-[#202827]/80 px-3 py-1 text-xs font-semibold text-white">0:{String(Math.round(item.durationS)).padStart(2, "0")}</span>{item.status === "hidden" && <span className="absolute left-3 top-3 rounded-full bg-[#FFF4CF] px-3 py-1 text-xs font-semibold text-[#795900]">Hidden</span>}</div>
+      <div className="relative z-10 min-w-0 flex-1 space-y-2 bg-white p-4 pt-5">
+        <div className="min-w-0 space-y-0.5">
+          <p className="m-0 min-w-0 break-words [overflow-wrap:anywhere] text-sm font-bold leading-5 text-[#155F65]" style={{ color: "#155F65", WebkitTextFillColor: "#155F65" }}>{item.vendorName}</p>
+          <p className="m-0 min-w-0 break-words [overflow-wrap:anywhere] text-sm font-semibold leading-5">{item.title}</p>
+        </div>
+        {item.caption && <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs text-[#2F3C3F]">&ldquo;{item.caption}&rdquo;</p>}
+        <div className="break-words text-xs text-[#55656A]">Viewed {item.viewCount} times · {ago(item.createdAt)}</div>
+        <div className="grid min-w-0 grid-cols-3 gap-2 pt-1">
+          {item.status === "hidden" ? <button type="button" onClick={() => void setShort(item, "active")} className="h-11 min-w-0 whitespace-nowrap rounded-full bg-[#155F65] px-1 text-[11px] font-bold leading-none text-white sm:px-3 sm:text-sm">Show again</button> : <button type="button" onClick={() => void setShort(item, "hidden")} className="h-11 min-w-0 whitespace-nowrap rounded-full bg-white px-1 text-[11px] font-semibold leading-none ring-1 ring-[#DDE3E4] sm:px-3 sm:text-sm">Hide</button>}
+          <button type="button" onClick={() => void setShort(item, "removed")} className="h-11 min-w-0 whitespace-nowrap rounded-full bg-white px-1 text-[11px] font-semibold leading-none text-[#b42332] ring-1 ring-[#f0c3c9] sm:px-3 sm:text-sm">Remove</button>
+          <a href={item.videoUrl} target="_blank" rel="noreferrer" className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-full bg-white px-1 text-[11px] font-semibold leading-none ring-1 ring-[#DDE3E4] sm:px-3 sm:text-sm">Open</a>
+        </div>
+      </div>
     </article>)}</div> : <p className="rounded-3xl bg-white p-6 text-sm text-[#55656A]">{live ? "No Food Shorts to review." : "No Food Shorts to show in demo mode."}</p>)}
 
     <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Statuses disappear on their own after 24 hours. Removing one hides it at once and the author is told why.</p>

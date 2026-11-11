@@ -91,7 +91,7 @@ function fakeAdmin({ tableMissing = false, rows = [] } = {}) {
 const modelFetch = (calls) => async (url) => { calls.push(String(url)); return String(url).includes("moderations") ? { ok: true, status: 200, json: async () => ({ results: [{ flagged: false }] }) } : okImage(); };
 
 test("a picture is drawn once per product type, stored, and reused for the next vendor", async () => {
-  process.env.OPENAI_API_KEY = "test-key"; process.env.AI_IMAGE_DAILY_LIMIT = "60"; process.env.AI_IMAGE_VENDOR_DAILY_LIMIT = "15";
+  process.env.URUV_API_KEY = "test-key"; process.env.AI_IMAGE_DAILY_LIMIT = "60"; process.env.AI_IMAGE_VENDOR_DAILY_LIMIT = "15";
   const admin = fakeAdmin(); const calls = [];
   const first = await server.ensureConceptImage(admin, { name: "Idli Sambar", category: "Home food", vendorId: "v1", fetchImpl: modelFetch(calls) });
   assert.equal(first.source, "generated");
@@ -105,7 +105,7 @@ test("a picture is drawn once per product type, stored, and reused for the next 
 });
 
 test("spending is capped per day and per store, and a missing library fails safe", async () => {
-  process.env.OPENAI_API_KEY = "test-key";
+  process.env.URUV_API_KEY = "test-key";
   const today = new Date().toISOString();
   process.env.AI_IMAGE_DAILY_LIMIT = "2"; process.env.AI_IMAGE_VENDOR_DAILY_LIMIT = "15";
   const full = fakeAdmin({ rows: [{ concept_key: "a", url: "u", created_at: today }, { concept_key: "b", url: "u", created_at: today }] });

@@ -281,7 +281,7 @@ git push -u origin main
 **Render (or any Node host):**
 - Build command: `npm run install:ci && npm run build` (or `npm install && npm run build` if `install:ci`'s coreutils requirement isn't available on the target — this delivery's build was verified with `./node_modules/.bin/vinext build` directly for that reason; confirm `timeout`/`gtimeout` is available on your deploy image, or adjust `scripts/build-verified.sh` if not).
 - Start command: `npm run start` (`vinext start`).
-- Environment variables: copy your existing `.env.local` values (Supabase URL/anon/service-role keys, `OPENAI_API_KEY`) into Render's environment settings. No new variables are required by this delivery.
+- Environment variables: copy your existing `.env.local` values (Supabase URL/anon/service-role keys, `URUV_API_KEY`) into Render's environment settings. No new variables are required by this delivery.
 - Run the six migrations in §5 against your production Supabase project **before or immediately after** deploying — the app degrades gracefully without them, but the fixed features won't actually work until they're applied.
 
 ---

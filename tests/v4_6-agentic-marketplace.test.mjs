@@ -39,7 +39,7 @@ test("vendor portfolio includes AI insights and truthful image enhancement", () 
   assert.match(app, /vendor: \["Dashboard", "AI insights"/);
   assert.match(app, /Store intelligence/);
   assert.match(app, /AI enhance for marketplace/);
-  assert.match(imageRoute, /gpt-image-2/);
+  assert.match(imageRoute, /uruv-image/);
   assert.match(imageRoute, /Preserve the actual product identity, pack, ingredients and visible quantity/);
   assert.match(supabase, /uploadLiveProductImage/);
   assert.match(migration, /product-images/);
