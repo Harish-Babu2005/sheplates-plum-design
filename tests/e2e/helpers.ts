@@ -17,7 +17,7 @@ export async function loginAsCustomer(page: Page) {
   await page.goto("/");
   // The header shows "Customer login" on desktop and just "Sign in" on
   // mobile (sm:hidden / hidden sm:inline), so match either.
-  await page.getByRole("button", { name: /Customer login|^Sign in$/ }).click();
+  await page.getByRole("button", { name: /Customer login|^Sign in$/i }).first().click();
   await page.getByLabel("Email").fill(DEMO.customer.email);
   await page.locator('input[type="password"]').fill(DEMO.customer.password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
@@ -63,7 +63,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   // list from React state on the next toast, so removing these DOM nodes
   // has no lasting effect beyond clearing the current visual stack.
   await page.evaluate(() => document.querySelectorAll("[data-sonner-toast]").forEach((el) => el.remove()));
-  const loginButtonName = who === "customer" ? /^Customer login$|^Sign in$/ : /^Vendor(\s*\/\s*Team)?$/;
+  const loginButtonName = who === "customer" ? /^Customer login$|^Sign in$/i : /^Vendor(\s*\/\s*Team)?$/;
   // Anchored: an unanchored /Vendor/ also matches staff sidebar nav items
   // ("Vendor onboarding", "Vendor payments", ...) that can still be present
   // in the DOM for a moment during the sign-out transition.

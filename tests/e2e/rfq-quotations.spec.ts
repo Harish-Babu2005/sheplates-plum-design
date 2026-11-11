@@ -69,7 +69,7 @@ test.afterAll(async () => {
 async function signIn(browser: Browser, who: "customer" | Acct): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await page.goto("/"); await page.evaluate(() => localStorage.clear()); await page.goto("/");
-  if (who === "customer") await page.getByRole("button", { name: /Customer login|^Sign in$/ }).click();
+  if (who === "customer") await page.getByRole("button", { name: /Customer login|^Sign in$/i }).first().click();
   else await page.getByRole("button", { name: /Vendor/ }).click();
   await page.getByLabel("Email").fill(who === "customer" ? DEMO.customer.email : who.email);
   await page.getByLabel("Password").fill(who === "customer" ? DEMO.customer.password : PASSWORD);

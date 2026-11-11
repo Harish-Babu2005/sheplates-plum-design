@@ -331,8 +331,10 @@ await sendPasswordResetEmail(
         return;
       }
 
+      if (mode !== "create" && (!email.trim() || !password)) throw new Error("Enter your email and password.");
       if (mode === "create") {
         if (!name.trim()) throw new Error("Enter your full name.");
+        if (!email.trim()) throw new Error("Enter your email address.");
         if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
         if (!liveMode) {
           const normalizedEmail = email.trim().toLowerCase();
