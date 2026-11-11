@@ -998,6 +998,7 @@ export function SheplatesV3() {
 
     const vendor = state.vendors.find((v) => v.id === targetVendorId);
     if (vendor) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a vendor deep link opens that store once, after the vendors load
       setVendorProfileIdState(vendor.id);
       try {
         sessionStorage.removeItem("sheplates_pending_vendor");
@@ -1097,6 +1098,7 @@ export function SheplatesV3() {
       : validPages.includes(active)
         ? active
         : validPages[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the first page comes from the address bar, read once in the browser
     if (initialPage !== active) setActive(initialPage);
     parameters.delete("view");
     if (initialPage !== validPages[0]) parameters.set("view", initialPage);
@@ -2989,6 +2991,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
   // Synchronize component form state whenever profile updates from live sync or external state
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the form re-syncs when the saved profile changes
       setPhone(profile.phone || "");
       setAddress(profile.address || "");
       setDiet(profile.diet || "No preference");
@@ -3209,7 +3212,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                 {STANDARD_DIETS.map((x) => (
                   <SelectItem key={x} value={x}>{x}</SelectItem>
                 ))}
-                {!STANDARD_DIETS.includes(diet as any) && diet ? (
+                {!(STANDARD_DIETS as readonly string[]).includes(diet) && diet ? (
                   <SelectItem value={diet}>{diet}</SelectItem>
                 ) : null}
               </SelectContent>
@@ -4739,7 +4742,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
 
     if (isLive) {
       try {
-        let liveRzpOrder: any = null;
+        let liveRzpOrder: Awaited<ReturnType<typeof createLiveRazorpayOrder>> | null = null;
         try {
           const loaded = await loadRazorpayScript();
           if (loaded && (window as unknown as { Razorpay?: unknown }).Razorpay) {
@@ -5918,7 +5921,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
     <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">"{vendor.bio}"</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
       {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
     </div>
     <div className="surface-card rounded-[28px] p-6">
@@ -6172,7 +6175,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
 }
 
 function ProductDialog({ open, close, vendor, setState, session, editingProduct }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null }) {
-  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category as any) ? vendor.category : "Milk & dairy") as string;
+  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>(defaultCategory);
   const [skuGroup, setSkuGroup] = useState<string>("");
@@ -6209,6 +6212,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
 
   useEffect(() => {
     if (editingProduct) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- editing a product fills the form once from that product
       setCategory(editingProduct.category);
       const groups = getSkuGroups(editingProduct.category);
       const grp = editingProduct.skuGroupName || "";
@@ -6239,7 +6243,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
         setPackSize(editingProduct.packSize || editingProduct.baseUnit || "Other");
         setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
       }
-      if (editingProduct.unitType && SKU_UNIT_TYPES.includes(editingProduct.unitType as any)) {
+      if (editingProduct.unitType && (SKU_UNIT_TYPES as readonly string[]).includes(editingProduct.unitType)) {
         setCustomUnit(editingProduct.unitType as SkuUnitType);
       }
       setName(editingProduct.name);
@@ -6259,7 +6263,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
       setNutritionNote(editingProduct.nutritionNote || "");
       setConfirmed(editingProduct.nutritionStatus === "Verified");
     } else if (open) {
-      const initialCat = (SKU_CATEGORIES.includes(vendor.category as any) ? vendor.category : "Milk & dairy") as string;
+      const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
       setCategory(initialCat);
       const groups = getSkuGroups(initialCat);
       const firstGrp = groups[0] || "Other";
@@ -7086,6 +7090,7 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
 }
 
 function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+  const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
@@ -7100,7 +7105,6 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { 
   if (active === "Reports") return <ReportsCentre state={state} />;
   if (active === "Audit log") return <AuditLog items={state.audit} />;
   const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
-  const [range, setRange] = useState<7 | 30 | 90>(30);
   const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
   const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
   const gross = inRange.reduce((sum, x) => sum + x.total, 0);

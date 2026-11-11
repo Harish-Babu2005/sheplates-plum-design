@@ -15,6 +15,9 @@
  * - Preserves non-AI fallbacks across all calling surfaces
  */
 
+/** The provider's JSON answer. Its shape depends on the endpoint, so callers narrow what they read. */
+export type UruvJson = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
 export class UruvAiError extends Error {
   status: number;
   code?: string;
@@ -73,7 +76,7 @@ export async function alertAdminBudgetCredit(err: { code?: string; requestId?: s
   }
 }
 
-export async function uruvFetch(path: string, init: RequestInit & { timeoutMs?: number }, isRetry = false): Promise<any> {
+export async function uruvFetch(path: string, init: RequestInit & { timeoutMs?: number }, isRetry = false): Promise<UruvJson> {
   const key = uruvApiKey();
   if (!key) {
     throw new UruvAiError(503, "URUV_API_KEY is not configured", "missing_api_key");
@@ -89,7 +92,8 @@ export async function uruvFetch(path: string, init: RequestInit & { timeoutMs?: 
       headers: { ...headers, ...((init.headers as Record<string, string>) || {}) },
       signal: init.signal ?? AbortSignal.timeout(init.timeoutMs ?? 60_000),
     });
-  } catch (netErr: any) {
+  } catch (caught) {
+    const netErr = caught as { name?: string; code?: string; message?: string };
     if (!isRetry && (netErr.name === "TimeoutError" || netErr.name === "AbortError" || netErr.code === "ECONNRESET")) {
       console.warn(`[URUV AI Network Retry] ${netErr.message || "Network glitch"}, retrying once...`);
       return uruvFetch(path, init, true);
@@ -116,7 +120,7 @@ export async function uruvFetch(path: string, init: RequestInit & { timeoutMs?: 
     }
   }
 
-  const data: any = await res.json().catch(() => ({}));
+  const data: UruvJson = await res.json().catch(() => ({}));
 
   if (!res.ok) {
     const code = data?.error?.code || (res.status === 429 ? "rate_limit_exceeded" : res.status === 402 ? "insufficient_quota" : undefined);

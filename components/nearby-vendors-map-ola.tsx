@@ -55,7 +55,8 @@ export function NearbyVendorsMapOla({
   const placed = useMemo(() => spreadOverlaps(vendors), [vendors]);
   const placedPeople = useMemo(() => spreadOverlaps(people || []), [people]);
   const closestId = useMemo(() => (vendors.length ? [...vendors].sort((a, b) => a.distanceKm - b.distanceKm)[0]?.id || "" : ""), [vendors]);
-  const latest = useRef({ onRadiusChange, onFail, radiusKm }); latest.current = { onRadiusChange, onFail, radiusKm };
+  const latest = useRef({ onRadiusChange, onFail, radiusKm });
+  useEffect(() => { latest.current = { onRadiusChange, onFail, radiusKm }; }); // keep the newest callbacks for the map's long-lived handlers
 
   // the map itself, created once
   useEffect(() => {

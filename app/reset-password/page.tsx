@@ -48,6 +48,7 @@ const [resetAudience, setResetAudience] = useState<"customer" | "team">("custome
     const search = window.location.search || "";
     const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
     const searchParams = new URLSearchParams(search);
+// eslint-disable-next-line react-hooks/set-state-in-effect -- the audience comes from the address bar, read once in the browser
 setResetAudience(
   searchParams.get("audience") === "team" ? "team" : "customer"
 );

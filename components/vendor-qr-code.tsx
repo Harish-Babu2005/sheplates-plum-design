@@ -581,6 +581,7 @@ export function VendorQrCode({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = `${window.location.origin}${window.location.pathname}?vendor=${vendorId}`;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the link needs window.location, which only exists in the browser
     setShopUrl(url);
 
     let isMounted = true;

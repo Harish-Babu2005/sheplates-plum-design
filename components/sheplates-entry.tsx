@@ -454,7 +454,7 @@ await sendPasswordResetEmail(
                   If <b>{email}</b> is registered with Sheplates, you will receive a password reset link shortly. Please check your inbox.
                 </p>
                 <p className="mt-2 text-[11px] text-emerald-700">
-                  Didn't see it? Check your spam or promotions folder.
+                  Didn&apos;t see it? Check your spam or promotions folder.
                 </p>
               </div>
             </div>

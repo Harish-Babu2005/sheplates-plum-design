@@ -63,6 +63,7 @@ export function PhotoTile({ imageUrl, category, initial, className = "", emojiSi
   const hasValidImage = Boolean(trimmed && trimmed !== "null" && trimmed !== "undefined" && !loadError);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new image address clears the earlier load error
     setLoadError(false);
   }, [trimmed]);
 

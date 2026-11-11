@@ -71,7 +71,8 @@ async function classifyWithAI(products: ProductInput[]): Promise<Record<string, 
       result[item.productId] = trimmed;
     }
     return result;
-  } catch (error: any) {
+  } catch (caught) {
+    const error = caught as { code?: string; status?: number; message?: string };
     console.error("[food-attributes] AI classification failed, using local fallback", { code: error?.code, status: error?.status, message: error?.message });
     return null;
   }
