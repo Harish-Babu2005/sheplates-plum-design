@@ -502,18 +502,18 @@ const unitsByCategory: Record<string, SellingSpec[]> = {
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
 
-let nextSequenceValue = 0;
-function nextSequenceToken() {
-  nextSequenceValue += 1;
-  return nextSequenceValue;
+/** Cryptographically random numbers (never Math.random or the clock), for ids, codes and generated passwords. */
+function randomBelow(max: number) {
+  const limit = Math.floor(0x100000000 / max) * max; // avoids modulo bias
+  const bucket = new Uint32Array(1);
+  do { crypto.getRandomValues(bucket); } while (bucket[0] >= limit);
+  return bucket[0] % max;
 }
 function id(prefix: string) {
-  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${nextSequenceToken().toString(36).toUpperCase().padStart(4, "0")}`;
+  const suffix = Array.from({ length: 4 }, () => "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[randomBelow(36)]).join("");
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
 }
-function sixDigitCode() {
-  const base = Number(String(Date.now()).slice(-6)) + nextSequenceToken();
-  return String((base % 900000) + 100000);
-}
+function sixDigitCode() { return String(100000 + randomBelow(900000)); }
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
@@ -637,12 +637,7 @@ function writeLocalStaffAccounts(list: (StaffAccount & { password: string })[]) 
 }
 function generatePassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < 12; i++) {
-    const index = (Date.now() + nextSequenceToken() + i) % chars.length;
-    out += chars[index];
-  }
-  return out;
+  return Array.from({ length: 12 }, () => chars[randomBelow(chars.length)]).join("");
 }
 function verificationFromLive(value: string): Verification {
   const labels: Record<string, Verification> = { draft: "Draft", submitted: "Submitted", under_review: "Under review", changes_required: "Changes required", verified: "Verified", rejected: "Rejected", expired: "Changes required" };
@@ -927,8 +922,10 @@ export function SheplatesV3() {
   const storageWarningShown = useRef(false);
   const storageUnavailable = useRef(false);
   const [liveSync, setLiveSync] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  useEffect(() => { liveSyncRef.current = liveSync; }, [liveSync]);
   const [liveSyncError, setLiveSyncError] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
+  const liveSyncRef = useRef<"idle" | "loading" | "ready" | "error">("idle");
   const [tourOpen, setTourOpen] = useState<null | "customer" | "vendor">(null);
   const initializedNavigationKey = useRef("");
   const skipNavigationSync = useRef(false);
@@ -1290,13 +1287,16 @@ export function SheplatesV3() {
     if (!hydrated || !syncSession) return;
     if (!isLiveSupabaseMode()) { queueMicrotask(() => setLiveSync("ready")); return; }
     let cancelled = false;
+    // The first load and a manual retry show progress. The quiet refresh every 30 seconds changes nothing on screen unless it brings new data,
+    // and never flashes the loading card or an error banner: if it fails, the next one simply tries again.
+    const quiet = syncVersion > 0 && liveSyncRef.current === "ready";
     const syncTimeout = window.setTimeout(() => {
-      if (!cancelled) {
+      if (!cancelled && !quiet) {
         setLiveSync("error");
         setLiveSyncError("The account service did not respond within 10 seconds. You can continue using the page and retry.");
       }
     }, 10000);
-    queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
+    if (!quiet) queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
     (async () => {
       if (syncSession.role === "customer") {
         const preference = syncSession.userId ? await loadLiveCustomerPreference(syncSession.userId) : null;
@@ -1409,7 +1409,7 @@ export function SheplatesV3() {
       if (!cancelled) setState((current) => mergeLiveCommerce(current, commerce, syncSession));
       window.clearTimeout(syncTimeout);
       if (!cancelled) setLiveSync("ready");
-    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
+    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled && !quiet) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
@@ -1456,70 +1456,24 @@ export function SheplatesV3() {
       void refreshDrops();
       return;
     }
-    let verificationCode = sixDigitCode();
-    let orderNum = sixDigitCode();
-    let orderId = id("ORD");
-
-    if (isLiveSupabaseMode()) {
-      try {
-        const liveClaim = await claimLiveFoodDrop(drop.id, quantity);
-        if (liveClaim.verificationCode) verificationCode = liveClaim.verificationCode;
-        if (liveClaim.orderNumber) orderNum = liveClaim.orderNumber;
-        if (liveClaim.orderId) orderId = liveClaim.orderId;
-        void refreshDrops();
-      } catch (err) {
-        toast.error(errorMessage(err, "Could not claim this Food Drop."));
-        void refreshDrops();
-        return;
+    const ownCart = state.cart.filter((item) => item.customerEmail === session!.email);
+    const existing = ownCart.find((item) => item.productId === drop.productId && item.foodDropId === drop.id);
+    const nextOwn = existing
+      ? ownCart.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + quantity, unitPrice: drop.dropPrice } : item)
+      : [{ id: id("CART"), customerEmail: session!.email, productId: drop.productId, quantity, foodDropId: drop.id, unitPrice: drop.dropPrice }, ...ownCart];
+    setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...nextOwn] }));
+    try {
+      if (isLiveSupabaseMode()) {
+        const saved = await syncLiveCart({ items: nextOwn.map((item) => ({
+          productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId,
+        })) });
+        if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session!));
       }
+      toast.success(`Added ${quantity} × ${drop.title} to your cart`);
+    } catch (error) {
+      setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...ownCart] }));
+      toast.error(errorMessage(error, "This drop could not be added to your cart"));
     }
-
-    const vendorObj = state.vendors.find((v) => v.id === drop.vendorId);
-    const confirmedOrder: Order = {
-      id: orderId,
-      orderNumber: orderNum,
-      customerEmail: session!.email,
-      vendorId: drop.vendorId,
-      productId: drop.productId,
-      description: `${drop.title} (Food Drop)`,
-      quantity,
-      unit: "packs",
-      total: drop.dropPrice * quantity,
-      date: todayISO(),
-      slot: "12:00 PM – 06:00 PM (Pickup)",
-      deliveryAddress: vendorObj?.address ? `Store Pickup: ${vendorObj.address}` : "Store Self-Pickup",
-      mode: "Self pickup",
-      status: "Confirmed",
-      payment: "Paid",
-      foodDropId: drop.id,
-      verificationCode,
-      verificationStatus: "pending",
-      createdAt: new Date().toISOString(),
-      items: [{ name: `${drop.title} (Food Drop)`, quantity, price: drop.dropPrice }],
-    };
-    const confirmationNotice = notice(
-      session!.email,
-      "customer",
-      "Food Drop Confirmed 🎉",
-      `Your Food Drop order for ${drop.title} (${quantity} pack${quantity === 1 ? "" : "s"}) is confirmed for pickup today. Pickup Verification Code: ${verificationCode}. No online payment required.`
-    );
-    const vendorNotice = notice(
-      vendorObj?.ownerEmail || "vendor",
-      "vendor",
-      "New Food Drop Order",
-      `New Food Drop order #${orderNum} for ${drop.title} (${quantity} pack${quantity === 1 ? "" : "s"}) is confirmed for pickup today. Customer verification code: ${verificationCode}.`
-    );
-
-    setState((current) => ({
-      ...current,
-      orders: [confirmedOrder, ...current.orders.filter((o) => o.id !== orderId)],
-      foodDrops: current.foodDrops.map((d) => d.id === drop.id ? { ...d, remainingQuantity: Math.max(0, d.remainingQuantity - quantity) } : d),
-      notifications: [confirmationNotice, vendorNotice, ...current.notifications],
-    }));
-
-    showDeviceNotification("Food Drop Confirmed", `Your pickup verification code is ${verificationCode}`);
-    // Legacy test invariant: Added ${quantity} × ${drop.title} to your cart
-    toast.success(`Food Drop added to your orders! Pickup Code #${verificationCode} confirmed in Orders.`);
   }
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };

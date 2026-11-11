@@ -206,6 +206,12 @@ export async function getAccessToken() {
   return data.session?.access_token ?? null;
 }
 
+/** Store branding from the server. The sign-in token is sent when there is one, so an owner also sees their own unverified store. */
+async function brandingFetch(query: string) {
+  const token = await getAccessToken();
+  return fetch(`/api/vendor/branding${query}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+}
+
 export async function saveLiveCustomerLocation(input: { userId: string; address: string; latitude: number; longitude: number }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -306,7 +312,7 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
 
   let vendorBranding: LiveVendorBranding[] = [];
   try {
-    const res = await fetch("/api/vendor/branding").catch(() => null);
+    const res = await brandingFetch("").catch(() => null);
     if (res && res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.brandings && Array.isArray(json.brandings)) {
@@ -444,7 +450,7 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
   let vendorRow = vendor.data as LiveVendorRow;
   try {
-    const res = await fetch(`/api/vendor/branding?vendorId=${encodeURIComponent(vendorId)}`).catch(() => null);
+    const res = await brandingFetch(`?vendorId=${encodeURIComponent(vendorId)}`).catch(() => null);
     if (res && res.ok) {
       const json = await res.json().catch(() => null);
       const b = json?.brandings?.[0];
@@ -497,7 +503,7 @@ export async function loadLiveOperationsWorkspace() {
     throw vendors.error;
   }
   try {
-    const res = await fetch("/api/vendor/branding").catch(() => null);
+    const res = await brandingFetch("").catch(() => null);
     if (res && res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.brandings && Array.isArray(json.brandings)) {

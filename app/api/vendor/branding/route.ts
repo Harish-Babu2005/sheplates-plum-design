@@ -1,41 +1,47 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+/**
+ * Public store branding (name, category, logo, banner, description) for the marketplace.
+ * Anyone may read VERIFIED, visible stores. A store that is not verified is returned only to its own owner or to Operations and
+ * Super Admin, never to the public: the server key bypasses row security, so this check is what keeps unverified vendors private.
+ */
 export async function GET(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || (!anon && !service)) {
-    return NextResponse.json({ error: "Branding service is unavailable." }, { status: 503 });
+  if (!url || !anon || !service) return NextResponse.json({ error: "Branding service is unavailable." }, { status: 503 });
+  const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  const vendorId = new URL(request.url).searchParams.get("vendorId");
+  if (vendorId && !/^[0-9a-f-]{32,40}$/i.test(vendorId)) return NextResponse.json({ error: "Invalid vendor." }, { status: 400 });
+
+  // Who is asking (optional): the owner of this store, or staff, may also see it before it is verified.
+  let privileged = false;
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (token) {
+    const caller = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } });
+    const { data } = await caller.auth.getUser(token);
+    if (data.user) {
+      const { data: profile } = await admin.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
+      const role = String((profile as { role?: string } | null)?.role || "");
+      if (["operations", "admin"].includes(role)) privileged = true;
+      else if (vendorId) {
+        const own = await admin.from("vendors").select("id").eq("id", vendorId).eq("owner_id", data.user.id).maybeSingle();
+        privileged = Boolean(own.data);
+      }
+    }
   }
 
-  const client = createClient(url, service || anon!, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  let query = admin.from("vendors").select("id,name,category,logo_url,banner_url,description,verification_status,marketplace_visible");
+  if (vendorId) query = query.eq("id", vendorId);
+  const { data, error } = await query.limit(1000);
+  if (error) return NextResponse.json({ error: "Branding could not be loaded." }, { status: 500 });
 
-  const { searchParams } = new URL(request.url);
-  const vendorId = searchParams.get("vendorId");
-
-  let query = client.from("vendors").select("id,name,category,logo_url,banner_url,description");
-  if (vendorId) {
-    query = query.eq("id", vendorId);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
+  const visible = (data || []).filter((row) => privileged || (row.verification_status === "verified" && row.marketplace_visible !== false));
   return NextResponse.json({
     ok: true,
-    brandings: (data || []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      category: row.category,
-      logo_url: row.logo_url || null,
-      banner_url: row.banner_url || null,
-      description: row.description || null,
-    })),
+    brandings: visible.map((row) => ({ id: row.id, name: row.name, category: row.category, logo_url: row.logo_url || null, banner_url: row.banner_url || null, description: row.description || null })),
   });
 }
 
