@@ -6,8 +6,11 @@ test("new vendor can sign in again after signing out", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  await page.getByRole("button", { name: /^(Vendors? (&|\/) Team|Vendor)$/ }).first().click();
-  await expect(page.getByText("Vendor / Team access")).toBeVisible();
+  // the page may still be hydrating on the first click (seen when many tests run at once), so retry until the dialog opens
+  await expect(async () => {
+    await page.getByRole("button", { name: /^(Vendors? (&|\/) Team|Vendor)$/ }).first().click();
+    await expect(page.getByText("Vendor / Team access")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await page.getByText("Be part of our vendor team").click();
   await page.getByLabel("Full name").fill("Test Vendor");
   await page.getByLabel("Email").fill("test-vendor@example.com");
