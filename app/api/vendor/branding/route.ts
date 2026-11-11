@@ -1,6 +1,44 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export async function GET(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || (!anon && !service)) {
+    return NextResponse.json({ error: "Branding service is unavailable." }, { status: 503 });
+  }
+
+  const client = createClient(url, service || anon!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { searchParams } = new URL(request.url);
+  const vendorId = searchParams.get("vendorId");
+
+  let query = client.from("vendors").select("id,name,category,logo_url,banner_url,description");
+  if (vendorId) {
+    query = query.eq("id", vendorId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    brandings: (data || []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      logo_url: row.logo_url || null,
+      banner_url: row.banner_url || null,
+      description: row.description || null,
+    })),
+  });
+}
+
 export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -38,6 +76,7 @@ export async function POST(request: Request) {
     vendorId?: string;
     logoUrl?: string | null;
     bannerUrl?: string | null;
+    bio?: string | null;
   };
 
   const vendorId = body.vendorId?.trim();
@@ -70,6 +109,7 @@ export async function POST(request: Request) {
 
   if (body.logoUrl !== undefined) patch.logo_url = body.logoUrl;
   if (body.bannerUrl !== undefined) patch.banner_url = body.bannerUrl;
+  if (body.bio !== undefined) patch.description = body.bio;
 
   let updateRes = await admin.from("vendors").update(patch).eq("id", vendorId);
 
@@ -77,6 +117,7 @@ export async function POST(request: Request) {
   if (updateRes.error && (updateRes.error.code === "42703" || /banner_url/i.test(updateRes.error.message || ""))) {
     const fallbackPatch: Record<string, unknown> = { updated_at: patch.updated_at };
     if (patch.logo_url !== undefined) fallbackPatch.logo_url = patch.logo_url;
+    if (patch.description !== undefined) fallbackPatch.description = patch.description;
     updateRes = await admin.from("vendors").update(fallbackPatch).eq("id", vendorId);
   }
 

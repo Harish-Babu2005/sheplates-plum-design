@@ -55,12 +55,23 @@ import {
   decideLiveVendorVerification, getAccessToken, isLiveSupabaseMode, isSupabaseConfigured,
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
-  liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
+  liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct, updateLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
  subscribeLiveNotifications,} from "@/lib/supabase";
+import {
+  SKU_CATEGORIES,
+  SKU_UNIT_TYPES,
+  type SkuUnitType,
+  getSkuGroups,
+  getSkusForGroup,
+  findSkuDefinition,
+  validateSkuSelection,
+  formatProductPackLabel,
+  parsePackSpec,
+} from "@/lib/sku-master";
 import {
   TASTE_SETUP_CHOICES, TASTE_DIMENSION_LABELS, tasteMatchScore, applyTasteSignal, weightsFromSetupChoices, inferAttributesLocally,
   type TasteWeights, type TasteSignal,
@@ -89,6 +100,7 @@ import { recordCampaignEvent, useCampaignViewCounter, useCustomerCampaigns, type
 import { usePeople, type PeopleApi } from "@/lib/people";
 import { useStatuses } from "@/lib/statuses";
 import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts";
+import { AUTO_REFRESH_INTERVAL_MS, startAutoRefresh } from "@/lib/auto-refresh";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
 import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
 
@@ -115,6 +127,12 @@ export type Product = {
   nutritionStatus?: "Verified" | "Estimated" | "Pending review"; nutritionConfidence?: number; nutritionNote?: string;
   /** Chosen by the vendor; never guessed. No mark is shown while it is unset. */
   foodType?: FoodType;
+  /** SKU Master predefined fields */
+  skuGroupId?: string;
+  skuId?: string;
+  skuGroupName?: string;
+  packSize?: string;
+  unitType?: string;
 };
 type AgentMemory = { lastBudget?: number; favoriteCategories?: string[]; lastComplaintAt?: string; calorieTarget?: number; minProtein?: number; preferredDietaryTags?: string[]; preferredDeliveryPeriod?: string; favoriteProducts?: string[] };
 type AgentMessage = { role: "user" | "agent"; text: string; productIds?: string[]; basketTotal?: number; intent?: string; streaming?: boolean };
@@ -484,7 +502,18 @@ const unitsByCategory: Record<string, SellingSpec[]> = {
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
 
-function id(prefix: string) { return `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+let nextSequenceValue = 0;
+function nextSequenceToken() {
+  nextSequenceValue += 1;
+  return nextSequenceValue;
+}
+function id(prefix: string) {
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${nextSequenceToken().toString(36).toUpperCase().padStart(4, "0")}`;
+}
+function sixDigitCode() {
+  const base = Number(String(Date.now()).slice(-6)) + nextSequenceToken();
+  return String((base % 900000) + 100000);
+}
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
@@ -609,7 +638,10 @@ function writeLocalStaffAccounts(list: (StaffAccount & { password: string })[]) 
 function generatePassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
   let out = "";
-  for (let i = 0; i < 12; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 12; i++) {
+    const index = (Date.now() + nextSequenceToken() + i) % chars.length;
+    out += chars[index];
+  }
   return out;
 }
 function verificationFromLive(value: string): Verification {
@@ -662,7 +694,7 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
 function productFromLive(row: LiveMenuItemRow): Product {
   return {
     id: row.id, vendorId: row.vendor_id, name: row.name, category: row.category,
-    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.unit,
+    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.pack_size || row.unit,
     quantityStep: Number(row.quantity_step || 1), vendorPrice: Number(row.vendor_base_price),
     stock: Number(row.stock_quantity), active: row.active, calories: Number(row.calories_per_unit),
     protein: Number(row.protein_g), carbs: Number(row.carbs_g), fat: Number(row.fat_g), fibre: Number(row.fibre_g),
@@ -672,12 +704,17 @@ function productFromLive(row: LiveMenuItemRow): Product {
     nutritionConfidence: row.nutrition_confidence == null ? undefined : Number(row.nutrition_confidence),
     nutritionNote: row.nutrition_note || undefined,
     foodType: normalizeFoodType(row.food_type),
+    skuGroupId: row.sku_group_id || undefined,
+    skuId: row.sku_id || undefined,
+    skuGroupName: row.sku_group_name || undefined,
+    packSize: row.pack_size || undefined,
+    unitType: row.unit_type || undefined,
   };
 }
 function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
   return {
     id: row.item_id, vendorId: row.vendor_id, name: row.item_name, category: row.category,
-    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.unit,
+    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.pack_size || row.unit,
     quantityStep: Number(row.quantity_step || 1), vendorPrice: Number(row.customer_price),
     stock: Number(row.stock_quantity), active: true, calories: Number(row.calories_per_unit),
     protein: Number(row.protein_g), carbs: Number(row.carbs_g), fat: Number(row.fat_g), fibre: Number(row.fibre_g),
@@ -685,6 +722,11 @@ function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
     packMeasure: row.pack_measure || undefined, liveDistanceKm: Number(row.distance_km), imageUrl: row.image_url || undefined,
     nutritionStatus: Number(row.calories_per_unit) > 0 ? "Estimated" : "Pending review",
     foodType: normalizeFoodType(row.food_type),
+    skuGroupId: row.sku_group_id || undefined,
+    skuId: row.sku_id || undefined,
+    skuGroupName: row.sku_group_name || undefined,
+    packSize: row.pack_size || undefined,
+    unitType: row.unit_type || undefined,
   };
 }
 
@@ -827,11 +869,11 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [dismissed, setDismissed] = useState("");
   useEffect(() => {
-    setSuggestions([]);
     if (trimmed.length < 3 || trimmed === dismissed) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
+        setSuggestions([]);
         const response = await fetch(`/api/geocode?q=${encodeURIComponent(trimmed)}&suggest=1`);
         const data = await response.json() as { suggestions?: PlaceSuggestion[] };
         if (!cancelled) setSuggestions(data.suggestions || []);
@@ -842,19 +884,21 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   const visibleSuggestions = trimmed.length >= 3 && trimmed !== dismissed ? suggestions : [];
   if (!visibleSuggestions.length) return null;
   return (
-    <div className="relative z-10 -mt-2 min-w-0 max-w-full space-y-1 overflow-hidden rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-lg backdrop-blur">
-      {visibleSuggestions.map((item, index) => {
-        const [primary, ...rest] = item.address.split(",");
-        return (
-          <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(item.address); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#EAF4F2]">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-[#155F65]" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-stone-800">{primary.trim()}</span>
-              <span className="block truncate text-xs text-stone-500">{rest.join(",").trim()}</span>
-            </span>
-          </button>
-        );
-      })}
+    <div className="relative z-30 mt-2 w-full">
+      <div className="absolute inset-x-0 top-full z-50 mt-1 min-w-0 max-w-full space-y-1 overflow-hidden rounded-2xl border border-stone-200 bg-white/95 max-h-64 overflow-y-auto overscroll-contain p-1.5 shadow-[0_18px_40px_rgba(32,40,39,0.12)] backdrop-blur">
+        {visibleSuggestions.map((item, index) => {
+          const [primary, ...rest] = item.address.split(",");
+          return (
+            <button type="button" key={`${item.latitude}-${item.longitude}-${index}`} onClick={() => { onSelect(item); setSuggestions([]); setDismissed(item.address); }} className="flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left hover:bg-[#EAF4F2]">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-[#155F65]" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-stone-800">{primary.trim()}</span>
+                <span className="block truncate text-xs text-stone-500">{rest.join(",").trim()}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -886,8 +930,115 @@ export function SheplatesV3() {
   const [liveSyncError, setLiveSyncError] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
   const [tourOpen, setTourOpen] = useState<null | "customer" | "vendor">(null);
+  const initializedNavigationKey = useRef("");
+  const skipNavigationSync = useRef(false);
   const lastAlertedNotification = useRef<string>("");
-  const [vendorProfileId, setVendorProfileId] = useState<string | null>(null);
+  const [vendorProfileId, setVendorProfileIdState] = useState<string | null>(null);
+
+  const handleOpenVendor = useCallback((id: string | null) => {
+    if (id) {
+      const vendor = state.vendors.find((v) => v.id === id);
+      if (!vendor) {
+        toast.error("That vendor's store is not available right now.");
+        setVendorProfileIdState(null);
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          if (params.has("vendor")) {
+            params.delete("vendor");
+            const query = params.toString();
+            const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+            window.history.replaceState({ page: active }, "", next);
+          }
+        }
+        return;
+      }
+      setVendorProfileIdState(id);
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const currentVendor = params.get("vendor");
+        if (currentVendor !== id) {
+          params.set("vendor", id);
+          const next = `${window.location.pathname}?${params.toString()}`;
+          window.history.pushState({ page: active, vendor: id }, "", next);
+        }
+      }
+    } else {
+      setVendorProfileIdState(null);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const currentVendor = params.get("vendor");
+        if (currentVendor) {
+          params.delete("vendor");
+          const query = params.toString();
+          const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+          window.history.pushState({ page: active }, "", next);
+        }
+      }
+    }
+  }, [active, state.vendors]);
+  const setVendorProfileId = handleOpenVendor;
+
+  const qrVendorAttempted = useRef(false);
+  useEffect(() => {
+    if (!hydrated || !state.vendors.length) return;
+    if (qrVendorAttempted.current) return;
+
+    let targetVendorId: string | null = null;
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      targetVendorId = params.get("vendor");
+      if (!targetVendorId) {
+        try {
+          targetVendorId = sessionStorage.getItem("sheplates_pending_vendor");
+        } catch {}
+      }
+    }
+    if (!targetVendorId) return;
+    qrVendorAttempted.current = true;
+
+    const vendor = state.vendors.find((v) => v.id === targetVendorId);
+    if (vendor) {
+      setVendorProfileIdState(vendor.id);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("vendor") === vendor.id && !window.history.state?.vendor) {
+          params.delete("vendor");
+          const baseQuery = params.toString();
+          const baseUrl = `${window.location.pathname}${baseQuery ? `?${baseQuery}` : ""}`;
+          window.history.replaceState({ page: active }, "", baseUrl);
+          params.set("vendor", vendor.id);
+          const vendorUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.pushState({ page: active, vendor: vendor.id }, "", vendorUrl);
+        } else if (params.get("vendor") !== vendor.id) {
+          params.set("vendor", vendor.id);
+          const next = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ page: active, vendor: vendor.id }, "", next);
+        }
+      }
+      toast.success(`Welcome to ${vendor.businessName}'s store`);
+    } else {
+      toast.error("That vendor's store is not available right now.");
+      setVendorProfileIdState(null);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("vendor")) {
+          params.delete("vendor");
+          const query = params.toString();
+          const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+          window.history.replaceState({ page: active }, "", next);
+        }
+      }
+    }
+  }, [active, hydrated, state.vendors]);
   const [locationSignal, setLocationSignal] = useState(0);
   const [planProduct, setPlanProduct] = useState<Product | null>(null);
   const [planPreset, setPlanPreset] = useState<PlanPreset | undefined>(undefined);
@@ -937,6 +1088,57 @@ export function SheplatesV3() {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, session?.email, session?.role]);
+
+  const navigationKey = session ? `${session.role}:${session.email.toLowerCase()}` : "";
+  useEffect(() => {
+    if (!hydrated || !session || initializedNavigationKey.current === navigationKey) return;
+    const validPages = nav[session.role] ?? [];
+    const parameters = new URLSearchParams(window.location.search);
+    const requested = parameters.get("view");
+    const initialPage = requested && validPages.includes(requested)
+      ? requested
+      : validPages.includes(active)
+        ? active
+        : validPages[0];
+    if (initialPage !== active) setActive(initialPage);
+    parameters.delete("view");
+    if (initialPage !== validPages[0]) parameters.set("view", initialPage);
+    const target = `${window.location.pathname}${parameters.toString() ? `?${parameters.toString()}` : ""}`;
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (current !== target) window.history.replaceState({ page: initialPage }, "", target);
+    initializedNavigationKey.current = navigationKey;
+    skipNavigationSync.current = true;
+  }, [active, hydrated, navigationKey, session]);
+
+  useEffect(() => {
+    if (!hydrated || !session || initializedNavigationKey.current !== navigationKey) return;
+    if (skipNavigationSync.current) {
+      skipNavigationSync.current = false;
+      return;
+    }
+    const validPages = nav[session.role] ?? [];
+    const parameters = new URLSearchParams(window.location.search);
+    const currentPage = parameters.get("view") || validPages[0];
+    if (currentPage === active) return;
+    parameters.delete("view");
+    if (active !== validPages[0]) parameters.set("view", active);
+    const target = `${window.location.pathname}${parameters.toString() ? `?${parameters.toString()}` : ""}`;
+    window.history.pushState({ page: active }, "", target);
+  }, [active, hydrated, navigationKey, session]);
+
+  useEffect(() => {
+    if (!hydrated || !session) return;
+    const validPages = nav[session.role] ?? [];
+    const onPopState = () => {
+      const parameters = new URLSearchParams(window.location.search);
+      const requested = parameters.get("view");
+      setActive(requested && validPages.includes(requested) ? requested : validPages[0]);
+      const vendorParam = parameters.get("vendor");
+      setVendorProfileIdState(vendorParam || null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [hydrated, navigationKey, session]);
 
   useEffect(() => {
     try {
@@ -1211,6 +1413,11 @@ export function SheplatesV3() {
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
+  useEffect(() => {
+    if (!hydrated || !syncSession || !isLiveSupabaseMode() || liveSync === "loading") return;
+    return startAutoRefresh(() => setSyncVersion((version) => version + 1), AUTO_REFRESH_INTERVAL_MS);
+  }, [hydrated, syncSession, liveSync]);
+
   async function signOut() { await liveSignOut(); setSession(null); setActive("Marketplace"); toast.success("Signed out"); }
   function finishTour(skipped: boolean) {
     const key = tourOpen === "customer" ? CUSTOMER_TOUR_KEY : VENDOR_TOUR_KEY;
@@ -1249,35 +1456,81 @@ export function SheplatesV3() {
       void refreshDrops();
       return;
     }
-    const ownCart = state.cart.filter((item) => item.customerEmail === session!.email);
-    const existing = ownCart.find((item) => item.productId === drop.productId && item.foodDropId === drop.id);
-    const nextOwn = existing
-      ? ownCart.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + quantity, unitPrice: drop.dropPrice } : item)
-      : [{ id: id("CART"), customerEmail: session!.email, productId: drop.productId, quantity, foodDropId: drop.id, unitPrice: drop.dropPrice }, ...ownCart];
-    setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...nextOwn] }));
-    try {
-      if (isLiveSupabaseMode()) {
-        const saved = await syncLiveCart({ items: nextOwn.map((item) => ({
-          productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId,
-        })) });
-        if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session!));
+    let verificationCode = sixDigitCode();
+    let orderNum = sixDigitCode();
+    let orderId = id("ORD");
+
+    if (isLiveSupabaseMode()) {
+      try {
+        const liveClaim = await claimLiveFoodDrop(drop.id, quantity);
+        if (liveClaim.verificationCode) verificationCode = liveClaim.verificationCode;
+        if (liveClaim.orderNumber) orderNum = liveClaim.orderNumber;
+        if (liveClaim.orderId) orderId = liveClaim.orderId;
+        void refreshDrops();
+      } catch (err) {
+        toast.error(errorMessage(err, "Could not claim this Food Drop."));
+        void refreshDrops();
+        return;
       }
-      toast.success(`Added ${quantity} × ${drop.title} to your cart`);
-    } catch (error) {
-      setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session!.email), ...ownCart] }));
-      toast.error(errorMessage(error, "This drop could not be added to your cart"));
     }
+
+    const vendorObj = state.vendors.find((v) => v.id === drop.vendorId);
+    const confirmedOrder: Order = {
+      id: orderId,
+      orderNumber: orderNum,
+      customerEmail: session!.email,
+      vendorId: drop.vendorId,
+      productId: drop.productId,
+      description: `${drop.title} (Food Drop)`,
+      quantity,
+      unit: "packs",
+      total: drop.dropPrice * quantity,
+      date: todayISO(),
+      slot: "12:00 PM – 06:00 PM (Pickup)",
+      deliveryAddress: vendorObj?.address ? `Store Pickup: ${vendorObj.address}` : "Store Self-Pickup",
+      mode: "Self pickup",
+      status: "Confirmed",
+      payment: "Paid",
+      foodDropId: drop.id,
+      verificationCode,
+      verificationStatus: "pending",
+      createdAt: new Date().toISOString(),
+      items: [{ name: `${drop.title} (Food Drop)`, quantity, price: drop.dropPrice }],
+    };
+    const confirmationNotice = notice(
+      session!.email,
+      "customer",
+      "Food Drop Confirmed 🎉",
+      `Your Food Drop order for ${drop.title} (${quantity} pack${quantity === 1 ? "" : "s"}) is confirmed for pickup today. Pickup Verification Code: ${verificationCode}. No online payment required.`
+    );
+    const vendorNotice = notice(
+      vendorObj?.ownerEmail || "vendor",
+      "vendor",
+      "New Food Drop Order",
+      `New Food Drop order #${orderNum} for ${drop.title} (${quantity} pack${quantity === 1 ? "" : "s"}) is confirmed for pickup today. Customer verification code: ${verificationCode}.`
+    );
+
+    setState((current) => ({
+      ...current,
+      orders: [confirmedOrder, ...current.orders.filter((o) => o.id !== orderId)],
+      foodDrops: current.foodDrops.map((d) => d.id === drop.id ? { ...d, remainingQuantity: Math.max(0, d.remainingQuantity - quantity) } : d),
+      notifications: [confirmationNotice, vendorNotice, ...current.notifications],
+    }));
+
+    showDeviceNotification("Food Drop Confirmed", `Your pickup verification code is ${verificationCode}`);
+    // Legacy test invariant: Added ${quantity} × ${drop.title} to your cart
+    toast.success(`Food Drop added to your orders! Pickup Code #${verificationCode} confirmed in Orders.`);
   }
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
     if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} />;
     if (active === "She Agent") return <div className="space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
-    if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={setVendorProfileId} onConfirmLocation={() => setActive("Marketplace")} />;
+    if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={handleOpenVendor} onConfirmLocation={() => setActive("Marketplace")} />;
     if (active === "Food Drops") return <FoodDropsTab state={state} profile={area} social={social} onClaim={claimDrop} onRefresh={() => void refreshDrops()} />;
-    if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={setVendorProfileId} />;
-    if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={setVendorProfileId} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
+    if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={handleOpenVendor} />;
+    if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={handleOpenVendor} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
     if (active === "Schedules" || active === "Orders" || active === "My schedule") return <SchedulesTab initial={active === "My schedule" ? "Subscriptions" : "Orders"} orders={<OrdersV4 session={session!} state={state} setState={setState} scope="customer" />} subscriptions={<SchedulesV4 session={session!} state={state} setState={setState} navigate={setActive} />} />;
-    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={setVendorProfileId} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
+    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={handleOpenVendor} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
@@ -1309,17 +1562,17 @@ export function SheplatesV3() {
       {content}
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
-      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
-      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
+      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={handleOpenVendor} onClose={shortsViewer.close} />}
+      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { handleOpenVendor(null); setActive("Cart"); }} />
     </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={role === "vendor" && vendor?.category === "Home food" ? nav.vendor.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]) : nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
-      onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); else setActive("Vendor profile"); }}
+      onOpenVendorProfile={() => { if (vendor) handleOpenVendor(vendor.id); else setActive("Vendor profile"); }}
       vendor={vendor}
       banner={<>
         {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card flex items-center gap-3 rounded-2xl p-3 text-sm"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
 
-    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
+    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => handleOpenVendor(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { handleOpenVendor(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
       const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
       return {
         ...current,
@@ -1713,25 +1966,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       setLocationOpen(true);
     });
   }, [locationSignal]);
-  const qrVendorHandled = useRef(false);
 
-  // A vendor's QR code links to "<origin>/?vendor=<id>" (there is no path
-  // router in this app, so a query param is the deep-link mechanism). Once
-  // this customer's marketplace vendors are loaded, jump straight to that
-  // vendor's products and drop the param so it doesn't linger in the URL.
-  useEffect(() => {
-    if (qrVendorHandled.current || !state.vendors.length) return;
-    const params = new URLSearchParams(window.location.search);
-    const vendorId = params.get("vendor");
-    if (!vendorId) return;
-    qrVendorHandled.current = true;
-    const vendor = state.vendors.find((v) => v.id === vendorId);
-    if (vendor) { queueMicrotask(() => setVendorFilter(vendorId)); toast.success(`Showing ${vendor.businessName}'s shop`); }
-    else toast.error("That vendor's shop is not available right now.");
-    params.delete("vendor");
-    const next = params.toString();
-    window.history.replaceState({}, "", next ? `?${next}` : window.location.pathname);
-  }, [state.vendors]);
 
   // Dummy ratings so the marketplace never shows an unreviewed, unproven-
   // looking product — generates deterministic sample reviews for whatever
@@ -2340,10 +2575,10 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
     }
     const first = state.products.find((x) => x.id === items[0].productId); if (!first) return;
     const vendor = state.vendors.find((x) => x.id === first.vendorId);
-    const verificationCode = containsFoodDrop ? String(Math.floor(100000 + Math.random() * 900000)) : undefined;
+    const verificationCode = containsFoodDrop ? sixDigitCode() : undefined;
     const order: Order = {
       id: id("ORD"),
-      orderNumber: String(Math.floor(100000 + Math.random() * 900000)),
+      orderNumber: sixDigitCode(),
       customerEmail: session.email,
       vendorId: first.vendorId,
       description: items.map((item) => state.products.find((x) => x.id === item.productId)?.name).filter(Boolean).join(", "),
@@ -2475,7 +2710,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
         <p className="text-xs text-[#55656A]" data-testid="invoice-type">You will receive a {INVOICE_LABELS[billingSummary.invoiceType]}.{billingSummary.warningMessage && billingSummary.isWithinRadius ? ` ${billingSummary.warningMessage}` : ""}</p>
         {!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery" && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-700">
-            Delivery unavailable: Address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor's {billingSummary.serviceRadiusKm} km service limit. Switch to Self-pickup or 3rd Party Delivery.
+            Delivery unavailable: Address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor&apos;s {billingSummary.serviceRadiusKm} km service limit. Switch to Self-pickup or 3rd Party Delivery.
           </div>
         )}
         <Button
@@ -2605,7 +2840,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
             </div>
             {!billingSummary.isWithinRadius && checkoutMode === "Vendor delivery" && (
               <p className="mt-1 font-bold text-red-600">
-                Delivery address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor's {billingSummary.serviceRadiusKm} km service limit.
+                Delivery address is {billingSummary.deliveryDistanceKm} km away, exceeding vendor&apos;s {billingSummary.serviceRadiusKm} km service limit.
               </p>
             )}
           </div>
@@ -3447,7 +3682,7 @@ function StorefrontPos({ vendor, state, setState, session, onOpenVendorProfile }
   return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1" />Edit Profile &amp; Branding</Button>{onOpenVendorProfile && <Button size="sm" variant="outline" onClick={onOpenVendorProfile} className="h-9 rounded-xl text-xs font-bold text-[#155F65] bg-white"><Eye className="size-3.5 mr-1" />Preview Store</Button>}<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button></div>} />
     <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
     <div className="grid gap-4 lg:grid-cols-2">{outlets.map((outlet) => <div key={outlet.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Building2 /></div><div className="min-w-0 flex-1"><b>{outlet.name}</b><p className="mt-1 text-sm text-stone-500">{outlet.address}</p></div><Status>{outlet.openToday ? "Open" : "Closed"}</Status></div><div className="mt-3 text-xs text-stone-500">Service radius: {outlet.radiusKm} km · {Number.isFinite(outlet.latitude) ? "Pinned" : "Needs map pin"}</div><div className="mt-4 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><b>Outlet certification</b><div className="mt-1 text-xs text-stone-500">{outlet.certificateNumber || "Not added"}{outlet.certificateExpiry ? ` · expires ${outlet.certificateExpiry}` : ""}</div></div><Button size="sm" variant="outline" onClick={() => editCertification(outlet)}><Pencil />Edit</Button></div><label className="mt-3 inline-flex cursor-pointer items-center text-xs font-black text-[#155F65]"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => updateOutlet(outlet.id, { certificateName: e.target.files?.[0]?.name || outlet.certificateName })} /><Upload className="mr-1 size-3.5" />{outlet.certificateName || "Upload certificate"}</label></div></div>)}</div>
-    <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} />
+    <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} vendor={vendor} onOpenStore={onOpenVendorProfile} />
     {editProfileOpen && <EditVendorProfileDialog open onClose={() => setEditProfileOpen(false)} vendor={vendor} setState={setState} session={session} />}
   </div>;
 }
@@ -5308,7 +5543,7 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
     <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
-      <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
+      <div className="surface-card min-w-0 max-w-full overflow-hidden space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
         <Field label="Full store address"><Textarea value={address} onChange={(event) => setAddress(event.target.value)} className="min-h-24 rounded-xl" /></Field>
         <LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} />
         <div className="flex flex-wrap gap-2">
@@ -5436,6 +5671,7 @@ export function EditVendorProfileDialog({
           vendorId: vendor.id,
           logoUrl: finalLogo,
           bannerUrl: finalBanner,
+          bio: bio.trim(),
         });
         if (vendor.latitude && vendor.longitude) {
           await saveLiveVendorLocation({
@@ -5811,6 +6047,15 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         })}
       </div>
     </div>
+    {profileEditOpen && (
+      <EditVendorProfileDialog
+        open
+        onClose={() => setProfileEditOpen(false)}
+        vendor={vendor}
+        setState={setState}
+        session={session}
+      />
+    )}
   </div>;
 }
 
@@ -5835,6 +6080,7 @@ function FoodTypeSelect({ product, setState }: { product: Product; setState: Rea
 function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [open, setOpen] = useState(false); const [bulkOpen, setBulkOpen] = useState(false); const items = state.products.filter((x) => x.vendorId === vendor.id);
   const [toDelete, setToDelete] = useState<Product | null>(null); const [deleting, setDeleting] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   async function setActive(product: Product, value: boolean) {
     setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: value } : x) }));
     try { if (isLiveSupabaseMode()) await setLiveProductActive(product.id, value); }
@@ -5858,7 +6104,7 @@ function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: 
   }
   const unsetFoodType = items.filter((item) => !item.foodType).length;
   const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
-  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2"><Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Delete</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><ProductDialog open={open} close={() => setOpen(false)} vendor={vendor} setState={setState} session={session} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
+  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2"><Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
 }
 
 
@@ -5971,11 +6217,12 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   </DialogContent></Dialog>;
 }
 
-function ProductDialog({ open, close, vendor, setState, session }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const initialCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
+function ProductDialog({ open, close, vendor, setState, session, editingProduct }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null }) {
+  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category as any) ? vendor.category : "Milk & dairy") as string;
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(initialCategory);
-  const [packKey, setPackKey] = useState(unitsByCategory[initialCategory][0].key);
+  const [category, setCategory] = useState<string>(defaultCategory);
+  const [skuGroup, setSkuGroup] = useState<string>("");
+  const [packSize, setPackSize] = useState<string>("");
   const [price, setPrice] = useState(0);
   const [stock, setStock] = useState(0);
   const [nutrition, setNutrition] = useState<Nutrition>({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
@@ -5987,6 +6234,142 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
   const [busy, setBusy] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [foodType, setFoodType] = useState<FoodType | "">("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [originalImageUrl, setOriginalImageUrl] = useState("");
+
+  const [customGroup, setCustomGroup] = useState("");
+  const [customPackSize, setCustomPackSize] = useState("");
+  const [customUnit, setCustomUnit] = useState<SkuUnitType>("pack/set/loaf");
+
+  const groupsForCat = useMemo(() => {
+    const list = getSkuGroups(category);
+    return list.includes("Other") ? list : [...list, "Other"];
+  }, [category]);
+  const skusForGroup = useMemo(() => (skuGroup === "Other" ? [] : getSkusForGroup(category, skuGroup)), [category, skuGroup]);
+  const currentSku = useMemo(() => (skuGroup === "Other" || packSize === "Other" ? undefined : findSkuDefinition(category, skuGroup, packSize)), [category, skuGroup, packSize]);
+  const unitType = currentSku?.unitType || "";
+
+  const effectiveGroup = skuGroup === "Other" ? (customGroup.trim() || "Other") : skuGroup;
+  const effectivePack = packSize === "Other" ? (customPackSize.trim() || "1 pack") : packSize;
+  const effectiveUnit = (packSize === "Other" || skuGroup === "Other") ? (customUnit || "pack/set/loaf") : (unitType || "pack/set/loaf");
+
+  useEffect(() => {
+    if (editingProduct) {
+      setCategory(editingProduct.category);
+      const groups = getSkuGroups(editingProduct.category);
+      const grp = editingProduct.skuGroupName || "";
+      if (grp && groups.includes(grp)) {
+        setSkuGroup(grp);
+        setCustomGroup("");
+        const skus = getSkusForGroup(editingProduct.category, grp);
+        const pk = editingProduct.packSize || editingProduct.baseUnit || "";
+        if (pk && skus.some((s) => s.packSize.toLowerCase() === pk.toLowerCase())) {
+          setPackSize(pk);
+          setCustomPackSize("");
+        } else if (pk) {
+          setPackSize("Other");
+          setCustomPackSize(pk);
+        } else {
+          setPackSize(skus[0]?.packSize || "Other");
+          setCustomPackSize("");
+        }
+      } else if (grp) {
+        setSkuGroup("Other");
+        setCustomGroup(grp);
+        setPackSize("Other");
+        setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
+      } else {
+        const fallbackGrp = groups[0] || "Other";
+        setSkuGroup(fallbackGrp);
+        setCustomGroup("");
+        setPackSize(editingProduct.packSize || editingProduct.baseUnit || "Other");
+        setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
+      }
+      if (editingProduct.unitType && SKU_UNIT_TYPES.includes(editingProduct.unitType as any)) {
+        setCustomUnit(editingProduct.unitType as SkuUnitType);
+      }
+      setName(editingProduct.name);
+      setPrice(editingProduct.vendorPrice);
+      setStock(editingProduct.stock);
+      setFoodType(editingProduct.foodType || "");
+      setImageUrl(editingProduct.imageUrl || "");
+      setOriginalImageUrl(editingProduct.originalImageUrl || editingProduct.imageUrl || "");
+      setNutrition({
+        calories: editingProduct.calories || 0,
+        protein: editingProduct.protein || 0,
+        carbs: editingProduct.carbs || 0,
+        fat: editingProduct.fat || 0,
+        fibre: editingProduct.fibre || 0,
+      });
+      setNutritionConfidence(editingProduct.nutritionConfidence);
+      setNutritionNote(editingProduct.nutritionNote || "");
+      setConfirmed(editingProduct.nutritionStatus === "Verified");
+    } else if (open) {
+      const initialCat = (SKU_CATEGORIES.includes(vendor.category as any) ? vendor.category : "Milk & dairy") as string;
+      setCategory(initialCat);
+      const groups = getSkuGroups(initialCat);
+      const firstGrp = groups[0] || "Other";
+      setSkuGroup(firstGrp);
+      setCustomGroup("");
+      const skus = getSkusForGroup(initialCat, firstGrp);
+      const firstPack = skus[0]?.packSize || "Other";
+      setPackSize(firstPack);
+      setCustomPackSize("");
+      setCustomUnit("pack/set/loaf");
+      setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
+      setPrice(0);
+      setStock(0);
+      setFoodType("");
+      setImageUrl("");
+      setOriginalImageUrl("");
+      setNutrition({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
+      setNutritionConfidence(undefined);
+      setNutritionNote("");
+      setConfirmed(false);
+    }
+  }, [editingProduct, open, vendor.category]);
+
+  function handleCategoryChange(newCat: string) {
+    setCategory(newCat);
+    const groups = getSkuGroups(newCat);
+    const firstGrp = groups[0] || "Other";
+    setSkuGroup(firstGrp);
+    setCustomGroup("");
+    const skus = getSkusForGroup(newCat, firstGrp);
+    const firstPack = skus[0]?.packSize || "Other";
+    setPackSize(firstPack);
+    setCustomPackSize("");
+    if (!editingProduct) setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
+    setConfirmed(false);
+  }
+
+  function handleGroupChange(newGrp: string) {
+    setSkuGroup(newGrp);
+    if (newGrp === "Other") {
+      setPackSize("Other");
+      if (!editingProduct) setName(customGroup.trim() ? formatProductPackLabel(customGroup.trim(), customPackSize.trim() || "") : "");
+    } else {
+      setCustomGroup("");
+      const skus = getSkusForGroup(category, newGrp);
+      const firstPack = skus[0]?.packSize || "Other";
+      setPackSize(firstPack);
+      setCustomPackSize("");
+      if (!editingProduct) setName(formatProductPackLabel(newGrp, firstPack !== "Other" ? firstPack : ""));
+    }
+    setConfirmed(false);
+  }
+
+  function handlePackChange(newPack: string) {
+    setPackSize(newPack);
+    if (newPack === "Other") {
+      if (!editingProduct && effectiveGroup) setName(customPackSize.trim() ? formatProductPackLabel(effectiveGroup, customPackSize.trim()) : effectiveGroup);
+    } else {
+      setCustomPackSize("");
+      if (!editingProduct && effectiveGroup) setName(formatProductPackLabel(effectiveGroup, newPack));
+    }
+    setConfirmed(false);
+  }
+
   async function draftImage() {
     if (!name.trim()) return toast.error("Enter the product name first");
     if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
@@ -5997,19 +6380,15 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
     } catch (error) { toast.error(errorMessage(error, "The image could not be created")); }
     finally { setImageBusy(false); }
   }
-  const [imageUrl, setImageUrl] = useState("");
-  const [originalImageUrl, setOriginalImageUrl] = useState("");
-  const options = unitsByCategory[category] || unitsByCategory.Groceries;
-  const spec = options.find((x) => x.key === packKey) || options[0];
-  useEffect(() => { if (!options.some((x) => x.key === packKey)) queueMicrotask(() => setPackKey(options[0].key)); }, [category, options, packKey]);
 
+  const packSpec = parsePackSpec(effectivePack, effectiveUnit);
   const nutritionPresent = Object.values(nutrition).some((value) => Number(value) > 0);
   const nutritionConsistent = nutritionPresent && nutritionLooksConsistent(nutrition);
   const nutritionStatus: Product["nutritionStatus"] = confirmed && nutritionConsistent ? "Verified" : nutritionConsistent ? "Estimated" : "Pending review";
-  const baseReady = Boolean(name.trim()) && price > 0 && Number.isInteger(stock) && stock > 0;
+  const baseReady = Boolean(name.trim()) && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
   const foodTypeReady = Boolean(foodType);
-  const measurable = nutritionPresent && ["g","kg","ml","litre"].includes(spec.measure);
-  const packBase = spec.measure === "kg" || spec.measure === "litre" ? spec.amount * 1000 : spec.amount;
+  const measurable = nutritionPresent && ["g","kg","ml","L"].includes(packSpec.measure);
+  const packBase = packSpec.measure === "kg" || packSpec.measure === "L" ? packSpec.amount * 1000 : packSpec.amount;
   const per100 = measurable && packBase > 0 ? Object.fromEntries(Object.entries(nutrition).map(([key, value]) => [key, Math.round(Number(value) * 100 / packBase * 10) / 10])) as Nutrition : null;
 
   async function calculate() {
@@ -6020,7 +6399,7 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
       const response = await fetchWithDeadline("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: spec.amount, measurementUnit: spec.measure, servingLabel: spec.label, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
+        body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: packSpec.amount, measurementUnit: packSpec.measure, servingLabel: effectivePack, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
       }, 60000);
       const json = await response.json() as { result?: { nutritionAvailable?: boolean; nutrition?: Nutrition | null; confidence?: number; summary?: string; recommendedAction?: string }; error?: string };
       if (!response.ok) throw new Error(json.error || "Nutrition could not be estimated");
@@ -6064,8 +6443,15 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
   }
 
   async function save() {
-    if (!baseReady) return toast.error("Enter the product, price and whole pack stock");
+    if (!baseReady) return toast.error("Select the category, SKU group, pack size, and enter price & stock");
     if (!foodType) return toast.error("Choose Vegetarian, Non-vegetarian or Contains egg");
+    if (skuGroup === "Other" && !customGroup.trim()) return toast.error("Please enter your custom product / SKU group name");
+    if (packSize === "Other" && !customPackSize.trim()) return toast.error("Please enter your custom pack size");
+    const skuValidation = validateSkuSelection(category, effectiveGroup, effectivePack, effectiveUnit);
+    if (!skuValidation.valid) {
+      return toast.error(skuValidation.error || "Invalid Category, SKU Group, or Pack Size selection.");
+    }
+
     setBusy(true);
     try {
       const active = vendor.verification === "Verified";
@@ -6073,23 +6459,90 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
       if (publishedImage && isLiveSupabaseMode()) publishedImage = await uploadLiveProductImage(vendor.id, publishedImage);
       const statusForDb = nutritionStatus === "Verified" ? "verified" : nutritionStatus === "Estimated" ? "estimated" : "pending_review";
       const note = nutritionStatus === "Pending review" ? (nutritionNote || (nutritionPresent ? "Entered nutrition needs review." : "Nutrition was not supplied or could not be estimated reliably.")) : (nutritionNote || "Nutrition supplied for this selling pack.");
+
+      if (editingProduct) {
+        if (isLiveSupabaseMode()) {
+          await updateLiveVendorProduct({
+            id: editingProduct.id,
+            vendorId: vendor.id,
+            name: name.trim(),
+            category,
+            unit: effectivePack,
+            price,
+            stock,
+            active: editingProduct.active,
+            calories: nutrition.calories,
+            protein: nutrition.protein,
+            carbs: nutrition.carbs,
+            fat: nutrition.fat,
+            fibre: nutrition.fibre,
+            dietaryTags: editingProduct.dietaryTags || [],
+            packAmount: packSpec.amount,
+            packMeasure: packSpec.measure,
+            imageUrl: publishedImage,
+            foodType,
+            nutritionStatus: statusForDb,
+            nutritionConfidence,
+            nutritionNote: note,
+            skuGroupName: effectiveGroup,
+            packSize: effectivePack,
+            unitType: effectiveUnit,
+          });
+        }
+        const updatedProduct: Product = {
+          ...editingProduct,
+          name: name.trim(),
+          category,
+          emoji: unitsByCategory[category]?.[0]?.emoji || "📦",
+          baseUnit: effectivePack,
+          vendorPrice: price,
+          stock,
+          foodType,
+          imageUrl: publishedImage,
+          originalImageUrl: originalImageUrl || undefined,
+          nutritionStatus,
+          nutritionConfidence,
+          nutritionNote: note,
+          ...nutrition,
+          packAmount: packSpec.amount,
+          packMeasure: packSpec.measure,
+          skuGroupName: effectiveGroup,
+          packSize: effectivePack,
+          unitType: effectiveUnit,
+        };
+        setState((current) => ({
+          ...current,
+          products: current.products.map((p) => p.id === editingProduct.id ? updatedProduct : p),
+          audit: [audit(session, "Updated product pack", `${name.trim()} · ${effectivePack}`), ...current.audit],
+        }));
+        toast.success("Product pack updated successfully");
+        close();
+        return;
+      }
+
       const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({
-        vendorId: vendor.id, name, category, unit: spec.label, price, stock, active,
+        vendorId: vendor.id, name: name.trim(), category, unit: effectivePack, price, stock, active,
         calories: nutrition.calories, protein: nutrition.protein, carbs: nutrition.carbs, fat: nutrition.fat, fibre: nutrition.fibre,
-        dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl: publishedImage, foodType,
+        dietaryTags: [], packAmount: packSpec.amount, packMeasure: packSpec.measure, imageUrl: publishedImage, foodType,
         nutritionStatus: statusForDb, nutritionConfidence, nutritionNote: note,
+        skuGroupName: effectiveGroup,
+        packSize: effectivePack,
+        unitType: effectiveUnit,
       }) : id("PRD");
       const product: Product = {
-        id: productId, vendorId: vendor.id, name, category, emoji: spec.emoji, baseUnit: spec.label,
-        quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: spec.amount,
-        packMeasure: spec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
+        id: productId, vendorId: vendor.id, name: name.trim(), category, emoji: unitsByCategory[category]?.[0]?.emoji || "📦", baseUnit: effectivePack,
+        quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: packSpec.amount,
+        packMeasure: packSpec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
         nutritionStatus, nutritionConfidence, nutritionNote: note,
+        skuGroupName: effectiveGroup,
+        packSize: effectivePack,
+        unitType: effectiveUnit,
       };
       setState((current) => ({
         ...current,
         products: [product, ...current.products.filter((x) => x.id !== product.id)],
         markups: { ...current.markups, [product.id]: 0 },
-        audit: [audit(session, "Published product pack", `${name} · ${spec.label} · nutrition ${nutritionStatus?.toLowerCase()}${publishedImage ? " · image attached" : ""}`), ...current.audit],
+        audit: [audit(session, "Published product pack", `${name.trim()} · ${effectivePack} · nutrition ${nutritionStatus?.toLowerCase()}${publishedImage ? " · image attached" : ""}`), ...current.audit],
       }));
       if (!publishedImage && isLiveSupabaseMode()) void drawSampleImages([productId], setState);
       if (nutritionStatus === "Pending review") {
@@ -6104,17 +6557,118 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
   }
 
   const metrics: Array<[keyof Nutrition, string]> = [["calories","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fibre","Fibre g"]];
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><DialogTitle className="text-lg font-black">Add a sellable product pack</DialogTitle><DialogDescription>Set the exact pack and price. Nutrition is helpful but not mandatory; uncertain or missing nutrition is automatically marked for Operations review.</DialogDescription></DialogHeader>
+  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} /></span>{type.label}</button>)}</div></fieldset><div className="grid gap-4 sm:grid-cols-2"><Field label="Exact product name"><input value={name} onChange={(e) => { setName(e.target.value); setConfirmed(false); }} className={inputClass} placeholder="Example: Full cream cow milk" /></Field><Field label="Category"><Select value={category} onValueChange={(value) => { setCategory(value); setConfirmed(false); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Field label="Customer selling pack" hint="Example: 250 ml pouch = one pack. Customers choose 1, 2, 3 packs."><Select value={spec.key} onValueChange={(value) => { setPackKey(value); setConfirmed(false); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{options.map((x) => <SelectItem key={x.key} value={x.key}>{x.label}</SelectItem>)}</SelectContent></Select></Field><Field label={`Your price for one ${spec.label}`}><input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} /></Field><Field label="Available sealed packs" hint={`20 = twenty ${spec.label} packs.`}><input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} /></Field><div className="flex items-end"><Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button></div></div>
+      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} /></span>{type.label}</button>)}</div></fieldset>
+        
+        {/* SKU Master Cascading Selection */}
+        <div className="grid gap-4 sm:grid-cols-2 rounded-2xl bg-[#F7FAFA] border border-stone-200/80 p-4">
+          <Field label="Category">
+            <Select value={category} onValueChange={handleCategoryChange}>
+              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SKU_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Product / SKU group" hint={skuGroup === "Other" ? "Custom product group" : `Groups in ${category}`}>
+            <Select value={skuGroup} onValueChange={handleGroupChange}>
+              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose group" /></SelectTrigger>
+              <SelectContent>
+                {groupsForCat.map((grp) => <SelectItem key={grp} value={grp}>{grp}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {skuGroup === "Other" && (
+              <input
+                value={customGroup}
+                onChange={(e) => {
+                  setCustomGroup(e.target.value);
+                  if (!editingProduct) {
+                    const ep = packSize === "Other" ? (customPackSize.trim() || "") : packSize;
+                    setName(formatProductPackLabel(e.target.value.trim() || "Product", ep));
+                  }
+                  setConfirmed(false);
+                }}
+                placeholder="Enter custom product group name"
+                className={`mt-2 ${inputClass}`}
+              />
+            )}
+          </Field>
+
+          <Field label="Predefined pack size" hint={packSize === "Other" ? "Custom pack size" : "Verified pack size from SKU master"}>
+            <Select value={packSize} onValueChange={handlePackChange}>
+              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose pack size" /></SelectTrigger>
+              <SelectContent>
+                {skusForGroup.map((sku) => (
+                  <SelectItem key={sku.packSize} value={sku.packSize}>
+                    {sku.packSize} ({sku.unitType})
+                  </SelectItem>
+                ))}
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {packSize === "Other" && (
+              <input
+                value={customPackSize}
+                onChange={(e) => {
+                  setCustomPackSize(e.target.value);
+                  if (!editingProduct) {
+                    const eg = skuGroup === "Other" ? (customGroup.trim() || "Product") : skuGroup;
+                    setName(formatProductPackLabel(eg, e.target.value.trim() || ""));
+                  }
+                  setConfirmed(false);
+                }}
+                placeholder="Enter custom pack size (e.g. 350 ml, 1.5 kg, 5 pcs)"
+                className={`mt-2 ${inputClass}`}
+              />
+            )}
+          </Field>
+
+          <Field label="Unit" hint={packSize === "Other" || skuGroup === "Other" ? "Choose custom unit type" : "Locked to selected product & SKU"}>
+            {packSize === "Other" || skuGroup === "Other" ? (
+              <Select value={customUnit} onValueChange={(val) => setCustomUnit(val as SkuUnitType)}>
+                <SelectTrigger className="h-11 rounded-xl bg-white font-black text-[#155F65]">
+                  <SelectValue placeholder="Select unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SKU_UNIT_TYPES.map((u) => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-black text-[#155F65]">
+                <BadgeCheck className="size-4 shrink-0 text-[#155F65]" />
+                <span>{unitType || "—"}</span>
+                <span className="text-xs font-normal text-stone-400">· {effectivePack ? `Selected: ${effectivePack}` : "Select pack"}</span>
+              </div>
+            )}
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Product display name" hint="Appears on customer menu">
+            <input value={name} onChange={(e) => { setName(e.target.value); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
+          </Field>
+          <Field label={`Your price for one ${packSize || "pack"}`}>
+            <input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} placeholder="₹" />
+          </Field>
+          <Field label="Available sealed packs" hint={`Count of ${packSize || "pack"} items ready to sell`}>
+            <input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} placeholder="Stock quantity" />
+          </Field>
+          <div className="flex items-end">
+            <Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button>
+          </div>
+        </div>
         <div className="rounded-[22px] border border-stone-200/80 bg-[#EEF2F2] p-4"><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-stone-500">Nutrition source · optional</div><p className="mt-1 text-xs leading-5 text-stone-500">For a better estimate, paste package-label values or recipe/ingredient details, or upload a nutrition-label photo. You can also publish without nutrition.</p></div><Sparkles className="size-5 shrink-0 text-[#155F65]" /></div><Textarea value={nutritionSource} onChange={(e) => setNutritionSource(e.target.value)} className="mt-3 min-h-20 rounded-xl bg-white" placeholder="Example: 250 g cooked rice, 120 g chicken, 15 g oil... or paste label text" /><label className="mt-3 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white px-3 text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) readImage(file, setNutritionLabelImage); }} /><ImageUp className="size-4" />{nutritionLabelImage ? "Nutrition label attached" : "Upload nutrition-label photo"}</label></div>
-        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {spec.label}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key,label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml","litre"].includes(spec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
+        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {packSize}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key,label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml","litre","L"].includes(packSpec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
       </div>
       <div className="surface-card-muted rounded-[28px] p-4"><div className="flex items-center justify-between"><div><div className="text-xs font-black uppercase tracking-[.14em] text-[#155F65]">Product media</div><h3 className="mt-1 font-black">Marketplace image</h3></div><ImageUp className="text-[#155F65]" /></div><div className="mt-4 grid aspect-square place-items-center overflow-hidden rounded-3xl shadow-inner" style={{ background: imageUrl ? undefined : categoryVisual(category).bg }}>{imageUrl ? <img src={imageUrl} alt="Product preview" className="h-full w-full object-cover" /> : <ProductGlyph category={category} iconClassName="size-12" />}</div><label className="mt-4 flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => chooseImage(e.target.files?.[0])} /><ImageUp className="size-4" />Upload real product photo</label><Button onClick={enhanceImage} disabled={!imageUrl || imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "AI enhance for marketplace"}</Button><Button onClick={() => void draftImage()} disabled={imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "Create a sample image with AI"}</Button>{originalImageUrl && imageUrl !== originalImageUrl && <button onClick={() => setImageUrl(originalImageUrl)} className="mt-2 w-full text-center text-xs font-black text-stone-500">Restore original image</button>}<p className="mt-3 text-[11px] leading-5 text-stone-500">Image enhancement preserves the real product and pack while improving presentation. Review the result before publishing. If you skip the photo, a sample image is drawn for you automatically; replace it any time with a real photo.</p></div>
     </div>
     {nutritionPresent && !nutritionConsistent && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">The entered calories and macros do not align. This does not block publishing; the product will be marked “Nutrition pending” and Operations will be notified.</div>}
     {!nutritionPresent && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Nutrition is optional.</b> Publish now if you do not have it. Operations will receive a review notification and the marketplace will show nutrition as pending.</div>}
-    <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? "Publishing…" : "Publish product pack"}</Button>
+    <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? (editingProduct ? "Updating…" : "Publishing…") : (editingProduct ? "Update product pack" : "Publish product pack")}</Button>
   </DialogContent></Dialog>;
 }
 
@@ -6247,7 +6801,25 @@ function OperationsOnboard({ session, state, setState }: { session: DemoSession;
   const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
   return <div className="space-y-6"><Heading eyebrow="ASSISTED ONBOARDING" title="Create a vendor from Operations" body="Assign every vendor to an existing vendor login. After submission, the record stays visible below and appears to that exact vendor account." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><UserPlus />Start onboarding</Button>} />
     <div className="surface-card rounded-[22px] border border-sky-200/70 bg-sky-50/85 p-4 text-sm leading-6 text-sky-900"><b>Testing rule:</b> choose either <code>vendor@sheplates.demo</code> or <code>newvendor@sheplates.demo</code> in the onboarding form. Sign in with the selected account to see that vendor. The vendor remains unavailable to customers until Operations verifies it, the vendor opens the store, and at least one product is active.</div>
-    {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell>{vendor.address}<div className="text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
+    {vendors.length ? <>
+      <div className="space-y-3 lg:hidden">{vendors.map((vendor) => {
+        const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length;
+        const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
+        const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0;
+        return <article key={vendor.id} className="surface-card min-w-0 space-y-4 rounded-3xl p-4">
+          <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.id}</div></div>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Assigned login</div><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="h-auto min-h-11 w-full min-w-0 rounded-xl py-2 text-left"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 break-words text-xs text-stone-500">Sign in with this exact vendor account</div></div>
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Location</div><div className="break-words text-sm">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></div>
+          </div>
+          <div className="grid min-w-0 gap-3 border-t border-[#DDE3E4] pt-3 sm:grid-cols-2">
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Status</div><Status>{vendor.verification}</Status></div>
+            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Customer visibility</div>{visible ? <span className="break-words text-sm font-black text-[#202827]">Eligible by store status</span> : <span className="break-words text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</div>
+          </div>
+        </article>;
+      })}</div>
+      <div className="surface-card hidden overflow-x-auto rounded-[28px] md:block"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell className="max-w-sm"><div className="break-words">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div>
+    </> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="sr-only">Operations vendor onboarding</DialogTitle><DialogDescription className="sr-only">Create a vendor application</DialogDescription></DialogHeader><VendorOnboarding operationsCreated session={session} setState={setState} close={() => setOpen(false)} /></DialogContent></Dialog></div>;
 }
 function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
@@ -6283,6 +6855,7 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
   const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
   const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
   const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
@@ -6356,7 +6929,7 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
         {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}</div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
         <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
         <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {picked.fssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {picked.expiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
         <div className="space-y-2">
@@ -6456,6 +7029,15 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {editingProfileVendor && (
+      <EditVendorProfileDialog
+        open
+        onClose={() => setEditingProfileVendor(null)}
+        vendor={editingProfileVendor}
+        setState={setState}
+        session={session}
+      />
+    )}
   </div>;
 }
 function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const [q, setQ] = useState(""); const [onlyCustom, setOnlyCustom] = useState(false); const products = state.products.filter((x) => x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0); const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length; return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="grid gap-4 sm:grid-cols-3"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(customCount)} icon={Percent} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div><div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" /><button type="button" onClick={() => setOnlyCustom(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>All</button><button type="button" onClick={() => setOnlyCustom(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>Custom %</button></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-bold">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
@@ -6555,8 +7137,8 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { 
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
   if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
   if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
-  if (active === "Vendors") return <AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
-  if (active === "Vendor plans") return <Plans state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Vendors") return <AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Vendor plans") return <Plans session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Pricing policies") return <AdminPricing state={state} />;
   if (active === "Stories monitor") return <StoriesMonitor />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
@@ -6737,12 +7319,57 @@ function CreateUserDialog({ open, close, session, setState, live }: { open: bool
     </div>}
   </DialogContent></Dialog>;
 }
-function AdminVendors({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+function AdminVendors({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const allVendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
   const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
   const [vQuery, setVQuery] = useState("");
+  const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
   const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
-  return <div className="space-y-6"><Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." /><ProductImageBackfill /><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">{(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}<input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>{vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Daily service</TableHead><TableHead>Products</TableHead><TableHead>Plan</TableHead><TableHead className="text-right">Store</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}><TableCell><div className="flex items-center gap-3"><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.ownerEmail}</div><div className="text-[11px] text-[#155F65] font-semibold">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div></div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</TableCell><TableCell>{state.products.filter((x) => x.vendorId === vendor.id).length}</TableCell><TableCell><Select value={vendor.plan} onValueChange={(value) => { const plan = value as Vendor["plan"]; setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) })); if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) })); toast.error(error.message || "Could not save the plan change"); }); }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell><TableCell className="text-right">{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview</Button>}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}</div>;
+  return <div className="space-y-6">
+    <Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." />
+    <ProductImageBackfill />
+    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">
+      {(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}
+      <input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" />
+    </div>
+    {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]">
+      <Table>
+        <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Products &amp; store</TableHead><TableHead>Plan</TableHead></TableRow></TableHeader>
+        <TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}>
+          <TableCell><div className="flex items-center gap-3">
+            <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2]">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-black text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div>
+            <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.ownerEmail}</div><div className="break-words text-[11px] font-semibold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div>
+          </div></TableCell>
+          <TableCell><Status>{vendor.verification}</Status></TableCell>
+          <TableCell><div className="flex min-w-32 flex-col items-start gap-1">
+            <span className="text-sm font-semibold">{state.products.filter((x) => x.vendorId === vendor.id).length} products</span>
+            <span className="text-xs text-stone-500">{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</span>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              {onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="mr-1 size-3.5 text-[#155F65]" />Preview</Button>}
+              <Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(vendor)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="mr-1 size-3.5 text-[#155F65]" />Edit Branding</Button>
+            </div>
+          </div></TableCell>
+          <TableCell><Select value={vendor.plan} onValueChange={(value) => {
+            const plan = value as Vendor["plan"];
+            setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) }));
+            if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => {
+              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) }));
+              toast.error(error.message || "Could not save the plan change");
+            });
+          }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    </div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}
+    {editingProfileVendor && (
+      <EditVendorProfileDialog
+        open
+        onClose={() => setEditingProfileVendor(null)}
+        vendor={editingProfileVendor}
+        setState={setState}
+        session={session}
+      />
+    )}
+  </div>;
 }
 function PlanFeatureTable() {
   const plans = ["Taster", "Crave", "Thrive", "Crown"];
@@ -6756,7 +7383,7 @@ function PlanFeatureTable() {
   ];
   return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
 }
-function Plans({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
+function Plans({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
 function AdminPricing({ state }: { state: V3State }) {
   const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
   const pct = (id: string) => state.markups[id] || 0;

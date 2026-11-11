@@ -1,4 +1,5 @@
 /* Customer shell from the approved boards: responsive top bar, menu row, floating bottom pill, footer. */
+body { overflow-x: hidden; }
 .k-head { position: sticky; top: 0; z-index: 40; background: #fff; box-shadow: 0 1px 0 var(--border); }
 .k-top { display: flex; align-items: center; gap: 14px; padding: 12px 20px; max-width: 1560px; margin: 0 auto; }
 .k-logo { display: inline-flex; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; cursor: pointer; font: 700 20px "Outfit", sans-serif; color: var(--foreground); flex: none; }
@@ -48,7 +49,7 @@
   .k-pill .it { border: 0; background: transparent; cursor: pointer; height: 52px; min-width: 52px; border-radius: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-secondary); font: 700 15px "Outfit", sans-serif; }
   .k-pill .it.on { background: var(--selected); color: var(--on-brand); padding: 0 20px; }
   .k-fab { display: grid; position: fixed; right: 16px; bottom: 100px; z-index: 57; width: 52px; height: 52px; place-items: center; border: 0; border-radius: 50%; background: var(--brand-primary); color: #fff; box-shadow: 0 10px 24px rgba(32, 40, 39, 0.3); cursor: pointer; }
-  .k-foot { padding: 24px 16px 110px; flex-direction: column; align-items: flex-start; }
+  .k-foot { display: none !important; padding: 24px 16px 110px; flex-direction: column; align-items: flex-start; }
 }
 @media (min-width: 768px) {
   .k-top .ibtn { width: 44px; height: 44px; }

@@ -3,6 +3,7 @@
 // demo mode applies the same rules to the sample campaigns in local data.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient, isLiveSupabaseMode } from "@/lib/supabase";
+import { AUTO_REFRESH_INTERVAL_MS, startAutoRefresh } from "@/lib/auto-refresh";
 import { liveForCustomer, type CampaignSegment, type CampaignStatus, type CampaignTargetType } from "@/lib/campaigns-rules";
 
 export type LiveCampaign = {
@@ -48,8 +49,8 @@ export function useCustomerCampaigns(local: CampaignRecord[], hasOrdered: boolea
   useEffect(() => {
     if (!live) return;
     const initial = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), 60_000);
-    return () => { window.clearTimeout(initial); window.clearInterval(interval); };
+    const stopAutoRefresh = startAutoRefresh(refresh, AUTO_REFRESH_INTERVAL_MS);
+    return () => { window.clearTimeout(initial); stopAutoRefresh(); };
   }, [live, refresh]);
   const [tick, setTick] = useState(0);
   useEffect(() => { if (live) return; const t = window.setInterval(() => setTick((n) => n + 1), 30_000); return () => window.clearInterval(t); }, [live]);

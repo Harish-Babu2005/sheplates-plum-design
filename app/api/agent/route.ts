@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import { runToolDrivenCommerceAgent } from "@/lib/she-agent-commerce-runtime";
+import { alertAdminBudgetCredit } from "@/lib/uruv-ai";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 type AgentRequest = {
@@ -89,16 +90,19 @@ function controlledFallback(body: AgentRequest) {
 
 
 function extractResponseText(payload: Record<string, unknown>) {
-  if (typeof payload.output_text === "string" && payload.output_text.trim()) return payload.output_text.trim();
-  const output = Array.isArray(payload.output) ? payload.output as Array<Record<string, unknown>> : [];
-  const chunks: string[] = [];
-  for (const item of output) {
-    const content = Array.isArray(item.content) ? item.content as Array<Record<string, unknown>> : [];
+  const choices = Array.isArray(payload.choices) ? payload.choices as Array<Record<string, unknown>> : [];
+  const first = choices[0] as Record<string, unknown> | undefined;
+  const message = first?.message as Record<string, unknown> | undefined;
+  const content = message?.content;
+  if (typeof content === "string" && content.trim()) return content.trim();
+  if (Array.isArray(content)) {
+    const chunks: string[] = [];
     for (const part of content) {
-      if (typeof part.text === "string" && part.text.trim()) chunks.push(part.text.trim());
+      if (typeof part === "object" && part && typeof (part as Record<string, unknown>).text === "string" && (part as Record<string, unknown>).text) chunks.push(String((part as Record<string, unknown>).text));
     }
+    return chunks.join("\n").trim();
   }
-  return chunks.join("\n").trim();
+  return "";
 }
 
 type AgentTask = NonNullable<AgentRequest["task"]> | "commerce";
@@ -441,7 +445,7 @@ export async function POST(request: Request) {
   const campaignStrategy = requestedTask === "campaign_strategy";
   const qualityComplaint = requestedTask === "quality_complaint";
   const commerce = requestedTask === "commerce";
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY;
 
   if (!apiKey && commerce) {
     return NextResponse.json({ error: "She Agent is temporarily unavailable. Please try again shortly." }, { status: 503 });
@@ -455,7 +459,7 @@ export async function POST(request: Request) {
     const runCommerce = async (onReply?: (replySoFar: string) => void) => {
       const result = await runToolDrivenCommerceAgent({
         apiKey,
-        model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
+        model: process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat",
         role: auth.role,
         message: body.message || "",
         history: (body.history || []).slice(-12),
@@ -596,19 +600,25 @@ export async function POST(request: Request) {
   }
 
   const imageBase64 = qualityComplaint || nutrition ? body.imageBase64 : undefined;
-  const input = imageBase64
-    ? [{ role: "user" as const, content: [{ type: "input_text" as const, text: prompt }, { type: "input_image" as const, image_url: imageBase64 }] }]
-    : prompt;
+  if (imageBase64 && imageBase64.length > 14 * 1024 * 1024) {
+    return NextResponse.json({ error: "Image must be under 10 MB. Please upload a smaller photo." }, { status: 413 });
+  }
+  const messages = imageBase64
+    ? [{ role: "user" as const, content: [
+        { type: "text" as const, text: prompt },
+        { type: "image_url" as const, image_url: { url: imageBase64 } },
+      ] }]
+    : [{ role: "user" as const, content: prompt }];
 
-  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+  const model = process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
   const requestBody = {
     model,
-    input,
-    text: { format: { type: "json_schema", name: "sheplates_agent_result", strict: true, schema: { type: "object", additionalProperties: false, properties, required } } },
+    messages,
+    response_format: { type: "json_schema", json_schema: { name: "sheplates_agent_result", strict: true, schema: { type: "object", additionalProperties: false, properties, required } } },
   };
   // Never wait forever: a slow or unreachable model must end in a plain answer, not a button that keeps spinning.
   const MODEL_WAIT_MS = Number(process.env.AGENT_TASK_TIMEOUT_MS || 40000);
-  const callModel = (payload: Record<string, unknown>) => fetch(`${(process.env.AI_API_BASE || "https://api.openai.com/v1").replace(/\/$/, "")}/responses`, {
+  const callModel = (payload: Record<string, unknown>) => fetch(`${(process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -616,9 +626,12 @@ export async function POST(request: Request) {
   });
   let response: Response;
   try {
-    // Reasoning models answer far faster at low effort for these short structured tasks; a model that rejects the setting is retried plainly.
-    response = await callModel(/^(gpt-5|o\d)/i.test(model) ? { ...requestBody, reasoning: { effort: "low" } } : requestBody);
-    if (response.status === 400) response = await callModel(requestBody);
+    response = await callModel(requestBody);
+    if (response.status === 502 || response.status === 503) {
+      response = await callModel(requestBody);
+    } else if (response.status === 400) {
+      response = await callModel(requestBody);
+    }
   } catch (error) {
     console.error("[She Agent task]", requestedTask, error instanceof Error ? error.message : error);
     if (commerce) return NextResponse.json({ error: "She Agent is taking too long. Please try again." }, { status: 504 });
@@ -626,6 +639,13 @@ export async function POST(request: Request) {
   }
 
   if (!response.ok) {
+    const errorData = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+    const errCode = errorData?.error?.code || (response.status === 429 ? "rate_limit_exceeded" : response.status === 402 ? "insufficient_quota" : undefined);
+    const reqId = response.headers.get("x-request-id") || undefined;
+    console.error("[She Agent task error]", { status: response.status, code: errCode, requestId: reqId });
+    if (response.status === 402 || errCode === "insufficient_quota" || errCode === "budget_exceeded" || /quota|credit|balance|budget/i.test(errorData?.error?.message || "")) {
+      void alertAdminBudgetCredit({ code: errCode, requestId: reqId, message: errorData?.error?.message });
+    }
     if (commerce) return NextResponse.json({ error: "She Agent is temporarily unavailable. Please try again shortly." }, { status: 503 });
     return NextResponse.json({ source: "assistant", result: controlledFallback(body), warning: "The assistant could not complete the request right now." });
   }

@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
+import { validateSkuSelection } from "@/lib/sku-master";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -155,12 +156,13 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (role === "customer") schedulesQuery.eq("customer_id", profile.id);
   if (role === "vendor" && profile.vendor_id) schedulesQuery.eq("vendor_id", profile.vendor_id);
 
-  let [orders, schedules] = await Promise.all([orderQuery, schedulesQuery]);
+  let orders = (await orderQuery) as Awaited<typeof orderQuery>;
+  const schedules = await schedulesQuery;
   if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
     let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
     if (role === "customer") fallbackOrderQuery = fallbackOrderQuery.eq("customer_id", profile.id);
     if (role === "vendor" && profile.vendor_id) fallbackOrderQuery = fallbackOrderQuery.eq("vendor_id", profile.vendor_id);
-    orders = (await fallbackOrderQuery) as any;
+    orders = (await fallbackOrderQuery) as Awaited<typeof orders>;
   }
   if (orders.error) throw orders.error;
   if (schedules.error) throw schedules.error;
@@ -272,6 +274,103 @@ export async function POST(request: Request) {
   const action = String(body.action || "");
   const { admin, profile } = ctx;
   try {
+    if (action === "claim_food_drop") {
+      const dropId = String(body.dropId || "");
+      const quantity = Math.max(1, Math.floor(Number(body.quantity || 1)));
+      const { data: drop, error: fetchErr } = await admin.from("food_drops").select("id,vendor_id,product_id,title,drop_price,remaining_quantity,starts_at,ends_at,status").eq("id", dropId).maybeSingle();
+      if (fetchErr || !drop) return NextResponse.json({ error: "Food Drop not found." }, { status: 404 });
+      if (drop.status !== "active") return NextResponse.json({ error: "This Food Drop is no longer active." }, { status: 409 });
+      if (Number(drop.remaining_quantity || 0) < quantity) {
+        return NextResponse.json({ error: `Only ${drop.remaining_quantity} pack(s) remaining.` }, { status: 409 });
+      }
+
+      const start = new Date(String(drop.starts_at || 0));
+      const istStart = new Date(start.getTime() + 330 * 60_000);
+      let newStartsAt = drop.starts_at;
+      let newEndsAt = drop.ends_at;
+      if (istStart.getUTCHours() >= 18) {
+        const correctedStart = new Date(Date.UTC(istStart.getUTCFullYear(), istStart.getUTCMonth(), istStart.getUTCDate(), 12) - 330 * 60_000);
+        const correctedEnd = new Date(correctedStart.getTime() + 6 * 60 * 60_000);
+        newStartsAt = correctedStart.toISOString();
+        newEndsAt = correctedEnd.toISOString();
+      }
+
+      const nextRemaining = Math.max(0, Number(drop.remaining_quantity || 0) - quantity);
+      const updateResult = await admin.from("food_drops").update({
+        remaining_quantity: nextRemaining,
+        starts_at: newStartsAt,
+        ends_at: newEndsAt,
+        updated_at: new Date().toISOString(),
+      }).eq("id", dropId);
+      if (updateResult.error) throw updateResult.error;
+
+      try {
+        await admin.from("food_drop_claims").insert({
+          drop_id: dropId,
+          customer_id: profile.id,
+          quantity,
+          unit_price: Number(drop.drop_price || 0),
+          total_price: Number(drop.drop_price || 0) * quantity,
+        });
+      } catch {}
+
+      const ordNum = orderNumber();
+      const code = generateDeliveryVerificationCode();
+      const dropPrice = Number(drop.drop_price || 0);
+      const total = dropPrice * quantity;
+      const today = new Date().toISOString().slice(0, 10);
+      let createdOrderId: string | undefined;
+
+      try {
+        const insertedOrder = await admin.from("orders").insert({
+          order_number: ordNum,
+          customer_id: profile.id,
+          vendor_id: drop.vendor_id,
+          vendor_base_total: 0,
+          markup_total: 0,
+          tax_amount: 0,
+          delivery_fee: 0,
+          customer_total: total,
+          delivery_address: "Store Self-Pickup",
+          fulfilment_mode: "self_pickup",
+          scheduled_date: today,
+          scheduled_slot: "12:00 PM – 06:00 PM (Pickup)",
+          status: "confirmed",
+        }).select("id,order_number").single();
+
+        if (insertedOrder.data) {
+          createdOrderId = insertedOrder.data.id;
+          await admin.from("order_items").insert({
+            order_id: insertedOrder.data.id,
+            product_name: `${drop.title} (Food Drop)`,
+            quantity,
+            unit: "packs",
+            vendor_base_price: 0,
+            markup_percent: 0,
+            customer_price: dropPrice,
+          });
+          await admin.from("payments").insert({
+            order_id: insertedOrder.data.id,
+            customer_id: profile.id,
+            amount: total,
+            status: "paid",
+            provider: "food_drop_pickup",
+            provider_reference: `FOOD_DROP_CODE:${code}`,
+          });
+        }
+      } catch (orderErr) {
+        console.error("Order creation in claim_food_drop error:", orderErr);
+      }
+
+      return NextResponse.json({
+        success: true,
+        remainingQuantity: nextRemaining,
+        dropId,
+        orderId: createdOrderId,
+        orderNumber: ordNum,
+        verificationCode: code,
+      });
+    }
     if (action === "sync_cart") {
       if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
       const requested = Array.isArray(body.items) ? body.items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
@@ -282,6 +381,19 @@ export async function POST(request: Request) {
         ? await admin.from("food_drops").select("id,product_id,vendor_id,title,drop_price,remaining_quantity,starts_at,ends_at,status").in("id", requestedDrops)
         : { data: [], error: null };
       if (dropQuery.error) throw dropQuery.error;
+      if (dropQuery.data && dropQuery.data.length > 0) {
+        for (const drop of dropQuery.data) {
+          const start = new Date(String(drop.starts_at || 0));
+          const istStart = new Date(start.getTime() + 330 * 60_000);
+          if (istStart.getUTCHours() >= 18) {
+            const correctedStart = new Date(Date.UTC(istStart.getUTCFullYear(), istStart.getUTCMonth(), istStart.getUTCDate(), 12) - 330 * 60_000);
+            const correctedEnd = new Date(correctedStart.getTime() + 6 * 60 * 60_000);
+            void admin.from("food_drops").update({ starts_at: correctedStart.toISOString(), ends_at: correctedEnd.toISOString() }).eq("id", drop.id);
+            drop.starts_at = correctedStart.toISOString();
+            drop.ends_at = correctedEnd.toISOString();
+          }
+        }
+      }
       const dropMap = new Map((dropQuery.data || []).map((drop) => [String(drop.id), drop as Record<string, unknown>]));
       const normalized: Array<{ productId: string; vendorId: string; quantity: number; unit: string; unitPrice: number; foodDropId?: string }> = [];
       for (const item of boundedRequested) {
@@ -349,6 +461,19 @@ export async function POST(request: Request) {
         ? await admin.from("food_drops").select("id,product_id,vendor_id,title,drop_price,original_price,remaining_quantity,starts_at,ends_at,status").in("id", dropIds)
         : { data: [], error: null };
       if (drops.error) throw drops.error;
+      if (drops.data && drops.data.length > 0) {
+        for (const drop of drops.data) {
+          const start = new Date(String(drop.starts_at || 0));
+          const istStart = new Date(start.getTime() + 330 * 60_000);
+          if (istStart.getUTCHours() >= 18) {
+            const correctedStart = new Date(Date.UTC(istStart.getUTCFullYear(), istStart.getUTCMonth(), istStart.getUTCDate(), 12) - 330 * 60_000);
+            const correctedEnd = new Date(correctedStart.getTime() + 6 * 60 * 60_000);
+            void admin.from("food_drops").update({ starts_at: correctedStart.toISOString(), ends_at: correctedEnd.toISOString() }).eq("id", drop.id);
+            drop.starts_at = correctedStart.toISOString();
+            drop.ends_at = correctedEnd.toISOString();
+          }
+        }
+      }
       const dropMap = new Map((drops.data || []).map((drop) => [String(drop.id), drop]));
       const grouped = new Map<string, Array<Record<string, unknown>>>();
       for (const item of draft.items) {
@@ -391,14 +516,16 @@ export async function POST(request: Request) {
         if (claims.error) return NextResponse.json({ error: claims.error.message || "Food Drops could not be reserved." }, { status: 409 });
       }
       const orderIds: string[] = [];
+      let customerTotal = 0;
       for (const [vendorId, items] of grouped.entries()) {
-        const fulfilmentMode = vendorFulfilments.get(vendorId);
+        const isFoodDrop = items.some((item) => Boolean(item.food_drop_id));
+        const fulfilmentMode = isFoodDrop ? "self_pickup" : vendorFulfilments.get(vendorId);
         if (!fulfilmentMode) return NextResponse.json({ error: "This vendor's fulfilment settings could not be loaded." }, { status: 409 });
 
         const customerCoords = await loadCustomerCoords(admin, profile.id, { latitude: body.customerLatitude, longitude: body.customerLongitude });
         const terms = await loadVendorBillingTerms(admin, vendorId);
 
-        let vendorBaseTotal = 0; let customerTotal = 0;
+        let vendorBaseTotal = 0;
         const orderItems = items.map((item) => {
           const product = item.product as Record<string, unknown>;
           const drop = item.drop as Record<string, unknown> | undefined;
@@ -491,7 +618,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Enter delivery instructions (up to 1,000 characters) for third-party delivery." }, { status: 400 });
       }
       const quantity = Math.max(0.001, Number(body.quantity || 1));
-      const customerPrice = Math.max(0, Number(body.customerPrice || product.vendor_base_price));
+      Math.max(0, Number(body.customerPrice || product.vendor_base_price));
       const startDate = String(body.startDate || "");
       const endDate = body.endDate ? String(body.endDate) : "";
       if (!isFutureDate(startDate)) return NextResponse.json({ error: "Choose a first delivery date after today." }, { status: 400 });
@@ -928,6 +1055,17 @@ export async function POST(request: Request) {
       const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", targetVendorId);
       if (updated.error) throw updated.error;
       return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "validate_sku") {
+      const category = String(body.category || "");
+      const group = String(body.group || "");
+      const packSize = String(body.packSize || "");
+      const validation = validateSkuSelection(category, group, packSize);
+      if (!validation.valid) {
+        return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true, sku: validation.sku });
     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });

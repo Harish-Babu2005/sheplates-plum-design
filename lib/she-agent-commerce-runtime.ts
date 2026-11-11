@@ -20,29 +20,59 @@ export type CommerceResult = {
   memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
 };
 
-type OpenAIOutputItem = {
-  type?: string;
-  call_id?: string;
-  name?: string;
-  arguments?: string;
-  content?: Array<{ type?: string; text?: string; refusal?: string }>;
+type UruvChoiceMessage = {
+  role?: string;
+  content?: string | Array<{ type?: string; text?: string; refusal?: string }> | null;
+  refusal?: string | null;
+  tool_calls?: Array<{
+    id?: string;
+    type?: string;
+    function?: { name?: string; arguments?: string };
+  }>;
 };
 
-type OpenAIResponse = {
+type UruvChatResponse = {
   id?: string;
   status?: string;
-  output_text?: string;
-  output?: OpenAIOutputItem[];
+  choices?: Array<{
+    finish_reason?: string | null;
+    message?: UruvChoiceMessage;
+    delta?: { content?: string | null };
+  }>;
   error?: { message?: string; code?: string; type?: string } | null;
 };
 
-type ToolDefinition = {
-  type: "function";
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-  strict: true;
-};
+type ToolDefinition = 
+  | {
+      type: "function";
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+      strict?: true;
+    }
+  | {
+      type: "function";
+      function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+        strict?: true;
+      };
+    };
+
+function normalizeTool(tool: ToolDefinition) {
+  if ("function" in tool && tool.function) return { type: "function", function: tool.function };
+  const flat = tool as { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict?: true };
+  return {
+    type: "function",
+    function: {
+      name: flat.name,
+      description: flat.description,
+      parameters: flat.parameters,
+      strict: flat.strict,
+    },
+  };
+}
 
 type ToolCall = { callId: string; name: string; args: Record<string, unknown> };
 
@@ -324,27 +354,32 @@ function executeTool(role: Role, context: Record<string, unknown>, name: string,
   return { error: "Tool is not available in this role workspace." };
 }
 
-function functionCalls(response: OpenAIResponse): ToolCall[] {
-  return (response.output || []).filter((item) => item.type === "function_call" && item.call_id && item.name).map((item) => {
+function functionCalls(response: UruvChatResponse): ToolCall[] {
+  return (response.choices?.[0]?.message?.tool_calls || []).map((item) => {
     let args: Record<string, unknown> = {};
-    try { args = JSON.parse(item.arguments || "{}") as Record<string, unknown>; } catch { args = {}; }
-    return { callId: item.call_id!, name: item.name!, args };
+    const fnName = item.function?.name || "";
+    try { args = JSON.parse(item.function?.arguments || "{}") as Record<string, unknown>; } catch { args = {}; }
+    return { callId: item.id || fnName || "call", name: fnName, args };
   });
 }
 
-function extractOutputText(response: OpenAIResponse) {
-  if (typeof response.output_text === "string" && response.output_text.trim()) return response.output_text.trim();
-  const chunks: string[] = [];
-  for (const item of response.output || []) {
-    if (item.type !== "message") continue;
-    for (const content of item.content || []) if (content.type === "output_text" && content.text) chunks.push(content.text);
+function extractOutputText(response: UruvChatResponse) {
+  const message = response.choices?.[0]?.message;
+  if (typeof message?.content === "string" && message.content.trim()) return message.content.trim();
+  if (Array.isArray(message?.content)) {
+    const chunks: string[] = [];
+    for (const part of message.content) {
+      if (typeof part === "object" && part && typeof (part as Record<string, unknown>).text === "string") chunks.push(String((part as Record<string, unknown>).text));
+    }
+    return chunks.join("\n").trim();
   }
-  return chunks.join("\n").trim();
+  return "";
 }
 
-function extractRefusal(response: OpenAIResponse) {
-  for (const item of response.output || []) for (const content of item.content || []) if (content.type === "refusal" && content.refusal) return content.refusal;
-  return "";
+function extractRefusal(response: UruvChatResponse) {
+  const message = response.choices?.[0]?.message as Record<string, unknown> | undefined;
+  const refusal = message?.refusal;
+  return typeof refusal === "string" ? refusal : "";
 }
 
 function finalSchema(role: Role) {
@@ -367,32 +402,32 @@ function finalSchema(role: Role) {
   return { type: "object", additionalProperties: false, properties, required };
 }
 
-const apiBase = () => (process.env.AI_API_BASE || "https://api.openai.com/v1").replace(/\/$/, "");
+const apiBase = () => (process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "");
 
 /** Latency settings for the reasoning model family: minimal reasoning effort and short answers. A shopping
  * assistant that picks tools and writes two sentences does not need deep reasoning, and each reasoning
  * token is waiting time for the customer. Models that do not accept the settings get the plain request. */
 let fastParamsSupported = true;
-function withFastParams(model: string, payload: Record<string, unknown>) {
-  if (!fastParamsSupported || !/^(gpt-5|o\d)/i.test(model) || process.env.AI_REASONING_EFFORT === "default") return payload;
-  const text = payload.text as Record<string, unknown> | undefined;
-  return { ...payload, reasoning: { effort: process.env.AI_REASONING_EFFORT || "minimal" }, ...(text ? { text: { ...text, verbosity: "low" } } : {}) };
+function withFastParams(_model: string, payload: Record<string, unknown>) {
+  return payload;
 }
 function withoutFastParams(payload: Record<string, unknown>) {
-  const { reasoning, ...rest } = payload; void reasoning;
-  const text = rest.text as Record<string, unknown> | undefined;
-  if (text) { const { verbosity, ...t } = text; void verbosity; return { ...rest, text: t }; }
-  return rest;
+  return payload;
 }
 
 /** One model call may take this long (including reading its stream). A hung provider then fails with a clear error instead of leaving the chat on "Working on the best options". */
 const MODEL_CALL_TIMEOUT_MS = Number(process.env.AGENT_MODEL_TIMEOUT_MS || 75000);
 
 async function postResponses(apiKey: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${apiBase()}/responses`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS) });
+  const response = await fetch(`${apiBase()}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
+  });
   const raw = await response.text();
-  let data: OpenAIResponse = {};
-  try { data = JSON.parse(raw) as OpenAIResponse; } catch { /* handled below */ }
+  let data: UruvChatResponse = {};
+  try { data = JSON.parse(raw) as UruvChatResponse; } catch { /* handled below */ }
   if (!response.ok) {
     const message = data.error?.message || raw.slice(0, 500) || `Assistant request failed with ${response.status}`;
     const error = new Error(message) as Error & { status?: number; code?: string };
@@ -402,8 +437,6 @@ async function postResponses(apiKey: string, payload: Record<string, unknown>) {
   return data;
 }
 
-/** Pulls the text of the "reply" field out of a JSON document that is still being written. "reply" is the first
- * property of the result schema, so its words arrive first. Handles escapes and stops at the closing quote. */
 export function extractPartialReply(partial: string): string {
   const key = partial.indexOf('"reply"');
   if (key < 0) return "";
@@ -416,37 +449,87 @@ export function extractPartialReply(partial: string): string {
     if (ch === '"') return out;
     if (ch !== "\\") { out += ch; continue; }
     const next = partial[i + 1];
-    if (next === undefined) return out;               // escape not finished yet
+    if (next === undefined) return out;
     if (next === "u") { const hex = partial.slice(i + 2, i + 6); if (hex.length < 4) return out; out += String.fromCharCode(parseInt(hex, 16)); i += 5; continue; }
     out += next === "n" ? "\n" : next === "t" ? "\t" : next; i += 1;
   }
   return out;
 }
 
-/** Same request, but read as a stream: text deltas are reported as they arrive and the finished response object
- * is returned exactly as the non-streaming call would have returned it. */
 async function postResponsesStream(apiKey: string, payload: Record<string, unknown>, onText: (textSoFar: string) => void) {
-  const response = await fetch(`${apiBase()}/responses`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify({ ...payload, stream: true }), signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS) });
+  const response = await fetch(`${apiBase()}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ ...payload, stream: true }),
+    signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
+  });
   if (!response.ok || !response.body) {
     const raw = await response.text();
-    let data: OpenAIResponse = {};
-    try { data = JSON.parse(raw) as OpenAIResponse; } catch { /* not json */ }
+    let data: UruvChatResponse = {};
+    try { data = JSON.parse(raw) as UruvChatResponse; } catch { /* not json */ }
     const error = new Error(data.error?.message || raw.slice(0, 500) || `Assistant request failed with ${response.status}`) as Error & { status?: number; code?: string };
     error.status = response.status; error.code = data.error?.code;
     throw error;
   }
-  const reader = response.body.getReader(); const decoder = new TextDecoder();
-  let buffer = "", text = "", finished: OpenAIResponse | null = null;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  const toolCallsAcc: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
+  let finished: UruvChatResponse | null = null;
   const handle = (block: string) => {
     const dataLine = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("");
     if (!dataLine || dataLine === "[DONE]") return;
-    let event: { type?: string; delta?: string; response?: OpenAIResponse; error?: { message?: string; code?: string }; message?: string };
+    let event: {
+      type?: string;
+      choices?: Array<{
+        delta?: {
+          content?: string | null;
+          tool_calls?: Array<{
+            index?: number;
+            id?: string;
+            type?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+        finish_reason?: string | null;
+      }>;
+      error?: { message?: string; code?: string };
+      message?: string;
+    };
     try { event = JSON.parse(dataLine); } catch { return; }
-    if (event.type === "response.output_text.delta" && typeof event.delta === "string") { text += event.delta; onText(text); }
-    else if (event.type === "response.completed") finished = event.response || null;
-    else if (event.type === "response.failed" || event.type === "error") {
-      const failure = new Error(event.response?.error?.message || event.error?.message || event.message || "The assistant stream failed") as Error & { code?: string };
-      failure.code = event.response?.error?.code || event.error?.code; throw failure;
+    const deltaText = event.choices?.[0]?.delta?.content;
+    if (typeof deltaText === "string") { text += deltaText; onText(text); }
+    const deltaCalls = event.choices?.[0]?.delta?.tool_calls;
+    if (Array.isArray(deltaCalls)) {
+      for (const tc of deltaCalls) {
+        const idx = tc.index ?? toolCallsAcc.length;
+        if (!toolCallsAcc[idx]) {
+          toolCallsAcc[idx] = { id: tc.id || "", type: "function", function: { name: tc.function?.name || "", arguments: "" } };
+        }
+        if (tc.id) toolCallsAcc[idx].id = tc.id;
+        if (tc.function?.name) toolCallsAcc[idx].function.name += tc.function.name;
+        if (tc.function?.arguments) toolCallsAcc[idx].function.arguments += tc.function.arguments;
+      }
+    }
+    if (event.choices?.[0]?.finish_reason) {
+      finished = {
+        choices: [
+          {
+            finish_reason: event.choices[0].finish_reason,
+            message: {
+              role: "assistant",
+              content: text || null,
+              tool_calls: toolCallsAcc.length > 0 ? toolCallsAcc : undefined,
+            },
+          },
+        ],
+      } as UruvChatResponse;
+    }
+    if (event.error) {
+      const failure = new Error(event.error.message || event.message || "The assistant stream failed") as Error & { code?: string };
+      failure.code = event.error.code;
+      throw failure;
     }
   };
   for (;;) {
@@ -454,13 +537,29 @@ async function postResponsesStream(apiKey: string, payload: Record<string, unkno
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let cut: number;
-    while ((cut = buffer.indexOf("\n\n")) >= 0) { handle(buffer.slice(0, cut)); buffer = buffer.slice(cut + 2); }
+    while ((cut = buffer.indexOf("\n")) >= 0) {
+      handle(buffer.slice(0, cut));
+      buffer = buffer.slice(cut + 1);
+    }
   }
   if (buffer.trim()) handle(buffer);
+  if (!finished && (text || toolCallsAcc.length > 0)) {
+    finished = {
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: text || null,
+            tool_calls: toolCallsAcc.length > 0 ? toolCallsAcc : undefined,
+          },
+        },
+      ],
+    } as UruvChatResponse;
+  }
   if (!finished) throw new Error("The assistant stream ended before a result arrived");
-  return finished as OpenAIResponse;
+  return finished as UruvChatResponse;
 }
-
 async function callResponses(apiKey: string, payload: Record<string, unknown>, onText?: (textSoFar: string) => void) {
   const model = String(payload.model || "");
   const fast = withFastParams(model, payload);
@@ -500,20 +599,22 @@ export async function runToolDrivenCommerceAgent(args: {
   const onText = args.onReply ? (textSoFar: string) => { const reply = extractPartialReply(textSoFar); if (reply) args.onReply?.(reply); } : undefined;
   const initialPayload = (model: string) => ({
     model,
-    instructions,
-    input: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}`,
+    messages: [
+      { role: "system", content: instructions },
+      { role: "user", content: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}` },
+    ],
     tools,
     tool_choice: "auto",
     parallel_tool_calls: true,
-    text: { format: { type: "json_schema", name: "sheplates_commerce_result", strict: true, schema } },
+    response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
   });
-  let activeModel = args.model || "gpt-5.6-luna";
-  let response: OpenAIResponse;
+  let activeModel = args.model || process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
+  let response: UruvChatResponse;
   try {
     response = await callResponses(args.apiKey, initialPayload(activeModel), onText);
   } catch (error) {
     const typed = error as Error & { status?: number };
-    const fallbackModel = "gpt-5.6-luna";
+    const fallbackModel = process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
     if (activeModel !== fallbackModel && (typed.status === 400 || typed.status === 404)) {
       activeModel = fallbackModel;
       response = await callResponses(args.apiKey, initialPayload(activeModel), onText);
@@ -524,16 +625,19 @@ export async function runToolDrivenCommerceAgent(args: {
     const calls = functionCalls(response);
     if (!calls.length) break;
     const toolContext = await args.context;
-    const outputs = calls.map((call) => ({ type: "function_call_output", call_id: call.callId, output: JSON.stringify(executeTool(args.role, toolContext, call.name, call.args)) }));
+    const outputs = calls.map((call) => ({ call_id: call.callId, output: JSON.stringify(executeTool(args.role, toolContext, call.name, call.args)) }));
     response = await callResponses(args.apiKey, {
       model: activeModel,
-      previous_response_id: response.id,
-      instructions,
-      input: outputs,
+      messages: [
+        { role: "system", content: instructions },
+        { role: "user", content: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}` },
+        { role: "assistant", tool_calls: calls.map((call) => ({ id: call.callId, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } })) },
+        ...outputs.map((toolOutput) => ({ role: "tool", tool_call_id: toolOutput.call_id, content: toolOutput.output })),
+      ],
       tools,
       tool_choice: "auto",
       parallel_tool_calls: true,
-      text: { format: { type: "json_schema", name: "sheplates_commerce_result", strict: true, schema } },
+      response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
     }, onText);
   }
 
@@ -546,3 +650,14 @@ export async function runToolDrivenCommerceAgent(args: {
   if (!parsed || typeof parsed.reply !== "string" || !parsed.intent || !Array.isArray(parsed.selectedProductIds) || !Array.isArray(parsed.basketProductIds) || !Array.isArray(parsed.removeProductIds)) throw new Error("The assistant returned an incomplete response.");
   return parsed;
 }
+
+
+
+
+
+
+
+
+
+
+

@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { TASTE_DIMENSIONS, inferAttributesLocally, type TasteWeights } from "@/lib/taste-match";
-
-// Classifies products into Taste Match dimensions (spicy/chicken/south_indian/...)
-// once each, caching the result in food_item_attributes so the same product is
-// never re-classified. Uses the existing OpenAI Responses API integration when
-// available; otherwise (or on any failure) falls back to a deterministic
-// keyword/category classifier so the marketplace never has to wait on, or
-// depend on, a live AI call to show a Taste Match score.
+import { uruvChat, uruvApiKey } from "@/lib/uruv-ai";
 
 function clients(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,41 +19,49 @@ function clients(request: Request) {
 type ProductInput = { id: string; name: string; category: string; description?: string };
 
 async function classifyWithAI(products: ProductInput[]): Promise<Record<string, TasteWeights> | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || !products.length) return null;
+  if (!uruvApiKey() || !products.length) return null;
   const dimensionProperties = Object.fromEntries(TASTE_DIMENSIONS.map((d) => [d, { type: "number", minimum: 0, maximum: 1 }]));
   const prompt = `Classify each food product into weighted taste dimensions (0 to 1, 0 = not applicable, 1 = strongly applicable). Use only the listed dimensions. Base the weights strictly on the product's name, category and description — do not invent facts about ingredients you cannot infer. Products: ${JSON.stringify(products)}`;
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-5-mini",
-        input: prompt,
-        text: {
-          format: {
-            type: "json_schema", name: "food_attribute_classification", strict: true,
-            schema: {
-              type: "object", additionalProperties: false,
-              properties: {
+    const data = await uruvChat({
+      model: process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat",
+      messages: [
+        { role: "system", content: "Return valid JSON only." },
+        { role: "user", content: prompt },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "food_attribute_classification",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              items: {
+                type: "array",
                 items: {
-                  type: "array",
-                  items: {
-                    type: "object", additionalProperties: false,
-                    properties: { productId: { type: "string" }, attributes: { type: "object", additionalProperties: false, properties: dimensionProperties, required: [...TASTE_DIMENSIONS] } },
-                    required: ["productId", "attributes"],
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    productId: { type: "string" },
+                    attributes: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: dimensionProperties,
+                      required: [...TASTE_DIMENSIONS],
+                    },
                   },
+                  required: ["productId", "attributes"],
                 },
               },
-              required: ["items"],
             },
+            required: ["items"],
           },
         },
-      }),
+      },
     });
-    if (!response.ok) return null;
-    const data = await response.json() as { output?: Array<{ content?: Array<{ text?: string }> }> };
-    const text = data.output?.flatMap((item) => item.content || []).map((c) => c.text).find(Boolean);
+    const text = data?.choices?.[0]?.message?.content || "";
     if (!text) return null;
     const parsed = JSON.parse(text) as { items: { productId: string; attributes: TasteWeights }[] };
     const result: Record<string, TasteWeights> = {};
@@ -69,8 +71,8 @@ async function classifyWithAI(products: ProductInput[]): Promise<Record<string, 
       result[item.productId] = trimmed;
     }
     return result;
-  } catch (error) {
-    console.error("[food-attributes] AI classification failed, using local fallback", error);
+  } catch (error: any) {
+    console.error("[food-attributes] AI classification failed, using local fallback", { code: error?.code, status: error?.status, message: error?.message });
     return null;
   }
 }

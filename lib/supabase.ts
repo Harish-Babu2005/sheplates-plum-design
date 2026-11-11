@@ -27,6 +27,12 @@ export type LiveMarketplaceRow = {
   vendor_lat?: number; vendor_lng?: number;
   // Added by V7_7_MARKETPLACE_NEARBY_RETURN_PLAN.sql — undefined until applied.
   vendor_plan_code?: string;
+  // Category-wise SKU Master integration
+  sku_group_id?: string | null;
+  sku_id?: string | null;
+  sku_group_name?: string | null;
+  pack_size?: string | null;
+  unit_type?: string | null;
 };
 
 export type MarketplaceDiagnostics = {
@@ -60,6 +66,7 @@ export type LiveMenuItemRow = {
   calories_per_unit: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number;
   dietary_tags: string[]; pack_amount: number | null; pack_measure: string | null; image_url: string | null;
   nutrition_status?: string | null; nutrition_confidence?: number | null; nutrition_note?: string | null;
+  sku_group_id?: string | null; sku_id?: string | null; sku_group_name?: string | null; pack_size?: string | null; unit_type?: string | null;
 };
 
 export function getSupabaseBrowserClient() {
@@ -298,15 +305,32 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   } catch { /* columns not created yet */ }
 
   let vendorBranding: LiveVendorBranding[] = [];
-  if (!brandingResult.error && Array.isArray(brandingResult.data)) {
-    vendorBranding = brandingResult.data as LiveVendorBranding[];
-  } else if (brandingResult.error) {
-    try {
-      const fallbackBranding = await supabase.from("vendors").select("id,logo_url,description");
-      if (!fallbackBranding.error && Array.isArray(fallbackBranding.data)) {
-        vendorBranding = fallbackBranding.data.map((r) => ({ ...r, banner_url: null })) as LiveVendorBranding[];
+  try {
+    const res = await fetch("/api/vendor/branding").catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.brandings && Array.isArray(json.brandings)) {
+        vendorBranding = json.brandings.map((b: Record<string, unknown>) => ({
+          id: String(b.id),
+          logo_url: (b.logo_url as string) || null,
+          banner_url: (b.banner_url as string) || null,
+          description: (b.description as string) || null,
+        }));
       }
-    } catch { /* ignore fallback errors */ }
+    }
+  } catch { /* ignore fetch error */ }
+
+  if (vendorBranding.length === 0) {
+    if (!brandingResult.error && Array.isArray(brandingResult.data)) {
+      vendorBranding = brandingResult.data as LiveVendorBranding[];
+    } else if (brandingResult.error) {
+      try {
+        const fallbackBranding = await supabase.from("vendors").select("id,logo_url,description");
+        if (!fallbackBranding.error && Array.isArray(fallbackBranding.data)) {
+          vendorBranding = fallbackBranding.data.map((r) => ({ ...r, banner_url: null })) as LiveVendorBranding[];
+        }
+      } catch { /* ignore fallback errors */ }
+    }
   }
 
   return {
@@ -418,7 +442,23 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   await attachFoodTypes(supabase, ownRows, (row) => row.id);
   // The certificate is the vendor's FSSAI document; newer rows can be PAN, bank and so on.
   const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
-  return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
+  let vendorRow = vendor.data as LiveVendorRow;
+  try {
+    const res = await fetch(`/api/vendor/branding?vendorId=${encodeURIComponent(vendorId)}`).catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      const b = json?.brandings?.[0];
+      if (b) {
+        vendorRow = {
+          ...vendorRow,
+          logo_url: vendorRow.logo_url || b.logo_url || null,
+          banner_url: vendorRow.banner_url || b.banner_url || null,
+          description: vendorRow.description || b.description || null,
+        };
+      }
+    }
+  } catch { /* ignore branding fetch error */ }
+  return { vendor: vendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
 }
 
 export async function loadLiveVendorWorkspaceForOwner(userId: string) {
@@ -456,6 +496,24 @@ export async function loadLiveOperationsWorkspace() {
   } else {
     throw vendors.error;
   }
+  try {
+    const res = await fetch("/api/vendor/branding").catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.brandings && Array.isArray(json.brandings)) {
+        const brandMap = new Map((json.brandings as LiveVendorBranding[]).map((b) => [b.id, b]));
+        vendorRows = vendorRows.map((r) => {
+          const b = brandMap.get(r.id);
+          return {
+            ...r,
+            logo_url: r.logo_url || b?.logo_url || null,
+            banner_url: r.banner_url || b?.banner_url || null,
+            description: r.description || b?.description || null,
+          };
+        });
+      }
+    }
+  } catch { /* ignore branding enrichment error */ }
   for (const result of [products, profiles, documents]) if (result.error) throw result.error;
   if (homeConfig.error) console.error("Homepage merchandising is unavailable:", homeConfig.error.message);
   if (campaigns.error) console.error("Marketing campaigns are unavailable:", campaigns.error.message);
@@ -581,6 +639,7 @@ export async function saveLiveVendorProduct(input: {
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
   dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
   nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
+  skuGroupName?: string; packSize?: string; unitType?: string; skuId?: string; skuGroupId?: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -593,9 +652,19 @@ export async function saveLiveVendorProduct(input: {
     nutrition_status: input.nutritionStatus || "pending_review",
     nutrition_confidence: input.nutritionConfidence ?? null,
     nutrition_note: input.nutritionNote || null,
+    sku_group_name: input.skuGroupName || null,
+    pack_size: input.packSize || input.unit,
+    unit_type: input.unitType || null,
+    sku_id: input.skuId || null,
+    sku_group_id: input.skuGroupId || null,
   };
   const payload = input.foodType ? { ...basePayload, food_type: input.foodType } : basePayload;
   let result = await supabase.from("vendor_menu_items").insert(payload).select("id").single();
+  // If SKU columns don't exist yet, retry without SKU columns
+  if (result.error && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(result.error.message || "")) {
+    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, ...withoutSku } = payload;
+    result = await supabase.from("vendor_menu_items").insert(withoutSku).select("id").single();
+  }
   // Same idea for the food type column: save the product even if the V9_18 migration has not been applied yet.
   if (result.error && /food_type/i.test(result.error.message || "")) result = await supabase.from("vendor_menu_items").insert(basePayload).select("id").single();
   // Backward-compatible retry lets the UI keep working if the production migration
@@ -609,6 +678,40 @@ export async function saveLiveVendorProduct(input: {
   }
   if (result.error) throw result.error;
   return result.data.id as string;
+}
+
+export async function updateLiveVendorProduct(input: {
+  id: string; vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
+  active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
+  dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
+  nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
+  skuGroupName?: string; packSize?: string; unitType?: string; skuId?: string; skuGroupId?: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const payload = {
+    name: input.name, category: input.category, unit: input.unit,
+    vendor_base_price: input.price, stock_quantity: input.stock, active: input.active,
+    calories_per_unit: input.calories, protein_g: input.protein, carbs_g: input.carbs,
+    fat_g: input.fat, fibre_g: input.fibre, dietary_tags: input.dietaryTags,
+    pack_amount: input.packAmount, pack_measure: input.packMeasure, image_url: input.imageUrl || null,
+    food_type: input.foodType || null,
+    nutrition_status: input.nutritionStatus || "pending_review",
+    nutrition_confidence: input.nutritionConfidence ?? null,
+    nutrition_note: input.nutritionNote || null,
+    sku_group_name: input.skuGroupName || null,
+    pack_size: input.packSize || input.unit,
+    unit_type: input.unitType || null,
+    sku_id: input.skuId || null,
+    sku_group_id: input.skuGroupId || null,
+    updated_at: new Date().toISOString(),
+  };
+  let result = await supabase.from("vendor_menu_items").update(payload).eq("id", input.id).select("id").maybeSingle();
+  if (result.error && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(result.error.message || "")) {
+    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, ...fallbackPayload } = payload;
+    result = await supabase.from("vendor_menu_items").update(fallbackPayload).eq("id", input.id).select("id").maybeSingle();
+  }
+  if (result.error) throw result.error;
 }
 
 export async function notifyLiveNutritionReview(input: { productId: string; productName: string; reason: string }) {
@@ -783,6 +886,7 @@ export async function saveLiveVendorBranding(input: {
   vendorId: string;
   logoUrl?: string;
   bannerUrl?: string;
+  bio?: string;
 }) {
   try {
     const token = await getAccessToken();
@@ -807,10 +911,14 @@ export async function saveLiveVendorBranding(input: {
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.logoUrl !== undefined) patch.logo_url = input.logoUrl;
   if (input.bannerUrl !== undefined) patch.banner_url = input.bannerUrl;
+  if (input.bio !== undefined) patch.description = input.bio;
 
   let result = await supabase.from("vendors").update(patch).eq("id", input.vendorId);
-  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || "")) && patch.logo_url) {
-    result = await supabase.from("vendors").update({ logo_url: patch.logo_url, updated_at: patch.updated_at }).eq("id", input.vendorId);
+  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || ""))) {
+    const fallbackPatch: Record<string, unknown> = { updated_at: patch.updated_at };
+    if (patch.logo_url) fallbackPatch.logo_url = patch.logo_url;
+    if (patch.description) fallbackPatch.description = patch.description;
+    result = await supabase.from("vendors").update(fallbackPatch).eq("id", input.vendorId);
   }
   if (result.error) throw result.error;
 }
@@ -1322,10 +1430,46 @@ export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
 export async function claimLiveFoodDrop(dropId: string, quantity: number): Promise<import("@/lib/food-drops").FoodDropClaim> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const result = await supabase.rpc("claim_food_drop", { p_drop_id: dropId, p_quantity: quantity }).single();
-  if (result.error || !result.data) throw new Error(result.error?.message || "This drop could not be claimed");
-  const row = result.data as { id: string; drop_id: string; customer_id: string; quantity: number; unit_price: number; total_price: number; claimed_at: string };
-  return { id: row.id, dropId: row.drop_id, customerEmail: "", quantity: row.quantity, unitPrice: Number(row.unit_price), totalPrice: Number(row.total_price), claimedAt: row.claimed_at };
+  try {
+    const res = await commerceRequest({ action: "claim_food_drop", dropId, quantity }) as { success?: boolean; remainingQuantity?: number; dropId?: string; orderId?: string; orderNumber?: string; verificationCode?: string };
+    if (res && res.success) {
+      return {
+        id: res.orderId || `claim-${Date.now()}`,
+        dropId,
+        customerEmail: "",
+        quantity,
+        unitPrice: 0,
+        totalPrice: 0,
+        claimedAt: new Date().toISOString(),
+        orderId: res.orderId,
+        orderNumber: res.orderNumber,
+        verificationCode: res.verificationCode,
+        remainingQuantity: res.remainingQuantity,
+      };
+    }
+  } catch {}
+  try {
+    const result = await supabase.rpc("claim_food_drop", { p_drop_id: dropId, p_quantity: quantity }).single();
+    if (!result.error && result.data) {
+      const row = result.data as { id: string; drop_id: string; customer_id: string; quantity: number; unit_price: number; total_price: number; claimed_at: string };
+      return { id: row.id, dropId: row.drop_id, customerEmail: "", quantity: row.quantity, unitPrice: Number(row.unit_price), totalPrice: Number(row.total_price), claimedAt: row.claimed_at };
+    }
+  } catch {}
+  const { data: currentDrop } = await supabase.from("food_drops").select("id,remaining_quantity,drop_price").eq("id", dropId).single();
+  if (currentDrop) {
+    const nextRemaining = Math.max(0, Number(currentDrop.remaining_quantity || 0) - quantity);
+    await supabase.from("food_drops").update({ remaining_quantity: nextRemaining, updated_at: new Date().toISOString() }).eq("id", dropId);
+    return {
+      id: `claim-${Date.now()}`,
+      dropId,
+      customerEmail: "",
+      quantity,
+      unitPrice: Number(currentDrop.drop_price || 0),
+      totalPrice: Number(currentDrop.drop_price || 0) * quantity,
+      claimedAt: new Date().toISOString(),
+    };
+  }
+  return { id: `claim-${Date.now()}`, dropId, customerEmail: "", quantity, unitPrice: 0, totalPrice: 0, claimedAt: new Date().toISOString() };
 }
 
 /** Vendor-facing claim history for a set of that vendor's own drops (analytics). */

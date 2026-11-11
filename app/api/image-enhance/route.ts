@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { uruvImageEdit, uruvApiKey, UruvAiError } from "@/lib/uruv-ai";
 
 async function authoriseVendorOrAdmin(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,8 +16,7 @@ async function authoriseVendorOrAdmin(request: Request) {
 
 export async function POST(request: Request) {
   if (!(await authoriseVendorOrAdmin(request))) return NextResponse.json({ error: "Vendor or Super Admin access is required." }, { status: 403 });
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "Image enhancement is temporarily unavailable." }, { status: 503 });
+  if (!uruvApiKey()) return NextResponse.json({ error: "Image enhancement is temporarily unavailable." }, { status: 503 });
 
   const body = await request.json() as { imageDataUrl?: string; productName?: string; category?: string };
   const match = body.imageDataUrl?.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -24,24 +24,23 @@ export async function POST(request: Request) {
 
   const mime = match[1];
   const bytes = Buffer.from(match[2], "base64");
-  if (bytes.length > 10 * 1024 * 1024) return NextResponse.json({ error: "Image must be under 10 MB." }, { status: 413 });
+  if (bytes.length > 10 * 1024 * 1024) return NextResponse.json({ error: "Image must be under 10 MB. Please upload a smaller photo." }, { status: 413 });
 
   const form = new FormData();
-  form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
+  form.append("model", process.env.AI_IMAGE_MODEL || process.env.URUV_IMAGE_MODEL || "uruv-image");
   form.append("image", new Blob([bytes], { type: mime }), "product-upload.png");
   form.append("size", "1024x1024");
   form.append("quality", "medium");
   form.append("prompt", `Create a polished marketplace product photo for Sheplates from this vendor-uploaded image. Product: ${body.productName || "food product"}. Category: ${body.category || "food"}. Preserve the actual product identity, pack, ingredients and visible quantity. Improve lighting, framing, sharpness and background only. Use a clean premium food-commerce aesthetic with natural realistic colors, soft daylight, uncluttered neutral background and no text overlays, fake labels, extra ingredients, people or misleading quantity changes. The result must still honestly represent the uploaded product.`);
 
-  const response = await fetch("https://api.openai.com/v1/images/edits", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
-  const json = await response.json() as { data?: Array<{ b64_json?: string; url?: string }>; error?: { message?: string } };
-  if (!response.ok) return NextResponse.json({ error: json.error?.message || "Image enhancement failed." }, { status: response.status });
-  const item = json.data?.[0];
-  if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}`, source: "openai" });
-  if (item?.url) return NextResponse.json({ imageUrl: item.url, source: "openai" });
-  return NextResponse.json({ error: "Image enhancement returned no image." }, { status: 502 });
+  try {
+    const json = await uruvImageEdit(form);
+    const item = json.data?.[0];
+    if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}`, source: "uruv" });
+    if (item?.url) return NextResponse.json({ imageUrl: item.url, source: "uruv" });
+    return NextResponse.json({ error: "Image enhancement returned no image." }, { status: 502 });
+  } catch (err: any) {
+    const status = err instanceof UruvAiError ? err.status : 502;
+    return NextResponse.json({ error: err.message || "Image enhancement failed." }, { status });
+  }
 }

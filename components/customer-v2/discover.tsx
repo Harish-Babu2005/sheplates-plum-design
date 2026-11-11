@@ -84,7 +84,7 @@ export function VendorCard({ state, vendor, profile, onOpen, compact = false, co
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor);
   const connectNumber = connectVendor?.whatsapp_number ? normalizeWhatsAppNumber(connectVendor.whatsapp_number) : null;
   return <div className={`flex items-center gap-3 rounded-[22px] border border-stone-200/70 bg-white p-3 shadow-sm ${compact ? "" : "sm:p-4"}`}>
-    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="size-[72px] shrink-0 rounded-2xl" emojiSize={30} />
+    <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="size-18 shrink-0 rounded-2xl" emojiSize={30} />
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5"><span className="truncate font-black">{vendor.businessName}</span>{vendor.verification === "Verified" && <BadgeCheck className="size-4 shrink-0 text-emerald-600" aria-label="Verified" />}</div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-bold text-stone-500">{rating ? <span className="flex items-center gap-1 text-amber-600"><Stars value={rating.average} size={12} />{rating.average.toFixed(1)} <span className="text-stone-400">({rating.count})</span></span> : <span>New on Sheplates</span>}{distance !== null && <span>· {distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`}</span>}<span>· {shortArea(vendor.address)}</span></div>

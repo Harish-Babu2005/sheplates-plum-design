@@ -5,6 +5,7 @@
 //   local  — browser storage (video in IndexedDB), used in demo mode or until the migration is applied.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient, isLiveSupabaseMode } from "@/lib/supabase";
+import { startAutoRefresh } from "@/lib/auto-refresh";
 import { compressImage } from "@/lib/social";
 import { deleteLocalVideo, loadLocalVideoUrl, saveLocalVideo } from "@/lib/food-shorts-media";
 import { checkVideoFile } from "@/lib/food-shorts-rules";
@@ -104,7 +105,7 @@ export function useStatuses(user: PeopleUser & { handle: string }, people: Peopl
     const initial = window.setTimeout(() => void loadRemote(), 0);
     return () => window.clearTimeout(initial);
   }, [mode, loadRemote]);
-  useEffect(() => { if (mode !== "remote") return; const t = window.setInterval(() => void loadRemote(), 60_000); return () => window.clearInterval(t); }, [mode, loadRemote]);
+  useEffect(() => { if (mode !== "remote") return; return startAutoRefresh(loadRemote); }, [mode, loadRemote]);
 
   // local back-end: resolve stored videos
   useEffect(() => {
