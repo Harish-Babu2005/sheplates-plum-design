@@ -18,8 +18,8 @@ for (const [name, slug] of PAGES) {
     else if (name === "Cart") await page.locator('[data-tour="cart"]').click();
     else if (name === "Profile" && w < 768) await page.getByRole("button", { name: "Profile", exact: true }).click();
     else if (name === "Profile") await page.locator('[data-tour="account"]').click();
-    else if (trigger) await trigger.click();
-    else if (name !== "Marketplace") await page.getByRole("button", { name: name === "My schedule" ? "Orders" : name === "My quotations" ? "Profile" : name, exact: true }).first().click().catch(() => undefined);
+    else if (trigger) await trigger.click({ timeout: 5_000 }).catch(() => undefined); // this spec only takes screenshots, so a missing menu entry must not fail it
+    else if (name !== "Marketplace") await page.getByRole("button", { name: name === "My schedule" ? "Orders" : name === "My quotations" ? "Profile" : name, exact: true }).first().click({ timeout: 5_000 }).catch(() => undefined);
     await page.waitForTimeout(700);
     await page.screenshot({ path: `qa-screenshots/redesign/${info.project.name}-${slug}.png`, fullPage: false });
   });

@@ -29,7 +29,7 @@ export async function loginAsStaff(page: Page, who: "vendor" | "operations" | "a
   await page.evaluate(() => localStorage.clear());
   await page.goto("/");
   // "Vendor / Team" on desktop, just "Vendor" on mobile.
-  await page.getByRole("button", { name: /Vendor/ }).click();
+  await page.getByRole("button", { name: /Vendor/ }).first().click();
   await page.getByLabel("Email").fill(DEMO[who].email);
   await page.locator('input[type="password"]').fill(DEMO[who].password);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();
@@ -63,7 +63,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   // list from React state on the next toast, so removing these DOM nodes
   // has no lasting effect beyond clearing the current visual stack.
   await page.evaluate(() => document.querySelectorAll("[data-sonner-toast]").forEach((el) => el.remove()));
-  const loginButtonName = who === "customer" ? /^Customer login$|^Sign in$/i : /^Vendor(\s*\/\s*Team)?$/;
+  const loginButtonName = who === "customer" ? /^Customer login$|^Sign in$/i : /^(Vendors? \s*(&|\/)\s*Team|Vendor)$/;
   // Anchored: an unanchored /Vendor/ also matches staff sidebar nav items
   // ("Vendor onboarding", "Vendor payments", ...) that can still be present
   // in the DOM for a moment during the sign-out transition.
@@ -71,7 +71,7 @@ export async function switchTo(page: Page, who: "customer" | "vendor" | "operati
   let opened = false;
   for (let attempt = 0; attempt < 3 && !opened; attempt++) {
     await page.evaluate(() => document.querySelectorAll("[data-sonner-toast]").forEach((el) => el.remove()));
-    await page.getByRole("button", { name: loginButtonName }).click({ force: true });
+    await page.getByRole("button", { name: loginButtonName }).first().click({ force: true });
     // Occasionally (seen under full-suite load, more on mobile) this click
     // still lands during the sign-out transition and never actually opens
     // the dialog — self-heal by retrying rather than hanging the whole test.

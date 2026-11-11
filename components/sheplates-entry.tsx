@@ -220,7 +220,7 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
         </nav>
         <button type="button" className="btn sm sec e-vendor" onClick={() => setAuthAudience("team")}>Vendor</button>
         <button type="button" className="btn sm sec" onClick={openCustomer}>Sign In</button>
-        <button type="button" className="btn sm" onClick={openCustomer}>Get Started</button>
+        <button type="button" className="btn sm e-start" onClick={openCustomer}>Get Started</button>
       </header>
 
       <section className="e-hero">

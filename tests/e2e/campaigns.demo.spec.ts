@@ -67,7 +67,7 @@ test.describe("Live campaigns (demo data)", () => {
     await expect(banner.getByTestId("campaign-headline")).toHaveText("Fresh meat, cut to order");
     await expect(banner.getByText("From butchers within 5 km")).toBeVisible();
     await expect(banner.getByText("10% off above 500")).toBeVisible();
-    await expect(page.getByText("Tonight 8 PM to midnight")).toHaveCount(0); // the standing promo steps aside
+    await expect(page.getByText("Today, 12 PM to 6 PM")).toHaveCount(0); // the standing promo steps aside
 
     await banner.getByTestId("campaign-cta").click();
     const grid = page.locator('[data-tour="products"]');
@@ -77,7 +77,7 @@ test.describe("Live campaigns (demo data)", () => {
 
   test("no live campaign means the customer sees the standing promo; pausing takes a live one down", async ({ page }) => {
     await open(page, CUSTOMER);
-    await expect(page.getByText("Tonight 8 PM to midnight")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Today, 12 PM to 6 PM")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("campaign-banner")).toHaveCount(0);
 
     await switchTo(page, ADMIN);
@@ -93,7 +93,7 @@ test.describe("Live campaigns (demo data)", () => {
     await expect(page.getByText(/Campaign paused/)).toBeVisible();
     await expect(rowOf(page, "Pause me").getByTestId("campaign-phase")).toHaveText("Paused");
     await switchTo(page, CUSTOMER);
-    await expect(page.getByText("Tonight 8 PM to midnight")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Today, 12 PM to 6 PM")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("campaign-banner")).toHaveCount(0);
   });
 
@@ -104,7 +104,7 @@ test.describe("Live campaigns (demo data)", () => {
     const row = rowOf(page, "Still a draft");
     await expect(row.getByTestId("campaign-phase")).toHaveText("Draft");
     await switchTo(page, CUSTOMER);
-    await expect(page.getByText("Tonight 8 PM to midnight")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Today, 12 PM to 6 PM")).toBeVisible({ timeout: 15_000 });
 
     await switchTo(page, ADMIN);
     await openCampaigns(page);
@@ -120,7 +120,7 @@ test.describe("Live campaigns (demo data)", () => {
     await createCampaign(page, { name: "Starts later", headline: "Coming soon", starts: inDays(2) });
     await expect(rowOf(page, "Starts later").getByTestId("campaign-phase")).toHaveText("Scheduled");
     await switchTo(page, CUSTOMER);
-    await expect(page.getByText("Tonight 8 PM to midnight")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Today, 12 PM to 6 PM")).toBeVisible({ timeout: 15_000 });
 
     await switchTo(page, ADMIN);
     await openCampaigns(page);

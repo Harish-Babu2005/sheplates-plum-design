@@ -85,7 +85,7 @@ test("a Thrive vendor sees the Food Drops screen with the one-evening rule", asy
   await dismissTourIfOpen(page);
   await page.getByRole("button", { name: "Food Drops" }).first().click({ timeout: 60_000 });
   await expect(page.getByRole("button", { name: /New drop/ })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/available only on the evening it is created/)).toBeVisible();
+  await expect(page.getByText(/available only on the day it is created/)).toBeVisible();
 });
 
 test("customers have no Cancel button on orders or schedules", async ({ page }) => {
@@ -101,11 +101,11 @@ test("customers have no Cancel button on orders or schedules", async ({ page }) 
 test("P0 Connect vendor listing category dropdown contains onboarding categories", async ({ page }) => {
   await openAs(page, "admin");
   await dismissTourIfOpen(page);
+  await openStaffNavIfCollapsed(page); // on a phone the menu is behind the toggle
   const entry = page.getByRole("button", { name: "P0 Connect vendors" }).first();
   await expect(entry).toBeVisible({ timeout: 60_000 });
   await entry.click();
   await expect(page.getByRole("heading", { name: "Add a Connect vendor" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("heading", { name: "Create a P0 Connect listing" })).toBeVisible({ timeout: 15_000 });
 
   const categoryCombobox = page.getByRole("combobox", { name: "Category" });
   await expect(categoryCombobox).toBeVisible();

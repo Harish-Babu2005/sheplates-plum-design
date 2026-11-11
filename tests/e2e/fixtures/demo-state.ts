@@ -2,12 +2,17 @@
 // database): six vendors around Coimbatore, 19 products, a paid-order history,
 // recurring subscriptions and four live Food Drops. Built relative to "now" so
 // drops are always live. Used by playwright.demo.config.ts specs only.
-const iso = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
-const day = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10);
+// Everything is built relative to NOW. Food Drops only run 12 PM to 6 PM IST, so specs that need a live drop build the state at
+// FOOD_DROP_TIME (2 PM IST) and freeze the browser clock to the same instant: they then pass at any hour of the day.
+export const FOOD_DROP_TIME = Date.UTC(2026, 10, 10, 8, 30);
+let NOW = Date.now();
+const iso = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
+const day = (d: number) => new Date(NOW + d * 86_400_000).toISOString().slice(0, 10);
 
 export const DEMO_CUSTOMER = { email: "customer@sheplates.demo", name: "Raj" };
 
-export function buildDemoState() {
+export function buildDemoState(now: number = Date.now()) {
+  NOW = now;
   const vendor = (id: string, businessName: string, category: string, latitude: number, longitude: number, address: string, extra: Record<string, unknown> = {}) => ({
     id, ownerEmail: `${id}@sheplates.demo`, ownerName: businessName, businessName, category, address, latitude, longitude, radiusKm: 10, delivery: true, pickup: true,
     openToday: true, fssaiNumber: "Verified", certificateName: "cert.pdf", expiryDate: "2027-12-31", verification: "Verified", operational: "Active", plan: "Crown", ...extra,
