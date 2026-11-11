@@ -98,7 +98,7 @@ export function ShortsViewer({ shorts, startIndex, onClose, liked, onLike, onVie
 
   const current = shorts[active];
   // Rendered on document.body: an ancestor with a filter or transform would otherwise shrink "fixed" to its own box.
-  return createPortal(<div role="dialog" aria-modal="true" aria-label="Food Shorts" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[250] bg-black" data-testid="shorts-viewer">
+  return createPortal(<div role="dialog" aria-modal="true" aria-label="Food Shorts" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[1500] bg-black" data-testid="shorts-viewer">
     <div ref={scroller} className="h-full snap-y snap-mandatory overflow-y-scroll overscroll-contain hide-scrollbar">
       {shorts.map((s, i) => <section key={s.id} ref={(el) => { slides.current[i] = el; }} data-index={i} aria-label={`${s.title}, ${s.vendorName}`} className="relative flex h-[100dvh] snap-start items-center justify-center">
         <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-stone-900">

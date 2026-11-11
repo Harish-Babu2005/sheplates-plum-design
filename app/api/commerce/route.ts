@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
+import { validateSkuSelection } from "@/lib/sku-master";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -1054,6 +1055,17 @@ export async function POST(request: Request) {
       const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", targetVendorId);
       if (updated.error) throw updated.error;
       return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "validate_sku") {
+      const category = String(body.category || "");
+      const group = String(body.group || "");
+      const packSize = String(body.packSize || "");
+      const validation = validateSkuSelection(category, group, packSize);
+      if (!validation.valid) {
+        return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true, sku: validation.sku });
     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });

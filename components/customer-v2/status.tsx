@@ -106,7 +106,7 @@ export function StatusViewer({ items, own, onClose, onViewed, onLike, onDelete, 
     const next = !liked; setLikedHere((m) => ({ ...m, [current.id]: next }));
     try { await onLike(current.id, next); } catch (e) { setLikedHere((m) => ({ ...m, [current.id]: !next })); toast.error(errorMessage(e, "Could not save your like")); }
   }
-  return createPortal(<div role="dialog" aria-modal="true" aria-label={own ? "Your status" : `${current.handle}'s status`} data-testid="status-viewer" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[260] grid place-items-center bg-[#EEF2F2] p-0 sm:p-5">
+  return createPortal(<div role="dialog" aria-modal="true" aria-label={own ? "Your status" : `${current.handle}'s status`} data-testid="status-viewer" ref={(el) => el?.style.setProperty("max-width", "none", "important")} className="fixed inset-0 z-[1600] grid place-items-center bg-[#EEF2F2] p-0 sm:p-5">
     <button type="button" aria-label="Go back one" disabled={index === 0} onClick={() => moveTo(Math.max(0, index - 1))} className="absolute left-1/2 top-1/2 z-10 hidden size-12 -translate-x-[330px] -translate-y-1/2 place-items-center rounded-full bg-[#155F65] text-white disabled:opacity-40 sm:grid"><ArrowLeft className="size-6" /></button>
     <button type="button" aria-label="Go forward one" onClick={advance} className="absolute left-1/2 top-1/2 z-10 hidden size-12 translate-x-[282px] -translate-y-1/2 place-items-center rounded-full bg-[#155F65] text-white sm:grid"><ArrowRight className="size-6" /></button>
     <div className="relative h-full w-full max-w-[460px] overflow-hidden bg-[#155F65] sm:max-h-[860px] sm:rounded-[32px]">

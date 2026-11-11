@@ -2012,6 +2012,7 @@ body {
   isolation: isolate !important;
   position: relative !important;
   z-index: 0 !important;
+  contain: paint !important;
 }
 
 /* Constrain Leaflet's internal high z-indexes so controls and panes never escape into dialogs */
