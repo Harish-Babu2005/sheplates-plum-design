@@ -157,7 +157,11 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
       return;
     }
     const params = new URLSearchParams(search);
-    if (params.get("vendor")) {
+    const vendorParam = params.get("vendor");
+    if (vendorParam) {
+      try {
+        sessionStorage.setItem("sheplates_pending_vendor", vendorParam);
+      } catch {}
       queueMicrotask(() => setAuthAudience("customer"));
       toast.info("Sign in to view and order from this vendor's shop.");
     } else if (params.get("forgot") === "true") {

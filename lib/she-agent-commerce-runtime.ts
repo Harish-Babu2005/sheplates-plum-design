@@ -20,7 +20,7 @@ export type CommerceResult = {
   memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
 };
 
-type OpenAIChoiceMessage = {
+type UruvChoiceMessage = {
   role?: string;
   content?: string | Array<{ type?: string; text?: string; refusal?: string }> | null;
   refusal?: string | null;
@@ -31,12 +31,12 @@ type OpenAIChoiceMessage = {
   }>;
 };
 
-type OpenAIResponse = {
+type UruvChatResponse = {
   id?: string;
   status?: string;
   choices?: Array<{
     finish_reason?: string | null;
-    message?: OpenAIChoiceMessage;
+    message?: UruvChoiceMessage;
     delta?: { content?: string | null };
   }>;
   error?: { message?: string; code?: string; type?: string } | null;
@@ -62,13 +62,14 @@ type ToolDefinition =
 
 function normalizeTool(tool: ToolDefinition) {
   if ("function" in tool && tool.function) return { type: "function", function: tool.function };
+  const flat = tool as { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict?: true };
   return {
     type: "function",
     function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-      strict: tool.strict,
+      name: flat.name,
+      description: flat.description,
+      parameters: flat.parameters,
+      strict: flat.strict,
     },
   };
 }
@@ -353,15 +354,16 @@ function executeTool(role: Role, context: Record<string, unknown>, name: string,
   return { error: "Tool is not available in this role workspace." };
 }
 
-function functionCalls(response: OpenAIResponse): ToolCall[] {
+function functionCalls(response: UruvChatResponse): ToolCall[] {
   return (response.choices?.[0]?.message?.tool_calls || []).map((item) => {
     let args: Record<string, unknown> = {};
-    try { args = JSON.parse(item.function.arguments || "{}") as Record<string, unknown>; } catch { args = {}; }
-    return { callId: item.id || item.function.name, name: item.function.name, args };
+    const fnName = item.function?.name || "";
+    try { args = JSON.parse(item.function?.arguments || "{}") as Record<string, unknown>; } catch { args = {}; }
+    return { callId: item.id || fnName || "call", name: fnName, args };
   });
 }
 
-function extractOutputText(response: OpenAIResponse) {
+function extractOutputText(response: UruvChatResponse) {
   const message = response.choices?.[0]?.message;
   if (typeof message?.content === "string" && message.content.trim()) return message.content.trim();
   if (Array.isArray(message?.content)) {
@@ -374,7 +376,7 @@ function extractOutputText(response: OpenAIResponse) {
   return "";
 }
 
-function extractRefusal(response: OpenAIResponse) {
+function extractRefusal(response: UruvChatResponse) {
   const message = response.choices?.[0]?.message as Record<string, unknown> | undefined;
   const refusal = message?.refusal;
   return typeof refusal === "string" ? refusal : "";
@@ -424,8 +426,8 @@ async function postResponses(apiKey: string, payload: Record<string, unknown>) {
     signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
   });
   const raw = await response.text();
-  let data: OpenAIResponse = {};
-  try { data = JSON.parse(raw) as OpenAIResponse; } catch { /* handled below */ }
+  let data: UruvChatResponse = {};
+  try { data = JSON.parse(raw) as UruvChatResponse; } catch { /* handled below */ }
   if (!response.ok) {
     const message = data.error?.message || raw.slice(0, 500) || `Assistant request failed with ${response.status}`;
     const error = new Error(message) as Error & { status?: number; code?: string };
@@ -463,8 +465,8 @@ async function postResponsesStream(apiKey: string, payload: Record<string, unkno
   });
   if (!response.ok || !response.body) {
     const raw = await response.text();
-    let data: OpenAIResponse = {};
-    try { data = JSON.parse(raw) as OpenAIResponse; } catch { /* not json */ }
+    let data: UruvChatResponse = {};
+    try { data = JSON.parse(raw) as UruvChatResponse; } catch { /* not json */ }
     const error = new Error(data.error?.message || raw.slice(0, 500) || `Assistant request failed with ${response.status}`) as Error & { status?: number; code?: string };
     error.status = response.status; error.code = data.error?.code;
     throw error;
@@ -473,16 +475,56 @@ async function postResponsesStream(apiKey: string, payload: Record<string, unkno
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
-  let finished: OpenAIResponse | null = null;
+  const toolCallsAcc: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
+  let finished: UruvChatResponse | null = null;
   const handle = (block: string) => {
     const dataLine = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("");
     if (!dataLine || dataLine === "[DONE]") return;
-    let event: { type?: string; choices?: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>; error?: { message?: string; code?: string }; message?: string };
+    let event: {
+      type?: string;
+      choices?: Array<{
+        delta?: {
+          content?: string | null;
+          tool_calls?: Array<{
+            index?: number;
+            id?: string;
+            type?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+        finish_reason?: string | null;
+      }>;
+      error?: { message?: string; code?: string };
+      message?: string;
+    };
     try { event = JSON.parse(dataLine); } catch { return; }
     const deltaText = event.choices?.[0]?.delta?.content;
     if (typeof deltaText === "string") { text += deltaText; onText(text); }
+    const deltaCalls = event.choices?.[0]?.delta?.tool_calls;
+    if (Array.isArray(deltaCalls)) {
+      for (const tc of deltaCalls) {
+        const idx = tc.index ?? toolCallsAcc.length;
+        if (!toolCallsAcc[idx]) {
+          toolCallsAcc[idx] = { id: tc.id || "", type: "function", function: { name: tc.function?.name || "", arguments: "" } };
+        }
+        if (tc.id) toolCallsAcc[idx].id = tc.id;
+        if (tc.function?.name) toolCallsAcc[idx].function.name += tc.function.name;
+        if (tc.function?.arguments) toolCallsAcc[idx].function.arguments += tc.function.arguments;
+      }
+    }
     if (event.choices?.[0]?.finish_reason) {
-      finished = { choices: [{ message: { content: text } }] } as OpenAIResponse;
+      finished = {
+        choices: [
+          {
+            finish_reason: event.choices[0].finish_reason,
+            message: {
+              role: "assistant",
+              content: text || null,
+              tool_calls: toolCallsAcc.length > 0 ? toolCallsAcc : undefined,
+            },
+          },
+        ],
+      } as UruvChatResponse;
     }
     if (event.error) {
       const failure = new Error(event.error.message || event.message || "The assistant stream failed") as Error & { code?: string };
@@ -497,12 +539,26 @@ async function postResponsesStream(apiKey: string, payload: Record<string, unkno
     let cut: number;
     while ((cut = buffer.indexOf("\n")) >= 0) {
       handle(buffer.slice(0, cut));
-      buffer = buffer.slice(cut + 2);
+      buffer = buffer.slice(cut + 1);
     }
   }
   if (buffer.trim()) handle(buffer);
+  if (!finished && (text || toolCallsAcc.length > 0)) {
+    finished = {
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: text || null,
+            tool_calls: toolCallsAcc.length > 0 ? toolCallsAcc : undefined,
+          },
+        },
+      ],
+    } as UruvChatResponse;
+  }
   if (!finished) throw new Error("The assistant stream ended before a result arrived");
-  return finished as OpenAIResponse;
+  return finished as UruvChatResponse;
 }
 async function callResponses(apiKey: string, payload: Record<string, unknown>, onText?: (textSoFar: string) => void) {
   const model = String(payload.model || "");
@@ -553,7 +609,7 @@ export async function runToolDrivenCommerceAgent(args: {
     response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
   });
   let activeModel = args.model || process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
-  let response: OpenAIResponse;
+  let response: UruvChatResponse;
   try {
     response = await callResponses(args.apiKey, initialPayload(activeModel), onText);
   } catch (error) {
@@ -578,7 +634,7 @@ export async function runToolDrivenCommerceAgent(args: {
         { role: "assistant", tool_calls: calls.map((call) => ({ id: call.callId, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } })) },
         ...outputs.map((toolOutput) => ({ role: "tool", tool_call_id: toolOutput.call_id, content: toolOutput.output })),
       ],
-      tools: chatTools,
+      tools,
       tool_choice: "auto",
       parallel_tool_calls: true,
       response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },

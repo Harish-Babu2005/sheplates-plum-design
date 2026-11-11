@@ -16,13 +16,20 @@ test.describe("Vendor QR code deep link", () => {
     await expect(page.getByRole("link", { name: /Download QR/ })).toBeVisible();
   });
 
-  test("a signed-in customer opening a vendor's QR link lands filtered to that vendor's shop", async ({ page }) => {
+  test("a signed-in customer opening a vendor's QR link opens that vendor's store profile", async ({ page }) => {
     await loginAsCustomer(page);
     await dismissTourIfOpen(page);
     await page.goto(`/?vendor=${KANDAN_FOODS_ID}`);
-    await expect(page.getByRole("button", { name: /Viewing Kandan Foods/ })).toBeVisible({ timeout: 10_000 });
-    await page.getByRole("button", { name: /Viewing Kandan Foods/ }).click();
-    await expect(page.getByRole("button", { name: /Viewing Kandan Foods/ })).not.toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await expect(dialog.getByText(/Kandan Foods/i).first()).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Menu" })).toBeVisible();
+    await expect(dialog.getByText("Your cart")).toBeVisible();
+
+    // Browser back navigation closes the store profile dialog
+    await page.goBack();
+    await expect(dialog).not.toBeVisible();
+    expect(page.url()).not.toContain(`vendor=${KANDAN_FOODS_ID}`);
   });
 
   test("a signed-out visitor opening a vendor's QR link is prompted to sign in", async ({ page }) => {

@@ -858,7 +858,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   if (!visibleSuggestions.length) return null;
   return (
     <div className="relative z-30 mt-2 w-full">
-      <div className="absolute inset-x-0 top-full z-50 mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-[0_18px_40px_rgba(32,40,39,0.12)] backdrop-blur">
+      <div className="absolute inset-x-0 top-full z-50 mt-1 min-w-0 max-w-full space-y-1 overflow-hidden rounded-2xl border border-stone-200 bg-white/95 max-h-64 overflow-y-auto overscroll-contain p-1.5 shadow-[0_18px_40px_rgba(32,40,39,0.12)] backdrop-blur">
         {visibleSuggestions.map((item, index) => {
           const [primary, ...rest] = item.address.split(",");
           return (
@@ -906,7 +906,91 @@ export function SheplatesV3() {
   const initializedNavigationKey = useRef("");
   const skipNavigationSync = useRef(false);
   const lastAlertedNotification = useRef<string>("");
-  const [vendorProfileId, setVendorProfileId] = useState<string | null>(null);
+  const [vendorProfileId, setVendorProfileIdState] = useState<string | null>(null);
+
+  const handleOpenVendor = useCallback((id: string | null) => {
+    setVendorProfileIdState(id);
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const currentVendor = params.get("vendor");
+    if (id) {
+      if (currentVendor !== id) {
+        params.set("vendor", id);
+        const next = `${window.location.pathname}?${params.toString()}`;
+        window.history.pushState({ page: active, vendor: id }, "", next);
+      }
+    } else {
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (currentVendor) {
+        params.delete("vendor");
+        const query = params.toString();
+        const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+        window.history.pushState({ page: active }, "", next);
+      }
+    }
+  }, [active]);
+  const setVendorProfileId = handleOpenVendor;
+
+  const qrVendorAttempted = useRef(false);
+  useEffect(() => {
+    if (!hydrated || !state.vendors.length) return;
+    if (qrVendorAttempted.current) return;
+
+    let targetVendorId: string | null = null;
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      targetVendorId = params.get("vendor");
+      if (!targetVendorId) {
+        try {
+          targetVendorId = sessionStorage.getItem("sheplates_pending_vendor");
+        } catch {}
+      }
+    }
+    if (!targetVendorId) return;
+    qrVendorAttempted.current = true;
+
+    const vendor = state.vendors.find((v) => v.id === targetVendorId);
+    if (vendor) {
+      setVendorProfileIdState(vendor.id);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("vendor") === vendor.id && !window.history.state?.vendor) {
+          params.delete("vendor");
+          const baseQuery = params.toString();
+          const baseUrl = `${window.location.pathname}${baseQuery ? `?${baseQuery}` : ""}`;
+          window.history.replaceState({ page: active }, "", baseUrl);
+          params.set("vendor", vendor.id);
+          const vendorUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.pushState({ page: active, vendor: vendor.id }, "", vendorUrl);
+        } else if (params.get("vendor") !== vendor.id) {
+          params.set("vendor", vendor.id);
+          const next = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ page: active, vendor: vendor.id }, "", next);
+        }
+      }
+      toast.success(`Welcome to ${vendor.businessName}'s store`);
+    } else {
+      toast.error("That vendor's store is not available right now.");
+      setVendorProfileIdState(null);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("vendor")) {
+          params.delete("vendor");
+          const query = params.toString();
+          const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+          window.history.replaceState({ page: active }, "", next);
+        }
+      }
+    }
+  }, [active, hydrated, state.vendors]);
   const [locationSignal, setLocationSignal] = useState(0);
   const [planProduct, setPlanProduct] = useState<Product | null>(null);
   const [planPreset, setPlanPreset] = useState<PlanPreset | undefined>(undefined);
@@ -1001,6 +1085,8 @@ export function SheplatesV3() {
       const parameters = new URLSearchParams(window.location.search);
       const requested = parameters.get("view");
       setActive(requested && validPages.includes(requested) ? requested : validPages[0]);
+      const vendorParam = parameters.get("vendor");
+      setVendorProfileIdState(vendorParam || null);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -1391,12 +1477,12 @@ export function SheplatesV3() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
     if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} />;
     if (active === "She Agent") return <div className="space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
-    if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={setVendorProfileId} onConfirmLocation={() => setActive("Marketplace")} />;
+    if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={handleOpenVendor} onConfirmLocation={() => setActive("Marketplace")} />;
     if (active === "Food Drops") return <FoodDropsTab state={state} profile={area} social={social} onClaim={claimDrop} onRefresh={() => void refreshDrops()} />;
-    if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={setVendorProfileId} />;
-    if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={setVendorProfileId} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
+    if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={handleOpenVendor} />;
+    if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={handleOpenVendor} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
     if (active === "Schedules" || active === "Orders" || active === "My schedule") return <SchedulesTab initial={active === "My schedule" ? "Subscriptions" : "Orders"} orders={<OrdersV4 session={session!} state={state} setState={setState} scope="customer" />} subscriptions={<SchedulesV4 session={session!} state={state} setState={setState} navigate={setActive} />} />;
-    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={setVendorProfileId} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
+    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={handleOpenVendor} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
@@ -1428,17 +1514,17 @@ export function SheplatesV3() {
       {content}
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
-      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
-      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
+      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={handleOpenVendor} onClose={shortsViewer.close} />}
+      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { handleOpenVendor(null); setActive("Cart"); }} />
     </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={role === "vendor" && vendor?.category === "Home food" ? nav.vendor.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]) : nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
-      onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); else setActive("Vendor profile"); }}
+      onOpenVendorProfile={() => { if (vendor) handleOpenVendor(vendor.id); else setActive("Vendor profile"); }}
       vendor={vendor}
       banner={<>
         {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card flex items-center gap-3 rounded-2xl p-3 text-sm"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
 
-    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
+    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => handleOpenVendor(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { handleOpenVendor(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
       const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
       return {
         ...current,
@@ -1832,25 +1918,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       setLocationOpen(true);
     });
   }, [locationSignal]);
-  const qrVendorHandled = useRef(false);
 
-  // A vendor's QR code links to "<origin>/?vendor=<id>" (there is no path
-  // router in this app, so a query param is the deep-link mechanism). Once
-  // this customer's marketplace vendors are loaded, jump straight to that
-  // vendor's products and drop the param so it doesn't linger in the URL.
-  useEffect(() => {
-    if (qrVendorHandled.current || !state.vendors.length) return;
-    const params = new URLSearchParams(window.location.search);
-    const vendorId = params.get("vendor");
-    if (!vendorId) return;
-    qrVendorHandled.current = true;
-    const vendor = state.vendors.find((v) => v.id === vendorId);
-    if (vendor) { queueMicrotask(() => setVendorFilter(vendorId)); toast.success(`Showing ${vendor.businessName}'s shop`); }
-    else toast.error("That vendor's shop is not available right now.");
-    params.delete("vendor");
-    const next = params.toString();
-    window.history.replaceState({}, "", next ? `?${next}` : window.location.pathname);
-  }, [state.vendors]);
 
   // Dummy ratings so the marketplace never shows an unreviewed, unproven-
   // looking product — generates deterministic sample reviews for whatever
@@ -2343,10 +2411,6 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       customerCoords: { latitude: custLat, longitude: custLng },
       vendorCoords: { latitude: cartVendor?.latitude, longitude: cartVendor?.longitude },
       serviceRadiusKm: cartVendor?.radiusKm,
-<<<<<<<<< Temporary merge branch 1
-    });
-  }, [items, state.products, state.foodDrops, containsFoodDrop, checkoutMode, custLat, custLng, cartVendor?.latitude, cartVendor?.longitude, cartVendor?.radiusKm, state]);
-=========
       vendorCustomFee: cartVendor?.deliveryFeeOverride,
       gstMode: cartVendor?.gstMode,
       vendorCategory: cartVendor?.category,
@@ -2354,7 +2418,6 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       commissionPercentOverride: cartVendor?.commissionPercent,
     });
   }, [items, state.products, state.foodDrops, containsFoodDrop, checkoutMode, custLat, custLng, cartVendor?.latitude, cartVendor?.longitude, cartVendor?.radiusKm, cartVendor?.deliveryFeeOverride, cartVendor?.gstMode, cartVendor?.category, cartVendor?.plan, cartVendor?.commissionPercent, state]);
->>>>>>>>> Temporary merge branch 2
 
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
     setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));

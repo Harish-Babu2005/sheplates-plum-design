@@ -3,10 +3,7 @@ import { insertOrderWithBilling, priceExistingSchedule, updateOrderWithBilling }
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 import { calculateBillingSummary } from "@/lib/billing";
-<<<<<<<<< Temporary merge branch 1
-=========
 import { loadVendorBillingTerms } from "@/lib/billing-server";
->>>>>>>>> Temporary merge branch 2
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -307,37 +304,10 @@ export async function POST(request: Request) {
           }
           const unitPrice = Math.round(base * (1 + markup / 100) * 100) / 100;
           calculatedBaseTotal += base * qty;
-          calculatedCustomerTotal += unitPrice * qty;
           billingItems.push({ name: item.product_name, price: unitPrice, quantity: qty });
         }
 
         // Fetch vendor details for dynamic delivery fee & radius calculation
-<<<<<<<<< Temporary merge branch 1
-        const { data: vendorRow } = await admin
-          .from("vendors")
-          .select("id,latitude,longitude,radius_km,delivery_fee")
-          .eq("id", order.vendor_id)
-          .maybeSingle();
-
-        const { data: customerProfile } = await admin
-          .from("profiles")
-          .select("latitude,longitude")
-          .eq("id", profile.id)
-          .maybeSingle();
-
-        const custLat = order.tracking_latitude != null ? Number(order.tracking_latitude) : customerProfile?.latitude;
-        const custLng = order.tracking_longitude != null ? Number(order.tracking_longitude) : customerProfile?.longitude;
-
-        const billing = calculateBillingSummary({
-          items: billingItems,
-          mode: order.fulfilment_mode || "vendor_delivery",
-          customerCoords: { latitude: custLat, longitude: custLng },
-          vendorCoords: { latitude: vendorRow?.latitude, longitude: vendorRow?.longitude },
-          serviceRadiusKm: vendorRow?.radius_km,
-          vendorCustomFee: vendorRow?.delivery_fee,
-        });
-
-=========
         // The delivery fee was measured and fixed when the order was created. Payment only re-prices the items and GST, so the
         // amount cannot drift between checkout and payment, and the browser can never change what is charged.
         const terms = await loadVendorBillingTerms(admin, String(order.vendor_id));
@@ -352,7 +322,6 @@ export async function POST(request: Request) {
           commissionPercentOverride: terms.commissionPercent,
         });
 
->>>>>>>>> Temporary merge branch 2
         totalPayableRupees = billing.totalAmount;
 
         const baseUpdatePayload = {
@@ -373,14 +342,11 @@ export async function POST(request: Request) {
           total_amount: totalPayableRupees,
           currency: billing.currency,
           delivery_distance: billing.deliveryDistanceKm,
-<<<<<<<<< Temporary merge branch 1
-=========
           commission_percent: billing.commissionPercent,
           commission_amount: billing.commissionAmount,
           vendor_payout: billing.vendorPayout,
           invoice_type: billing.invoiceType,
           gst_mode: billing.gstMode,
->>>>>>>>> Temporary merge branch 2
         }).eq("id", order.id);
 
         if (updateResult.error && (updateResult.error.code === "42703" || /column .* does not exist/i.test(updateResult.error.message || ""))) {

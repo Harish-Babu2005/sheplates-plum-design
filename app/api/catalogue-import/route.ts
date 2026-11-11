@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { uruvChat, uruvApiKey, UruvAiError } from "@/lib/uruv-ai";
 
 function extractText(payload: Record<string, unknown>) {
   const choices = Array.isArray(payload.choices) ? (payload.choices as Array<Record<string, unknown>>) : [];
@@ -18,7 +19,6 @@ function extractText(payload: Record<string, unknown>) {
 export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const key = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY;
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!url || !anon || !token) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
   const caller = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } });
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const body = await request.json() as { text?: string; defaultCategory?: string };
   const raw = String(body.text || "").trim().slice(0, 30000);
   if (!raw) return NextResponse.json({ error: "The uploaded list is empty." }, { status: 400 });
-  if (!key) return NextResponse.json({ error: "Smart list reading is temporarily unavailable." }, { status: 503 });
+  if (!uruvApiKey()) return NextResponse.json({ error: "Smart list reading is temporarily unavailable." }, { status: 503 });
 
   const schema = {
     type: "object",
@@ -50,27 +50,21 @@ export async function POST(request: Request) {
     },
     required: ["items"],
   };
-  const response = await fetch(`${(process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    const json = await uruvChat({
       model: process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat",
       messages: [
         { role: "system", content: "Convert a vendor product/grocery list into clean catalogue draft rows. Preserve product names faithfully. Infer only obvious categories and pack descriptions. If price or stock are absent, return 0 for price and 1 for stock. Never invent brands, claims or nutrition. The vendor will review every row before publication." },
-        { role: "user", content: `Default category: ${body.defaultCategory || "Groceries"}
-
-List:
-${raw}` },
+        { role: "user", content: `Default category: ${body.defaultCategory || "Groceries"}\n\nList:\n${raw}` },
       ],
       response_format: { type: "json_schema", json_schema: { name: "catalogue_import", strict: true, schema } },
-    }),
-  });
-  const json = await response.json() as Record<string, unknown>;
-  if (!response.ok) return NextResponse.json({ error: "The list could not be read right now." }, { status: 502 });
-  try {
+    });
     const parsed = JSON.parse(extractText(json)) as { items?: unknown[] };
     return NextResponse.json({ items: parsed.items || [] });
-  } catch {
-    return NextResponse.json({ error: "The list needs manual review." }, { status: 422 });
+  } catch (err: any) {
+    if (err instanceof UruvAiError && (err.status === 400 || err.status === 422)) {
+      return NextResponse.json({ error: "The list needs manual review." }, { status: 422 });
+    }
+    return NextResponse.json({ error: "The list could not be read right now." }, { status: 502 });
   }
 }

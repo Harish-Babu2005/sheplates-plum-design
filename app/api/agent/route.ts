@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import { runToolDrivenCommerceAgent } from "@/lib/she-agent-commerce-runtime";
+import { alertAdminBudgetCredit } from "@/lib/uruv-ai";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 type AgentRequest = {
@@ -599,6 +600,9 @@ export async function POST(request: Request) {
   }
 
   const imageBase64 = qualityComplaint || nutrition ? body.imageBase64 : undefined;
+  if (imageBase64 && imageBase64.length > 14 * 1024 * 1024) {
+    return NextResponse.json({ error: "Image must be under 10 MB. Please upload a smaller photo." }, { status: 413 });
+  }
   const messages = imageBase64
     ? [{ role: "user" as const, content: [
         { type: "text" as const, text: prompt },
@@ -622,9 +626,12 @@ export async function POST(request: Request) {
   });
   let response: Response;
   try {
-    // Reasoning models answer far faster at low effort for these short structured tasks; a model that rejects the setting is retried plainly.
     response = await callModel(requestBody);
-    if (response.status === 400) response = await callModel(requestBody);
+    if (response.status === 502 || response.status === 503) {
+      response = await callModel(requestBody);
+    } else if (response.status === 400) {
+      response = await callModel(requestBody);
+    }
   } catch (error) {
     console.error("[She Agent task]", requestedTask, error instanceof Error ? error.message : error);
     if (commerce) return NextResponse.json({ error: "She Agent is taking too long. Please try again." }, { status: 504 });
@@ -632,6 +639,13 @@ export async function POST(request: Request) {
   }
 
   if (!response.ok) {
+    const errorData = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+    const errCode = errorData?.error?.code || (response.status === 429 ? "rate_limit_exceeded" : response.status === 402 ? "insufficient_quota" : undefined);
+    const reqId = response.headers.get("x-request-id") || undefined;
+    console.error("[She Agent task error]", { status: response.status, code: errCode, requestId: reqId });
+    if (response.status === 402 || errCode === "insufficient_quota" || errCode === "budget_exceeded" || /quota|credit|balance|budget/i.test(errorData?.error?.message || "")) {
+      void alertAdminBudgetCredit({ code: errCode, requestId: reqId, message: errorData?.error?.message });
+    }
     if (commerce) return NextResponse.json({ error: "She Agent is temporarily unavailable. Please try again shortly." }, { status: 503 });
     return NextResponse.json({ source: "assistant", result: controlledFallback(body), warning: "The assistant could not complete the request right now." });
   }
