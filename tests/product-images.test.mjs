@@ -134,3 +134,47 @@ test("the routes, SQL and screens are wired: ownership checks, Super Admin backf
   assert.match(app, /<ProductImageBackfill \/>/);
   assert.match(app, /Create a sample image with AI/);
 });
+
+test("CATALOG-007: AI product picture generation enforces 60-character input across single, bulk and enhance flows without altering original product names", async () => {
+  // 1. Shorter than 60 characters
+  const shortName = "Fresh Paneer";
+  assert.equal(ai.sanitizeProductName(shortName), "Fresh Paneer");
+  assert.ok(ai.sanitizeProductName(shortName).length < 60);
+
+  // 2. Exactly 60 characters
+  const exactly60 = "Fresh Farm Milk Direct From Free Range Cattle Naturally Produced";
+  const cleaned60 = ai.sanitizeProductName(exactly60);
+  assert.equal(cleaned60.length, 60);
+
+  // 3. Longer than 60 characters is capped at exactly 60 characters
+  const longName = "Special Homemade Paneer Butter Masala With Extra Cream And Spices And Herbs And Fresh Butter And Cashew Nuts 500g";
+  const cleanedLong = ai.sanitizeProductName(longName);
+  assert.equal(cleanedLong.length, 60);
+  assert.equal(cleanedLong, longName.slice(0, 60).trim());
+
+  // 4. Full original product name variable remains intact
+  const fullOriginal = "Authentic Chettinad Chicken Biryani Special Pack With Raita and Gravy 1 kg";
+  const forImage = ai.sanitizeProductName(fullOriginal);
+  assert.notEqual(forImage, fullOriginal);
+  assert.equal(fullOriginal, "Authentic Chettinad Chicken Biryani Special Pack With Raita and Gravy 1 kg", "original name was not mutated");
+
+  // 5. Prompt generation enforces 60-character input in prompt body
+  const prompt = ai.buildProductImagePrompt(longName, "Home food");
+  assert.ok(prompt.includes(cleanedLong));
+  assert.ok(!prompt.includes("Cashew Nuts 500g"), "text beyond 60 characters is excluded from prompt");
+
+  // 6. Server route accepts both 'name' and 'productName' and bounds to 60 chars
+  const route = await read("app/api/product-image-generate/route.ts");
+  assert.match(route, /body\.name\s*\?\?\s*body\.productName/);
+  assert.match(route, /\.slice\(0,\s*60\)/);
+
+  // 7. Bulk catalog dialog sends compatible payload with 60-char bound
+  const app = await read("components/sheplates-v3.tsx");
+  assert.match(app, /name:\s*row\.name\.slice\(0,\s*60\)/);
+  assert.match(app, /productName:\s*row\.name\.slice\(0,\s*60\)/);
+
+  // 8. Image enhance route enforces 60-character limit on prompt input
+  const enhance = await read("app/api/image-enhance/route.ts");
+  assert.match(enhance, /body\.productName\s*\?\?\s*body\.name/);
+  assert.match(enhance, /slice\(0,\s*60\)/);
+});

@@ -274,10 +274,26 @@ async function attachFoodTypes<T extends { food_type?: string | null }>(supabase
   if (!ids.length) return;
   try {
     const { data, error } = await supabase.rpc("product_food_types", { p_ids: ids });
-    if (error || !Array.isArray(data)) return;
-    const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
-    for (const row of rows) row.food_type = types.get(idOf(row)) ?? null;
+    if (!error && Array.isArray(data) && data.length) {
+      const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
+      for (const row of rows) {
+        const val = types.get(idOf(row));
+        if (val !== undefined) row.food_type = val;
+      }
+      return;
+    }
   } catch { /* not deployed yet */ }
+
+  try {
+    const { data, error } = await supabase.from("vendor_menu_items").select("id, food_type").in("id", ids);
+    if (!error && Array.isArray(data) && data.length) {
+      const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
+      for (const row of rows) {
+        const val = types.get(idOf(row));
+        if (val !== undefined) row.food_type = val;
+      }
+    }
+  } catch { /* direct select fallback failed */ }
 }
 
 export type LiveVendorBranding = {
@@ -425,10 +441,20 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
-  const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   let productRows = productResult.data as LiveMenuItemRow[] | null;
   let productError = productResult.error;
+  if (productError && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(productError.message || "")) {
+    const fallbackProducts = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+    productRows = fallbackProducts.data as LiveMenuItemRow[] | null;
+    productError = fallbackProducts.error;
+  }
   if (productError && /nutrition_status|nutrition_confidence|nutrition_note/i.test(productError.message || "")) {
+    const fallbackProducts = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+    productRows = fallbackProducts.data as LiveMenuItemRow[] | null;
+    productError = fallbackProducts.error;
+  }
+  if (productError && /food_type/i.test(productError.message || "")) {
     const fallbackProducts = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").eq("vendor_id", vendorId).order("created_at", { ascending: false });
     productRows = fallbackProducts.data as LiveMenuItemRow[] | null;
     productError = fallbackProducts.error;
@@ -481,7 +507,7 @@ export async function loadLiveOperationsWorkspace() {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
-    supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
+    supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
     supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),

@@ -6091,8 +6091,23 @@ function FoodTypeSelect({ product, setState }: { product: Product; setState: Rea
     }
   }
   return <Select value={product.foodType ?? "unset"} onValueChange={(value) => void choose(value === "unset" ? "" : value)}>
-    <SelectTrigger aria-label={`Food type of ${product.name}`} className="h-10 w-44 rounded-xl"><SelectValue placeholder="Set food type" /></SelectTrigger>
-    <SelectContent>{!product.foodType && <SelectItem value="unset">Not set</SelectItem>}{FOOD_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectContent>
+    <SelectTrigger aria-label={`Food type of ${product.name}`} className="h-10 w-48 rounded-xl">
+      <div className="flex items-center gap-1.5 truncate">
+        {product.foodType ? <FoodTypeMark type={product.foodType} /> : null}
+        <SelectValue placeholder="Set food type" />
+      </div>
+    </SelectTrigger>
+    <SelectContent>
+      {!product.foodType && <SelectItem value="unset">Not set</SelectItem>}
+      {FOOD_TYPES.map((type) => (
+        <SelectItem key={type.value} value={type.value}>
+          <div className="flex items-center gap-2">
+            <FoodTypeMark type={type.value} />
+            <span>{type.label}</span>
+          </div>
+        </SelectItem>
+      ))}
+    </SelectContent>
   </Select>;
 }
 
@@ -6185,7 +6200,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   }
   async function generateImage(row: BulkCatalogDraft) {
     setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: true } : item));
-    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ productName: row.name, category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
+    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ name: row.name.slice(0, 60), productName: row.name.slice(0, 60), category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
   }
   async function publishAll() {
     const valid = rows.filter((row) => rowProblems(row).length === 0);
@@ -6395,7 +6410,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
     if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
     setImageBusy(true);
     try {
-      setImageUrl(await generateLiveProductImage({ name, category }));
+      setImageUrl(await generateLiveProductImage({ name: name.trim().slice(0, 60), category }));
       toast.success("A sample image is ready. Replace it any time with a real photo.");
     } catch (error) { toast.error(errorMessage(error, "The image could not be created")); }
     finally { setImageBusy(false); }
@@ -6579,7 +6594,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
   const metrics: Array<[keyof Nutrition, string]> = [["calories","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fibre","Fibre g"]];
   return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} /></span>{type.label}</button>)}</div></fieldset>
+      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
         
         {/* SKU Master Cascading Selection */}
         <div className="grid gap-4 sm:grid-cols-2 rounded-2xl bg-[#F7FAFA] border border-stone-200/80 p-4">

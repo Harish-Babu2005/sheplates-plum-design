@@ -101,8 +101,9 @@ async function ensureBucket(admin: SupabaseClient) {
  * (Regenerate); otherwise a previously drawn picture for the same product type is reused at no cost.
  */
 export async function ensureConceptImage(admin: SupabaseClient, input: { name: string; category: string; vendorId: string | null; force?: boolean; fetchImpl?: Fetch }): Promise<ImageResult> {
-  const clean = sanitizeProductName(input.name);
-  const key = conceptKey(input.name, input.category);
+  const boundedName = String(input.name ?? "").slice(0, 60);
+  const clean = sanitizeProductName(boundedName);
+  const key = conceptKey(boundedName, input.category);
   if (!clean || !key) throw new ImageError(422, "Give the product a clear name first.");
 
   if (!input.force) {
