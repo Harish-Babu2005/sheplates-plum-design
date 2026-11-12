@@ -516,6 +516,15 @@ function id(prefix: string) {
 /** Household size is a whole number from 1 to 20. */
 const HOUSEHOLD_MESSAGE = "Household size must be a whole number from 1 to 20.";
 const validHousehold = (value: number) => Number.isInteger(value) && value >= 1 && value <= 20;
+function householdProblem(value: unknown): string | null {
+  if (value === "" || value === undefined || value === null) return "Household size is required.";
+  const num = typeof value === "string" ? Number(value.trim()) : Number(value);
+  if (!Number.isFinite(num)) return "Household size must be a valid number.";
+  if (!Number.isInteger(num)) return "Household size must be a whole number.";
+  if (num < 1) return "Household size must be at least 1.";
+  if (num > 20) return "Household size must be at most 20.";
+  return null;
+}
 function sixDigitCode() { return String(100000 + randomBelow(900000)); }
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
@@ -1744,26 +1753,49 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
   const [address, setAddress] = useState(""), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({});
   const pinLookup = useRef(0);
-  const [household, setHousehold] = useState(2), [diet, setDiet] = useState("No preference"), [allergies, setAllergies] = useState<string[]>([]), [goals, setGoals] = useState<string[]>([]), [dislikes, setDislikes] = useState("");
+  const householdRef = useRef<HTMLInputElement>(null);
+  const householdStep2Ref = useRef<HTMLInputElement>(null);
+  const [household, setHousehold] = useState(2), [householdError, setHouseholdError] = useState("");
+  const [diet, setDiet] = useState("No preference"), [allergies, setAllergies] = useState<string[]>([]), [goals, setGoals] = useState<string[]>([]), [dislikes, setDislikes] = useState("");
   const [privateAccount, setPrivateAccount] = useState(session.privateAccount ?? false);
   const roundPoint = (point: { lat: number; lng: number }) => ({ lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) });
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); const request = ++pinLookup.current; setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = roundPoint({ lat: position.coords.latitude, lng: position.coords.longitude }); setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); } toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { if (request === pinLookup.current) toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); const request = ++pinLookup.current; setMapBusy(true); try { const place = await findLocation({ address }); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); toast.success("Address pinned on the map"); } } catch (error) { if (request === pinLookup.current) toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  function movePin(point: { lat: number; lng: number }) {
+  async function movePin(point: { lat: number; lng: number }) {
     const next = roundPoint(point);
     setCoords(next);
-    setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+    const request = ++pinLookup.current;
+    try {
+      const place = await findLocation(next);
+      if (request === pinLookup.current && place?.address) {
+        setAddress(place.address);
+      }
+    } catch {
+      if (request === pinLookup.current) {
+        setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+      }
+    }
   }
   function continueSetup() {
     if (step === 1 && !address.trim()) return toast.error("Enter your delivery address first");
     if (step === 1 && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng))) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before continuing");
-    if (step === 1 && !validHousehold(household)) return toast.error(HOUSEHOLD_MESSAGE);
+    const hhErr = householdProblem(household);
+    if (hhErr) {
+      setHouseholdError(hhErr);
+      (step === 2 ? householdStep2Ref.current : householdRef.current)?.focus();
+      return toast.error(hhErr);
+    }
     setStep((current) => current + 1);
   }
   async function finish() {
     if (!address.trim()) return toast.error("Enter your delivery address first");
     if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving");
-    if (!validHousehold(household)) { setStep(1); return toast.error(HOUSEHOLD_MESSAGE); }
+    const hhErr = householdProblem(household);
+    if (hhErr) {
+      setHouseholdError(hhErr);
+      (householdStep2Ref.current || householdRef.current)?.focus();
+      return toast.error(hhErr);
+    }
     const latitude = Number(coords.lat?.toFixed(6));
     const longitude = Number(coords.lng?.toFixed(6));
     try {
@@ -1804,8 +1836,8 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
       toast.success("Your food profile and exact service pin are ready");
     } catch (error) { toast.error(errorMessage(error, "Profile could not be saved")); }
   }
-  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#155F65]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
-  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
+  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#155F65]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input ref={householdRef} id="customer-household-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field></div>}
+  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Household size"><input ref={householdStep2Ref} id="customer-household-step2-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
   {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#EEF2F2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
   <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Check />Save profile</Button>}</div></div></div></div>;
 }
@@ -2268,7 +2300,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     </>}
 
     <ScheduleDialog product={selected} close={() => setSelected(null)} session={session} state={state} setState={setState} initialStartDate={deliveryDate} onCreated={() => navigate("Cart")} />
-<Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" /></div></div></DialogContent></Dialog>  </div>;
+<Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" onPinChange={async (point) => { const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) }; setDraftCoords(next); try { const place = await findLocation(next); if (place?.address) setDraftAddress(place.address); } catch { setDraftAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`); } }} /></div></div></DialogContent></Dialog>  </div>;
 }
 
 function ScheduleDialog({ product, preset, close, session, state, setState, initialStartDate, onCreated }: { product: Product | null; preset?: PlanPreset; close: () => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; initialStartDate?: string; onCreated?: () => void }) {
@@ -3094,6 +3126,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
   const [coords, setCoords] = useState({ lat: profile.latitude, lng: profile.longitude });
   const [saving, setSaving] = useState(false);
   const [clearingMemory, setClearingMemory] = useState(false);
+  const [profileHouseholdError, setProfileHouseholdError] = useState("");
 
   // Synchronize component form state whenever profile updates from live sync or external state
   useEffect(() => {
@@ -3170,6 +3203,11 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
   }
 
   async function save() {
+    const hhErr = householdProblem(household);
+    if (hhErr) {
+      setProfileHouseholdError(hhErr);
+      return toast.error(hhErr);
+    }
     setSaving(true);
     const parsedCustomAllergies = customAllergies.split(",").map((x) => x.trim()).filter(Boolean);
     const finalAllergies = Array.from(new Set([...selectedAllergies, ...parsedCustomAllergies]));
@@ -3293,10 +3331,15 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
             lng={coords.lng}
             radius={0}
             label="Default delivery address"
-            onPinChange={(point) => {
+            onPinChange={async (point) => {
               const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) };
               setCoords(next);
-              setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+              try {
+                const place = await findLocation(next);
+                if (place?.address) setAddress(place.address);
+              } catch {
+                setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+              }
             }}
           />
           <div className="space-y-2">
@@ -3391,10 +3434,22 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
               type="number"
               min="1"
               max="20"
+              step="1"
               value={household}
-              onChange={(e) => setHousehold(Number(e.target.value))}
+              onChange={(e) => {
+                const val = e.target.value;
+                const num = Number(val);
+                setHousehold(num);
+                const prob = householdProblem(val === "" ? "" : num);
+                setProfileHouseholdError(prob || "");
+              }}
               className={inputClass}
             />
+            {profileHouseholdError && (
+              <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">
+                {profileHouseholdError}
+              </p>
+            )}
           </Field>
 
           <Field label="Instructions for She Agent">

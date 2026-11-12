@@ -66,3 +66,34 @@ test("CustomerProfileV4 has standardized diet selection and toggleable chips for
   assert.match(v3Code, /Save profile/);
 });
 
+test("BUG 12 — CUST-ONB-003: Address name updates automatically when dragging the map pin", () => {
+  // CustomerOnboarding: movePin reverse geocodes coordinates via findLocation and updates address
+  assert.match(v3Code, /async function movePin\(point:\s*\{\s*lat:\s*number;\s*lng:\s*number\s*\}\)/);
+  assert.match(v3Code, /const place = await findLocation\(next\);/);
+  assert.match(v3Code, /if \(request === pinLookup\.current && place\?\.address\)\s*\{\s*setAddress\(place\.address\);/);
+
+  // CustomerProfileV4: MapPreview onPinChange also reverse geocodes coordinates
+  assert.match(v3Code, /onPinChange=\{async \(point\) => \{\s*const next = \{ lat: Number\(point\.lat\.toFixed\(6\)\), lng: Number\(point\.lng\.toFixed\(6\)\) \};\s*setCoords\(next\);\s*try \{\s*const place = await findLocation\(next\);\s*if \(place\?\.address\) setAddress\(place\.address\);/);
+
+  // Customer Marketplace delivery pin dialog onPinChange also reverse geocodes
+  assert.match(v3Code, /label="Customer delivery pin" onPinChange=\{async \(point\) =>/);
+});
+
+test("BUG 13 — CUST-ONB-014: Fractional household size rejected with whole-number validation", () => {
+  // householdProblem helper validates integer, positive, max 20, not empty
+  assert.match(v3Code, /function householdProblem\(value: unknown\): string \| null/);
+  assert.match(v3Code, /Household size must be a whole number/);
+  assert.match(v3Code, /Household size must be at least 1/);
+  assert.match(v3Code, /Household size must be at most 20/);
+
+  // CustomerOnboarding step 1 & step 2 inputs enforce step="1" and field error alert
+  assert.match(v3Code, /id="customer-household-input" type="number" min="1" max="20" step="1"/);
+  assert.match(v3Code, /id="customer-household-step2-input" type="number" min="1" max="20" step="1"/);
+  assert.match(v3Code, /\{householdError && <p role="alert" data-testid="field-error"/);
+
+  // CustomerProfileV4 enforces step="1" and profileHouseholdError
+  assert.match(v3Code, /<Field label="Household size">\s*<input\s+type="number"\s+min="1"\s+max="20"\s+step="1"/);
+  assert.match(v3Code, /\{profileHouseholdError && \(\s*<p role="alert" data-testid="field-error"/);
+});
+
+
