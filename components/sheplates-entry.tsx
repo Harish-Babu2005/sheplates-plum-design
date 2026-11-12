@@ -220,7 +220,7 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
         </nav>
         <button type="button" className="btn sm sec e-vendor" onClick={() => setAuthAudience("team")}>Vendor</button>
         <button type="button" className="btn sm sec" onClick={openCustomer}>Sign In</button>
-        <button type="button" className="btn sm" onClick={openCustomer}>Get Started</button>
+        <button type="button" className="btn sm e-start" onClick={openCustomer}>Get Started</button>
       </header>
 
       <section className="e-hero">
@@ -331,8 +331,10 @@ await sendPasswordResetEmail(
         return;
       }
 
+      if (mode !== "create" && (!email.trim() || !password)) throw new Error("Enter your email and password.");
       if (mode === "create") {
         if (!name.trim()) throw new Error("Enter your full name.");
+        if (!email.trim()) throw new Error("Enter your email address.");
         if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
         if (!liveMode) {
           const normalizedEmail = email.trim().toLowerCase();
@@ -454,7 +456,7 @@ await sendPasswordResetEmail(
                   If <b>{email}</b> is registered with Sheplates, you will receive a password reset link shortly. Please check your inbox.
                 </p>
                 <p className="mt-2 text-[11px] text-emerald-700">
-                  Didn't see it? Check your spam or promotions folder.
+                  Didn&apos;t see it? Check your spam or promotions folder.
                 </p>
               </div>
             </div>

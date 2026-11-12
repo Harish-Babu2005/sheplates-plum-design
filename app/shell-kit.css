@@ -202,3 +202,5 @@ html .sp-auth-dialog .sp-auth-hero { background: var(--selected) !important; col
 }
 
 .e-hero-cats { font: 600 15px "Outfit", sans-serif; color: #D9F5E7; margin: 6px 0 8px; line-height: 1.4; }
+/* Very narrow phones: Sign In and Get Started open the same dialog, so only Sign In stays in the header (no sideways scroll at 320px). */
+@media (max-width: 400px) { .e-head .btn.e-start { display: none; } }

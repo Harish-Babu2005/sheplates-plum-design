@@ -502,25 +502,29 @@ const unitsByCategory: Record<string, SellingSpec[]> = {
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
 
-let nextSequenceValue = 0;
-function nextSequenceToken() {
-  nextSequenceValue += 1;
-  return nextSequenceValue;
+/** Cryptographically random numbers (never Math.random or the clock), for ids, codes and generated passwords. */
+function randomBelow(max: number) {
+  const limit = Math.floor(0x100000000 / max) * max; // avoids modulo bias
+  const bucket = new Uint32Array(1);
+  do { crypto.getRandomValues(bucket); } while (bucket[0] >= limit);
+  return bucket[0] % max;
 }
 function id(prefix: string) {
-  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${nextSequenceToken().toString(36).toUpperCase().padStart(4, "0")}`;
+  const suffix = Array.from({ length: 4 }, () => "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[randomBelow(36)]).join("");
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
 }
-function sixDigitCode() {
-  const base = Number(String(Date.now()).slice(-6)) + nextSequenceToken();
-  return String((base % 900000) + 100000);
-}
+/** Household size is a whole number from 1 to 20. */
+const HOUSEHOLD_MESSAGE = "Household size must be a whole number from 1 to 20.";
+const validHousehold = (value: number) => Number.isInteger(value) && value >= 1 && value <= 20;
+function sixDigitCode() { return String(100000 + randomBelow(900000)); }
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
 /** Orders and schedules can be planned from tomorrow up to 15 days ahead (the database enforces the same window). */
 const ORDER_WINDOW_DAYS = 15;
 function latestOrderDate() { return addDaysISO(todayISO(), ORDER_WINDOW_DAYS); }
-function money(value: number) { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value); }
+/** Rupees: whole rupees show without decimals, any paise show as two decimals (₹35.48, ₹77.50), so a bill never rounds away what is charged. */
+function money(value: number) { const whole = Math.abs(value - Math.round(value)) < 0.005; return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 }).format(value); }
 function finalPrice(product: Product, state: V3State) { return Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100; }
 function vendorFor(state: V3State, session: DemoSession) { return state.vendors.find((v) => (session.vendorId && (v.id === session.vendorId || String(v.id).toLowerCase() === String(session.vendorId).toLowerCase())) || (session.email && v.ownerEmail && v.ownerEmail.toLowerCase() === session.email.toLowerCase())); }
 function notificationBelongsToSession(item: Notification, session: DemoSession) {
@@ -637,12 +641,7 @@ function writeLocalStaffAccounts(list: (StaffAccount & { password: string })[]) 
 }
 function generatePassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < 12; i++) {
-    const index = (Date.now() + nextSequenceToken() + i) % chars.length;
-    out += chars[index];
-  }
-  return out;
+  return Array.from({ length: 12 }, () => chars[randomBelow(chars.length)]).join("");
 }
 function verificationFromLive(value: string): Verification {
   const labels: Record<string, Verification> = { draft: "Draft", submitted: "Submitted", under_review: "Under review", changes_required: "Changes required", verified: "Verified", rejected: "Rejected", expired: "Changes required" };
@@ -927,8 +926,10 @@ export function SheplatesV3() {
   const storageWarningShown = useRef(false);
   const storageUnavailable = useRef(false);
   const [liveSync, setLiveSync] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  useEffect(() => { liveSyncRef.current = liveSync; }, [liveSync]);
   const [liveSyncError, setLiveSyncError] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
+  const liveSyncRef = useRef<"idle" | "loading" | "ready" | "error">("idle");
   const [tourOpen, setTourOpen] = useState<null | "customer" | "vendor">(null);
   const initializedNavigationKey = useRef("");
   const skipNavigationSync = useRef(false);
@@ -1001,6 +1002,7 @@ export function SheplatesV3() {
 
     const vendor = state.vendors.find((v) => v.id === targetVendorId);
     if (vendor) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a vendor deep link opens that store once, after the vendors load
       setVendorProfileIdState(vendor.id);
       try {
         sessionStorage.removeItem("sheplates_pending_vendor");
@@ -1100,6 +1102,7 @@ export function SheplatesV3() {
       : validPages.includes(active)
         ? active
         : validPages[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the first page comes from the address bar, read once in the browser
     if (initialPage !== active) setActive(initialPage);
     parameters.delete("view");
     if (initialPage !== validPages[0]) parameters.set("view", initialPage);
@@ -1290,13 +1293,16 @@ export function SheplatesV3() {
     if (!hydrated || !syncSession) return;
     if (!isLiveSupabaseMode()) { queueMicrotask(() => setLiveSync("ready")); return; }
     let cancelled = false;
+    // The first load and a manual retry show progress. The quiet refresh every 30 seconds changes nothing on screen unless it brings new data,
+    // and never flashes the loading card or an error banner: if it fails, the next one simply tries again.
+    const quiet = syncVersion > 0 && liveSyncRef.current === "ready";
     const syncTimeout = window.setTimeout(() => {
-      if (!cancelled) {
+      if (!cancelled && !quiet) {
         setLiveSync("error");
         setLiveSyncError("The account service did not respond within 10 seconds. You can continue using the page and retry.");
       }
     }, 10000);
-    queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
+    if (!quiet) queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
     (async () => {
       if (syncSession.role === "customer") {
         const preference = syncSession.userId ? await loadLiveCustomerPreference(syncSession.userId) : null;
@@ -1409,7 +1415,7 @@ export function SheplatesV3() {
       if (!cancelled) setState((current) => mergeLiveCommerce(current, commerce, syncSession));
       window.clearTimeout(syncTimeout);
       if (!cancelled) setLiveSync("ready");
-    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
+    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled && !quiet) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
@@ -1442,11 +1448,11 @@ export function SheplatesV3() {
   const needsRemoteIdentity = (role === "customer" && !customer) || (role === "vendor" && Boolean(session.vendorId) && !vendor);
   if (isLiveSupabaseMode() && liveSync === "loading" && needsRemoteIdentity) return <div className="sp-v7 grid min-h-screen place-items-center bg-[#EEF2F2] p-5"><div className="text-center"><RefreshCcw className="mx-auto size-8 animate-spin text-[#155F65]" /><div className="mt-4 font-black">Loading your Sheplates profile…</div><p className="mt-1 text-sm text-stone-500">You can continue if the account service is temporarily unavailable.</p><Button variant="outline" onClick={() => setLiveSync("ready")} className="mt-5 rounded-xl">Continue to setup</Button></div></div>;
   if (isLiveSupabaseMode() && liveSync === "error" && needsRemoteIdentity) return <div className="sp-v7 grid min-h-screen place-items-center bg-[#EEF2F2] p-5"><div className="surface-card max-w-lg rounded-[28px] p-6 text-center"><AlertTriangle className="mx-auto text-amber-600" /><h1 className="mt-4 text-xl font-black">Account sync is unavailable</h1><p className="mt-2 text-sm text-stone-500">{liveSyncError}</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setSyncVersion((value) => value + 1)} className="rounded-xl bg-[#155F65]"><RefreshCcw />Try again</Button><Button variant="outline" onClick={() => setLiveSync("ready")} className="rounded-xl">Continue to setup</Button></div></div></div>;
-  if (role === "customer" && !customer?.onboardingComplete) return <CustomerOnboarding session={session} onSave={(profile) => setState((s) => ({ ...s, customers: [...s.customers.filter((x) => x.email !== profile.email), profile], audit: [audit(session, "Completed customer food profile", profile.diet), ...s.audit] }))} onLogout={signOut} />;
+  if (role === "customer" && !customer?.onboardingComplete) return <><Toaster position="top-center" richColors /><CustomerOnboarding session={session} onSave={(profile) => setState((s) => ({ ...s, customers: [...s.customers.filter((x) => x.email !== profile.email), profile], audit: [audit(session, "Completed customer food profile", profile.diet), ...s.audit] }))} onLogout={signOut} /></>;
   if (role === "vendor" && !vendor && session.p0UpgradeInvitationId) {
     return <P0UpgradeAcceptance invitationId={session.p0UpgradeInvitationId} />;
   }
-  if (role === "vendor" && !vendor) return <VendorOnboarding session={session} setState={setState} onLogout={signOut} />;
+  if (role === "vendor" && !vendor) return <><Toaster position="top-center" richColors /><VendorOnboarding session={session} setState={setState} onLogout={signOut} /></>;
 
   const unread = state.notifications.filter((item) => notificationBelongsToSession(item, session) && !item.read).length;
   const hasPin = Boolean(customer && Number.isFinite(customer.latitude) && Number.isFinite(customer.longitude));
@@ -1750,11 +1756,13 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
   function continueSetup() {
     if (step === 1 && !address.trim()) return toast.error("Enter your delivery address first");
     if (step === 1 && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng))) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before continuing");
+    if (step === 1 && !validHousehold(household)) return toast.error(HOUSEHOLD_MESSAGE);
     setStep((current) => current + 1);
   }
   async function finish() {
     if (!address.trim()) return toast.error("Enter your delivery address first");
     if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving");
+    if (!validHousehold(household)) { setStep(1); return toast.error(HOUSEHOLD_MESSAGE); }
     const latitude = Number(coords.lat?.toFixed(6));
     const longitude = Number(coords.lng?.toFixed(6));
     try {
@@ -1820,11 +1828,13 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
     if (step === 1 && !form.businessName.trim()) return toast.error("Please enter your business name");
     if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
     if (step === 2 && !form.address.trim()) return toast.error("Please enter the store address");
+    if (step === 3 && !form.delivery && !form.pickup) return toast.error("Enable delivery or pickup.");
     setStep((current) => current + 1);
   }
   async function submit() {
     if (!form.businessName.trim()) { setStep(1); return toast.error("Please enter your business name in Step 1."); }
     if (!form.address.trim()) { setStep(2); return toast.error("Please enter your store address in Step 2."); }
+    if (!form.delivery && !form.pickup) { setStep(3); return toast.error("Enable delivery or pickup."); }
     if (!form.fssai.trim()) { setStep(4); return toast.error("Please enter your 14-digit FSSAI licence number in Step 4."); }
     if (!form.expiry) { setStep(4); return toast.error("Please choose the FSSAI certificate expiry date in Step 4."); }
     const certFile = file || Object.values(docFiles).find((f): f is File => Boolean(f));
@@ -1837,7 +1847,7 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
     const delivery = form.delivery || (!form.delivery && !form.pickup);
     const pickup = form.pickup;
     if (!termsAccepted) return toast.error("Accept the Vendor Terms and Conditions to submit");
-    if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to");
+    if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to.");
     setBusy(true);
     let vendorId = id("VEN");
     try {
@@ -2039,8 +2049,8 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     finally { setRefreshing(false); }
   }
   function detectLocation() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setDraftCoords(point); setDraftAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still shown.` : "The exact GPS pin is shown; add street details."); } finally { setLocating(false); } }, (error) => { setLocating(false); toast.error(error.code === 1 ? "Allow precise location for localhost in Chrome, then try again" : "GPS could not get a fresh position. Search your complete address instead."); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function findTypedLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first"); setMapBusy(true); try { const place = await findLocation({ address: draftAddress }); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address located on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  async function saveLocation() { if (!Number.isFinite(draftCoords.lat) || !Number.isFinite(draftCoords.lng)) return toast.error("Detect GPS or find the typed address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address: draftAddress, latitude: draftCoords.lat!, longitude: draftCoords.lng! }); setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, address: draftAddress, latitude: draftCoords.lat, longitude: draftCoords.lng } : item) })); setLocationOpen(false); toast.success("Delivery location and service pin updated"); } catch (error) { toast.error(errorMessage(error, "Location could not be saved")); } }
+  async function findTypedLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first."); setMapBusy(true); try { const place = await findLocation({ address: draftAddress }); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address located on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
+  async function saveLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first."); if (!Number.isFinite(draftCoords.lat) || !Number.isFinite(draftCoords.lng)) return toast.error("Detect GPS or find the typed address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address: draftAddress, latitude: draftCoords.lat!, longitude: draftCoords.lng! }); setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, address: draftAddress, latitude: draftCoords.lat, longitude: draftCoords.lng } : item) })); setLocationOpen(false); toast.success("Delivery location and service pin updated"); } catch (error) { toast.error(errorMessage(error, "Location could not be saved")); } }
   function addToCart(product: Product) { return addProductToCart(state, setState, session, product); }
   function openProduct(product: Product) {
     recordTasteSignal(state, setState, session, product, "view");
@@ -2096,7 +2106,15 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
   // Serviceability, stock and price are the grounding boundary for this recommendation call.
   }, [serviceable.length, serviceableSignature, showAiPicks, recommendationsEnabled]);
 
-  const dietaryOptions = Array.from(new Set(serviceable.flatMap((product) => product.dietaryTags))).filter(Boolean).slice(0, 10);
+  // The Vegetarian / Non-vegetarian / Contains egg choices come from the mark each vendor set on the product (never guessed), so a product with
+  // no mark is never listed as vegetarian. Other dietary tags (for example "High protein") still filter by tag.
+  const foodTypeOptions = FOOD_TYPES.filter((type) => serviceable.some((product) => product.foodType === type.value));
+  const tagOptions = Array.from(new Set(serviceable.flatMap((product) => product.dietaryTags))).filter((tag) => tag && !FOOD_TYPES.some((type) => type.label.toLowerCase() === tag.toLowerCase())).slice(0, 10);
+  const dietaryOptions = [...foodTypeOptions.map((type) => type.label), ...tagOptions];
+  const matchesDietary = (product: Product, choice: string) => {
+    const type = FOOD_TYPES.find((item) => item.label === choice);
+    return type ? product.foodType === type.value : product.dietaryTags.includes(choice);
+  };
   const popularVendors = state.vendors
     .filter((vendor) => serviceable.some((product) => product.vendorId === vendor.id))
     .sort((a, b) => (distanceKm(profile.latitude, profile.longitude, a.latitude, a.longitude) ?? 99) - (distanceKm(profile.latitude, profile.longitude, b.latitude, b.longitude) ?? 99));
@@ -2108,7 +2126,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       && (!maxPrice || finalPrice(product, state) <= maxPrice)
       && (!maxCalories || product.calories <= maxCalories)
       && (!minProtein || product.protein >= minProtein)
-      && (dietary === "All" || product.dietaryTags.includes(dietary))
+      && (dietary === "All" || matchesDietary(product, dietary))
       && (!vendorFilter || product.vendorId === vendorFilter);
   });
 
@@ -3035,6 +3053,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
   // Synchronize component form state whenever profile updates from live sync or external state
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the form re-syncs when the saved profile changes
       setPhone(profile.phone || "");
       setAddress(profile.address || "");
       setDiet(profile.diet || "No preference");
@@ -3255,7 +3274,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                 {STANDARD_DIETS.map((x) => (
                   <SelectItem key={x} value={x}>{x}</SelectItem>
                 ))}
-                {!STANDARD_DIETS.includes(diet as any) && diet ? (
+                {!(STANDARD_DIETS as readonly string[]).includes(diet) && diet ? (
                   <SelectItem value={diet}>{diet}</SelectItem>
                 ) : null}
               </SelectContent>
@@ -4785,7 +4804,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
 
     if (isLive) {
       try {
-        let liveRzpOrder: any = null;
+        let liveRzpOrder: Awaited<ReturnType<typeof createLiveRazorpayOrder>> | null = null;
         try {
           const loaded = await loadRazorpayScript();
           if (loaded && (window as unknown as { Razorpay?: unknown }).Razorpay) {
@@ -5538,8 +5557,8 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
       }
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
-  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first"); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
-  async function saveStorePin() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
+  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first."); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
+  async function saveStorePin() { if (!address.trim()) return toast.error("Enter the complete store address first."); if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving."); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
     <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
@@ -5964,7 +5983,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
     <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">"{vendor.bio}"</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
       {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
     </div>
     <div className="surface-card rounded-[28px] p-6">
@@ -6218,7 +6237,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
 }
 
 function ProductDialog({ open, close, vendor, setState, session, editingProduct }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null }) {
-  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category as any) ? vendor.category : "Milk & dairy") as string;
+  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>(defaultCategory);
   const [skuGroup, setSkuGroup] = useState<string>("");
@@ -6255,6 +6274,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
 
   useEffect(() => {
     if (editingProduct) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- editing a product fills the form once from that product
       setCategory(editingProduct.category);
       const groups = getSkuGroups(editingProduct.category);
       const grp = editingProduct.skuGroupName || "";
@@ -6285,7 +6305,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
         setPackSize(editingProduct.packSize || editingProduct.baseUnit || "Other");
         setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
       }
-      if (editingProduct.unitType && SKU_UNIT_TYPES.includes(editingProduct.unitType as any)) {
+      if (editingProduct.unitType && (SKU_UNIT_TYPES as readonly string[]).includes(editingProduct.unitType)) {
         setCustomUnit(editingProduct.unitType as SkuUnitType);
       }
       setName(editingProduct.name);
@@ -6305,7 +6325,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
       setNutritionNote(editingProduct.nutritionNote || "");
       setConfirmed(editingProduct.nutritionStatus === "Verified");
     } else if (open) {
-      const initialCat = (SKU_CATEGORIES.includes(vendor.category as any) ? vendor.category : "Milk & dairy") as string;
+      const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
       setCategory(initialCat);
       const groups = getSkuGroups(initialCat);
       const firstGrp = groups[0] || "Other";
@@ -6690,6 +6710,9 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
     } catch (error) { toast.error(errorMessage(error, "Delivery person could not be saved")); }
   }
   async function remove(person: Staff) {
+    // A delivery person with an open order cannot be removed: that would leave the order with nobody to deliver it.
+    const openOrders = state.assignments.filter((x) => x.staffId === person.id).map((x) => state.orders.find((o) => o.id === x.orderId)).filter((o): o is Order => Boolean(o) && !["Completed", "Delivered", "Cancelled"].includes(o!.status));
+    if (openOrders.length) { toast.error(`${person.name} is assigned to ${openOrders.length} open order${openOrders.length === 1 ? "" : "s"}. Assign ${openOrders.length === 1 ? "it" : "them"} to someone else or finish ${openOrders.length === 1 ? "it" : "them"} before deleting this person.`); return; }
     if (!confirm(`Delete ${person.name} from the delivery team? Existing completed-order history is retained.`)) return;
     try { if (isLiveSupabaseMode()) await deleteLiveDeliveryStaff(person.id); setState((s) => ({ ...s, staff: s.staff.filter((x) => x.id !== person.id), assignments: s.assignments.filter((x) => x.staffId !== person.id), audit: [audit(session, "Deleted delivery staff", `${person.name} · ${person.phone}`), ...s.audit] })); toast.success("Delivery person deleted"); }
     catch (error) { toast.error(errorMessage(error, "Delivery person could not be deleted")); }
@@ -7132,6 +7155,7 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
 }
 
 function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+  const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
@@ -7146,7 +7170,6 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { 
   if (active === "Reports") return <ReportsCentre state={state} />;
   if (active === "Audit log") return <AuditLog items={state.audit} />;
   const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
-  const [range, setRange] = useState<7 | 30 | 90>(30);
   const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
   const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
   const gross = inRange.reduce((sum, x) => sum + x.total, 0);

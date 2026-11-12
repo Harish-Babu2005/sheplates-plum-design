@@ -18,6 +18,7 @@ export function CommercialTermsPanel({ vendor, live, onSaved }: Props) {
   const [gst, setGst] = useState<string>(vendor.gstMode ?? "");
   const [fee, setFee] = useState(vendor.deliveryFeeOverride != null ? String(vendor.deliveryFeeOverride) : "");
   const [busy, setBusy] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the form re-syncs when another vendor is picked
   useEffect(() => { setCommission(vendor.commissionPercent != null ? String(vendor.commissionPercent) : ""); setGst(vendor.gstMode ?? ""); setFee(vendor.deliveryFeeOverride != null ? String(vendor.deliveryFeeOverride) : ""); }, [vendor.id, vendor.commissionPercent, vendor.gstMode, vendor.deliveryFeeOverride]);
 
   const defaultPercent = commissionPercentFor(vendor.category, null, vendor.plan);
@@ -43,7 +44,7 @@ export function CommercialTermsPanel({ vendor, live, onSaved }: Props) {
 
   return <section aria-label="Commercial terms" data-testid="commercial-terms" className="space-y-3 rounded-2xl bg-white p-4">
     <div><h4 className="text-sm font-black text-[#202827]">Commercial terms <span className="font-semibold text-stone-500">(set by Operations, not by the vendor)</span></h4>
-      <p className="text-xs text-stone-500">Leave a field empty to use the default for this vendor's category.</p></div>
+      <p className="text-xs text-stone-500">Leave a field empty to use the default for this vendor&apos;s category.</p></div>
     <div className="grid gap-3 sm:grid-cols-3">
       <label className="block text-xs font-black uppercase tracking-wider text-stone-500">Commission %
         <input aria-label="Commission percent" inputMode="decimal" value={commission} onChange={(e) => setCommission(e.target.value)} placeholder={taster ? "0 (Taster has none)" : `Default ${defaultPercent}%`} className={`${input} mt-1.5 normal-case tracking-normal`} />

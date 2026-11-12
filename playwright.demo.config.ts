@@ -13,15 +13,15 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   timeout: 30_000,
-  use: { baseURL: "http://localhost:5174", trace: "retain-on-failure", screenshot: "only-on-failure" },
+  use: { baseURL: "http://localhost:5198", trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "npx vite --port 5174",
+    command: "npx vite --port 5198",
     env: { NEXT_PUBLIC_DEMO_MODE: "true", NEXT_PUBLIC_BRAND_SPLASH: "off" },
-    url: "http://localhost:5174",
+    url: "http://localhost:5198",
     reuseExistingServer: true,
     timeout: 60_000,
   },

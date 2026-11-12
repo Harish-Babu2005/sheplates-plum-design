@@ -10,7 +10,8 @@ import type { Product, Vendor, V3State } from "@/components/sheplates-v3";
 
 export const BRAND = "#155F65";
 
-export const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
+/** Rupees: whole rupees show without decimals, any paise show as two decimals (₹35.48, ₹77.50), so a bill never rounds away what is charged. */
+export const money = (value: number) => { const whole = Math.abs(value - Math.round(value)) < 0.005; return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 }).format(value); };
 export const priceOf = (product: Product, state: V3State) => Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100;
 
 export function haversineKm(aLat?: number, aLng?: number, bLat?: number, bLng?: number) {
@@ -63,6 +64,7 @@ export function PhotoTile({ imageUrl, category, initial, className = "", emojiSi
   const hasValidImage = Boolean(trimmed && trimmed !== "null" && trimmed !== "undefined" && !loadError);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new image address clears the earlier load error
     setLoadError(false);
   }, [trimmed]);
 

@@ -532,7 +532,7 @@ export async function POST(request: Request) {
           const quantity = Math.max(0.001, Number(item.quantity || 1));
           const base = Math.max(0, Number(product.vendor_base_price || 0));
           const price = drop ? Math.max(0, Number(drop.drop_price)) : Math.max(0, Number(item.unit_price ?? base));
-          vendorBaseTotal += base * quantity; customerTotal += price * quantity;
+          vendorBaseTotal += base * quantity;
           return { product_name: drop ? `${String(drop.title)} — ${String(product.name || "Product")}` : String(product.name || "Product"), quantity, unit: String(item.unit || product.unit || "pack"), vendor_base_price: base, markup_percent: base > 0 ? Math.max(0, ((price / base) - 1) * 100) : 0, customer_price: price };
         });
 
@@ -618,7 +618,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Enter delivery instructions (up to 1,000 characters) for third-party delivery." }, { status: 400 });
       }
       const quantity = Math.max(0.001, Number(body.quantity || 1));
-      Math.max(0, Number(body.customerPrice || product.vendor_base_price));
       const startDate = String(body.startDate || "");
       const endDate = body.endDate ? String(body.endDate) : "";
       if (!isFutureDate(startDate)) return NextResponse.json({ error: "Choose a first delivery date after today." }, { status: 400 });

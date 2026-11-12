@@ -39,8 +39,8 @@ export async function POST(request: Request) {
     if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}`, source: "uruv" });
     if (item?.url) return NextResponse.json({ imageUrl: item.url, source: "uruv" });
     return NextResponse.json({ error: "Image enhancement returned no image." }, { status: 502 });
-  } catch (err: any) {
+  } catch (err) {
     const status = err instanceof UruvAiError ? err.status : 502;
-    return NextResponse.json({ error: err.message || "Image enhancement failed." }, { status });
+    return NextResponse.json({ error: err instanceof Error && err.message ? err.message : "Image enhancement failed." }, { status });
   }
 }

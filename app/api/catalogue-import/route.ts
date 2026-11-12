@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     });
     const parsed = JSON.parse(extractText(json)) as { items?: unknown[] };
     return NextResponse.json({ items: parsed.items || [] });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof UruvAiError && (err.status === 400 || err.status === 422)) {
       return NextResponse.json({ error: "The list needs manual review." }, { status: 422 });
     }

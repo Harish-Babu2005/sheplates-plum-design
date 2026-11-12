@@ -8,8 +8,8 @@ test("new customer must confirm and save a movable delivery pin before continuin
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  await expect(page.getByRole("button", { name: /Customer login|^Sign in$/ })).toBeVisible();
-  await page.getByRole("button", { name: /Customer login|^Sign in$/ }).click();
+  await expect(page.getByRole("button", { name: /Customer login|^Sign in$/i }).first()).toBeVisible();
+  await page.getByRole("button", { name: /Customer login|^Sign in$/i }).first().click();
   await expect(page.getByText("Customer access")).toBeVisible();
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await page.getByLabel("Full name").fill("New Location Customer");
