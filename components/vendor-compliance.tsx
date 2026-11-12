@@ -11,7 +11,7 @@ import { signedVendorDocumentUrl } from "@/lib/supabase";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   ADDRESS_PROOF_TYPES, BUSINESS_REG_TYPES, COMPLIANCE_DOCS, GOV_ID_TYPES, VENDOR_TERMS_EFFECTIVE, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION,
-  complianceFieldProblems, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocument,
+  complianceFieldProblems, fssaiFieldProblem, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocument,
 } from "@/lib/vendor-compliance";
 
 const fieldInput = "h-11 w-full min-w-0 rounded-xl border border-stone-200 bg-white px-3.5 text-sm outline-none focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10";
@@ -83,6 +83,11 @@ export type ComplianceStepProps = {
   fields: ComplianceFields; setField: <K extends keyof ComplianceFields>(key: K, value: ComplianceFields[K]) => void;
   files: Partial<Record<OptionalComplianceKey, File | null>>; setFile: (key: OptionalComplianceKey, file: File | null) => void;
   termsAccepted: boolean; setTermsAccepted: (value: boolean) => void;
+  fssaiError?: string;
+  expiryError?: string;
+  certificateError?: string;
+  fssaiInputRef?: React.Ref<HTMLInputElement>;
+  expiryInputRef?: React.Ref<HTMLInputElement>;
 };
 
 export function ComplianceStep(p: ComplianceStepProps) {
@@ -94,11 +99,11 @@ export function ComplianceStep(p: ComplianceStepProps) {
   const uploaded = COMPLIANCE_DOCS.filter((doc) => p.files[doc.key]).length;
 
   const select = (id: string, value: string, options: readonly string[], onChange: (value: string) => void) => <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={fieldInput}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
-  const text = (id: string, value: string, onChange: (value: string) => void, placeholder: string, extra?: { maxLength?: number; inputMode?: "numeric" | "text" }) => <input id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={extra?.maxLength} inputMode={extra?.inputMode} className={fieldInput} />;
+  const text = (id: string, value: string, onChange: (value: string) => void, placeholder: string, extra?: { maxLength?: number; inputMode?: "numeric" | "text"; ref?: React.Ref<HTMLInputElement> }) => <input id={id} ref={extra?.ref} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={extra?.maxLength} inputMode={extra?.inputMode} className={fieldInput} />;
 
   const problems = complianceFieldProblems(p.fields);
   const problem = (prefix: string) => problems.find((message) => message.startsWith(prefix));
-  const err = (message?: string) => message ? <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{message}</p> : null;
+  const err = (message?: string | null) => message ? <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{message}</p> : null;
   const body: Record<OptionalComplianceKey, ReactNode> = {
     pan: <Labelled label="PAN Number" htmlFor="pan-number-input">{text("pan-number-input", p.fields.panNumber, (v) => p.setField("panNumber", v.toUpperCase()), "ABCDE1234F", { maxLength: 10 })}{err(problem("PAN"))}</Labelled>,
     government_id: <div className="grid gap-3 sm:grid-cols-2"><Labelled label="ID Type" htmlFor="govid-type-input">{select("govid-type-input", p.fields.govIdType, GOV_ID_TYPES, (v) => p.setField("govIdType", v))}</Labelled><Labelled label="ID Number" htmlFor="govid-number-input">{text("govid-number-input", p.fields.govIdNumber, (v) => p.setField("govIdNumber", v), "e.g. 1234 5678 9012")}</Labelled></div>,
@@ -120,9 +125,18 @@ export function ComplianceStep(p: ComplianceStepProps) {
         <div className="flex items-center gap-1.5"><span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-black text-red-700">Required</span><span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-700">PDF only</span></div>
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <Labelled label="Food certificate / FSSAI number" htmlFor="fssai-number-input">{text("fssai-number-input", p.fssai, p.setFssai, "14-digit FSSAI Licence Number")}</Labelled>
-        <Labelled label="Expiry date" htmlFor="fssai-expiry-input"><input id="fssai-expiry-input" type="date" min={p.minExpiry} value={p.expiry} onChange={(event) => p.setExpiry(event.target.value)} className={fieldInput} /></Labelled>
-        <div className="md:col-span-2"><PdfUpload inputId="fssai-file-input" label="Food Safety Certificate" file={p.certificate} setFile={p.setCertificate} uploadLabel="Upload FSSAI certificate PDF" onPreview={openPreview} previewTitle="Food Safety Certificate (FSSAI)" /></div>
+        <Labelled label="Food certificate / FSSAI number" htmlFor="fssai-number-input">
+          {text("fssai-number-input", p.fssai, p.setFssai, "14-digit FSSAI Licence Number", { maxLength: 14, inputMode: "numeric", ref: p.fssaiInputRef })}
+          {err(p.fssaiError || fssaiFieldProblem(p.fssai))}
+        </Labelled>
+        <Labelled label="Expiry date" htmlFor="fssai-expiry-input">
+          <input id="fssai-expiry-input" ref={p.expiryInputRef} type="date" min={p.minExpiry} value={p.expiry} onChange={(event) => p.setExpiry(event.target.value)} className={fieldInput} />
+          {err(p.expiryError)}
+        </Labelled>
+        <div className="md:col-span-2">
+          <PdfUpload inputId="fssai-file-input" label="Food Safety Certificate" file={p.certificate} setFile={p.setCertificate} uploadLabel="Upload FSSAI certificate PDF" onPreview={openPreview} previewTitle="Food Safety Certificate (FSSAI)" />
+          {err(p.certificateError)}
+        </div>
       </div>
     </section>
 

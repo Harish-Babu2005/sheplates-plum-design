@@ -62,4 +62,38 @@ test("Compliance rules: PDF check, field formats, and what is stored for each do
   assert.equal(c.documentEntry("pan", f).documentNumber, undefined, "nothing typed means nothing stored");
   assert.equal(c.documentTitle("government_id", { idType: "Passport" }), "Government ID (Passport)");
   assert.equal(c.maskNumber("ABCDE1234F"), "••••••234F");
+
+  // FSSAI validation rules
+  assert.equal(c.fssaiFieldProblem("", false), null, "empty FSSAI is optional during typing");
+  assert.equal(c.fssaiFieldProblem("", true), "FSSAI licence number is required.");
+  assert.equal(c.fssaiFieldProblem("1234ABCD567890"), "FSSAI licence number must contain digits only.");
+  assert.equal(c.fssaiFieldProblem("12345"), "FSSAI licence number must be 14 digits.");
+  assert.equal(c.fssaiFieldProblem("123456789012345"), "FSSAI licence number must be 14 digits.");
+  assert.equal(c.fssaiFieldProblem("12423008000401"), null, "valid 14-digit FSSAI");
+  assert.equal(c.FSSAI_PATTERN.test("12423008000401"), true);
+  assert.equal(c.FSSAI_PATTERN.test("1242300800040"), false);
+});
+
+test("Compliance UI: FSSAI doc has field validation and auto-focus refs for required fields", () => {
+  const complianceUi = read("components/vendor-compliance.tsx");
+  assert.ok(complianceUi.includes("fssaiError"), "ComplianceStep accepts fssaiError");
+  assert.ok(complianceUi.includes("expiryError"), "ComplianceStep accepts expiryError");
+  assert.ok(complianceUi.includes("certificateError"), "ComplianceStep accepts certificateError");
+  assert.ok(complianceUi.includes("fssaiInputRef"), "ComplianceStep accepts fssaiInputRef");
+  assert.ok(complianceUi.includes("expiryInputRef"), "ComplianceStep accepts expiryInputRef");
+  assert.ok(complianceUi.includes("err(p.fssaiError || fssaiFieldProblem(p.fssai))"), "renders FSSAI validation error under fssai input");
+  assert.ok(complianceUi.includes("err(p.expiryError)"), "renders expiry validation error under expiry input");
+  assert.ok(complianceUi.includes("err(p.certificateError)"), "renders certificate validation error under upload");
+
+  const v3Ui = read("components/sheplates-v3.tsx");
+  assert.ok(v3Ui.includes("businessNameRef"), "VendorOnboarding uses businessNameRef");
+  assert.ok(v3Ui.includes("otherCategoryRef"), "VendorOnboarding uses otherCategoryRef");
+  assert.ok(v3Ui.includes("addressRef"), "VendorOnboarding uses addressRef");
+  assert.ok(v3Ui.includes("fssaiRef"), "VendorOnboarding uses fssaiRef");
+  assert.ok(v3Ui.includes("expiryRef"), "VendorOnboarding uses expiryRef");
+  assert.ok(v3Ui.includes("businessNameRef.current?.focus()"), "auto-focuses business name when empty");
+  assert.ok(v3Ui.includes("focus(fssaiRef, \"fssai-number-input\")"), "auto-focuses FSSAI input when missing or invalid");
+  assert.ok(v3Ui.includes("focus(expiryRef, \"fssai-expiry-input\")"), "auto-focuses expiry input when missing");
+  assert.ok(v3Ui.includes("focus(null, \"fssai-file-input\")"), "auto-focuses FSSAI file input when certificate missing");
+  assert.ok(v3Ui.includes("focus(null, \"vendor-terms-checkbox\")"), "auto-focuses terms checkbox when not accepted");
 });
