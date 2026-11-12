@@ -9,7 +9,15 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { acceptQuote, loadCustomerRfqs, loadOpsRfqs, loadVendorRfqs, rfqIsOpen, rfqStatusLabel, submitQuote, uploadCustomerRfqDocument, type CustomerRfq, type VendorRfq } from "@/lib/rfq";
 
-const money = (v: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(v);
+const money = (v: number) => {
+  const safe = Number.isFinite(v) ? v : 0;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safe);
+};
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 const chip = (status: string) => status === "awarded" || status === "selected" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : status === "quotes_received" || status === "submitted" ? "border-sky-200 bg-sky-50 text-sky-800" : status === "not_selected" || status === "closed" ? "border-stone-200 bg-stone-50 text-stone-500" : "border-amber-200 bg-amber-50 text-amber-800";
 const Chip = ({ status, label }: { status: string; label?: string }) => <span className={`inline-flex shrink-0 rounded-full border px-3 py-1 text-[11px] font-black ${chip(status)}`}>{label || rfqStatusLabel(status)}</span>;

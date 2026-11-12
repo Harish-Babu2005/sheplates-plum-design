@@ -355,10 +355,24 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
     }
   }
 
+  let liveMarkups: Record<string, number> = {};
+  try {
+    const markupsResult = await supabase.from("vendor_item_markups").select("menu_item_id,markup_percent");
+    if (!markupsResult.error && Array.isArray(markupsResult.data)) {
+      liveMarkups = Object.fromEntries(
+        markupsResult.data.map((m: Record<string, unknown>) => [
+          String(m.menu_item_id),
+          Number(m.markup_percent || 0),
+        ])
+      );
+    }
+  } catch { /* ignore if table missing */ }
+
   return {
     items: marketplaceRows,
     vendorBranding,
     vendorCommercial,
+    markups: liveMarkups,
     diagnostics: ((diagnostics.data || [])[0] || null) as MarketplaceDiagnostics | null,
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
@@ -553,7 +567,33 @@ export async function loadLiveOperationsWorkspace() {
   const merchandisingError = homeConfig.error?.message || campaigns.error?.message || null;
   const allProductRows = (products.data || []) as LiveMenuItemRow[];
   await attachFoodTypes(supabase, allProductRows, (row) => row.id);
-  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+  let liveMarkups: Record<string, number> = {};
+  try {
+    const markupsResult = await supabase.from("vendor_item_markups").select("menu_item_id,markup_percent");
+    if (!markupsResult.error && Array.isArray(markupsResult.data)) {
+      liveMarkups = Object.fromEntries(
+        markupsResult.data.map((m: Record<string, unknown>) => [
+          String(m.menu_item_id),
+          Number(m.markup_percent || 0),
+        ])
+      );
+    }
+  } catch { /* ignore if table missing */ }
+  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], markups: liveMarkups, merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+}
+
+export async function saveLiveItemMarkup(productId: string, markupPercent: number): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase || !isLiveSupabaseMode()) return;
+  try {
+    const { error } = await supabase.from("vendor_item_markups").upsert(
+      { menu_item_id: productId, markup_percent: markupPercent },
+      { onConflict: "menu_item_id" }
+    );
+    if (error) console.warn("Could not save live item markup:", error.message);
+  } catch (e) {
+    console.warn("Could not save live item markup:", e);
+  }
 }
 
 export async function saveLiveMarketplaceHome(config: { featuredProductIds: string[]; recommendationPopupEnabled: boolean; maxFeatured: number }) {

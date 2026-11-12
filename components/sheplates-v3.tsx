@@ -56,7 +56,7 @@ import {
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct, updateLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, saveLiveItemMarkup, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
@@ -462,7 +462,7 @@ const nav: Record<Role, string[]> = {
   customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre"],
   vendor: ["Dashboard", "AI insights", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre"],
   operations: ["Command centre", "AI insights", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
-  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log"],
+  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log"],
 };
 const navIcons: Record<string, typeof Store> = {
   "Stories monitor": Play,
@@ -523,8 +523,8 @@ function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1);
 /** Orders and schedules can be planned from tomorrow up to 15 days ahead (the database enforces the same window). */
 const ORDER_WINDOW_DAYS = 15;
 function latestOrderDate() { return addDaysISO(todayISO(), ORDER_WINDOW_DAYS); }
-/** Rupees: whole rupees show without decimals, any paise show as two decimals (₹35.48, ₹77.50), so a bill never rounds away what is charged. */
-function money(value: number) { const whole = Math.abs(value - Math.round(value)) < 0.005; return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 }).format(value); }
+/** Rupees: consistent two-decimal display across cart, orders, invoices and marketplace. */
+function money(value: number) { const safe = Number.isFinite(value) ? value : 0; return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe); }
 function finalPrice(product: Product, state: V3State) { return Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100; }
 function vendorFor(state: V3State, session: DemoSession) { return state.vendors.find((v) => (session.vendorId && (v.id === session.vendorId || String(v.id).toLowerCase() === String(session.vendorId).toLowerCase())) || (session.email && v.ownerEmail && v.ownerEmail.toLowerCase() === session.email.toLowerCase())); }
 function notificationBelongsToSession(item: Notification, session: DemoSession) {
@@ -1317,10 +1317,10 @@ export function SheplatesV3() {
           if (row.memory_key === "dietary_preference") liveMemory.preferredDietaryTags = row.memory_value.split(",").map((item) => item.trim()).filter(Boolean);
           if (row.memory_key === "delivery_window") liveMemory.preferredDeliveryPeriod = row.memory_value;
         }
-        let products: Product[] = []; let vendors: Vendor[] = []; let merchandising = { featuredProductIds: [] as string[], recommendationPopupEnabled: true, maxFeatured: 6 }; let merchandisingError: string | null = null;
+        let products: Product[] = []; let vendors: Vendor[] = []; let liveMarketplaceMarkups: Record<string, number> = {}; let merchandising = { featuredProductIds: [] as string[], recommendationPopupEnabled: true, maxFeatured: 6 }; let merchandisingError: string | null = null;
         if (preference && Number.isFinite(Number(preference.latitude)) && Number.isFinite(Number(preference.longitude))) {
           const marketplace = await loadLiveMarketplace(Number(preference.latitude), Number(preference.longitude));
-          products = marketplace.items.map(marketplaceProductFromLive); merchandising = marketplace.merchandising; merchandisingError = marketplace.merchandisingError || null;
+          products = marketplace.items.map(marketplaceProductFromLive); liveMarketplaceMarkups = marketplace.markups || {}; merchandising = marketplace.merchandising; merchandisingError = marketplace.merchandisingError || null;
           const unique = new Map<string, Vendor>();
           const brandMap = new Map((marketplace.vendorBranding || []).map((b) => [b.id, b]));
           const commercialMap = new Map((marketplace.vendorCommercial || []).map((c) => [c.id, c]));
@@ -1374,7 +1374,7 @@ export function SheplatesV3() {
               bannerUrl: v.bannerUrl || existing?.bannerUrl,
               bio: v.bio || existing?.bio,
             };
-          }), products, markups: {}, merchandising, merchandisingError,
+          }), products, markups: { ...current.markups, ...liveMarketplaceMarkups }, merchandising, merchandisingError,
         }));
       } else if (syncSession.role === "vendor" && syncSession.vendorId) {
         const workspace = await loadLiveVendorWorkspace(syncSession.vendorId);
@@ -1401,6 +1401,7 @@ export function SheplatesV3() {
             return vendorFromLive(row, { name: profile?.full_name }, own.find((item) => item.document_type === "food_certificate") || own[0], own as Array<Record<string, unknown>>);
           }),
           products: workspace.products.map(productFromLive),
+          markups: { ...current.markups, ...(workspace.markups || {}) },
           merchandising: workspace.merchandising || current.merchandising,
           merchandisingError: workspace.merchandisingError || null,
           campaigns: (workspace.campaigns || []).map((row: Record<string, unknown>) => ({
@@ -2040,7 +2041,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
             bio: v.bio || existing?.bio,
           };
         }),
-        markups: {},
+        markups: { ...current.markups, ...(live.markups || {}) },
         merchandising: live.merchandising || current.merchandising,
         merchandisingError: live.merchandisingError || null,
       }));
@@ -2328,8 +2329,32 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
       if (isLiveSupabaseMode()) {
 const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
+      const frozenUnitPrice = deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state);
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
-      const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: firstDishes.length ? `${scheduledProduct.name} · ${weekdayOfDate(deliveryDates[0])}: ${firstDishes.join(", ")}` : scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot: effectiveSlot, mode, status: "Scheduled", payment: "Pending" };
+      const order: Order = {
+        id: orderId,
+        scheduleId,
+        customerEmail: session.email,
+        vendorId: scheduledProduct.vendorId,
+        productId: scheduledProduct.id,
+        description: firstDishes.length ? `${scheduledProduct.name} · ${weekdayOfDate(deliveryDates[0])}: ${firstDishes.join(", ")}` : scheduledProduct.name,
+        quantity,
+        unit: scheduledProduct.baseUnit,
+        subtotal: price,
+        total: price,
+        totalAmount: price,
+        date: deliveryDates[0],
+        slot: effectiveSlot,
+        mode,
+        status: "Scheduled",
+        payment: "Pending",
+        items: [{
+          name: scheduledProduct.name,
+          quantity,
+          unit: scheduledProduct.baseUnit,
+          price: frozenUnitPrice,
+        }],
+      };
       setState((s) => ({ ...s, schedules: [schedule, ...s.schedules.filter((x) => x.id !== schedule.id)], orders: [order, ...s.orders.filter((x) => x.id !== order.id)], notifications: [notice(session.email, "customer", "Schedule ready for payment", `${scheduledProduct.name} has ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}. Complete payment to activate it.`), ...s.notifications], audit: [audit(session, "Created product schedule", `${scheduledProduct.name} · ${recurrence} · ${occurrences} deliveries`), ...s.audit] }));
       showDeviceNotification("Schedule ready for payment", `${scheduledProduct.name} · ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}`);
       toast.success("Schedule saved. Complete payment to activate it."); close(); onCreated?.();
@@ -2706,7 +2731,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
               Delivery fee {billingSummary.deliveryDistanceKm != null ? `(${billingSummary.deliveryDistanceKm} km)` : ""}
             </span>
             <b className="tabular-nums">
-              {billingSummary.isPickup ? "₹0 (Store Pickup)" : billingSummary.isThirdParty ? "₹0 (3rd Party)" : money(billingSummary.deliveryFee)}
+              {billingSummary.isPickup ? `${money(0)} (Store Pickup)` : billingSummary.isThirdParty ? `${money(0)} (3rd Party)` : money(billingSummary.deliveryFee)}
             </b>
           </div>
           <div className="flex justify-between">
@@ -2839,7 +2864,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
             <div className="flex justify-between text-stone-600">
               <span>Delivery fee {billingSummary.deliveryDistanceKm != null ? `(${billingSummary.deliveryDistanceKm} km)` : ""}:</span>
               <span className="font-mono font-semibold">
-                {billingSummary.isPickup ? "₹0 (Store Pickup)" : billingSummary.isThirdParty ? "₹0 (3rd Party)" : money(billingSummary.deliveryFee)}
+                {billingSummary.isPickup ? `${money(0)} (Store Pickup)` : billingSummary.isThirdParty ? `${money(0)} (3rd Party)` : money(billingSummary.deliveryFee)}
               </span>
             </div>
             <div className="flex justify-between text-stone-600">
@@ -4012,9 +4037,9 @@ function OrderDetailsDialog({
                     <div className="font-bold text-stone-900">
                       {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
                     </div>
-                    {it.price != null && (
-                      <div className="font-mono text-stone-700 font-semibold">{money(it.price * it.quantity)}</div>
-                    )}
+                    <div className="font-mono text-stone-700 font-semibold">
+                      {money(((it.price != null ? it.price : (order.subtotal != null ? order.subtotal / Math.max(1, order.quantity) : (order.totalAmount ?? order.total) / Math.max(1, order.quantity)))) * it.quantity)}
+                    </div>
                   </div>
                 ))
               ) : (
@@ -4022,7 +4047,7 @@ function OrderDetailsDialog({
                   <div className="font-bold text-stone-900">
                     {order.quantity} × {orderItemLabel(product?.name, order.description)} {order.unit ? `(${order.unit})` : ""}
                   </div>
-                  <div className="font-mono text-stone-700 font-semibold">{money(order.total)}</div>
+                  <div className="font-mono text-stone-700 font-semibold">{money(order.totalAmount ?? order.total)}</div>
                 </div>
               )}
             </div>
@@ -4037,7 +4062,7 @@ function OrderDetailsDialog({
                 <div className="flex justify-between text-stone-600">
                   <span>Delivery Fee {order.deliveryDistanceKm != null ? `(${order.deliveryDistanceKm} km)` : ""}</span>
                   <span className="font-mono font-semibold">
-                    {order.mode === "Self pickup" ? "₹0 (Store Pickup)" : order.mode === "Third-party delivery" ? "₹0 (3rd Party)" : money(order.deliveryFee)}
+                    {order.mode === "Self pickup" ? `${money(0)} (Store Pickup)` : order.mode === "Third-party delivery" ? `${money(0)} (3rd Party)` : money(order.deliveryFee)}
                   </span>
                 </div>
               )}
@@ -4348,7 +4373,7 @@ function CustomerOrderCard({
           <div className="text-xl sm:text-2xl font-black text-stone-900">{money(order.totalAmount ?? order.total)}</div>
           {order.deliveryFee != null && (
             <div className="text-[11px] text-stone-500 font-medium">
-              Delivery: {order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)}
+              Delivery: {money(order.deliveryFee)}
               {order.gstAmount != null ? ` · GST: ${money(order.gstAmount)}` : ""}
             </div>
           )}
@@ -4660,7 +4685,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
           ["Total", money(order.totalAmount ?? order.total)],
           ["Mode", order.mode],
           ...(order.subtotal != null ? [["Subtotal", money(order.subtotal)] as const] : []),
-          ...(order.deliveryFee != null ? [["Delivery Fee", order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)] as const] : []),
+          ...(order.deliveryFee != null ? [["Delivery Fee", money(order.deliveryFee)] as const] : []),
           ...(order.gstAmount != null ? [["GST", `${money(order.gstAmount)} (${order.gstRate ?? 5}%)`] as const] : []),
           ["Delivery person", person ? <Fragment key="delivery-person"><span className="block">{person.name}</span><span className="mt-1 block break-all text-xs font-semibold text-stone-600">{person.phone}</span></Fragment> : "Not assigned"],
         ] as const;
@@ -4947,7 +4972,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
       <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery</span><b className="text-right">{order.date} · {order.slot}</b></div>
       <div className="flex justify-between gap-4"><span className="text-[#55656A]">Items</span><b className="text-right">{order.description}</b></div>
       {order.subtotal != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Item subtotal</span><b className="tabular-nums">{money(order.subtotal)}</b></div>}
-      {order.deliveryFee != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery fee</span><b className="tabular-nums">{order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)}</b></div>}
+      {order.deliveryFee != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery fee</span><b className="tabular-nums">{money(order.deliveryFee)}</b></div>}
       {order.gstAmount != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">GST ({order.gstRate ?? 5}%)</span><b className="tabular-nums">{money(order.gstAmount)}</b></div>}
       <div className="flex justify-between gap-4"><span className="text-[#55656A]">Paid {isLive ? "with Razorpay" : `with ${method}`}</span><b className="tabular-nums">{money(order.totalAmount ?? order.total)}</b></div>
     </div>
@@ -4964,7 +4989,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
         {order.deliveryFee != null && (
           <Review
             label={`Delivery fee${order.deliveryDistanceKm != null ? ` (${order.deliveryDistanceKm} km)` : ""}`}
-            value={order.mode === "Self pickup" ? "₹0 (Store Pickup)" : order.mode === "Third-party delivery" ? "₹0 (3rd Party)" : money(order.deliveryFee)}
+            value={order.mode === "Self pickup" ? `${money(0)} (Store Pickup)` : order.mode === "Third-party delivery" ? `${money(0)} (3rd Party)` : money(order.deliveryFee)}
           />
         )}
         {order.gstAmount != null && (
@@ -7078,7 +7103,219 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     )}
   </div>;
 }
-function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const [q, setQ] = useState(""); const [onlyCustom, setOnlyCustom] = useState(false); const products = state.products.filter((x) => x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0); const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length; return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="grid gap-4 sm:grid-cols-3"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(customCount)} icon={Percent} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div><div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" /><button type="button" onClick={() => setOnlyCustom(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>All</button><button type="button" onClick={() => setOnlyCustom(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>Custom %</button></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-bold">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
+function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+  const [vendorId, setVendorId] = useState(state.vendors[0]?.id || "");
+  const [q, setQ] = useState("");
+  const [onlyCustom, setOnlyCustom] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState(false);
+
+  const products = state.products
+    .filter((x) => x.vendorId === vendorId)
+    .filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()))
+    .filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0);
+
+  const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length;
+  const hasDraftChanges = Object.keys(drafts).length > 0;
+
+  async function saveSingleMarkup(product: Product, markupVal: number) {
+    setSaving(true);
+    try {
+      const safeVal = Math.max(0, markupVal);
+      if (isLiveSupabaseMode()) {
+        await saveLiveItemMarkup(product.id, safeVal);
+      }
+      const newCustomerPrice = Math.round(product.vendorPrice * (1 + safeVal / 100) * 100) / 100;
+      setState((s) => ({
+        ...s,
+        markups: { ...s.markups, [product.id]: safeVal },
+        audit: [
+          audit(
+            session,
+            "Pricing change: item markup",
+            `${product.name} · Base: ${money(product.vendorPrice)} + ${safeVal}% markup → Customer: ${money(newCustomerPrice)}`
+          ),
+          ...s.audit,
+        ],
+      }));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[product.id];
+        return next;
+      });
+      toast.success("Pricing changes saved successfully");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save pricing changes"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAllPricingChanges() {
+    setSaving(true);
+    try {
+      const changedProducts = state.products.filter((p) => p.id in drafts);
+      if (!changedProducts.length) {
+        toast.info("No pricing changes to save");
+        return;
+      }
+      for (const p of changedProducts) {
+        if (isLiveSupabaseMode()) {
+          await saveLiveItemMarkup(p.id, Math.max(0, drafts[p.id]));
+        }
+      }
+      const newAudits = changedProducts.map((p) => {
+        const val = Math.max(0, drafts[p.id]);
+        const custPrice = Math.round(p.vendorPrice * (1 + val / 100) * 100) / 100;
+        return audit(
+          session,
+          "Pricing change: item markup",
+          `${p.name} · Base: ${money(p.vendorPrice)} + ${val}% markup → Customer: ${money(custPrice)}`
+        );
+      });
+      setState((s) => ({
+        ...s,
+        markups: { ...s.markups, ...drafts },
+        audit: [...newAudits, ...s.audit],
+      }));
+      setDrafts({});
+      toast.success("Pricing changes saved successfully");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save pricing changes"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Heading
+        eyebrow="ITEM-LEVEL PRICING"
+        title="Operational percentage by vendor item"
+        body="Select a vendor, inspect its menu and apply a markup percentage on top of each vendor base price. Customer prices update only for future schedules."
+        action={
+          <Button
+            onClick={() => void saveAllPricingChanges()}
+            disabled={!hasDraftChanges || saving}
+            className="rounded-xl bg-[#155F65]"
+          >
+            <Check className="size-4 mr-1.5" />
+            Save pricing changes
+          </Button>
+        }
+      />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Metric label="Items on the platform" value={String(state.products.length)} icon={Package} />
+        <Metric label="Items with their own %" value={String(customCount)} icon={Percent} />
+        <Metric label="Vendors" value={String(state.vendors.length)} icon={Store} />
+      </div>
+      <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4">
+        <Select value={vendorId} onValueChange={setVendorId}>
+          <SelectTrigger className="w-full max-w-sm rounded-xl">
+            <SelectValue placeholder="Select vendor" />
+          </SelectTrigger>
+          <SelectContent>
+            {state.vendors.map((x) => (
+              <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search item"
+          aria-label="Search item"
+          className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => setOnlyCustom(false)}
+          className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={() => setOnlyCustom(true)}
+          className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+        >
+          Custom %
+        </button>
+      </div>
+      {products.length ? (
+        <div className="surface-card overflow-x-auto rounded-[28px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead>Vendor base</TableHead>
+                <TableHead>Operations %</TableHead>
+                <TableHead>Customer price</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {products.map((product) => {
+                const markupVal = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                const isDraftModified = product.id in drafts && drafts[product.id] !== (state.markups[product.id] || 0);
+                const previewPrice = Math.round(product.vendorPrice * (1 + markupVal / 100) * 100) / 100;
+                return (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <b>{product.name}</b>
+                      <div className="text-xs text-stone-500">per {product.baseUnit}</div>
+                    </TableCell>
+                    <TableCell>{money(product.vendorPrice)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step=".5"
+                          value={markupVal}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDrafts((prev) => ({ ...prev, [product.id]: val }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                              void saveSingleMarkup(product, val);
+                            }
+                          }}
+                          className="h-10 w-24 rounded-xl border px-3 font-black"
+                          aria-label={`Markup for ${product.name}`}
+                        />
+                        <span>%</span>
+                        {isDraftModified && (
+                          <Button
+                            size="sm"
+                            onClick={() => void saveSingleMarkup(product, drafts[product.id])}
+                            disabled={saving}
+                            className="h-8 rounded-lg bg-[#155F65] px-2.5 text-xs text-white"
+                          >
+                            Save
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-lg font-bold">{money(previewPrice)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <Empty
+          icon={Percent}
+          title="No vendor products selected"
+          body="Choose a vendor with products, or wait for a vendor to add their catalogue."
+        />
+      )}
+    </div>
+  );
+}
 function RFQDesk({ state }: { state: V3State }) {
   const open = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received");
   const awarded = state.requirements.filter((x) => x.status === "Awarded");
@@ -7178,6 +7415,7 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { 
   if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
   if (active === "Vendors") return <AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Vendor plans") return <Plans session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
   if (active === "Pricing policies") return <AdminPricing state={state} />;
   if (active === "Stories monitor") return <StoriesMonitor />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
@@ -7441,7 +7679,7 @@ function AuditLog({ items }: { items: Audit[] }) {
   const [trailError, setTrailError] = useState("");
   useEffect(() => { if (!isLiveSupabaseMode()) return; let alive = true; loadAuditTrail().then((rows) => { if (alive) setDbTrail(rows); }).catch((e) => { if (alive) setTrailError(errorMessage(e, "The audit trail could not be loaded")); }); return () => { alive = false; }; }, []);
   const allItems = [...dbTrail, ...items];
-  const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
+  const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|pricing|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
   const shown = allItems.filter((item) => (kind === "All" || kindOf(item) === kind) && (!auditQuery.trim() || `${item.actor} ${item.action} ${item.detail}`.toLowerCase().includes(auditQuery.trim().toLowerCase())));
   return <div className="space-y-5"><Heading eyebrow="AUDITABILITY" title="Platform activity trail" body="Who did what, and when. Verification, pricing, catalogue, schedule and order actions are recorded." action={<Button variant="outline" onClick={download} disabled={!allItems.length}><Download />Download Excel</Button>} />{trailError && <p role="alert" className="rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{trailError}</p>}
     <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Kind of action">{(["All", "Permissions", "Vendors", "Plans and pricing"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={kind === name} onClick={() => setKind(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${kind === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name}</button>)}<input value={auditQuery} onChange={(e) => setAuditQuery(e.target.value)} placeholder="Search actor or action" aria-label="Search actor or action" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>

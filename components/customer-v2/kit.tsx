@@ -11,7 +11,15 @@ import type { Product, Vendor, V3State } from "@/components/sheplates-v3";
 export const BRAND = "#155F65";
 
 /** Rupees: whole rupees show without decimals, any paise show as two decimals (₹35.48, ₹77.50), so a bill never rounds away what is charged. */
-export const money = (value: number) => { const whole = Math.abs(value - Math.round(value)) < 0.005; return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 }).format(value); };
+export const money = (value: number) => {
+  const safe = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safe);
+};
 export const priceOf = (product: Product, state: V3State) => Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100;
 
 export function haversineKm(aLat?: number, aLng?: number, bLat?: number, bLng?: number) {

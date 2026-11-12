@@ -66,7 +66,7 @@ const statusClass:Record<string,string>={
   Draft:"bg-stone-100 text-stone-600 border-stone-200","Reversal initiated":"bg-amber-50 text-amber-700 border-amber-200",
 };
 
-function money(value:number){return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(value)}
+function money(value:number){const safe=Number.isFinite(value)?value:0;return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",minimumFractionDigits:2,maximumFractionDigits:2}).format(safe)}
 function nowLabel(){return new Date().toLocaleString("en-IN",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"})}
 
 export function SheplatesV2(){
