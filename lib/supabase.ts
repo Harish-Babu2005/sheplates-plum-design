@@ -815,6 +815,36 @@ export async function deleteLiveVendorProduct(productId: string): Promise<{ dele
   throw direct.error;
 }
 
+export async function clearLiveVendorProducts(productIds: string[]): Promise<{ deletedCount: number; deactivatedCount: number; removedFromBaskets: number }> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  let deletedCount = 0;
+  let deactivatedCount = 0;
+  let removedFromBaskets = 0;
+
+  const chunkSize = 5;
+  for (let i = 0; i < productIds.length; i += chunkSize) {
+    const chunk = productIds.slice(i, i + chunkSize);
+    const results = await Promise.all(
+      chunk.map((id) =>
+        deleteLiveVendorProduct(id).catch((err) => {
+          console.error(`Failed to delete product ${id}:`, err);
+          return { deleted: false, removedFromBaskets: 0 };
+        })
+      )
+    );
+    for (const res of results) {
+      if (res.deleted) {
+        deletedCount++;
+        removedFromBaskets += res.removedFromBaskets;
+      } else {
+        deactivatedCount++;
+      }
+    }
+  }
+  return { deletedCount, deactivatedCount, removedFromBaskets };
+}
+
 export async function setLiveProductActive(productId: string, active: boolean) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");

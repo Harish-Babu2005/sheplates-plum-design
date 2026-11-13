@@ -122,3 +122,15 @@ test("numbers: only whole packs, at most 2 price decimals, real thousands groupi
   const noColumn = readCatalogueText("Name,Price\nNo stock column,20\n", opts);
   assert.equal(noColumn.rows[0].stock, 1, "no stock column at all means 1 pack");
 });
+
+test("Clear all products functionality: vendors can remove all products at once from catalog", async () => {
+  const lib = await read("lib/supabase.ts");
+  assert.match(lib, /export async function clearLiveVendorProducts/, "exports clearLiveVendorProducts in lib/supabase.ts");
+
+  const v3Ui = await read("components/sheplates-v3.tsx");
+  assert.match(v3Ui, /clearLiveVendorProducts/, "imports and uses clearLiveVendorProducts in sheplates-v3.tsx");
+  assert.match(v3Ui, /Clear all products/, "provides Clear all products button in Catalog view");
+  assert.match(v3Ui, /confirmClearAll/, "defines confirmClearAll handler in Catalog");
+  assert.match(v3Ui, /Clear draft rows/, "provides Clear draft rows in BulkCatalogDialog");
+  assert.match(v3Ui, /Replace existing catalogue/, "provides Replace existing catalogue option in BulkCatalogDialog");
+});
