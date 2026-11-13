@@ -679,6 +679,8 @@ function complianceDocumentsFromLive(rows: Array<Record<string, unknown>> | unde
   });
 }
 function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: string }, document?: Record<string, unknown>, documents?: Array<Record<string, unknown>>): Vendor {
+  const fssaiDoc = (documents || []).find((d) => d.document_type === "food_certificate" || d.document_type === "fssai");
+  const effectiveDoc = fssaiDoc || document;
   return {
     id: row.id, ownerEmail: identity?.email || "vendor@sheplates.local", ownerName: identity?.name || "Vendor",
     businessName: row.name, category: row.category, address: row.address || row.locality,
@@ -690,8 +692,8 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     logoUrl: row.logo_url || undefined,
     bannerUrl: row.banner_url || undefined,
     bio: row.description || undefined,
-    fssaiNumber: String(document?.document_number || "Submitted"),
-    certificateName: String(document?.storage_path || "Private certificate"), expiryDate: String(document?.expiry_date || "—"),
+    fssaiNumber: String(effectiveDoc?.document_number || document?.document_number || "Submitted"),
+    certificateName: String(effectiveDoc?.storage_path || document?.storage_path || "Private certificate"), expiryDate: String(effectiveDoc?.expiry_date || document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
     termsVersion: row.terms_version || undefined,
     termsAcceptedAt: row.terms_accepted_at || undefined,
@@ -1407,7 +1409,7 @@ export function SheplatesV3() {
           vendors: workspace.vendors.map((row) => {
             const profile = workspace.profiles.find((item) => item.vendor_id === row.id || item.id === row.owner_id);
             const own = workspace.documents.filter((item) => item.vendor_id === row.id);
-            return vendorFromLive(row, { name: profile?.full_name }, own.find((item) => item.document_type === "food_certificate") || own[0], own as Array<Record<string, unknown>>);
+            return vendorFromLive(row, { name: profile?.full_name }, own.find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || own[0], own as Array<Record<string, unknown>>);
           }),
           products: workspace.products.map(productFromLive),
           markups: { ...current.markups, ...(workspace.markups || {}) },
@@ -6076,7 +6078,30 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         if (resubmit) await resubmitLiveVendorVerification({ documentNumber: certificate.trim(), expiryDate: expiry || undefined });
       }
       const nextStatus: Verification = resubmit ? "Submitted" : vendor.verification;
-      setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, fssaiNumber: certificate.trim(), certificateName: fileName || x.certificateName, expiryDate: expiry, verification: nextStatus, operational: resubmit ? "Inactive" : x.operational } : x), audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit] }));
+      const updatedCertificate = certificate.trim();
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? {
+          ...x,
+          fssaiNumber: updatedCertificate,
+          certificateName: fileName || x.certificateName,
+          expiryDate: expiry,
+          verification: nextStatus,
+          operational: resubmit ? "Inactive" : x.operational,
+          documents: x.documents ? (
+            x.documents.some((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai")
+              ? x.documents.map((d) =>
+                  d.documentType === "food_certificate" || (d.documentType as string) === "fssai"
+                    ? { ...d, documentNumber: updatedCertificate, expiryDate: expiry || d.expiryDate, verificationStatus: "submitted", fileName: fileName || d.fileName }
+                    : d
+                )
+              : [...x.documents, { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }]
+          ) : [
+            { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }
+          ],
+        } : x),
+        audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit]
+      }));
       setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
     } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
@@ -7070,9 +7095,13 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
         {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
-        <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
-        <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {picked.fssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {picked.expiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
+        {picked && (() => {
+          const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
+          const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
+          const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
+          return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+          <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
+          <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
@@ -7092,7 +7121,7 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
         </div>
         <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
         {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
-      </section>}
+      </section>; })()}
     </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
 
     <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>

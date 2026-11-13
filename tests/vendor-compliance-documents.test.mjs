@@ -97,3 +97,16 @@ test("Compliance UI: FSSAI doc has field validation and auto-focus refs for requ
   assert.ok(v3Ui.includes("focus(null, \"fssai-file-input\")"), "auto-focuses FSSAI file input when certificate missing");
   assert.ok(v3Ui.includes("focus(null, \"vendor-terms-checkbox\")"), "auto-focuses terms checkbox when not accepted");
 });
+
+test("Verification resubmission: editing FSSAI doc number persists and reflects in Operations queue", () => {
+  const route = read("app/api/commerce/route.ts");
+  assert.match(route, /action === "resubmit_verification"/, "has resubmit_verification action");
+  assert.match(route, /document_number:\s*documentNumber/, "persists updated document number");
+  assert.match(route, /document_type:\s*"food_certificate"/, "inserts food_certificate if document did not exist");
+
+  const v3Ui = read("components/sheplates-v3.tsx");
+  assert.match(v3Ui, /updatedCertificate\s*=\s*certificate\.trim\(\)/, "captures trimmed updated certificate");
+  assert.match(v3Ui, /fssaiNumber:\s*updatedCertificate/, "updates fssaiNumber in vendor state");
+  assert.match(v3Ui, /documentNumber:\s*updatedCertificate/, "updates documents array with new certificate number");
+  assert.match(v3Ui, /effectiveFssaiNumber/, "OperationsVerification reads effective FSSAI number from updated documents");
+});

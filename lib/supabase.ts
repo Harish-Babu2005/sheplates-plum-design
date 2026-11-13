@@ -487,7 +487,7 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   const ownRows = productRows || [];
   await attachFoodTypes(supabase, ownRows, (row) => row.id);
   // The certificate is the vendor's FSSAI document; newer rows can be PAN, bank and so on.
-  const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
+  const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || documents.data?.[0] || null;
   let vendorRow = vendor.data as LiveVendorRow;
   try {
     const res = await brandingFetch(`?vendorId=${encodeURIComponent(vendorId)}`).catch(() => null);
@@ -523,7 +523,7 @@ export async function loadLiveOperationsWorkspace() {
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
-    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
+    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
     supabase.from("marketing_campaigns").select("*").order("created_at", { ascending: false }).limit(100),
   ]);
