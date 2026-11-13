@@ -2225,7 +2225,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
         {product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : <ProductGlyph category={product.category} iconClassName="size-9" />}
       </div>
       <div className="k-pr-body">
-        <h3><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3>
+        <h3 className="break-words [overflow-wrap:anywhere]"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3>
         <p className="s m">{vendor.businessName} · {product.baseUnit} · {distance?.toFixed(1)} km {vendor.pickup && !vendor.delivery ? "to pick up" : "away"} · {fulfilmentLabel}</p>
         <div className="k-pr-tags">
           {product.nutritionStatus === "Pending review" || product.calories <= 0 ? <span className="pill warn">Nutrition pending</span> : <><span className="pill">{product.calories} kcal</span><span className="pill">{product.protein}g protein</span></>}
@@ -2479,7 +2479,7 @@ function WishlistView({ session, state, setState }: { session: DemoSession; stat
       const rating = productRating(product.id, state.reviews);
       return <article key={item.productId} className="sh k-pr">
         <div className="k-pr-img" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : <ProductGlyph category={product.category} iconClassName="size-9" />}</div>
-        <div className="k-pr-body"><h3><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3><p className="s m">{vendor?.businessName || "Vendor"} · {product.baseUnit}</p>
+        <div className="k-pr-body"><h3 className="break-words [overflow-wrap:anywhere]"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3><p className="s m">{vendor?.businessName || "Vendor"} · {product.baseUnit}</p>
           {rating && <div className="k-pr-tags"><span className="rate"><Star className="size-4" />{rating.average.toFixed(1)} ({rating.count})</span></div>}</div>
         <div className="k-pr-act"><div className="k-pr-price"><b>{money(finalPrice(product, state))}</b><span>per pack</span></div>
           <div className="k-pr-btns"><button type="button" className="btn xs" onClick={() => void addToCart(product)}><ShoppingCart className="size-4" />Add</button><button type="button" onClick={() => remove(product.id)} aria-label="Remove from wishlist" className="ibtn sm round o"><Heart className="size-5" /></button></div></div>
@@ -6335,13 +6335,13 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   const readyCount = rows.length - incomplete;
   return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-6xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload a CSV, Excel (.xlsx) or text file. Each line becomes a draft product. Review every row, set the food type, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
     <div className="flex flex-wrap items-center gap-2"><label className="surface-card flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl border-dashed p-6 text-sm font-black"><input type="file" data-testid="bulk-file" className="sr-only" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,text/csv,text/plain" onChange={(e) => { const input = e.target; const file = input.files?.[0]; void readList(file).finally(() => { input.value = ""; }); }} /><FileUp className="mr-2 shrink-0" />{reading ? "Reading the file…" : "Upload product list"}</label><Button type="button" variant="outline" onClick={downloadTemplate} className="rounded-xl"><Download />Download template</Button></div>
-    <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. The first row is read as headings.</p>
+    <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. Product names must be within 60 characters. The first row is read as headings.</p>
     {note && <p role="status" data-testid="bulk-summary" className="rounded-2xl bg-[#EAF4F2] p-3 text-sm font-medium text-[#202827]">{note}</p>}
     {rows.length > 0 && <div className="space-y-3">
       <div className={`hidden gap-3 px-4 text-xs font-black tracking-wide text-stone-500 lg:grid ${bulkCatalogGridClass}`}>
         <div className="min-w-0">Product name</div><div className="min-w-0">Category</div><div className="min-w-0">Pack size</div><div className="min-w-0">Price (₹)</div><div className="min-w-0">Stock (packs)</div><div className="min-w-0">Food type</div><div className="w-24" aria-hidden="true" />
       </div>
-      {rows.map((row, index) => { const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
+      {rows.map((row, index) => { const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} maxLength={60} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value.slice(0, 60) })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
         <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
         <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
         {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
@@ -6474,7 +6474,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
     const firstPack = skus[0]?.packSize || "Other";
     setPackSize(firstPack);
     setCustomPackSize("");
-    if (!editingProduct) setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
+    if (!editingProduct) setName((firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "").slice(0, 60));
     setConfirmed(false);
   }
 
@@ -6482,14 +6482,14 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
     setSkuGroup(newGrp);
     if (newGrp === "Other") {
       setPackSize("Other");
-      if (!editingProduct) setName(customGroup.trim() ? formatProductPackLabel(customGroup.trim(), customPackSize.trim() || "") : "");
+      if (!editingProduct) setName((customGroup.trim() ? formatProductPackLabel(customGroup.trim(), customPackSize.trim() || "") : "").slice(0, 60));
     } else {
       setCustomGroup("");
       const skus = getSkusForGroup(category, newGrp);
       const firstPack = skus[0]?.packSize || "Other";
       setPackSize(firstPack);
       setCustomPackSize("");
-      if (!editingProduct) setName(formatProductPackLabel(newGrp, firstPack !== "Other" ? firstPack : ""));
+      if (!editingProduct) setName(formatProductPackLabel(newGrp, firstPack !== "Other" ? firstPack : "").slice(0, 60));
     }
     setConfirmed(false);
   }
@@ -6497,10 +6497,10 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
   function handlePackChange(newPack: string) {
     setPackSize(newPack);
     if (newPack === "Other") {
-      if (!editingProduct && effectiveGroup) setName(customPackSize.trim() ? formatProductPackLabel(effectiveGroup, customPackSize.trim()) : effectiveGroup);
+      if (!editingProduct && effectiveGroup) setName((customPackSize.trim() ? formatProductPackLabel(effectiveGroup, customPackSize.trim()) : effectiveGroup).slice(0, 60));
     } else {
       setCustomPackSize("");
-      if (!editingProduct && effectiveGroup) setName(formatProductPackLabel(effectiveGroup, newPack));
+      if (!editingProduct && effectiveGroup) setName(formatProductPackLabel(effectiveGroup, newPack).slice(0, 60));
     }
     setConfirmed(false);
   }
@@ -6520,7 +6520,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
   const nutritionPresent = Object.values(nutrition).some((value) => Number(value) > 0);
   const nutritionConsistent = nutritionPresent && nutritionLooksConsistent(nutrition);
   const nutritionStatus: Product["nutritionStatus"] = confirmed && nutritionConsistent ? "Verified" : nutritionConsistent ? "Estimated" : "Pending review";
-  const baseReady = Boolean(name.trim()) && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
+  const baseReady = Boolean(name.trim()) && name.trim().length <= 60 && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
   const foodTypeReady = Boolean(foodType);
   const measurable = nutritionPresent && ["g","kg","ml","L"].includes(packSpec.measure);
   const packBase = packSpec.measure === "kg" || packSpec.measure === "L" ? packSpec.amount * 1000 : packSpec.amount;
@@ -6578,6 +6578,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
   }
 
   async function save() {
+    if (!name.trim()) return toast.error("Enter the product display name");
+    if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
     if (!baseReady) return toast.error("Select the category, SKU group, pack size, and enter price & stock");
     if (!foodType) return toast.error("Choose Vegetarian, Non-vegetarian or Contains egg");
     if (skuGroup === "Other" && !customGroup.trim()) return toast.error("Please enter your custom product / SKU group name");
@@ -6783,8 +6785,9 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Product display name" hint="Appears on customer menu">
-            <input value={name} onChange={(e) => { setName(e.target.value); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
+          <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
+            <input maxLength={60} value={name} onChange={(e) => { setName(e.target.value.slice(0, 60)); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
+            <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>
           </Field>
           <Field label={`Your price for one ${packSize || "pack"}`}>
             <input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} placeholder="₹" />
