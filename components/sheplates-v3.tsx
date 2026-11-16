@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import type * as React from "react";
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Bell, CalendarDays,
-  Check, ClipboardCheck, FileCheck2, HeartPulse,
+  Check, ClipboardCheck, FileCheck2, HeartPulse, Info,
   IndianRupee, LayoutDashboard, ListChecks, LocateFixed, LogOut, MapPin, Menu,
   MessageSquareText, Package, Pause, Percent, Play, Plus, RefreshCcw, Search, Send, Settings,
   ShieldCheck, ShoppingBag, Sparkles, Store, Truck, Upload, UserPlus, Users,
@@ -48,7 +48,20 @@ import { P0VendorManagement } from "@/components/p0-vendor-management";
 import { P0UpgradeAcceptance } from "@/components/p0-upgrade-acceptance";
 
 import { categories, categoryVisual } from "@/lib/sheplates-data";
-import { canAddProduct, canAddDeliveryStaff, canAddDeliverySlot, canCreateFoodDrop, canAccessRfq, getPlanLimits, getPlanDisplayName } from "@/lib/plans";
+import {
+  canAddProduct,
+  canAddDeliveryStaff,
+  canAddDeliverySlot,
+  canCreateFoodDrop,
+  canAccessRfq,
+  getPlanLimits,
+  getPlanDisplayName,
+  getNextMonthFirstIst,
+  formatIstEffectiveDate,
+  isScheduledDowngradeDue,
+  applyScheduledPlanDowngrade,
+  isSameIstDay,
+} from "@/lib/plans";
 import { demoAccounts, type DemoSession } from "@/lib/sheplates-v2-data";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import {
@@ -196,6 +209,11 @@ export type Vendor = {
   termsAcceptedAt?: string;
   termsDocumentReference?: string;
   documents?: VendorComplianceDocument[];
+  scheduledPlanChange?: {
+    nextPlan: "Taster" | "Crave" | "Thrive" | "Crown";
+    effectiveDate: string;
+    requestedAt: string;
+  };
 };
 type VendorOutlet = { id: string; name: string; address: string; latitude?: number; longitude?: number; radiusKm: number; openToday: boolean; certificateNumber?: string; certificateName?: string; certificateExpiry?: string };
 type Schedule = {
@@ -1562,7 +1580,9 @@ export function SheplatesV3() {
   if (role === "vendor") {
     let list = nav.vendor;
     if (vendor?.plan !== "Crown") {
-      list = list.filter((item) => item !== "Quote opportunities");
+      if (vendor?.plan !== "Thrive") {
+        list = list.filter((item) => item !== "Quote opportunities");
+      }
     }
     if (vendor?.category === "Home food") {
       list = list.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]);
@@ -1575,6 +1595,9 @@ export function SheplatesV3() {
     const res: Record<string, { badge: string; reason?: string }> = {};
     if (!canCreateFoodDrop(vendor.plan).allowed) {
       res["Food Drops"] = { badge: "Upgrade to Thrive", reason: "Food Drops are available on Thrive and Crown. Upgrade to Thrive to unlock daily 8 PM Food Drops." };
+    }
+    if (vendor.plan === "Thrive") {
+      res["Quote opportunities"] = { badge: "Upgrade to Crown", reason: "Quotation opportunities and RFQ tools are exclusive to Crown. Upgrade to Crown to unlock." };
     }
     if (Object.keys(res).length) vendorDisabledNavItems = res;
   }
@@ -3573,7 +3596,8 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
   }
 
   async function submit() {
-    const planCheck = canCreateFoodDrop(vendor.plan);
+    const todayDropCount = state.foodDrops.filter((d) => d.vendorId === vendor.id && isSameIstDay(d.startsAt)).length;
+    const planCheck = canCreateFoodDrop(vendor.plan, todayDropCount);
     if (!planCheck.allowed) return toast.error(planCheck.message);
     if (!product) return toast.error("Choose a product");
     if (!title.trim()) return toast.error("Enter a title");
@@ -3643,9 +3667,15 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
     } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
   }
 
-  if (!["Thrive", "Crown"].includes(vendor.plan)) return <div className="space-y-6"><Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Daily evening offers on your own products." /><Empty icon={Zap} title="Food Drops are on the Thrive and Crown plans" body={`Your store is on the ${vendor.plan} plan. Ask Operations to move you to Thrive or Crown to publish Food Drops.`} /></div>;
+  const isPlanAllowed = ["Thrive", "Crown"].includes(vendor.plan);
   return <div className="space-y-6">
-    <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={<Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button>} />
+    <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={isPlanAllowed ? <Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button> : <Button disabled variant="outline" className="opacity-60 cursor-not-allowed">Upgrade to Thrive to create</Button>} />
+    {!isPlanAllowed && (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 font-semibold flex items-center gap-2">
+        <Info className="size-5 text-amber-700 shrink-0" />
+        Your store is on the {vendor.plan} plan. Your Food Drop history and details remain saved below, but active drops are paused and hidden from customers. Upgrade to Thrive to publish daily Food Drops.
+      </div>
+    )}
     <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium leading-relaxed text-[#285fba]">
   How it works: Food Drops run 12:00 PM – 6:00 PM IST. Each drop is available only on the day it is created, and unclaimed units do not carry over.
 </p>
@@ -3680,12 +3710,7 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Weekly menu") return <WeeklyMenuManager vendor={vendor} state={state} setState={setState} />;
-  if (active === "Food Drops") {
-    if (!canCreateFoodDrop(vendor.plan).allowed) {
-      return <div className="space-y-6"><Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Daily evening offers on your own products." /><Empty icon={Zap} title="Food Drops are on the Thrive and Crown plans" body={`Your store is on the ${vendor.plan} plan. Upgrade to Thrive to publish daily Food Drops.`} /></div>;
-    }
-    return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
-  }
+  if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
   if (active === "Quote opportunities") {
     if (!canAccessRfq(vendor.plan).allowed) {
@@ -3711,7 +3736,55 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
   async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
   const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need the Thrive or Crown plan.", Crave: "Food Drops need the Thrive or Crown plan. Quotation requests are on Crown.", Thrive: "Food Drops are on. Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops and customer quotation requests are both on." };
+
+  useEffect(() => {
+    if (!vendor?.scheduledPlanChange) return;
+    if (isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate)) {
+      const outcome = applyScheduledPlanDowngrade(vendor, state.products);
+      if (outcome.applied && outcome.newPlan) {
+        const nextPlan = outcome.newPlan as Vendor["plan"];
+        const deactSet = new Set(outcome.deactivatedProductIds);
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, plan: nextPlan, scheduledPlanChange: undefined } : v),
+          products: deactSet.size ? s.products.map((p) => deactSet.has(p.id) ? { ...p, active: false } : p) : s.products,
+          audit: [audit(session, "Vendor plan changed", outcome.auditDetail || `${vendor.businessName} plan changed to ${nextPlan}`), ...s.audit],
+        }));
+        if (isLiveSupabaseMode()) {
+          void saveLiveVendorPlan(vendor.id, nextPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+        }
+      }
+    }
+  }, [vendor?.id, vendor?.scheduledPlanChange?.effectiveDate]);
+
   return <div className="space-y-5">
+    {vendor.scheduledPlanChange && (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Clock3 className="size-5 shrink-0 text-amber-600" />
+          <span className="text-sm font-semibold">
+            Your plan changes to {vendor.scheduledPlanChange.nextPlan} on {formatIstEffectiveDate(vendor.scheduledPlanChange.effectiveDate)}
+          </span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-amber-300 bg-white font-bold text-amber-900 hover:bg-amber-100"
+          onClick={() => {
+            const planToKeep = vendor.plan;
+            const cancelledTarget = vendor.scheduledPlanChange?.nextPlan;
+            setState((s) => ({
+              ...s,
+              vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, scheduledPlanChange: undefined } : v),
+              audit: [audit(session, "Cancelled scheduled plan downgrade", `${vendor.businessName} cancelled scheduled plan change to ${cancelledTarget} by ${session.name} (${session.email})`), ...s.audit],
+            }));
+            toast.success(`Scheduled plan change cancelled. You will remain on ${planToKeep}.`);
+          }}
+        >
+          Cancel change
+        </Button>
+      </div>
+    )}
     <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#b42332]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#795900]"}`}>{vendor.verification}</span></div>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="Orders today" value={String(ordersToday.length)} icon={ReceiptText} note={`${orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)).length} upcoming in total`} />
@@ -6084,6 +6157,39 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
   const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
+  const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
+
+  function handlePlanSelection(newPlan: Vendor["plan"]) {
+    if (vendor.plan === newPlan) return;
+    if (vendor.plan === "Thrive" && newPlan === "Crave") {
+      setDowngradeTarget(newPlan);
+      setDowngradeConfirmOpen(true);
+      return;
+    }
+    void upgradePlan(newPlan);
+  }
+
+  function confirmDowngrade() {
+    if (!downgradeTarget) return;
+    const target = downgradeTarget;
+    setDowngradeConfirmOpen(false);
+    setDowngradeTarget(null);
+    const effectiveDate = getNextMonthFirstIst();
+    setState((s) => ({
+      ...s,
+      vendors: s.vendors.map((x) => x.id === vendor.id ? {
+        ...x,
+        scheduledPlanChange: {
+          nextPlan: target,
+          effectiveDate,
+          requestedAt: new Date().toISOString(),
+        },
+      } : x),
+      audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
+    }));
+    toast.success(`You can enjoy all Thrive features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
+  }
 
   async function upgradePlan(newPlan: Vendor["plan"]) {
     if (vendor.plan === newPlan) return;
@@ -6111,7 +6217,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
 
         return {
           ...s,
-          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan } : x),
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan, scheduledPlanChange: undefined } : x),
           products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
           staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
           deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
@@ -6235,7 +6341,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
                 ) : (
                   <Button
                     type="button"
-                    onClick={() => void upgradePlan(plan.name)}
+                    onClick={() => handlePlanSelection(plan.name)}
                     disabled={upgradingTo === plan.name}
                     className={`w-full rounded-xl font-black ${
                       isHigher
@@ -6267,6 +6373,33 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         session={session}
       />
     )}
+    <Dialog open={downgradeConfirmOpen} onOpenChange={(v) => { if (!v) { setDowngradeConfirmOpen(false); setDowngradeTarget(null); } }}>
+      <DialogContent className="rounded-[28px] sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-black">Change to Crave plan</DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed text-stone-600 pt-2">
+            You can enjoy all the features of the Thrive plan until the end of this month. Your plan will change to Crave from the 1st of next month.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap justify-end gap-3 pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => { setDowngradeConfirmOpen(false); setDowngradeTarget(null); }}
+            className="rounded-xl font-bold"
+          >
+            Keep Thrive
+          </Button>
+          <Button
+            type="button"
+            onClick={confirmDowngrade}
+            className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#114b50]"
+          >
+            Confirm
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 

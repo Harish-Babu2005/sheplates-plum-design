@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
 import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
-import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode } from "./plans";
+import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode, getIstMidnightDate } from "./plans";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -1561,6 +1561,12 @@ export async function createLiveFoodDrop(input: {
   const dropCheck = canCreateFoodDrop(planCode);
   if (!dropCheck.allowed) {
     throw new Error(dropCheck.message);
+  }
+  const istMidnight = getIstMidnightDate();
+  const { count } = await supabase.from("food_drops").select("id", { count: "exact", head: true }).eq("vendor_id", input.vendorId).gte("created_at", istMidnight.toISOString());
+  const dailyCheck = canCreateFoodDrop(planCode, count || 0);
+  if (!dailyCheck.allowed) {
+    throw new Error(dailyCheck.message);
   }
   const { startsAt, endsAt } = nextFoodDropWindow();
   const result = await supabase.from("food_drops").insert({

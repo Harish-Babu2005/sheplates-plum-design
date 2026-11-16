@@ -67,12 +67,12 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     code: "thrive",
     name: "Thrive",
     monthlyPrice: 799,
-    maxProducts: 250,
-    maxFoodDrops: 1,
-    maxFoodShortsPerDay: 10,
+    maxProducts: 300,
+    maxFoodDrops: 3,
+    maxFoodShortsPerDay: 5,
     maxDeliveryStaff: 10,
-    maxDeliverySlots: 10,
-    maxAiPicturesPerDay: 25,
+    maxDeliverySlots: 6,
+    maxAiPicturesPerDay: 15,
     maxRadiusKm: 30,
     rfqAccess: false,
     whatsappLeads: false,
@@ -222,8 +222,59 @@ export function canAddDeliverySlot(plan: string, currentCount: number): { allowe
   return { allowed: true, limit: limits.maxDeliverySlots };
 }
 
-/** Check if Food Drops are available for this plan */
-export function canCreateFoodDrop(plan: string): { allowed: boolean; limit: number; message?: string; reason?: string } {
+/**
+ * Returns the 1st of next month in IST formatted as YYYY-MM-01
+ */
+export function getNextMonthFirstIst(refDate: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(refDate);
+
+  const yearPart = parts.find((p) => p.type === "year")?.value || "2026";
+  const monthPart = parts.find((p) => p.type === "month")?.value || "11";
+
+  let year = parseInt(yearPart, 10);
+  let month = parseInt(monthPart, 10);
+
+  if (month === 12) {
+    year += 1;
+    month = 1;
+  } else {
+    month += 1;
+  }
+
+  const mm = String(month).padStart(2, "0");
+  return `${year}-${mm}-01`;
+}
+
+/**
+ * Formats an IST effective date (e.g. "2026-12-01") into human readable "1 December"
+ */
+export function formatIstEffectiveDate(dateStr: string): string {
+  try {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    if (!year || !month || !day) return dateStr;
+    const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    const monthName = d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+    return `${day} ${monthName}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Checks if the effective date for a scheduled downgrade has arrived or passed in IST
+ */
+export function isScheduledDowngradeDue(effectiveDateStr: string, refDate: Date = new Date()): boolean {
+  const todayIst = getIstDateKey(refDate);
+  return todayIst >= effectiveDateStr;
+}
+
+/** Check if Food Drops are available for this plan and within daily creation limits (resets midnight IST) */
+export function canCreateFoodDrop(plan: string, countTodayIst: number = 0): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
   if (limits.maxFoodDrops <= 0) {
     const msg = `Food Drops are not included in the ${limits.name} plan. Upgrade to Thrive to publish daily Food Drops.`;
@@ -234,7 +285,64 @@ export function canCreateFoodDrop(plan: string): { allowed: boolean; limit: numb
       reason: msg,
     };
   }
+  if (countTodayIst >= limits.maxFoodDrops) {
+    const nextPlan = "Crown";
+    const msg = `Daily limit reached: ${limits.name} allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
+    return {
+      allowed: false,
+      limit: limits.maxFoodDrops,
+      message: msg,
+      reason: msg,
+    };
+  }
   return { allowed: true, limit: limits.maxFoodDrops };
+}
+
+/**
+ * Automatically applies a scheduled plan downgrade when effective date is reached.
+ * Deactivates products exceeding the new plan limit (newest first, setting active: false, never deleting).
+ */
+export function applyScheduledPlanDowngrade<TProduct extends { id: string; vendorId: string; active: boolean; createdAt?: string }>(
+  vendor: { id: string; businessName: string; plan: string; scheduledPlanChange?: { nextPlan: string; effectiveDate: string; requestedAt: string } },
+  products: TProduct[],
+  refDate: Date = new Date()
+): {
+  applied: boolean;
+  newPlan?: string;
+  deactivatedProductIds: string[];
+  auditDetail?: string;
+} {
+  if (!vendor.scheduledPlanChange) return { applied: false, deactivatedProductIds: [] };
+  if (!isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate, refDate)) {
+    return { applied: false, deactivatedProductIds: [] };
+  }
+
+  const nextPlan = vendor.scheduledPlanChange.nextPlan;
+  const newLimits = getPlanLimits(nextPlan);
+  const vendorProducts = products.filter((p) => p.vendorId === vendor.id && p.active);
+
+  // If excess products exist, sort by createdAt descending (newest first) and deactivate
+  const deactivatedProductIds: string[] = [];
+  if (vendorProducts.length > newLimits.maxProducts) {
+    const sorted = [...vendorProducts].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+    const excess = sorted.slice(0, vendorProducts.length - newLimits.maxProducts);
+    for (const item of excess) {
+      deactivatedProductIds.push(item.id);
+    }
+  }
+
+  const auditDetail = `Scheduled downgrade applied: ${vendor.businessName} moved from ${vendor.plan} to ${nextPlan}. ${deactivatedProductIds.length} excess product(s) deactivated (newest first).`;
+
+  return {
+    applied: true,
+    newPlan: nextPlan,
+    deactivatedProductIds,
+    auditDetail,
+  };
 }
 
 /** Check if RFQ (Quotations) access is allowed */

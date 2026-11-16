@@ -11,6 +11,7 @@ import { BadgeCheck, InfoIcon as Info, List, MapPin, Search, Timer, Zap, Message
 import { toast } from "sonner";
 import { MARKET_GROUPS } from "@/lib/market-groups";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
+import { canCreateFoodDrop } from "@/lib/plans";
 import type { NearbyVendorsMap as NearbyVendorsMapComponent, MapVendor, MapPerson } from "@/components/nearby-vendors-map";
 import type { Vendor, V3State } from "@/components/sheplates-v3";
 import type { SocialApi } from "@/lib/social";
@@ -266,7 +267,11 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
   }, [shorts, vendorRadius]);
 
   const rows = useMemo(() => {
-    const activity = (vendorId: string) => (shortsByVendor.get(vendorId)?.length || 0) * 2 + state.foodDrops.filter((d) => d.vendorId === vendorId && dropDisplayStatus(d) === "live").length * 3 + state.orders.filter((o) => o.vendorId === vendorId).length * 0.2;
+    const activity = (vendorId: string) => {
+      const v = state.vendors.find((item) => item.id === vendorId);
+      const dropsAllowed = v && canCreateFoodDrop(v.plan).allowed;
+      return (shortsByVendor.get(vendorId)?.length || 0) * 2 + (dropsAllowed ? state.foodDrops.filter((d) => d.vendorId === vendorId && dropDisplayStatus(d) === "live").length * 3 : 0) + state.orders.filter((o) => o.vendorId === vendorId).length * 0.2;
+    };
     let vendors = state.vendors.filter((v) => Number.isFinite(v.latitude) && Number.isFinite(v.longitude));
     const q = query.trim().toLowerCase(); if (q) vendors = vendors.filter((v) => `${v.businessName} ${v.category}`.toLowerCase().includes(q));
     if (tab === "Following") vendors = vendors.filter((v) => social.followed.includes(v.id));
@@ -538,8 +543,13 @@ export function FoodDropsTab({ state, profile, social, onClaim, onRefresh }: { s
   const [scope, setScope] = useState<DropScope>("Nearby");
   useEffect(() => { onRefresh(); const id = window.setInterval(onRefresh, 30_000); return () => window.clearInterval(id); }, [onRefresh]);
   const drops = useMemo(() => {
-    const live = state.foodDrops.filter((d) => ["live", "scheduled"].includes(dropDisplayStatus(d)));
-    const known = (d: FoodDrop) => state.vendors.find((v) => v.id === d.vendorId);
+    const known = (d: FoodDrop) => {
+      const v = state.vendors.find((item) => item.id === d.vendorId);
+      if (!v) return null;
+      if (!canCreateFoodDrop(v.plan).allowed) return null;
+      return v;
+    };
+    const live = state.foodDrops.filter((d) => ["live", "scheduled"].includes(dropDisplayStatus(d)) && Boolean(known(d)));
     const km = (d: FoodDrop) => { const v = known(d); return v ? vendorDistanceKm(profile, v) ?? 99 : 99; };
     if (scope === "Nearby") return live.filter((d) => known(d) && km(d) <= 8).sort((a, b) => new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime());
     if (scope === "Following") return live.filter((d) => social.followed.includes(d.vendorId));

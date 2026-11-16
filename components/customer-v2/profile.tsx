@@ -11,6 +11,7 @@ import { VendorQrCode } from "@/components/vendor-qr-code";
 import { toast } from "sonner";
 import { FoodTypeMark } from "@/components/food-type-mark";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { canCreateFoodDrop } from "@/lib/plans";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
 import type { Product, V3State } from "@/components/sheplates-v3";
 import { WeeklyMenuTab, type PlanPreset } from "@/components/weekly-menu";
@@ -136,7 +137,9 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
   const vendor = vendorId ? state.vendors.find((v) => v.id === vendorId) : undefined;
   if (!vendor) return null;
   const products = state.products.filter((p) => p.vendorId === vendor.id && p.active);
-  const drops = state.foodDrops.filter((d) => d.vendorId === vendor.id && ["live", "scheduled"].includes(dropDisplayStatus(d)));
+  const drops = canCreateFoodDrop(vendor.plan).allowed
+    ? state.foodDrops.filter((d) => d.vendorId === vendor.id && ["live", "scheduled"].includes(dropDisplayStatus(d)))
+    : [];
   const productIds = new Set(products.map((p) => p.id)); const reviews = state.reviews.filter((r) => productIds.has(r.productId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor); const following = social.followed.includes(vendor.id);
   const photo = vendorPhoto(state, vendor);
