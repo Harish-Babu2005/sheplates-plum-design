@@ -5,6 +5,7 @@ import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
 import { validateSkuSelection } from "@/lib/sku-master";
+import { getPlanLimits, canAddDeliveryStaff, canAddDeliverySlot, extractPlanCode } from "@/lib/plans";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -869,6 +870,13 @@ export async function POST(request: Request) {
     if (action === "save_staff") {
       if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
       const staffId = body.staffId ? String(body.staffId) : "";
+      if (!staffId) {
+        const { data: vendorRow } = await admin.from("vendors").select("plan_id,vendor_plans(code)").eq("id", profile.vendor_id).maybeSingle();
+        const planCode = extractPlanCode(vendorRow?.vendor_plans) || "crave";
+        const { count: currentStaffCount } = await admin.from("vendor_delivery_staff").select("id", { count: "exact", head: true }).eq("vendor_id", profile.vendor_id);
+        const planCheck = canAddDeliveryStaff(planCode || "crave", currentStaffCount ?? 0);
+        if (!planCheck.allowed) return NextResponse.json({ error: planCheck.message }, { status: 403 });
+      }
       const row = { vendor_id: profile.vendor_id, full_name: String(body.name || "").trim(), phone: String(body.phone || "").trim(), active: body.active !== false, updated_at: new Date().toISOString() };
       if (!row.full_name || !row.phone) return NextResponse.json({ error: "Name and phone are required." }, { status: 400 });
       const result = staffId ? await admin.from("vendor_delivery_staff").update(row).eq("id", staffId).eq("vendor_id", profile.vendor_id).select("id").single() : await admin.from("vendor_delivery_staff").insert(row).select("id").single();
@@ -965,6 +973,12 @@ export async function POST(request: Request) {
         .eq("vendor_id", targetVendorId);
 
       const allSlots = existingSlots || [];
+      if (!slotId) {
+        const { data: vendorRow } = await admin.from("vendors").select("plan_id,vendor_plans(code)").eq("id", targetVendorId).maybeSingle();
+        const planCode = extractPlanCode(vendorRow?.vendor_plans) || "crave";
+        const planCheck = canAddDeliverySlot(planCode, allSlots.length);
+        if (!planCheck.allowed) return NextResponse.json({ error: planCheck.message }, { status: 403 });
+      }
       const duplicateName = allSlots.find(
         (s) => s.id !== slotId && String(s.slot_name).trim().toLowerCase() === slotName.toLowerCase()
       );

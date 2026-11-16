@@ -48,6 +48,7 @@ import { P0VendorManagement } from "@/components/p0-vendor-management";
 import { P0UpgradeAcceptance } from "@/components/p0-upgrade-acceptance";
 
 import { categories, categoryVisual } from "@/lib/sheplates-data";
+import { canAddProduct, canAddDeliveryStaff, canAddDeliverySlot, canCreateFoodDrop, canAccessRfq, getPlanLimits, getPlanDisplayName } from "@/lib/plans";
 import { demoAccounts, type DemoSession } from "@/lib/sheplates-v2-data";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import {
@@ -1556,6 +1557,28 @@ export function SheplatesV3() {
     : role === "operations"
       ? { "Vendor verification": state.vendors.filter((v) => v.vendorKind !== "p0_connect" && ["Submitted", "Under review"].includes(v.verification)).length, "Ticket centre": openTicketCount, Cancellations: state.cancellations.filter((x) => x.status === "Awaiting operations").length }
       : role === "admin" ? { "Ticket centre": openTicketCount } : {};
+
+  let vendorNavItems = nav[role];
+  if (role === "vendor") {
+    let list = nav.vendor;
+    if (vendor?.plan !== "Crown") {
+      list = list.filter((item) => item !== "Quote opportunities");
+    }
+    if (vendor?.category === "Home food") {
+      list = list.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]);
+    }
+    vendorNavItems = list;
+  }
+
+  let vendorDisabledNavItems: Record<string, { badge: string; reason?: string }> | undefined = undefined;
+  if (role === "vendor" && vendor) {
+    const res: Record<string, { badge: string; reason?: string }> = {};
+    if (!canCreateFoodDrop(vendor.plan).allowed) {
+      res["Food Drops"] = { badge: "Upgrade to Thrive", reason: "Food Drops are available on Thrive and Crown. Upgrade to Thrive to unlock daily 8 PM Food Drops." };
+    }
+    if (Object.keys(res).length) vendorDisabledNavItems = res;
+  }
+
   const content = role === "customer"
     ? renderCustomerPage()
     : role === "vendor"
@@ -1582,7 +1605,7 @@ export function SheplatesV3() {
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
       {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={handleOpenVendor} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { handleOpenVendor(null); setActive("Cart"); }} />
-    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={role === "vendor" && vendor?.category === "Home food" ? nav.vendor.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]) : nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
+    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={vendorNavItems} disabledItems={vendorDisabledNavItems} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
       onOpenVendorProfile={() => { if (vendor) handleOpenVendor(vendor.id); else setActive("Vendor profile"); }}
       vendor={vendor}
       banner={<>
@@ -3550,6 +3573,8 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
   }
 
   async function submit() {
+    const planCheck = canCreateFoodDrop(vendor.plan);
+    if (!planCheck.allowed) return toast.error(planCheck.message);
     if (!product) return toast.error("Choose a product");
     if (!title.trim()) return toast.error("Enter a title");
     if (!dropPrice || dropPrice <= 0 || dropPrice >= originalPrice) return toast.error("Drop price must be positive and below the current price");
@@ -3655,9 +3680,19 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Catalog") return <Catalog vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Weekly menu") return <WeeklyMenuManager vendor={vendor} state={state} setState={setState} />;
-  if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
+  if (active === "Food Drops") {
+    if (!canCreateFoodDrop(vendor.plan).allowed) {
+      return <div className="space-y-6"><Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Daily evening offers on your own products." /><Empty icon={Zap} title="Food Drops are on the Thrive and Crown plans" body={`Your store is on the ${vendor.plan} plan. Upgrade to Thrive to publish daily Food Drops.`} /></div>;
+    }
+    return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
+  }
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
-  if (active === "Quote opportunities") return isLiveSupabaseMode() ? <LiveVendorRfqs vendor={vendor} /> : <VendorQuotes vendor={vendor} state={state} setState={setState} session={session} />;
+  if (active === "Quote opportunities") {
+    if (!canAccessRfq(vendor.plan).allowed) {
+      return <div className="space-y-6"><Heading eyebrow="RFQ QUOTATIONS" title="Quote opportunities" body="Request for Quote (RFQ) is an exclusive Crown feature." /><Empty icon={ClipboardCheck} title="Quote opportunities are on the Crown plan" body="Upgrade to Crown to receive customer quotation requests and RFQ opportunities." /></div>;
+    }
+    return isLiveSupabaseMode() ? <LiveVendorRfqs vendor={vendor} /> : <VendorQuotes vendor={vendor} state={state} setState={setState} session={session} />;
+  }
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="vendor" vendor={vendor} />;
   if (active === "Delivery team") return <DeliveryTeam vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Settlements") return <VendorSettlements vendor={vendor} state={state} />;
@@ -5268,6 +5303,9 @@ function DeliverySlotsSection({
   const [actionId, setActionId] = useState<string | null>(null);
 
   function handleOpenAdd() {
+    const currentSlots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+    const check = canAddDeliverySlot(vendor.plan, currentSlots.length);
+    if (!check.allowed) return toast.error(check.message);
     setEditingSlot(null);
     setSlotName("");
     setStartTime("09:00");
@@ -5288,6 +5326,14 @@ function DeliverySlotsSection({
   }
 
   async function handleSave() {
+    if (!editingSlot) {
+      const currentSlots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+      const check = canAddDeliverySlot(vendor.plan, currentSlots.length);
+      if (!check.allowed) {
+        setFormError(check.message || "");
+        return toast.error(check.message);
+      }
+    }
     const validation = validateDeliverySlot({
       slotName,
       startTime,
@@ -6046,14 +6092,35 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
       if (isLiveSupabaseMode()) {
         await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
       }
-      setState((s) => ({
-        ...s,
-        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan } : x),
-        audit: [audit(session, "Vendor upgraded plan", `${vendor.businessName} switched to ${newPlan}`), ...s.audit],
-      }));
+      const newLimits = getPlanLimits(newPlan);
+      setState((s) => {
+        const activeProds = s.products.filter((p) => p.vendorId === vendor.id && p.active);
+        const excessProds = activeProds.length > newLimits.maxProducts
+          ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+          : new Set<string>();
+
+        const activeStaff = s.staff.filter((st) => st.vendorId === vendor.id && st.active);
+        const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+          ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+          : new Set<string>();
+
+        const activeSlots = (s.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+        const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+          ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+          : new Set<string>();
+
+        return {
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan } : x),
+          products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+          staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+          deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+          audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${vendor.plan} to ${newPlan} by ${session.name} (${session.email})`), ...s.audit],
+        };
+      });
       toast.success(`Plan upgraded to ${newPlan}!`);
     } catch (error) {
-      toast.error(errorMessage(error, "Plan upgrade could not be saved"));
+      toast.error(errorMessage(error, "Plan update could not be saved"));
     } finally {
       setUpgradingTo(null);
     }
@@ -6289,7 +6356,7 @@ function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: 
 
   const unsetFoodType = items.filter((item) => !item.foodType).length;
   const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
-  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
+  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { const check = canAddProduct(vendor.plan, items.length); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { const check = canAddProduct(vendor.plan, 0); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} existingProductsCount={items.length} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
 }
 
 
@@ -6337,9 +6404,21 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
           if (response.ok && json.items?.length) list = json.items.map((item) => { const draft = { name: String(item.name || "").trim(), category: matchCategory(item.category, categoryNames, defaultCategory), pack: item.pack || "1 pack", price: Number(item.price || 0), stock: Math.max(1, Number(item.stock || 1)) }; return { ...draft, problems: rowProblems(draft) } as CatalogueDraftRow; }).filter((item) => item.name);
         } catch { /* keep the rows read directly from the file */ }
       }
+      const currentCount = replaceExisting ? 0 : existingProducts.length;
+      const maxProducts = getPlanLimits(vendor.plan).maxProducts;
+      if (currentCount >= maxProducts) {
+        return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Upgrade to Thrive to add more.`);
+      }
+      let trimmed = false;
+      if (currentCount + list.length > maxProducts) {
+        const allowed = Math.max(0, maxProducts - currentCount);
+        list = list.slice(0, allowed);
+        trimmed = true;
+        toast.warning(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Trimming upload to ${allowed} products.`);
+      }
       setRows(list.map(toDraft));
       const missing = list.filter((item) => item.problems.length).length;
-      setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
+      setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.${trimmed ? ` (Trimmed to meet ${getPlanDisplayName(vendor.plan)} limit of ${maxProducts})` : ""}`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
       toast.success(`${list.length} item(s) prepared. Review every row before publishing.`);
     } catch (error) { toast.error(errorMessage(error, "That file could not be read. Try saving it as CSV.")); }
     finally { setReading(false); }
@@ -6358,6 +6437,11 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   async function publishAll() {
     const valid = rows.filter((row) => rowProblems(row).length === 0);
     if (!valid.length) return toast.error("Add a price and stock for at least one item");
+    const currentCount = replaceExisting ? 0 : existingProducts.length;
+    const maxProducts = getPlanLimits(vendor.plan).maxProducts;
+    if (currentCount + valid.length > maxProducts) {
+      return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${existingProducts.length}. Upgrade to Thrive to add more.`);
+    }
     setBusy(true);
     const created: Product[] = [];
     const failed = new Map<string, string>();
@@ -6429,7 +6513,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   </DialogContent></Dialog>;
 }
 
-function ProductDialog({ open, close, vendor, setState, session, editingProduct }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null }) {
+function ProductDialog({ open, close, vendor, setState, session, editingProduct, existingProductsCount }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null; existingProductsCount?: number }) {
   const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>(defaultCategory);
@@ -6667,6 +6751,13 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct 
       return toast.error(skuValidation.error || "Invalid Category, SKU Group, or Pack Size selection.");
     }
 
+    if (!editingProduct) {
+      const planCheck = canAddProduct(vendor.plan, existingProductsCount ?? 0);
+      if (!planCheck.allowed) {
+        return toast.error(planCheck.reason);
+      }
+    }
+
     setBusy(true);
     try {
       const active = vendor.verification === "Verified";
@@ -6897,6 +6988,12 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
   const people = state.staff.filter((x) => x.vendorId === vendor.id);
   async function savePerson() {
     if (!name || !/^\+?[0-9 ]{10,15}$/.test(phone)) return toast.error("Enter a staff name and valid phone number");
+    if (!editing) {
+      const staffCheck = canAddDeliveryStaff(vendor.plan, people.length);
+      if (!staffCheck.allowed) {
+        return toast.error(staffCheck.reason);
+      }
+    }
     try {
       let staffId = editing?.id || id("STF");
       if (isLiveSupabaseMode()) { const result = await saveLiveDeliveryStaff({ staffId: editing?.id, name, phone, active: editing?.active ?? true }); staffId = String(result.id); }
@@ -7787,9 +7884,33 @@ function AdminVendors({ session, state, setState, onOpenVendorProfile }: { sessi
           </div></TableCell>
           <TableCell><Select value={vendor.plan} onValueChange={(value) => {
             const plan = value as Vendor["plan"];
-            setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) }));
+            const oldPlan = vendor.plan;
+            const newLimits = getPlanLimits(plan);
+            const activeProds = state.products.filter((p) => p.vendorId === vendor.id && p.active);
+            const excessProds = activeProds.length > newLimits.maxProducts
+              ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+              : new Set<string>();
+
+            const activeStaff = state.staff.filter((st) => st.vendorId === vendor.id && st.active);
+            const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+              ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+              : new Set<string>();
+
+            const activeSlots = (state.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+            const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+              ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+              : new Set<string>();
+
+            setState((s) => ({
+              ...s,
+              vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x),
+              products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+              staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+              deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+              audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${oldPlan} to ${plan} by ${session.name} (${session.email})`), ...s.audit],
+            }));
             if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => {
-              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) }));
+              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x) }));
               toast.error(error.message || "Could not save the plan change");
             });
           }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>

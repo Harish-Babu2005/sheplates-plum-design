@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
 import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
+import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode } from "./plans";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -715,6 +716,13 @@ export async function saveLiveVendorProduct(input: {
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const { count: currentProductCount } = await supabase.from("vendor_menu_items").select("id", { count: "exact", head: true }).eq("vendor_id", input.vendorId);
+  const { data: vendorData } = await supabase.from("vendors").select("plan_id,vendor_plans(code)").eq("id", input.vendorId).maybeSingle();
+  const planCode = extractPlanCode(vendorData?.vendor_plans) || "crave";
+  const limitCheck = canAddProduct(planCode, currentProductCount ?? 0);
+  if (!limitCheck.allowed) {
+    throw new Error(limitCheck.message);
+  }
   const basePayload = {
     vendor_id: input.vendorId, name: input.name, category: input.category, unit: input.unit,
     quantity_step: 1, vendor_base_price: input.price, stock_quantity: input.stock, active: input.active,
@@ -869,10 +877,69 @@ export async function updateLiveVendorControls(vendorId: string, patch: {
 export async function saveLiveVendorPlan(vendorId: string, planCode: "taster" | "crave" | "thrive" | "crown") {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const plan = await supabase.from("vendor_plans").select("id").eq("code", planCode).single();
+  const plan = await supabase.from("vendor_plans").select("id,code,name").eq("code", planCode).single();
   if (plan.error) throw plan.error;
   const result = await supabase.from("vendors").update({ plan_id: plan.data.id, updated_at: new Date().toISOString() }).eq("id", vendorId);
   if (result.error) throw result.error;
+
+  const limits = getPlanLimits(planCode);
+
+  // Downgrade enforcement:
+  // 1. Deactivate excess active products (newest first, never delete)
+  const { data: activeProducts } = await supabase
+    .from("vendor_menu_items")
+    .select("id,created_at")
+    .eq("vendor_id", vendorId)
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+  if (activeProducts && activeProducts.length > limits.maxProducts) {
+    const excess = activeProducts.slice(0, activeProducts.length - limits.maxProducts);
+    const excessIds = excess.map((p) => p.id);
+    await supabase.from("vendor_menu_items").update({ active: false, updated_at: new Date().toISOString() }).in("id", excessIds);
+  }
+
+  // 2. Deactivate excess active delivery staff (newest first)
+  const { data: activeStaff } = await supabase
+    .from("vendor_delivery_staff")
+    .select("id,created_at")
+    .eq("vendor_id", vendorId)
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+  if (activeStaff && activeStaff.length > limits.maxDeliveryStaff) {
+    const excess = activeStaff.slice(0, activeStaff.length - limits.maxDeliveryStaff);
+    const excessIds = excess.map((s) => s.id);
+    await supabase.from("vendor_delivery_staff").update({ active: false, updated_at: new Date().toISOString() }).in("id", excessIds);
+  }
+
+  // 3. Deactivate excess active delivery slots (newest first)
+  const { data: activeSlots } = await supabase
+    .from("vendor_delivery_slots")
+    .select("id,created_at")
+    .eq("vendor_id", vendorId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  if (activeSlots && activeSlots.length > limits.maxDeliverySlots) {
+    const excess = activeSlots.slice(0, activeSlots.length - limits.maxDeliverySlots);
+    const excessIds = excess.map((s) => s.id);
+    await supabase.from("vendor_delivery_slots").update({ is_active: false, updated_at: new Date().toISOString() }).in("id", excessIds);
+  }
+
+  // 4. Record audit log entry
+  try {
+    const userRes = await supabase.auth.getUser();
+    const user = userRes?.data?.user;
+    if (user) {
+      await supabase.from("audit_logs").insert({
+        actor_id: user.id,
+        action: "Vendor plan changed",
+        entity_type: "vendor",
+        entity_id: vendorId,
+        after_data: { plan: planCode, limits, changed_at: new Date().toISOString() },
+      });
+    }
+  } catch (err) {
+    console.error("Audit log error in saveLiveVendorPlan:", err);
+  }
 }
 
 export async function decideLiveVendorVerification(vendorId: string, verification: string) {
@@ -1489,6 +1556,12 @@ export async function createLiveFoodDrop(input: {
 }): Promise<import("@/lib/food-drops").FoodDrop> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const { data: vRow } = await supabase.from("vendors").select("plan_id,vendor_plans(code)").eq("id", input.vendorId).maybeSingle();
+  const planCode = extractPlanCode(vRow?.vendor_plans) || "crave";
+  const dropCheck = canCreateFoodDrop(planCode);
+  if (!dropCheck.allowed) {
+    throw new Error(dropCheck.message);
+  }
   const { startsAt, endsAt } = nextFoodDropWindow();
   const result = await supabase.from("food_drops").insert({
     vendor_id: input.vendorId, product_id: input.productId, title: input.title, description: input.description || null,

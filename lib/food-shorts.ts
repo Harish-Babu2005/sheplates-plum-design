@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient, isLiveSupabaseMode } from "@/lib/supabase";
 import { startAutoRefresh } from "@/lib/auto-refresh";
 import { MAX_SHORTS_PER_DAY, checkVideoDuration, checkVideoFile, defaultReachKm, haversineKm, shortVisibleAtDistance, type ShortStatus } from "@/lib/food-shorts-rules";
+import { isSameIstDay, canUploadFoodShort } from "@/lib/plans";
 import { deleteLocalVideo, loadLocalVideoUrl, saveLocalVideo } from "@/lib/food-shorts-media";
 
 export type FoodShort = {
@@ -216,8 +217,11 @@ export function useFoodShorts(user: ShortsUser, vendors: ShortsVendor[], viewer:
       try { parsedShopLink = new URL(shopLink); } catch { throw new Error("Enter a valid shop link beginning with https://"); }
       if (!["https:", "http:"].includes(parsedShopLink.protocol)) throw new Error("Shop links must use http:// or https://");
     }
-    const today = mine.filter((s) => Date.now() - new Date(s.createdAt).getTime() < 86_400_000).length;
-    if (today >= MAX_SHORTS_PER_DAY) throw new Error(`Daily limit reached: ${MAX_SHORTS_PER_DAY} Food Shorts per day`);
+    const vendorObj = vendorById(vendorId);
+    const vendorPlan = (vendorObj as any)?.plan || "crave";
+    const today = mine.filter((s) => isSameIstDay(s.createdAt)).length;
+    const limitCheck = canUploadFoodShort(vendorPlan, today);
+    if (!limitCheck.allowed) throw new Error(limitCheck.message);
     const vendorName = vendorById(vendorId)?.businessName || "";
     if (mode === "remote") {
       const sb = getSupabaseBrowserClient(); if (!sb || !userId) throw new Error("Sign in again to post");

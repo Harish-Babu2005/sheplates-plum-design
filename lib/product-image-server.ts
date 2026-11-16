@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { buildProductImagePrompt, conceptKey, detectImageType, sanitizeProductName, storageSlug } from "@/lib/product-image-ai";
+import { getIstMidnightDate, canGenerateAiPicture, extractPlanCode } from "@/lib/plans";
 
 /** Server-only: draws one product image with the image model, keeps it in storage, and remembers it per product type. */
 
@@ -72,7 +73,7 @@ async function nameIsAllowed(apiKey: string, name: string, fetchImpl?: Fetch): P
 }
 
 async function usageToday(admin: SupabaseClient, vendorId: string | null) {
-  const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+  const since = getIstMidnightDate();
   const total = await admin.from("ai_product_images").select("concept_key", { count: "exact", head: true }).gte("created_at", since.toISOString());
   if (total.error) {
     if (/ai_product_images|does not exist|schema cache/i.test(total.error.message) || total.error.code === "42P01") {
@@ -117,7 +118,19 @@ export async function ensureConceptImage(admin: SupabaseClient, input: { name: s
 
   const usage = await usageToday(admin, input.vendorId);
   if (usage.total >= DAILY_LIMIT()) throw new ImageError(429, "The daily limit for AI product images has been reached. It resets tomorrow.");
-  if (input.vendorId && usage.mine >= VENDOR_DAILY_LIMIT()) throw new ImageError(429, "Your store has used its AI images for today. Try again tomorrow or upload a photo.");
+  if (input.vendorId) {
+    if (usage.mine >= VENDOR_DAILY_LIMIT()) {
+      throw new ImageError(429, "Your store has used its AI images for today. Try again tomorrow or upload a photo.");
+    }
+    try {
+      const { data: vRow } = await admin.from("vendors").select("plan_id,vendor_plans(code)").eq("id", input.vendorId).maybeSingle();
+      const planCode = extractPlanCode(vRow?.vendor_plans) || "crave";
+      const planCheck = canGenerateAiPicture(planCode, usage.mine);
+      if (!planCheck.allowed) throw new ImageError(429, planCheck.message || "Your store has reached its daily limit for AI images.");
+    } catch (e) {
+      if (e instanceof ImageError) throw e;
+    }
+  }
 
   const apiKeyValue = apiKey();
   if (!apiKeyValue) throw new ImageError(503, "AI images are temporarily unavailable.");

@@ -6,6 +6,8 @@ import { errorMessage } from "@/lib/error-message";
 import type * as React from "react";
 import Image from "next/image";
 import { BadgeCheck, CalendarDays, ChevronRight, ClipboardCheck, Heart, HelpCircle, ListChecks, LogOut, Package, ShoppingCart, TicketCheck, UserRound, Zap, FileText, MapPin } from "@/components/icons";
+import { QrCode } from "lucide-react";
+import { VendorQrCode } from "@/components/vendor-qr-code";
 import { toast } from "sonner";
 import { FoodTypeMark } from "@/components/food-type-mark";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -130,6 +132,7 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
   onAdd: (p: Product) => void; onPlan: (p: Product, preset?: PlanPreset) => void; onToggleWishlist: (p: Product) => void; onClaimDrop: (d: FoodDrop, q: number) => Promise<void>; onFollowed?: (vendor: V3State["vendors"][number]) => void;
 }) {
   const [tab, setTab] = useState<VendorTabKey>("Menu");
+  const [qrOpen, setQrOpen] = useState(false);
   const vendor = vendorId ? state.vendors.find((v) => v.id === vendorId) : undefined;
   if (!vendor) return null;
   const products = state.products.filter((p) => p.vendorId === vendor.id && p.active);
@@ -140,7 +143,29 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
   return <Dialog open onOpenChange={(v) => !v && onClose()}><DialogContent className="max-h-[94vh] gap-0 overflow-y-auto overflow-x-hidden rounded-[28px] p-0 sm:max-w-5xl [&>*]:min-w-0">
     <DialogHeader className="sr-only"><DialogDescription>{vendor.businessName} — public vendor profile</DialogDescription></DialogHeader>
     <div className="relative h-40 sm:h-52"><PhotoTile imageUrl={vendor.bannerUrl} category={vendor.category} className="h-full w-full" emojiSize={90} /></div>
-    <div className="px-5 pb-5"><div className="-mt-10 flex items-end gap-3"><PhotoTile imageUrl={vendor.logoUrl || photo} category={vendor.category} initial={vendor.businessName?.[0]} className="size-20 shrink-0 rounded-2xl border-4 border-white shadow-lg bg-[#EAF4F2]" emojiSize={34} /></div>
+    <div className="px-5 pb-5"><div className="-mt-10 flex items-end justify-between gap-3">
+      <div className="relative group">
+        <PhotoTile imageUrl={vendor.logoUrl || photo} category={vendor.category} initial={vendor.businessName?.[0]} className="size-20 shrink-0 rounded-2xl border-4 border-white shadow-lg bg-[#EAF4F2]" emojiSize={34} />
+        <button
+          type="button"
+          onClick={() => setQrOpen(true)}
+          title="Kitchen QR code"
+          aria-label="Scan kitchen QR code"
+          data-testid="kitchen-profile-qr-button"
+          className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow hover:bg-[#0e4449] transition cursor-pointer"
+        >
+          <QrCode className="size-3.5" />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setQrOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1.5 text-xs font-bold text-stone-700 shadow-sm hover:bg-stone-50 transition"
+      >
+        <QrCode className="size-3.5 text-[#155F65]" />
+        <span>Kitchen QR</span>
+      </button>
+    </div>
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><DialogTitle asChild><h2 className="flex items-center gap-1.5 text-xl font-black leading-tight tracking-[-.02em]">{vendor.businessName}{vendor.verification === "Verified" && <BadgeCheck className="size-5 text-sky-500" aria-label="Verified" />}</h2></DialogTitle>
         <div className="mt-0.5 text-sm font-bold text-stone-500">{vendor.category} · {shortArea(vendor.address)}{distance !== null ? ` · ${distance.toFixed(1)} km` : ""}</div>
         <div className="mt-1 flex items-center gap-1.5 text-sm font-black">{rating ? <><Stars value={rating.average} /><span>{rating.average.toFixed(1)}</span><span className="font-bold text-stone-400">({rating.count} reviews)</span></> : <span className="text-stone-400">No reviews yet</span>}</div></div>
@@ -186,5 +211,24 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
           <button type="button" disabled={!cartLines.length} onClick={onViewCart} className="mt-3 h-12 w-full rounded-full bg-[#155F65] text-[15px] font-bold text-white disabled:opacity-50">View cart{cartLines.length ? ` · ${cartLines.reduce((sum, line) => sum + line.quantity, 0)} items · ${money(cartLines.reduce((sum, line) => sum + line.total, 0))}` : ""}</button></aside>
       </div>
     </div>
+    {qrOpen && (
+      <Dialog open onOpenChange={(v) => !v && setQrOpen(false)}>
+        <DialogContent className="max-w-md rounded-[28px] p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black">{vendor.businessName} QR Code</DialogTitle>
+            <DialogDescription>Scan to view kitchen menu, schedule orders, and share with neighbours.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-2" data-testid="kitchen-profile-qr-modal">
+            <VendorQrCode
+              vendorId={vendor.id}
+              vendorName={vendor.businessName}
+              vendorCategory={vendor.category}
+              vendorAddress={vendor.address}
+              vendorLogo={vendor.logoUrl || photo}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
   </DialogContent></Dialog>;
 }
