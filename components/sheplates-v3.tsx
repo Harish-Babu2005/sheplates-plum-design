@@ -16,7 +16,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound, QrCode,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -2544,7 +2544,7 @@ function Requirements({ session, state, setState }: { session: DemoSession; stat
   return <div className="space-y-6"><Heading eyebrow="MONTHLY REQUIREMENT" title="Request local quotations" body="Add your real household list. Eligible verified vendors on a quotation-enabled plan can submit their best price." action={<Button onClick={add} variant="outline" className="rounded-xl"><Plus />Add item</Button>} /><div className="surface-card rounded-[28px] p-5"><div className="grid gap-4 md:grid-cols-2"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Needed on"><input type="date" min={tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="mt-5 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#EEF2F2] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg", "litre", "piece", "pack", "dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} placeholder="Preferred brand" className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div><Button onClick={submit} className="mt-5 h-12 rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><Send />Send for local quotes</Button></div></div>;
 }
 
-function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created.`), ...s.notifications] })); toast.success("Quotation selected and order created"); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{state.quotes.filter((x) => x.requirementId === req.id).map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!state.quotes.some((x) => x.requirementId === req.id) && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
+function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created.`), ...s.notifications] })); toast.success("Quotation selected and order created"); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => { const reqQuotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown")); return <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{reqQuotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!reqQuotes.length && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>; }) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
 
 function CustomerProfileView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const profile = state.customers.find((x) => x.email === session.email)!; const [dislikes, setDislikes] = useState(profile.dislikes); return <div className="space-y-6"><Heading eyebrow="PRIVATE PROFILE" title="Location, diet & preferences" body="She Agent uses this information only within your customer context to personalize suggestions." /><div className="grid gap-5 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Household</h3><div className="mt-5 space-y-3"><Review label="Address" value={profile.address} /><Review label="Household size" value={String(profile.householdSize)} /><Review label="Diet" value={profile.diet} /><Review label="Allergies" value={profile.allergies.join(", ") || "None selected"} /><Review label="Goals" value={profile.goals.join(", ") || "None selected"} /></div></div><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Instructions for She Agent</h3><Textarea value={dislikes} onChange={(e) => setDislikes(e.target.value)} className="mt-4 min-h-32 rounded-xl" /><Button onClick={() => { setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? { ...x, dislikes } : x) })); toast.success("Preferences updated"); }} className="mt-4 rounded-xl bg-[#155F65]">Save changes</Button></div></div></div>; }
 
@@ -3113,7 +3113,7 @@ function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; 
   function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId); if (!req) return; const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending", cancellationFee: 0 }; const vendor = state.vendors.find((x) => x.id === quote.vendorId); setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [order, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(order.total)} order created for ${order.date}.`), ...(vendor ? [notice(vendor.ownerEmail, "vendor", "RFQ awarded", `${order.id} was awarded to your store.`)] : []), ...s.notifications] })); toast.success("Quotation selected. Review payment and delivery before fulfilment."); }
   return <div className="space-y-5"><Heading eyebrow="RFP / RFQ TRACKING" title="My quotations" body="Compare the sealed offers from invited Crown vendors and award the winner yourself." />
     {requirements.length ? requirements.map((req) => {
-      const invited = req.invitedVendorIds || []; const quotes = state.quotes.filter((x) => x.requirementId === req.id);
+      const invited = req.invitedVendorIds || []; const quotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown"));
       const best = quotes.length ? Math.min(...quotes.map((q) => q.total + q.deliveryFee)) : 0;
       return <section key={req.id} className="space-y-3">
         <div className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-lg font-semibold">{req.title}</h3><p className="mt-0.5 text-xs text-[#55656A]">{req.id} · delivery {req.deliveryDate} · quotes close {req.closingDate || "not set"} · {req.sourceFileName || "manually entered"}</p></div>
@@ -3740,14 +3740,18 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   useEffect(() => {
     if (!vendor?.scheduledPlanChange) return;
     if (isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate)) {
-      const outcome = applyScheduledPlanDowngrade(vendor, state.products);
+      const outcome = applyScheduledPlanDowngrade(vendor, state.products, state.staff, state.deliverySlots);
       if (outcome.applied && outcome.newPlan) {
         const nextPlan = outcome.newPlan as Vendor["plan"];
         const deactSet = new Set(outcome.deactivatedProductIds);
+        const deactStaff = new Set(outcome.deactivatedStaffIds || []);
+        const deactSlots = new Set(outcome.deactivatedSlotIds || []);
         setState((s) => ({
           ...s,
           vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, plan: nextPlan, scheduledPlanChange: undefined } : v),
           products: deactSet.size ? s.products.map((p) => deactSet.has(p.id) ? { ...p, active: false } : p) : s.products,
+          staff: deactStaff.size ? s.staff.map((st) => deactStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+          deliverySlots: deactSlots.size ? (s.deliverySlots || []).map((sl) => deactSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
           audit: [audit(session, "Vendor plan changed", outcome.auditDetail || `${vendor.businessName} plan changed to ${nextPlan}`), ...s.audit],
         }));
         if (isLiveSupabaseMode()) {
@@ -3909,9 +3913,9 @@ function StorefrontPos({ vendor, state, setState, session, onOpenVendorProfile }
   function updateOutlet(outletId: string, patch: Partial<VendorOutlet>) { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: outlets.map((outlet) => outlet.id === outletId ? { ...outlet, ...patch } : outlet) } : x), audit: [audit(session, "Updated outlet", `${vendor.businessName} · ${outletId}`), ...s.audit] })); }
   function editCertification(outlet: VendorOutlet) { const number = prompt("Certification / licence number", outlet.certificateNumber || "") ?? (outlet.certificateNumber || ""); const expiry = prompt("Expiry date (YYYY-MM-DD)", outlet.certificateExpiry || "") ?? (outlet.certificateExpiry || ""); updateOutlet(outlet.id, { certificateNumber: number, certificateExpiry: expiry }); toast.success("Outlet certification saved"); }
   return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1" />Edit Profile &amp; Branding</Button>{onOpenVendorProfile && <Button size="sm" variant="outline" onClick={onOpenVendorProfile} className="h-9 rounded-xl text-xs font-bold text-[#155F65] bg-white"><Eye className="size-3.5 mr-1" />Preview Store</Button>}<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button></div>} />
-    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
+    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><button type="button" onClick={() => { const el = document.getElementById("vendor-store-qr"); if (el) el.scrollIntoView({ behavior: "smooth" }); else toast.info("Store QR Code is available below"); }} className="absolute -top-2 -right-2 grid size-8 place-items-center rounded-full border-2 border-white bg-white text-[#155F65] shadow-lg hover:bg-stone-50" title="View Store QR Code"><QrCode className="size-4" /></button><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
     <div className="grid gap-4 lg:grid-cols-2">{outlets.map((outlet) => <div key={outlet.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Building2 /></div><div className="min-w-0 flex-1"><b>{outlet.name}</b><p className="mt-1 text-sm text-stone-500">{outlet.address}</p></div><Status>{outlet.openToday ? "Open" : "Closed"}</Status></div><div className="mt-3 text-xs text-stone-500">Service radius: {outlet.radiusKm} km · {Number.isFinite(outlet.latitude) ? "Pinned" : "Needs map pin"}</div><div className="mt-4 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><b>Outlet certification</b><div className="mt-1 text-xs text-stone-500">{outlet.certificateNumber || "Not added"}{outlet.certificateExpiry ? ` · expires ${outlet.certificateExpiry}` : ""}</div></div><Button size="sm" variant="outline" onClick={() => editCertification(outlet)}><Pencil />Edit</Button></div><label className="mt-3 inline-flex cursor-pointer items-center text-xs font-black text-[#155F65]"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => updateOutlet(outlet.id, { certificateName: e.target.files?.[0]?.name || outlet.certificateName })} /><Upload className="mr-1 size-3.5" />{outlet.certificateName || "Upload certificate"}</label></div></div>)}</div>
-    <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} vendor={vendor} onOpenStore={onOpenVendorProfile} />
+    <div id="vendor-store-qr"><VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} vendor={vendor} onOpenStore={onOpenVendorProfile} /></div>
     {editProfileOpen && <EditVendorProfileDialog open onClose={() => setEditProfileOpen(false)} vendor={vendor} setState={setState} session={session} />}
   </div>;
 }
@@ -6160,9 +6164,16 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
   const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
 
+  const planRank: Record<Vendor["plan"], number> = {
+    Taster: 0,
+    Crave: 1,
+    Thrive: 2,
+    Crown: 3,
+  };
+
   function handlePlanSelection(newPlan: Vendor["plan"]) {
     if (vendor.plan === newPlan) return;
-    if (vendor.plan === "Thrive" && newPlan === "Crave") {
+    if (planRank[newPlan] < planRank[vendor.plan]) {
       setDowngradeTarget(newPlan);
       setDowngradeConfirmOpen(true);
       return;
@@ -6188,7 +6199,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
       } : x),
       audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
     }));
-    toast.success(`You can enjoy all Thrive features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
+    toast.success(`You can enjoy all ${vendor.plan} features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
   }
 
   async function upgradePlan(newPlan: Vendor["plan"]) {
@@ -6378,7 +6389,9 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         <DialogHeader>
           <DialogTitle className="text-xl font-black">Change to Crave plan</DialogTitle>
           <DialogDescription className="text-sm leading-relaxed text-stone-600 pt-2">
-            You can enjoy all the features of the Thrive plan until the end of this month. Your plan will change to Crave from the 1st of next month.
+            {vendor.plan === "Crown"
+              ? `You can enjoy all the features of the Crown plan until the end of this month. Your plan will change to ${downgradeTarget || "selected plan"} from the 1st of next month.`
+              : "You can enjoy all the features of the Thrive plan until the end of this month. Your plan will change to Crave from the 1st of next month."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap justify-end gap-3 pt-4">
@@ -6388,7 +6401,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
             onClick={() => { setDowngradeConfirmOpen(false); setDowngradeTarget(null); }}
             className="rounded-xl font-bold"
           >
-            Keep Thrive
+            {vendor.plan === "Crown" ? "Keep Crown" : "Keep Thrive"}
           </Button>
           <Button
             type="button"
@@ -7112,7 +7125,86 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   </DialogContent></Dialog>;
 }
 
-function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) { const opportunities = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received").filter((x) => !x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id)); const [draft, setDraft] = useState<Record<string, number>>({}); function quote(req: Requirement) { if (req.closingDate && req.closingDate < new Date().toISOString().slice(0,10)) return toast.error("This RFQ is closed"); const total = draft[req.id]; if (!total) return toast.error("Enter your best total"); const item: Quote = { id: id("QTE"), requirementId: req.id, vendorId: vendor.id, total, deliveryFee: 0, note: "Best local price", status: "Submitted" }; setState((s) => ({ ...s, quotes: [item, ...s.quotes.filter((x) => !(x.vendorId === vendor.id && x.requirementId === req.id))], requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Quotes received" } : x), notifications: [notice(req.customerEmail, "customer", "Vendor accepted your RFQ", `${vendor.businessName} submitted ${money(total)}.`), ...s.notifications], audit: [audit(session, "Accepted RFQ and submitted quote", `${req.id} · ${money(total)}`), ...s.audit] })); toast.success("RFQ accepted and quotation submitted"); } return <div className="space-y-6"><Heading eyebrow="PREMIUM FEATURE" title="Local RFQ opportunities" body="Only RFQs explicitly matched to this vendor are visible. Submit an independent best price before the customer closing date." />{vendor.plan !== "Crown" ? <Empty icon={WalletCards} title="Quotation access is on the Crown plan" body="Ask Super Admin to assign the Crown plan for testing." /> : opportunities.length ? opportunities.map((req) => <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.items.length} items · closes {req.closingDate || "not set"} · needed {req.deliveryDate}</p></div><Status>{state.quotes.some((x) => x.requirementId === req.id && x.vendorId === vendor.id) ? "Accepted / quoted" : "Invited"}</Status></div><div className="mt-4 flex flex-wrap gap-2">{req.items.map((item) => <span key={item.id} className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold">{item.name} · {item.quantity} {item.unit}</span>)}</div><div className="mt-5 flex max-w-md gap-2"><input type="number" value={draft[req.id] || ""} onChange={(e) => setDraft((x) => ({ ...x, [req.id]: Number(e.target.value) }))} placeholder="Your best total ₹" className={inputClass} /><Button onClick={() => quote(req)} className="rounded-xl bg-[#155F65]">Accept & quote</Button></div></div>) : <Empty icon={ClipboardCheck} title="No RFQs matched to your store" body="Only serviceable customer requests sent to this vendor account will appear here." />}</div>; }
+function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+  const isCrown = vendor.plan === "Crown";
+  const opportunities = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received").filter((x) => !x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id));
+  const myQuotes = state.quotes.filter((x) => x.vendorId === vendor.id);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+
+  function quote(req: Requirement) {
+    if (!isCrown) return toast.error("Quotation requests (RFQ) and AI quotation assistance are exclusive to the Crown plan.");
+    if (req.closingDate && req.closingDate < new Date().toISOString().slice(0, 10)) return toast.error("This RFQ is closed");
+    const total = draft[req.id];
+    if (!total) return toast.error("Enter your best total");
+    const item: Quote = { id: id("QTE"), requirementId: req.id, vendorId: vendor.id, total, deliveryFee: 0, note: "Best local price", status: "Submitted" };
+    setState((s) => ({
+      ...s,
+      quotes: [item, ...s.quotes.filter((x) => !(x.vendorId === vendor.id && x.requirementId === req.id))],
+      requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Quotes received" } : x),
+      notifications: [notice(req.customerEmail, "customer", "Vendor accepted your RFQ", `${vendor.businessName} submitted ${money(total)}.`), ...s.notifications],
+      audit: [audit(session, "Accepted RFQ and submitted quote", `${req.id} · ${money(total)}`), ...s.audit],
+    }));
+    toast.success("RFQ accepted and quotation submitted");
+  }
+
+  return (
+    <div className="space-y-6">
+      <Heading eyebrow="PREMIUM FEATURE" title="Local RFQ opportunities" body="Only RFQs explicitly matched to this vendor are visible. Submit an independent best price before the customer closing date." />
+      {!isCrown && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+          <p className="text-sm font-semibold">
+            Quotation requests (RFQ) and new quote opportunities are exclusive to the Crown plan. Upgrade to Crown to accept customer quotation requests.
+          </p>
+        </div>
+      )}
+      {myQuotes.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-bold text-sm text-stone-700">Your Quotation History ({myQuotes.length})</h3>
+          <div className="grid gap-3">
+            {myQuotes.map((q) => {
+              const req = state.requirements.find((r) => r.id === q.requirementId);
+              return (
+                <div key={q.id} className="surface-card rounded-2xl p-4 flex justify-between items-center">
+                  <div>
+                    <h4 className="font-bold text-sm">{req?.title || `Requirement ${q.requirementId}`}</h4>
+                    <p className="text-xs text-stone-500">{q.id} · {money(q.total + (q.deliveryFee || 0))}</p>
+                  </div>
+                  <Status>{q.status}</Status>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {!isCrown && myQuotes.length === 0 ? (
+        <Empty icon={WalletCards} title="Quotation access is on the Crown plan" body="Upgrade to Crown to receive customer quotation requests and submit quotes." />
+      ) : isCrown && opportunities.length ? (
+        opportunities.map((req) => (
+          <div key={req.id} className="surface-card rounded-[28px] p-5">
+            <div className="flex justify-between">
+              <div>
+                <h3 className="font-black">{req.title}</h3>
+                <p className="text-xs text-stone-500">{req.items.length} items · closes {req.closingDate || "not set"} · needed {req.deliveryDate}</p>
+              </div>
+              <Status>{state.quotes.some((x) => x.requirementId === req.id && x.vendorId === vendor.id) ? "Accepted / quoted" : "Invited"}</Status>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {req.items.map((item) => (
+                <span key={item.id} className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold">{item.name} · {item.quantity} {item.unit}</span>
+              ))}
+            </div>
+            <div className="mt-5 flex max-w-md gap-2">
+              <input type="number" value={draft[req.id] || ""} onChange={(e) => setDraft((x) => ({ ...x, [req.id]: Number(e.target.value) }))} placeholder="Your best total ₹" className={inputClass} />
+              <Button onClick={() => quote(req)} className="rounded-xl bg-[#155F65]">Accept & quote</Button>
+            </div>
+          </div>
+        ))
+      ) : isCrown ? (
+        <Empty icon={ClipboardCheck} title="No RFQs matched to your store" body="Only serviceable customer requests sent to this vendor account will appear here." />
+      ) : null}
+    </div>
+  );
+}
 
 function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [name, setName] = useState("");

@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
 import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
-import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode, getIstMidnightDate } from "./plans";
+import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode, getIstMidnightDate, canAccessWhatsAppLeads } from "./plans";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -414,7 +414,14 @@ export type WhatsAppClickSource = "map" | "vendor_profile" | "search";
 export async function trackLiveVendorWhatsAppClick(
   vendorId: string,
   source: WhatsAppClickSource,
+  vendorPlan?: string,
 ) {
+  if (vendorPlan) {
+    const access = canAccessWhatsAppLeads(vendorPlan);
+    if (!access.allowed) {
+      throw new Error(access.message || "WhatsApp contact buttons and lead tracking are exclusive to the Taster plan.");
+    }
+  }
   const supabase = getSupabaseBrowserClient();
   if (!supabase || !isLiveSupabaseMode()) {
     throw new Error("Live WhatsApp click tracking is not available.");

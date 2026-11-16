@@ -86,12 +86,12 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     code: "crown",
     name: "Crown",
     monthlyPrice: 999,
-    maxProducts: 1000,
-    maxFoodDrops: 5,
-    maxFoodShortsPerDay: 30,
-    maxDeliveryStaff: 50,
-    maxDeliverySlots: 50,
-    maxAiPicturesPerDay: 50,
+    maxProducts: Infinity,
+    maxFoodDrops: 10,
+    maxFoodShortsPerDay: 10,
+    maxDeliveryStaff: Infinity,
+    maxDeliverySlots: 12,
+    maxAiPicturesPerDay: 25,
     maxRadiusKm: 30,
     rfqAccess: true,
     whatsappLeads: false,
@@ -177,7 +177,7 @@ export function getPlanDisplayName(plan?: string | null): PlanName {
 /** Check if product count is within the plan limit */
 export function canAddProduct(plan: string, currentCount: number): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
-  if (currentCount >= limits.maxProducts) {
+  if (limits.maxProducts !== Infinity && currentCount >= limits.maxProducts) {
     const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
     const msg = `${limits.name} allows ${limits.maxProducts} products. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
     return {
@@ -193,7 +193,7 @@ export function canAddProduct(plan: string, currentCount: number): { allowed: bo
 /** Check if delivery staff count is within the plan limit */
 export function canAddDeliveryStaff(plan: string, currentCount: number): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
-  if (currentCount >= limits.maxDeliveryStaff) {
+  if (limits.maxDeliveryStaff !== Infinity && currentCount >= limits.maxDeliveryStaff) {
     const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
     const msg = `${limits.name} allows ${limits.maxDeliveryStaff} delivery staff members. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
     return {
@@ -211,7 +211,9 @@ export function canAddDeliverySlot(plan: string, currentCount: number): { allowe
   const limits = getPlanLimits(plan);
   if (currentCount >= limits.maxDeliverySlots) {
     const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
-    const msg = `${limits.name} allows ${limits.maxDeliverySlots} delivery slots. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
+    const msg = limits.code === "crown"
+      ? `Crown allows ${limits.maxDeliverySlots} delivery slots. You have ${currentCount}.`
+      : `${limits.name} allows ${limits.maxDeliverySlots} delivery slots. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
     return {
       allowed: false,
       limit: limits.maxDeliverySlots,
@@ -286,8 +288,9 @@ export function canCreateFoodDrop(plan: string, countTodayIst: number = 0): { al
     };
   }
   if (countTodayIst >= limits.maxFoodDrops) {
-    const nextPlan = "Crown";
-    const msg = `Daily limit reached: ${limits.name} allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
+    const msg = limits.code === "crown"
+      ? `Daily limit reached: Crown allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST).`
+      : `Daily limit reached: ${limits.name} allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST). Upgrade to Crown for more.`;
     return {
       allowed: false,
       limit: limits.maxFoodDrops,
@@ -300,21 +303,35 @@ export function canCreateFoodDrop(plan: string, countTodayIst: number = 0): { al
 
 /**
  * Automatically applies a scheduled plan downgrade when effective date is reached.
- * Deactivates products exceeding the new plan limit (newest first, setting active: false, never deleting).
+ * Deactivates products, staff, and slots exceeding the new plan limit (newest first, setting active: false, never deleting).
  */
-export function applyScheduledPlanDowngrade<TProduct extends { id: string; vendorId: string; active: boolean; createdAt?: string }>(
+export function applyScheduledPlanDowngrade<
+  TProduct extends { id: string; vendorId: string; active: boolean; createdAt?: string } = any,
+  TStaff extends { id: string; vendorId?: string; active?: boolean; createdAt?: string } = any,
+  TSlot extends { id: string; vendorId?: string; active?: boolean; isActive?: boolean; createdAt?: string } = any,
+>(
   vendor: { id: string; businessName: string; plan: string; scheduledPlanChange?: { nextPlan: string; effectiveDate: string; requestedAt: string } },
   products: TProduct[],
-  refDate: Date = new Date()
+  staffOrRefDate?: TStaff[] | Date,
+  slots?: TSlot[],
+  refDateParam?: Date
 ): {
   applied: boolean;
   newPlan?: string;
   deactivatedProductIds: string[];
+  deactivatedStaffIds: string[];
+  deactivatedSlotIds: string[];
   auditDetail?: string;
 } {
-  if (!vendor.scheduledPlanChange) return { applied: false, deactivatedProductIds: [] };
+  const refDate = staffOrRefDate instanceof Date ? staffOrRefDate : (refDateParam || new Date());
+  const staff = Array.isArray(staffOrRefDate) ? staffOrRefDate : [];
+  const safeSlots = Array.isArray(slots) ? slots : [];
+
+  if (!vendor.scheduledPlanChange) {
+    return { applied: false, deactivatedProductIds: [], deactivatedStaffIds: [], deactivatedSlotIds: [] };
+  }
   if (!isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate, refDate)) {
-    return { applied: false, deactivatedProductIds: [] };
+    return { applied: false, deactivatedProductIds: [], deactivatedStaffIds: [], deactivatedSlotIds: [] };
   }
 
   const nextPlan = vendor.scheduledPlanChange.nextPlan;
@@ -323,7 +340,7 @@ export function applyScheduledPlanDowngrade<TProduct extends { id: string; vendo
 
   // If excess products exist, sort by createdAt descending (newest first) and deactivate
   const deactivatedProductIds: string[] = [];
-  if (vendorProducts.length > newLimits.maxProducts) {
+  if (newLimits.maxProducts !== Infinity && vendorProducts.length > newLimits.maxProducts) {
     const sorted = [...vendorProducts].sort((a, b) => {
       const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -335,12 +352,48 @@ export function applyScheduledPlanDowngrade<TProduct extends { id: string; vendo
     }
   }
 
-  const auditDetail = `Scheduled downgrade applied: ${vendor.businessName} moved from ${vendor.plan} to ${nextPlan}. ${deactivatedProductIds.length} excess product(s) deactivated (newest first).`;
+  // Deactivate excess staff (newest first)
+  const deactivatedStaffIds: string[] = [];
+  const vendorStaff = staff.filter((s) => s.vendorId === vendor.id && s.active !== false);
+  if (newLimits.maxDeliveryStaff !== Infinity && vendorStaff.length > newLimits.maxDeliveryStaff) {
+    const sortedStaff = [...vendorStaff].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+    const excessStaff = sortedStaff.slice(0, vendorStaff.length - newLimits.maxDeliveryStaff);
+    for (const item of excessStaff) {
+      deactivatedStaffIds.push(item.id);
+    }
+  }
+
+  // Deactivate excess slots (newest first)
+  const deactivatedSlotIds: string[] = [];
+  const vendorSlots = safeSlots.filter((s) => s.vendorId === vendor.id && (s.isActive ?? s.active ?? true));
+  if (newLimits.maxDeliverySlots !== Infinity && vendorSlots.length > newLimits.maxDeliverySlots) {
+    const sortedSlots = [...vendorSlots].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+    const excessSlots = sortedSlots.slice(0, vendorSlots.length - newLimits.maxDeliverySlots);
+    for (const item of excessSlots) {
+      deactivatedSlotIds.push(item.id);
+    }
+  }
+
+  const parts = [`${deactivatedProductIds.length} excess product(s)`];
+  if (deactivatedStaffIds.length) parts.push(`${deactivatedStaffIds.length} excess staff`);
+  if (deactivatedSlotIds.length) parts.push(`${deactivatedSlotIds.length} excess slot(s)`);
+
+  const auditDetail = `Scheduled downgrade applied: ${vendor.businessName} moved from ${vendor.plan} to ${nextPlan}. ${parts.join(", ")} deactivated (newest first).`;
 
   return {
     applied: true,
     newPlan: nextPlan,
     deactivatedProductIds,
+    deactivatedStaffIds,
+    deactivatedSlotIds,
     auditDetail,
   };
 }
@@ -359,12 +412,28 @@ export function canAccessRfq(plan: string): { allowed: boolean; message?: string
   return { allowed: true };
 }
 
+/** Check if WhatsApp lead tracking / contact button is accessible for this plan (Taster only) */
+export function canAccessWhatsAppLeads(plan?: string | null): { allowed: boolean; message?: string; reason?: string } {
+  const limits = getPlanLimits(plan);
+  if (!limits.whatsappLeads) {
+    const msg = `WhatsApp contact buttons and lead tracking are exclusive to the Taster plan. Selling plans (Crave, Thrive, Crown) use the integrated cart and checkout.`;
+    return {
+      allowed: false,
+      message: msg,
+      reason: msg,
+    };
+  }
+  return { allowed: true };
+}
+
 /** Check if Food Short upload count today is within daily limit (resets midnight IST) */
 export function canUploadFoodShort(plan: string, countTodayIst: number): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
   if (countTodayIst >= limits.maxFoodShortsPerDay) {
     const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
-    const msg = `Daily limit reached: ${limits.name} allows ${limits.maxFoodShortsPerDay} Food Shorts per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
+    const msg = limits.code === "crown"
+      ? `Daily limit reached: Crown allows ${limits.maxFoodShortsPerDay} Food Shorts per day (resets midnight IST).`
+      : `Daily limit reached: ${limits.name} allows ${limits.maxFoodShortsPerDay} Food Shorts per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
     return {
       allowed: false,
       limit: limits.maxFoodShortsPerDay,
@@ -380,7 +449,9 @@ export function canGenerateAiPicture(plan: string, countTodayIst: number): { all
   const limits = getPlanLimits(plan);
   if (countTodayIst >= limits.maxAiPicturesPerDay) {
     const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
-    const msg = `Daily limit reached: ${limits.name} allows ${limits.maxAiPicturesPerDay} AI product images per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
+    const msg = limits.code === "crown"
+      ? `Daily limit reached: Crown allows ${limits.maxAiPicturesPerDay} AI product images per day (resets midnight IST).`
+      : `Daily limit reached: ${limits.name} allows ${limits.maxAiPicturesPerDay} AI product images per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
     return {
       allowed: false,
       limit: limits.maxAiPicturesPerDay,
