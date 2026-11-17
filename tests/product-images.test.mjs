@@ -105,15 +105,17 @@ test("a picture is drawn once per product type, stored, and reused for the next 
   assert.equal(calls.filter((url) => url.includes("images/generations")).length, imageCalls, "no second paid call");
 });
 
-test("spending is capped per day and per store, and a missing library fails safe", async () => {
+test("spending is capped per day globally, vendor store cap is removed, and a missing library fails safe", async () => {
   process.env.URUV_API_KEY = "test-key";
   const today = new Date().toISOString();
-  process.env.AI_IMAGE_DAILY_LIMIT = "2"; process.env.AI_IMAGE_VENDOR_DAILY_LIMIT = "15";
+  process.env.AI_IMAGE_DAILY_LIMIT = "2";
   const full = fakeAdmin({ rows: [{ concept_key: "a", url: "u", created_at: today }, { concept_key: "b", url: "u", created_at: today }] });
   await assert.rejects(server.ensureConceptImage(full, { name: "Plain Cake", category: "Bakery", vendorId: null, fetchImpl: modelFetch([]) }), (e) => e.status === 429 && /daily limit/i.test(e.message));
-  process.env.AI_IMAGE_DAILY_LIMIT = "60"; process.env.AI_IMAGE_VENDOR_DAILY_LIMIT = "1";
+  process.env.AI_IMAGE_DAILY_LIMIT = "60";
+  // Per-store cap removed: vendor is not blocked by a store-level daily counter
   const mine = fakeAdmin({ rows: [{ concept_key: "a", url: "u", created_by_vendor: "v9", created_at: today }] });
-  await assert.rejects(server.ensureConceptImage(mine, { name: "Plain Cake", category: "Bakery", vendorId: "v9", fetchImpl: modelFetch([]) }), (e) => e.status === 429 && /your store/i.test(e.message));
+  const allowedResult = await server.ensureConceptImage(mine, { name: "Plain Cake", category: "Bakery", vendorId: "v9", fetchImpl: modelFetch([]) });
+  assert.equal(allowedResult.source, "generated");
   await assert.rejects(server.ensureConceptImage(fakeAdmin({ tableMissing: true }), { name: "Plain Cake", category: "Bakery", vendorId: null, fetchImpl: modelFetch([]) }), (e) => e.status === 503 && /V9_17/.test(e.message));
   await assert.rejects(server.ensureConceptImage(fakeAdmin(), { name: "123", category: "Bakery", vendorId: null, fetchImpl: modelFetch([]) }), (e) => e.status === 422);
 });

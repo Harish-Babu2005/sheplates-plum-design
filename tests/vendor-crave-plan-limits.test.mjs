@@ -17,11 +17,11 @@ test("lib/plans.ts exports centralized PLAN_LIMITS with accurate Crave rules", a
   assert.equal(crave.name, "Crave");
   assert.equal(crave.monthlyPrice, 699);
   assert.equal(crave.maxProducts, 100);
-  assert.equal(crave.maxFoodDrops, 0);
+  assert.equal(crave.maxFoodDrops, 2);
   assert.equal(crave.maxFoodShortsPerDay, 3);
-  assert.equal(crave.maxDeliveryStaff, 3);
-  assert.equal(crave.maxDeliverySlots, 3);
-  assert.equal(crave.maxAiPicturesPerDay, 10);
+  assert.equal(crave.maxDeliveryStaff, 5);
+  assert.equal(crave.maxDeliverySlots, Infinity);
+  assert.equal(crave.maxAiPicturesPerDay, undefined);
   assert.equal(crave.maxRadiusKm, 30);
   assert.equal(crave.rfqAccess, false);
   assert.equal(crave.whatsappLeads, false);
@@ -56,24 +56,33 @@ test("Limit 1: 101st product is blocked with clear upgrade message", async () =>
   assert.match(supabase, /canAddProduct\(planCode,\s*currentProductCount/);
 });
 
-test("Limit 2: Food Drop attempt by Crave vendor fails on server, DB, and UI", async () => {
+test("Limit 2: Food Drops on Crave - 3rd Food Drop in a day is blocked, Crave menu is available", async () => {
   const { canCreateFoodDrop } = await import("../lib/plans.ts");
   
-  const check = canCreateFoodDrop("crave");
-  assert.equal(check.allowed, false);
-  assert.equal(check.limit, 0);
-  assert.match(check.message || "", /Food Drops are not included in the Crave plan/i);
-  assert.match(check.message || "", /Upgrade to Thrive/i);
+  // Crave vendors get Food Drops (allowed)
+  assert.equal(canCreateFoodDrop("crave").allowed, true);
 
-  // Check server logic blocks creation
+  // 1st and 2nd Food Drops are allowed
+  assert.equal(canCreateFoodDrop("crave", 0).allowed, true);
+  assert.equal(canCreateFoodDrop("crave", 1).allowed, true);
+
+  // 3rd Food Drop in the same day (count is 2) is blocked
+  const check = canCreateFoodDrop("crave", 2);
+  assert.equal(check.allowed, false);
+  assert.equal(check.limit, 2);
+  assert.match(check.message || "", /Daily limit reached: Crave allows 2 Food Drops per day \(resets midnight IST\)\./i);
+  assert.match(check.message || "", /Upgrade to Thrive for more\./i);
+
+  // Food Drops menu item for Crave is available (not locked with Upgrade to Thrive)
+  const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
+  assert.match(ui, /canCreateFoodDrop\(vendor\.plan\)\.allowed/);
+  // Crave is included in isPlanAllowed for FoodDropsManager
+  assert.match(ui, /isPlanAllowed\s*=\s*\["Crave",\s*"Thrive",\s*"Crown"\]\.includes\(vendor\.plan\)/);
+
+  // Check server logic enforces daily limit
   const supabase = await readFile(path.join(root, "lib/supabase.ts"), "utf8");
   assert.match(supabase, /const dropCheck = canCreateFoodDrop\(planCode\);/);
   assert.match(supabase, /if \(!dropCheck\.allowed\) \{\s*throw new Error\(dropCheck\.message\);/);
-
-  // Check UI disables and displays "Upgrade to Thrive" badge
-  const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
-  assert.match(ui, /badge:\s*"Upgrade to Thrive"/);
-  assert.match(ui, /canCreateFoodDrop\(vendor\.plan\)/);
 });
 
 test("Limit 3: 4th Food Short in a day is blocked and resets midnight IST", async () => {
@@ -100,16 +109,19 @@ test("Limit 3: 4th Food Short in a day is blocked and resets midnight IST", asyn
   assert.match(shorts, /canUploadFoodShort\(vendorPlan,\s*today\)/);
 });
 
-test("Limit 4: 4th delivery staff member is blocked with clear message", async () => {
+test("Limit 4: 6th delivery staff member is blocked with clear message (limit 5 on Crave)", async () => {
   const { canAddDeliveryStaff } = await import("../lib/plans.ts");
   
-  assert.equal(canAddDeliveryStaff("crave", 2).allowed, true);
+  // Staff 1 through 5 are allowed
+  for (let i = 0; i < 5; i++) {
+    assert.equal(canAddDeliveryStaff("crave", i).allowed, true);
+  }
   
-  const check = canAddDeliveryStaff("crave", 3);
+  // 6th staff member (count is 5) is blocked
+  const check = canAddDeliveryStaff("crave", 5);
   assert.equal(check.allowed, false);
-  assert.equal(check.limit, 3);
-  assert.match(check.message || "", /Crave allows 3 delivery staff members/i);
-  assert.match(check.message || "", /Upgrade to Thrive/i);
+  assert.equal(check.limit, 5);
+  assert.match(check.message || "", /Crave allows 5 delivery staff members\. You have 5\. Upgrade to Thrive to add more\./i);
 
   // Verify UI and API validation
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
@@ -119,16 +131,14 @@ test("Limit 4: 4th delivery staff member is blocked with clear message", async (
   assert.match(api, /canAddDeliveryStaff\(planCode/);
 });
 
-test("Limit 5: 4th delivery slot is blocked with clear message", async () => {
+test("Limit 5: Delivery slots are unlimited on Crave (no slot cap in code or database)", async () => {
   const { canAddDeliverySlot } = await import("../lib/plans.ts");
   
-  assert.equal(canAddDeliverySlot("crave", 2).allowed, true);
-  
-  const check = canAddDeliverySlot("crave", 3);
-  assert.equal(check.allowed, false);
-  assert.equal(check.limit, 3);
-  assert.match(check.message || "", /Crave allows 3 delivery slots/i);
-  assert.match(check.message || "", /Upgrade to Thrive/i);
+  // Unlimited slots on Crave
+  for (let i = 0; i <= 20; i += 5) {
+    assert.equal(canAddDeliverySlot("crave", i).allowed, true);
+    assert.equal(canAddDeliverySlot("crave", i).limit, Infinity);
+  }
 
   // Verify UI and API validation
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
@@ -138,25 +148,21 @@ test("Limit 5: 4th delivery slot is blocked with clear message", async () => {
   assert.match(api, /canAddDeliverySlot\(planCode,\s*allSlots\.length\)/);
 });
 
-test("Limit 6: 11th AI picture in a day is blocked with 429 and resets midnight IST", async () => {
+test("Limit 6: AI picture limit is deleted from Crave (and all plans) - no cap remains", async () => {
   const { canGenerateAiPicture } = await import("../lib/plans.ts");
   
-  assert.equal(canGenerateAiPicture("crave", 9).allowed, true);
-  
-  const check = canGenerateAiPicture("crave", 10);
-  assert.equal(check.allowed, false);
-  assert.equal(check.limit, 10);
-  assert.match(check.message || "", /Daily limit reached: Crave allows 10 AI product images per day/i);
-  assert.match(check.message || "", /resets midnight IST/i);
+  // AI pictures are unlimited across all plans
+  assert.equal(canGenerateAiPicture("crave", 0).allowed, true);
+  assert.equal(canGenerateAiPicture("crave", 50).allowed, true);
+  assert.equal(canGenerateAiPicture("crave", 100).limit, Infinity);
 
-  // Verify server-side AI rate limiting
+  // Verify server-side vendor daily counter check has been removed
   const aiServer = await readFile(path.join(root, "lib/product-image-server.ts"), "utf8");
-  assert.match(aiServer, /getIstMidnightDate\(\)/);
-  assert.match(aiServer, /canGenerateAiPicture\(planCode,\s*usage\.mine\)/);
-  assert.match(aiServer, /throw new ImageError\(429/);
+  assert.doesNotMatch(aiServer, /usage\.mine >= VENDOR_DAILY_LIMIT/);
+  assert.doesNotMatch(aiServer, /Your store has reached its daily limit for AI images/);
 });
 
-test("Direct API calls: RFQ and Food Drop endpoints block Crave vendors", async () => {
+test("Direct API calls: RFQ endpoints block Crave vendors (Crown only)", async () => {
   const { canAccessRfq } = await import("../lib/plans.ts");
   
   const check = canAccessRfq("crave");
@@ -179,7 +185,7 @@ test("Direct API calls: RFQ and Food Drop endpoints block Crave vendors", async 
   assert.match(ui, /list\.filter\(\(item\) => item !== "Quote opportunities"\)/);
 });
 
-test("Downgrade and audit log: deactivates excess products, staff, and slots newest first without deletion", async () => {
+test("Downgrade and audit log: deactivates excess products and staff (slots unlimited)", async () => {
   const supabase = await readFile(path.join(root, "lib/supabase.ts"), "utf8");
   
   // Verify products deactivation (not deletion)
@@ -189,9 +195,6 @@ test("Downgrade and audit log: deactivates excess products, staff, and slots new
   // Verify staff deactivation
   assert.match(supabase, /from\("vendor_delivery_staff"\)\.update\(\{\s*active:\s*false/);
   
-  // Verify delivery slots deactivation
-  assert.match(supabase, /from\("vendor_delivery_slots"\)\.update\(\{\s*is_active:\s*false/);
-  
   // Verify audit log insertion
   assert.match(supabase, /from\("audit_logs"\)\.insert/);
 
@@ -199,7 +202,6 @@ test("Downgrade and audit log: deactivates excess products, staff, and slots new
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
   assert.match(ui, /excessProds\.has\(p\.id\)\s*\?\s*\{\s*\.\.\.p,\s*active:\s*false\s*\}/);
   assert.match(ui, /excessStaff\.has\(st\.id\)\s*\?\s*\{\s*\.\.\.st,\s*active:\s*false\s*\}/);
-  assert.match(ui, /excessSlots\.has\(sl\.id\)\s*\?\s*\{\s*\.\.\.sl,\s*isActive:\s*false\s*\}/);
 });
 
 test("Kitchen Profile QR Code: QR code scan button and modal exist on kitchen profile image", async () => {

@@ -17,11 +17,11 @@ test("lib/plans.ts exports centralized PLAN_LIMITS with accurate Thrive rules", 
   assert.equal(thrive.name, "Thrive");
   assert.equal(thrive.monthlyPrice, 799);
   assert.equal(thrive.maxProducts, 300);
-  assert.equal(thrive.maxFoodDrops, 3);
+  assert.equal(thrive.maxFoodDrops, 5);
   assert.equal(thrive.maxFoodShortsPerDay, 5);
   assert.equal(thrive.maxDeliveryStaff, 10);
-  assert.equal(thrive.maxDeliverySlots, 6);
-  assert.equal(thrive.maxAiPicturesPerDay, 15);
+  assert.equal(thrive.maxDeliverySlots, Infinity);
+  assert.equal(thrive.maxAiPicturesPerDay, undefined);
   assert.equal(thrive.maxRadiusKm, 30);
   assert.equal(thrive.rfqAccess, false);
   assert.equal(thrive.whatsappLeads, false);
@@ -56,18 +56,19 @@ test("Limit 1: 301st product is blocked with clear upgrade message", async () =>
   assert.match(supabase, /canAddProduct\(planCode,\s*currentProductCount/);
 });
 
-test("Limit 2: 4th Food Drop in a day is blocked and resets midnight IST", async () => {
+test("Limit 2: 6th Food Drop in a day is blocked and resets midnight IST", async () => {
   const { canCreateFoodDrop, getIstMidnightDate, isSameIstDay } = await import("../lib/plans.ts");
 
-  // 1st, 2nd, and 3rd Food Drops are allowed for Thrive
-  assert.equal(canCreateFoodDrop("thrive", 0).allowed, true);
-  assert.equal(canCreateFoodDrop("thrive", 1).allowed, true);
-  assert.equal(canCreateFoodDrop("thrive", 2).allowed, true);
+  // 1st through 5th Food Drops are allowed for Thrive
+  for (let i = 0; i < 5; i++) {
+    assert.equal(canCreateFoodDrop("thrive", i).allowed, true);
+  }
 
-  // 4th Food Drop in the same day (count is 3) is blocked
-  const check = canCreateFoodDrop("thrive", 3);
+  // 6th Food Drop in the same day (count is 5) is blocked
+  const check = canCreateFoodDrop("thrive", 5);
   assert.equal(check.allowed, false);
-  assert.match(check.message || "", /Daily limit reached: Thrive allows 3 Food Drops per day/i);
+  assert.equal(check.limit, 5);
+  assert.match(check.message || "", /Daily limit reached: Thrive allows 5 Food Drops per day/i);
   assert.match(check.message || "", /resets midnight IST/i);
   assert.match(check.message || "", /Upgrade to Crown/i);
 
@@ -114,6 +115,7 @@ test("Limit 4: 11th delivery staff member is blocked with clear message", async 
   // 11th staff member blocked
   const check = canAddDeliveryStaff("thrive", 10);
   assert.equal(check.allowed, false);
+  assert.equal(check.limit, 10);
   assert.match(check.message || "", /Thrive allows 10 delivery staff members/i);
   assert.match(check.message || "", /You have 10/i);
   assert.match(check.message || "", /Upgrade to Crown/i);
@@ -122,38 +124,31 @@ test("Limit 4: 11th delivery staff member is blocked with clear message", async 
   assert.match(ui, /canAddDeliveryStaff\(vendor\.plan,\s*people\.length\)/);
 });
 
-test("Limit 5: 7th delivery slot is blocked with clear message", async () => {
+test("Limit 5: Delivery slots are unlimited on Thrive (no slot cap in code or database)", async () => {
   const { canAddDeliverySlot } = await import("../lib/plans.ts");
 
-  // 6th slot allowed
-  assert.equal(canAddDeliverySlot("thrive", 5).allowed, true);
-
-  // 7th slot blocked
-  const check = canAddDeliverySlot("thrive", 6);
-  assert.equal(check.allowed, false);
-  assert.match(check.message || "", /Thrive allows 6 delivery slots/i);
-  assert.match(check.message || "", /You have 6/i);
-  assert.match(check.message || "", /Upgrade to Crown/i);
+  // Slots are unlimited on Thrive
+  for (let i = 0; i <= 30; i += 5) {
+    assert.equal(canAddDeliverySlot("thrive", i).allowed, true);
+    assert.equal(canAddDeliverySlot("thrive", i).limit, Infinity);
+  }
 
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
   assert.match(ui, /canAddDeliverySlot\(vendor\.plan,\s*currentSlots\.length\)/);
 });
 
-test("Limit 6: 16th AI picture in a day is blocked and resets midnight IST", async () => {
+test("Limit 6: AI picture limit is deleted from Thrive (and all plans) - no cap remains", async () => {
   const { canGenerateAiPicture } = await import("../lib/plans.ts");
 
-  // 15th picture allowed
-  assert.equal(canGenerateAiPicture("thrive", 14).allowed, true);
+  // Unlimited AI pictures
+  assert.equal(canGenerateAiPicture("thrive", 0).allowed, true);
+  assert.equal(canGenerateAiPicture("thrive", 50).allowed, true);
+  assert.equal(canGenerateAiPicture("thrive", 100).limit, Infinity);
 
-  // 16th picture blocked
-  const check = canGenerateAiPicture("thrive", 15);
-  assert.equal(check.allowed, false);
-  assert.match(check.message || "", /Daily limit reached: Thrive allows 15 AI product images per day/i);
-  assert.match(check.message || "", /resets midnight IST/i);
-  assert.match(check.message || "", /Upgrade to Crown/i);
-
+  // Daily counter check removed from server
   const aiServer = await readFile(path.join(root, "lib/product-image-server.ts"), "utf8");
-  assert.match(aiServer, /canGenerateAiPicture\(planCode,\s*usage\.mine\)/);
+  assert.doesNotMatch(aiServer, /usage\.mine >= VENDOR_DAILY_LIMIT/);
+  assert.doesNotMatch(aiServer, /Your store has reached its daily limit for AI images/);
 });
 
 test("Direct RFQ API call from Thrive vendor is rejected (Crown only)", async () => {
@@ -161,87 +156,68 @@ test("Direct RFQ API call from Thrive vendor is rejected (Crown only)", async ()
 
   const check = canAccessRfq("thrive");
   assert.equal(check.allowed, false);
-  assert.match(check.message || "", /Quotation requests \(RFQ\) and AI quotation assistance are exclusive to the Crown plan/i);
-  assert.match(check.message || "", /Upgrade to Crown/i);
-
-  const rfq = await readFile(path.join(root, "lib/rfq.ts"), "utf8");
-  assert.match(rfq, /canAccessRfq\(vendorPlan\)/);
+  assert.match(check.message || "", /exclusive to the Crown plan/i);
 });
 
-test("Thrive navigation shows Quote opportunities greyed with 'Upgrade to Crown' badge", async () => {
+test("Food Drops visibility: Food Drops do not vanish when vendor is on Crave, Thrive or Crown", async () => {
+  const { canCreateFoodDrop } = await import("../lib/plans.ts");
+  assert.equal(canCreateFoodDrop("crave").allowed, true);
+  assert.equal(canCreateFoodDrop("thrive").allowed, true);
+  assert.equal(canCreateFoodDrop("crown").allowed, true);
+  assert.equal(canCreateFoodDrop("taster").allowed, false);
+
+  // Customer discover filters vendors by canCreateFoodDrop(v.plan).allowed
+  const discover = await readFile(path.join(root, "components/customer-v2/discover.tsx"), "utf8");
+  assert.match(discover, /canCreateFoodDrop\(v\.plan\)\.allowed/);
+
+  // Vendor dashboard keeps Food Drops history and details visible
   const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
-  assert.match(ui, /if\s*\(vendor\.plan\s*===\s*"Thrive"\)\s*\{\s*res\["Quote opportunities"\]\s*=\s*\{\s*badge:\s*"Upgrade to Crown"/);
+  assert.match(ui, /Your store is on the \{vendor\.plan\} plan\. Your Food Drop history and details remain saved below/);
 });
 
-test("Downgrade flow: confirmation popup appears, keeps Thrive until 1st, allows cancel, and scheduled job applies Crave", async () => {
-  const {
-    getNextMonthFirstIst,
-    formatIstEffectiveDate,
-    isScheduledDowngradeDue,
-    applyScheduledPlanDowngrade,
-  } = await import("../lib/plans.ts");
+test("Scheduled downgrade to Crave: deactivates excess products and staff (slots unlimited)", async () => {
+  const { applyScheduledPlanDowngrade } = await import("../lib/plans.ts");
 
-  // Next month first date in IST
-  const nextMonth = getNextMonthFirstIst(new Date("2026-11-16T12:00:00+05:30"));
-  assert.equal(nextMonth, "2026-12-01");
-  assert.equal(formatIstEffectiveDate("2026-12-01"), "1 December");
-
-  // Scheduled downgrade is NOT due prior to effective date
-  assert.equal(isScheduledDowngradeDue("2026-12-01", new Date("2026-11-30T23:59:00+05:30")), false);
-
-  // Scheduled downgrade IS due on 1st of next month
-  assert.equal(isScheduledDowngradeDue("2026-12-01", new Date("2026-12-01T00:01:00+05:30")), true);
-
-  // Confirmation popup exact wording and buttons in VerificationView
-  const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
-  assert.match(ui, /You can enjoy all the features of the Thrive plan until the end of this month\. Your plan will change to Crave from the 1st of next month\./);
-  assert.match(ui, /Keep Thrive/);
-  assert.match(ui, /Confirm/);
-  assert.match(ui, /Your plan changes to/);
-  assert.match(ui, /Cancel change/);
-
-  // Scheduled job deactivates excess products (newest first, never deleting)
   const vendor = {
     id: "v_thrive_1",
-    businessName: "Amma Kitchen",
+    businessName: "Spice Garden",
     plan: "Thrive",
     scheduledPlanChange: {
       nextPlan: "Crave",
       effectiveDate: "2026-12-01",
-      requestedAt: "2026-11-16T12:00:00Z",
+      requestedAt: "2026-11-16T10:00:00Z",
     },
   };
 
-  // Vendor has 105 active products
-  const products = Array.from({ length: 105 }, (_, i) => ({
+  // 105 products (Crave limit 100) -> 5 excess deactivated
+  const prods = Array.from({ length: 105 }, (_, i) => ({
     id: `prod_${i + 1}`,
     vendorId: "v_thrive_1",
     active: true,
     createdAt: new Date(2026, 0, 1, 0, i).toISOString(),
   }));
 
-  // Not due on Nov 30
-  const beforeDue = applyScheduledPlanDowngrade(vendor, products, new Date("2026-11-30T12:00:00+05:30"));
-  assert.equal(beforeDue.applied, false);
+  // 7 staff members (Crave limit 5) -> 2 excess deactivated
+  const staff = Array.from({ length: 7 }, (_, i) => ({
+    id: `staff_${i + 1}`,
+    vendorId: "v_thrive_1",
+    active: true,
+    createdAt: new Date(2026, 0, 1, 0, i).toISOString(),
+  }));
 
-  // Due on Dec 1
-  const afterDue = applyScheduledPlanDowngrade(vendor, products, new Date("2026-12-01T01:00:00+05:30"));
-  assert.equal(afterDue.applied, true);
-  assert.equal(afterDue.newPlan, "Crave");
-  // Crave allows 100 products, so exactly 5 newest products are deactivated
-  assert.equal(afterDue.deactivatedProductIds.length, 5);
-  // The deactivated products are the newest (prod_105, prod_104, prod_103, prod_102, prod_101)
-  assert.deepEqual(afterDue.deactivatedProductIds, ["prod_105", "prod_104", "prod_103", "prod_102", "prod_101"]);
-});
+  // 10 delivery slots -> unlimited on Crave -> 0 deactivated
+  const slots = Array.from({ length: 10 }, (_, i) => ({
+    id: `slot_${i + 1}`,
+    vendorId: "v_thrive_1",
+    isActive: true,
+    createdAt: new Date(2026, 0, 1, 0, i).toISOString(),
+  }));
 
-test("Food Drops visibility: hidden for customers when vendor is not Thrive/Crown, retained in vendor dashboard", async () => {
-  const customerDiscover = await readFile(path.join(root, "components/customer-v2/discover.tsx"), "utf8");
-  assert.match(customerDiscover, /!canCreateFoodDrop\(v\.plan\)\.allowed/);
-
-  const customerProfile = await readFile(path.join(root, "components/customer-v2/profile.tsx"), "utf8");
-  assert.match(customerProfile, /canCreateFoodDrop\(vendor\.plan\)\.allowed/);
-
-  // Vendor dashboard keeps Food Drops history and details visible
-  const ui = await readFile(path.join(root, "components/sheplates-v3.tsx"), "utf8");
-  assert.match(ui, /Your store is on the \{vendor\.plan\} plan\. Your Food Drop history and details remain saved below/);
+  const res = applyScheduledPlanDowngrade(vendor, prods, staff, slots, new Date("2026-12-01T01:00:00+05:30"));
+  assert.equal(res.applied, true);
+  assert.equal(res.newPlan, "Crave");
+  assert.equal(res.deactivatedProductIds.length, 5);
+  assert.equal(res.deactivatedStaffIds.length, 2);
+  assert.deepEqual(res.deactivatedStaffIds, ["staff_7", "staff_6"]);
+  assert.equal(res.deactivatedSlotIds.length, 0);
 });

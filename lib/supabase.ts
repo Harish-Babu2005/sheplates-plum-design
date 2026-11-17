@@ -1587,7 +1587,7 @@ export async function createLiveFoodDrop(input: {
     if (failure && (failure.code === "42501" || /row-level security|permission denied/i.test(failure.message || ""))) {
       // The database only lets a store publish a Food Drop when its plan includes the feature. Say which of the two it is.
       const entitled = await supabase.rpc("vendor_has_entitlement", { p_vendor: input.vendorId, p_key: "food_drops" });
-      if (!entitled.error && entitled.data === false) throw new Error("Your store's plan does not include Food Drops in the database yet. Ask Operations to confirm the Thrive or Crown plan on your store, then try again.");
+      if (!entitled.error && entitled.data === false) throw new Error("Your store's plan does not include Food Drops in the database yet. Ask Operations to confirm the Crave, Thrive or Crown plan on your store, then try again.");
       throw new Error("You are not allowed to publish a Food Drop for this store. Sign in with the store owner's account, or ask Operations for help.");
     }
     if (failure && /food_drops|schema cache|does not exist/i.test(failure.message || "") && !/violates/i.test(failure.message || "")) throw new Error("Food Drops are not set up in the database yet. Ask the Super Admin to run the Food Drops update (V8_2 and V9_12).");

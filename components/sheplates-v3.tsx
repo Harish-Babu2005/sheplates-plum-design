@@ -1594,7 +1594,7 @@ export function SheplatesV3() {
   if (role === "vendor" && vendor) {
     const res: Record<string, { badge: string; reason?: string }> = {};
     if (!canCreateFoodDrop(vendor.plan).allowed) {
-      res["Food Drops"] = { badge: "Upgrade to Thrive", reason: "Food Drops are available on Thrive and Crown. Upgrade to Thrive to unlock daily 8 PM Food Drops." };
+      res["Food Drops"] = { badge: "Upgrade to Crave", reason: "Food Drops are available on Crave, Thrive and Crown. Upgrade to Crave to unlock daily Food Drops." };
     }
     if (vendor.plan === "Thrive") {
       res["Quote opportunities"] = { badge: "Upgrade to Crown", reason: "Quotation opportunities and RFQ tools are exclusive to Crown. Upgrade to Crown to unlock." };
@@ -3667,13 +3667,13 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
     } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
   }
 
-  const isPlanAllowed = ["Thrive", "Crown"].includes(vendor.plan);
+  const isPlanAllowed = ["Crave", "Thrive", "Crown"].includes(vendor.plan);
   return <div className="space-y-6">
-    <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={isPlanAllowed ? <Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button> : <Button disabled variant="outline" className="opacity-60 cursor-not-allowed">Upgrade to Thrive to create</Button>} />
+    <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={isPlanAllowed ? <Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button> : <Button disabled variant="outline" className="opacity-60 cursor-not-allowed">Upgrade to Crave to create</Button>} />
     {!isPlanAllowed && (
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 font-semibold flex items-center gap-2">
         <Info className="size-5 text-amber-700 shrink-0" />
-        Your store is on the {vendor.plan} plan. Your Food Drop history and details remain saved below, but active drops are paused and hidden from customers. Upgrade to Thrive to publish daily Food Drops.
+        Your store is on the {vendor.plan} plan. Your Food Drop history and details remain saved below, but active drops are paused and hidden from customers. Upgrade to Crave to publish daily Food Drops.
       </div>
     )}
     <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium leading-relaxed text-[#285fba]">
@@ -3735,7 +3735,7 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const maxDay = Math.max(1, ...byDay.map((d) => d.total));
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
   async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
-  const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need the Thrive or Crown plan.", Crave: "Food Drops need the Thrive or Crown plan. Quotation requests are on Crown.", Thrive: "Food Drops are on. Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops and customer quotation requests are both on." };
+  const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need Crave, Thrive or Crown.", Crave: "Food Drops are on (up to 2/day). Upgrade to Thrive for 5/day or Crown for quotation requests.", Thrive: "Food Drops are on (up to 5/day). Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops (up to 15/day) and customer quotation requests are both on." };
 
   useEffect(() => {
     if (!vendor?.scheduledPlanChange) return;
@@ -5813,30 +5813,31 @@ const THREE_VENDOR_PLANS = [
   {
     name: "Crave" as const,
     price: 699,
-    description: "Pre-orders, subscriptions, delivery fleet management and Food Stories.",
+    description: "Pre-orders, subscriptions, delivery fleet management, Food Stories and daily Food Drops (up to 2/day).",
     features: [
       "Pre-orders & scheduled subscriptions",
       "Delivery fleet & staff assignment",
       "Customer Food Stories & storefront",
+      "Daily Food Drops (up to 2 per day)",
     ],
   },
   {
     name: "Thrive" as const,
     price: 799,
     popular: true,
-    description: "Everything in Crave, plus daily Food Drops for surplus promotions.",
+    description: "Everything in Crave, plus up to 5 daily Food Drops for surplus promotions.",
     features: [
       "Everything in Crave plan",
-      "Daily Food Drops (evening promotions)",
+      "Daily Food Drops (up to 5 per day)",
       "Surplus deals badge & live countdown",
     ],
   },
   {
     name: "Crown" as const,
     price: 999,
-    description: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance.",
+    description: "Everything in Thrive, plus up to 15 daily Food Drops, Request for Quote (RFQ) with AI assistance and demand alerts.",
     features: [
-      "Everything in Thrive plan",
+      "Everything in Thrive plan (15 Food Drops/day)",
       "Request for Quote (RFQ) opportunities",
       "AI quotation assistant & demand alerts",
     ],
@@ -8160,12 +8161,12 @@ function PlanFeatureTable() {
     ["Leads through WhatsApp", [true, false, false, false]],
     ["Pre-orders, subscriptions, delivery fleet", [false, true, true, true]],
     ["Food Shorts (Food Stories)", [false, true, true, true]],
-    ["Food Drops", [false, false, true, true]],
+    ["Food Drops", [false, true, true, true]],
     ["Request for Quote with AI assistance", [false, false, false, true]],
   ];
   return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
 }
-function Plans({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
+function Plans({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management, Food Stories and Food Drops (2/day)." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus 5 daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive (15 Food Drops/day), plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
 function AdminPricing({ state }: { state: V3State }) {
   const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
   const pct = (id: string) => state.markups[id] || 0;

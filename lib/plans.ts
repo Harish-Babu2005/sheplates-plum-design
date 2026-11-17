@@ -9,11 +9,11 @@ export interface PlanLimits {
   name: PlanName;
   monthlyPrice: number; // in INR exclusive of GST
   maxProducts: number;
-  maxFoodDrops: number; // 0 for Crave
-  maxFoodShortsPerDay: number; // 3 for Crave, resets midnight IST
-  maxDeliveryStaff: number; // 3 for Crave
-  maxDeliverySlots: number; // 3 for Crave
-  maxAiPicturesPerDay: number; // 10 for Crave, resets midnight IST
+  maxFoodDrops: number; // 2 for Crave, 5 for Thrive, 15 for Crown
+  maxFoodShortsPerDay: number; // resets midnight IST
+  maxDeliveryStaff: number; // 5 for Crave, 10 for Thrive, 20 for Crown
+  maxDeliverySlots: number; // Infinity on Crave, Thrive, Crown (unlimited)
+  maxAiPicturesPerDay?: number; // unlimited across all plans
   maxRadiusKm: number; // 30 km for all
   rfqAccess: boolean; // Crown only
   whatsappLeads: boolean; // Taster only
@@ -34,7 +34,6 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     maxFoodShortsPerDay: 1,
     maxDeliveryStaff: 0,
     maxDeliverySlots: 0,
-    maxAiPicturesPerDay: 3,
     maxRadiusKm: 30,
     rfqAccess: false,
     whatsappLeads: true,
@@ -49,11 +48,10 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     name: "Crave",
     monthlyPrice: 699,
     maxProducts: 100,
-    maxFoodDrops: 0,
+    maxFoodDrops: 2,
     maxFoodShortsPerDay: 3,
-    maxDeliveryStaff: 3,
-    maxDeliverySlots: 3,
-    maxAiPicturesPerDay: 10,
+    maxDeliveryStaff: 5,
+    maxDeliverySlots: Infinity,
     maxRadiusKm: 30,
     rfqAccess: false,
     whatsappLeads: false,
@@ -68,11 +66,10 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     name: "Thrive",
     monthlyPrice: 799,
     maxProducts: 300,
-    maxFoodDrops: 3,
+    maxFoodDrops: 5,
     maxFoodShortsPerDay: 5,
     maxDeliveryStaff: 10,
-    maxDeliverySlots: 6,
-    maxAiPicturesPerDay: 15,
+    maxDeliverySlots: Infinity,
     maxRadiusKm: 30,
     rfqAccess: false,
     whatsappLeads: false,
@@ -87,11 +84,10 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     name: "Crown",
     monthlyPrice: 999,
     maxProducts: Infinity,
-    maxFoodDrops: 10,
+    maxFoodDrops: 15,
     maxFoodShortsPerDay: 10,
-    maxDeliveryStaff: Infinity,
-    maxDeliverySlots: 12,
-    maxAiPicturesPerDay: 25,
+    maxDeliveryStaff: 20,
+    maxDeliverySlots: Infinity,
     maxRadiusKm: 30,
     rfqAccess: true,
     whatsappLeads: false,
@@ -194,8 +190,10 @@ export function canAddProduct(plan: string, currentCount: number): { allowed: bo
 export function canAddDeliveryStaff(plan: string, currentCount: number): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
   if (limits.maxDeliveryStaff !== Infinity && currentCount >= limits.maxDeliveryStaff) {
-    const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
-    const msg = `${limits.name} allows ${limits.maxDeliveryStaff} delivery staff members. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
+    const nextPlan = limits.code === "crave" ? "Thrive" : limits.code === "thrive" ? "Crown" : undefined;
+    const msg = nextPlan
+      ? `${limits.name} allows ${limits.maxDeliveryStaff} delivery staff members. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`
+      : `${limits.name} allows ${limits.maxDeliveryStaff} delivery staff members. You have ${currentCount}.`;
     return {
       allowed: false,
       limit: limits.maxDeliveryStaff,
@@ -209,11 +207,9 @@ export function canAddDeliveryStaff(plan: string, currentCount: number): { allow
 /** Check if delivery slot count is within the plan limit */
 export function canAddDeliverySlot(plan: string, currentCount: number): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
-  if (currentCount >= limits.maxDeliverySlots) {
+  if (limits.maxDeliverySlots !== Infinity && currentCount >= limits.maxDeliverySlots) {
     const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
-    const msg = limits.code === "crown"
-      ? `Crown allows ${limits.maxDeliverySlots} delivery slots. You have ${currentCount}.`
-      : `${limits.name} allows ${limits.maxDeliverySlots} delivery slots. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
+    const msg = `${limits.name} allows ${limits.maxDeliverySlots} delivery slots. You have ${currentCount}. Upgrade to ${nextPlan} to add more.`;
     return {
       allowed: false,
       limit: limits.maxDeliverySlots,
@@ -221,7 +217,7 @@ export function canAddDeliverySlot(plan: string, currentCount: number): { allowe
       reason: msg,
     };
   }
-  return { allowed: true, limit: limits.maxDeliverySlots };
+  return { allowed: true, limit: Infinity };
 }
 
 /**
@@ -279,7 +275,7 @@ export function isScheduledDowngradeDue(effectiveDateStr: string, refDate: Date 
 export function canCreateFoodDrop(plan: string, countTodayIst: number = 0): { allowed: boolean; limit: number; message?: string; reason?: string } {
   const limits = getPlanLimits(plan);
   if (limits.maxFoodDrops <= 0) {
-    const msg = `Food Drops are not included in the ${limits.name} plan. Upgrade to Thrive to publish daily Food Drops.`;
+    const msg = `Food Drops are not included in the ${limits.name} plan. Upgrade to Crave to publish daily Food Drops.`;
     return {
       allowed: false,
       limit: 0,
@@ -288,9 +284,10 @@ export function canCreateFoodDrop(plan: string, countTodayIst: number = 0): { al
     };
   }
   if (countTodayIst >= limits.maxFoodDrops) {
-    const msg = limits.code === "crown"
-      ? `Daily limit reached: Crown allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST).`
-      : `Daily limit reached: ${limits.name} allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST). Upgrade to Crown for more.`;
+    const nextPlan = limits.code === "crave" ? "Thrive" : limits.code === "thrive" ? "Crown" : undefined;
+    const msg = nextPlan
+      ? `Daily limit reached: ${limits.name} allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST). Upgrade to ${nextPlan} for more.`
+      : `Daily limit reached: Crown allows ${limits.maxFoodDrops} Food Drops per day (resets midnight IST).`;
     return {
       allowed: false,
       limit: limits.maxFoodDrops,
@@ -444,20 +441,10 @@ export function canUploadFoodShort(plan: string, countTodayIst: number): { allow
   return { allowed: true, limit: limits.maxFoodShortsPerDay };
 }
 
-/** Check if AI product picture generation count today is within daily limit (resets midnight IST) */
-export function canGenerateAiPicture(plan: string, countTodayIst: number): { allowed: boolean; limit: number; message?: string; reason?: string } {
-  const limits = getPlanLimits(plan);
-  if (countTodayIst >= limits.maxAiPicturesPerDay) {
-    const nextPlan = limits.code === "crave" ? "Thrive" : "Crown";
-    const msg = limits.code === "crown"
-      ? `Daily limit reached: Crown allows ${limits.maxAiPicturesPerDay} AI product images per day (resets midnight IST).`
-      : `Daily limit reached: ${limits.name} allows ${limits.maxAiPicturesPerDay} AI product images per day (resets midnight IST). Upgrade to ${nextPlan} for more.`;
-    return {
-      allowed: false,
-      limit: limits.maxAiPicturesPerDay,
-      message: msg,
-      reason: msg,
-    };
-  }
-  return { allowed: true, limit: limits.maxAiPicturesPerDay };
+/**
+ * AI product picture generation is unlimited across all subscription plans.
+ * A separate package will cover AI pictures later; no plan-based cap is enforced.
+ */
+export function canGenerateAiPicture(plan?: string, countTodayIst: number = 0): { allowed: boolean; limit: number; message?: string; reason?: string } {
+  return { allowed: true, limit: Infinity };
 }
