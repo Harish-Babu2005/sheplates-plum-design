@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-assign-module-variable, @typescript-eslint/no-explicit-any */
 /**
  * Shared Notification Routing and Navigation
  *

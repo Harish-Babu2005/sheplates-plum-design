@@ -3,6 +3,7 @@ import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
 import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
 import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode, getIstMidnightDate, canAccessWhatsAppLeads } from "./plans";
+import { PLAN_INCLUDED_CREDITS } from "./ai-credits-config";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -467,7 +468,7 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
-  let productResult: { data: any; error: any } = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id,description").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  let productResult: { data: unknown; error: { message?: string } | null } = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id,description").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   if (productResult.error && /description/i.test(productResult.error.message || "")) {
     productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id").eq("vendor_id", vendorId).order("created_at", { ascending: false });
   }
@@ -967,6 +968,112 @@ export async function saveLiveVendorPlan(vendorId: string, planCode: "taster" | 
   } catch (err) {
     console.error("Audit log error in saveLiveVendorPlan:", err);
   }
+
+  // 5. Update plan AI credits upon plan upgrade/change
+  try {
+    const includedCredits = PLAN_INCLUDED_CREDITS[planCode] ?? 0;
+    const { data: currentCreds } = await supabase.from("vendor_ai_credits").select("purchased_credits").eq("vendor_id", vendorId).maybeSingle();
+    const purchased = currentCreds?.purchased_credits ?? 0;
+    await supabase.from("vendor_ai_credits").upsert({
+      vendor_id: vendorId,
+      plan_credits: includedCredits,
+      purchased_credits: purchased,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "vendor_id" });
+    await supabase.from("vendor_ai_credit_ledger").insert({
+      vendor_id: vendorId,
+      entry_type: "grant",
+      action: "plan_change_grant",
+      credits_change: includedCredits,
+      plan_credits_after: includedCredits,
+      purchased_credits_after: purchased,
+      balance_after: includedCredits + purchased,
+      notes: `Updated to ${planCode} plan (${includedCredits} plan credits)`,
+    });
+  } catch (credErr) {
+    console.warn("Could not sync AI credits in saveLiveVendorPlan (migration may be pending):", credErr);
+  }
+}
+
+export async function fetchLiveVendorAiCredits(vendorId?: string) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "get_vendor_credits", vendorId }),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || "Failed to load credits.");
+  }
+  return res.json() as Promise<{
+    ok: boolean;
+    balance: {
+      vendorId: string;
+      planCode: string;
+      planCredits: number;
+      purchasedCredits: number;
+      totalCredits: number;
+      includedAllowance: number;
+      isLow: boolean;
+    };
+    ledger: Array<Record<string, unknown>>;
+  }>;
+}
+
+export async function createLiveCreditPackOrder(packId: string) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "create_credit_pack_order", packId }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Could not create credit pack order.");
+  return json as {
+    ok: boolean;
+    keyId: string;
+    razorpayOrderId: string;
+    amount: number;
+    currency: string;
+    receipt: string;
+    pack: Record<string, unknown>;
+    billing: Record<string, unknown>;
+    description: string;
+  };
+}
+
+export async function verifyLiveCreditPackPayment(payload: {
+  packId: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "verify_credit_pack_payment", ...payload }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Payment verification failed.");
+  return json;
+}
+
+export async function adjustLiveVendorAiCreditsAdmin(input: {
+  vendorId: string;
+  amount: number;
+  reason: string;
+}) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/admin/vendor-credits", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Failed to adjust credits.");
+  return json;
 }
 
 export async function decideLiveVendorVerification(vendorId: string, verification: string) {

@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadVendorBillingTerms } from "@/lib/billing-server";
+import { CREDIT_PACKS, calculateCreditPackBilling } from "@/lib/ai-credits-config";
+import { addPurchasedAiCredits, getVendorAiCredits, getVendorAiCreditLedger } from "@/lib/ai-credits-server";
+import { normalizePlanCode } from "@/lib/plans";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -629,6 +632,183 @@ export async function POST(request: Request) {
         ok: true,
         orderId: order.id,
         snapshot: await commerceSnapshot(ctx),
+      });
+    }
+
+    // -----------------------------------------------------------------------------------
+    // ACTION: create_credit_pack_order
+    // -----------------------------------------------------------------------------------
+    if (action === "create_credit_pack_order") {
+      if (profile.role !== "vendor" || !profile.vendor_id) {
+        return NextResponse.json({ error: "Vendor access required to buy credit packs." }, { status: 403 });
+      }
+
+      // Taster vendors cannot purchase credit packs
+      const { data: vendorData } = await admin
+        .from("vendors")
+        .select("id, plan_id, vendor_plans(code)")
+        .eq("id", profile.vendor_id)
+        .maybeSingle();
+
+      const vendorPlansRecord = vendorData?.vendor_plans as unknown;
+      const rawPlanCode = Array.isArray(vendorPlansRecord)
+        ? (vendorPlansRecord[0] as { code?: string } | undefined)?.code
+        : (vendorPlansRecord as { code?: string } | undefined)?.code;
+
+      const planCode = normalizePlanCode(rawPlanCode);
+      if (planCode === "taster") {
+        return NextResponse.json({
+          error: "Credit packs cannot be purchased on the Taster plan. Upgrade to Crave, Thrive, or Crown to unlock AI credits.",
+        }, { status: 403 });
+      }
+
+      const packId = String(body.packId || "").trim();
+      const pack = CREDIT_PACKS.find((p) => p.id === packId);
+      if (!pack) {
+        return NextResponse.json({ error: "Invalid credit pack selected." }, { status: 400 });
+      }
+
+      const billing = calculateCreditPackBilling(pack);
+      const keyId = process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keyId || !keySecret) {
+        return NextResponse.json({ error: "Razorpay payment gateway is not configured on the server." }, { status: 500 });
+      }
+
+      const receiptId = `CP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+      // Create Razorpay order via official REST API
+      const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: billing.totalPaise,
+          currency: "INR",
+          receipt: receiptId,
+          notes: {
+            type: "ai_credit_pack",
+            pack_id: pack.id,
+            vendor_id: profile.vendor_id,
+            credits: String(pack.credits),
+          },
+        }),
+      });
+
+      if (!rzpRes.ok) {
+        const errData = await rzpRes.json().catch(() => ({}));
+        const message = errData?.error?.description || "Unable to initiate Razorpay transaction.";
+        return NextResponse.json({ error: message }, { status: 502 });
+      }
+
+      const rzpOrder = await rzpRes.json();
+
+      return NextResponse.json({
+        ok: true,
+        keyId,
+        razorpayOrderId: rzpOrder.id,
+        amount: billing.totalPaise,
+        currency: "INR",
+        receipt: receiptId,
+        pack,
+        billing,
+        description: `SHE Plates AI Credits: ${pack.credits} Credits (${pack.name})`,
+      });
+    }
+
+    // -----------------------------------------------------------------------------------
+    // ACTION: verify_credit_pack_payment
+    // -----------------------------------------------------------------------------------
+    if (action === "verify_credit_pack_payment") {
+      if (profile.role !== "vendor" || !profile.vendor_id) {
+        return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      }
+
+      const packId = String(body.packId || "").trim();
+      const razorpayOrderId = String(body.razorpay_order_id || "").trim();
+      const razorpayPaymentId = String(body.razorpay_payment_id || "").trim();
+      const razorpaySignature = String(body.razorpay_signature || "").trim();
+
+      if (!packId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+        return NextResponse.json({ error: "Missing required payment verification details." }, { status: 400 });
+      }
+
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keySecret) {
+        return NextResponse.json({ error: "Razorpay secret key is not configured on the server." }, { status: 500 });
+      }
+
+      // Verify HMAC SHA-256 signature
+      const expectedSignature = crypto
+        .createHmac("sha256", keySecret)
+        .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+        .digest("hex");
+
+      const isValid = timingSafeEqualHex(expectedSignature, razorpaySignature);
+      if (!isValid) {
+        return NextResponse.json({ error: "Payment verification failed: invalid signature." }, { status: 400 });
+      }
+
+      const pack = CREDIT_PACKS.find((p) => p.id === packId);
+      if (!pack) {
+        return NextResponse.json({ error: "Invalid credit pack." }, { status: 400 });
+      }
+
+      // Server-side credit grant: Add credits only after payment is confirmed on server
+      const creditResult = await addPurchasedAiCredits(admin, profile.vendor_id, pack.id, razorpayPaymentId);
+
+      // Record in audit log
+      try {
+        await admin.from("audit_logs").insert({
+          actor_id: profile.id,
+          action: "Purchased AI credit pack",
+          entity_type: "vendor",
+          entity_id: profile.vendor_id,
+          after_data: {
+            packId: pack.id,
+            creditsAdded: pack.credits,
+            razorpayPaymentId,
+            razorpayOrderId,
+            newBalance: creditResult.newBalance,
+            price: pack.price,
+            gst: pack.price * (pack.gstPercent / 100),
+            totalAmount: pack.price * (1 + pack.gstPercent / 100),
+          },
+        });
+      } catch (err) {
+        console.error("Audit log error on credit purchase:", err);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        creditsAdded: creditResult.creditsAdded,
+        newBalance: creditResult.newBalance,
+        purchasedCredits: creditResult.purchasedCredits,
+        pack,
+      });
+    }
+
+    // -----------------------------------------------------------------------------------
+    // ACTION: get_vendor_credits
+    // -----------------------------------------------------------------------------------
+    if (action === "get_vendor_credits") {
+      const targetVendorId = (["admin", "operations"].includes(profile.role) && body.vendorId)
+        ? String(body.vendorId)
+        : profile.vendor_id;
+
+      if (!targetVendorId) {
+        return NextResponse.json({ error: "No vendor specified." }, { status: 400 });
+      }
+
+      const balance = await getVendorAiCredits(admin, targetVendorId);
+      const ledger = await getVendorAiCreditLedger(admin, targetVendorId, 100);
+
+      return NextResponse.json({
+        ok: true,
+        balance,
+        ledger,
       });
     }
 

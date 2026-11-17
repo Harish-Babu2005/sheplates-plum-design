@@ -1,6 +1,8 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Wordmark } from "@/components/brand";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +18,7 @@ import {
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound, QrCode,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound, QrCode, Coins,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -120,6 +122,8 @@ import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profil
 import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
 import { resolveNotificationTarget, executeNotificationNavigation } from "@/lib/notification-router";
 import { getDeviceNotificationStatus, requestAndRegisterDeviceNotifications, deregisterDeviceNotifications, type DeviceNotificationStatus } from "@/lib/device-notifications";
+import { BuyCreditsScreen, AiCreditsBadge, AdminVendorCreditsManagement } from "@/components/vendor/ai-credits-view";
+import { PLAN_INCLUDED_CREDITS, isLowCreditBalance, CREDIT_PACKS } from "@/lib/ai-credits-config";
 
 function CategoryBadge({ name, className = "size-5" }: { name: string; className?: string }) {
   const { Icon, fg } = categoryVisual(name);
@@ -217,6 +221,13 @@ export type Vendor = {
     nextPlan: "Taster" | "Crave" | "Thrive" | "Crown";
     effectiveDate: string;
     requestedAt: string;
+  };
+  aiCredits?: {
+    planCredits: number;
+    purchasedCredits: number;
+    totalCredits: number;
+    includedAllowance: number;
+    isLow?: boolean;
   };
 };
 type VendorOutlet = { id: string; name: string; address: string; latitude?: number; longitude?: number; radiusKm: number; openToday: boolean; certificateNumber?: string; certificateName?: string; certificateExpiry?: string };
@@ -483,12 +494,13 @@ const SESSION_KEY = "sheplates-v3-session";
 const roleName: Record<Role, string> = { customer: "Customer", vendor: "Vendor", operations: "Operations", admin: "Super admin" };
 const nav: Record<Role, string[]> = {
   customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre", "Notifications"],
-  vendor: ["Dashboard", "AI insights", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre", "Notifications"],
-  operations: ["Command centre", "Notifications", "AI insights", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
-  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log", "Notifications"],
+  vendor: ["Dashboard", "AI insights", "Buy credits", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre", "Notifications"],
+  operations: ["Command centre", "Notifications", "AI insights", "Vendor credits", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
+  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor credits", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log", "Notifications"],
 };
 const navIcons: Record<string, typeof Store> = {
   "Stories monitor": Play,
+  "Buy credits": Coins, "AI credits": Coins, "Vendor credits": Coins,
   Marketplace: ShoppingBag, Cart: ShoppingCart, Wishlist: Heart, "My schedule": CalendarDays, "Monthly requirement": ListChecks, "My quotations": ClipboardCheck,
   Orders: Package, "Profile & food": HeartPulse, Dashboard: LayoutDashboard, "Vendor workspace": LayoutDashboard, "Store & radius": MapPin, "People followers": Users,
   "Weekly menu": CalendarDays, Verification: BadgeCheck, Catalog: ShoppingBag, "Online shop & POS": Building2, "Food Drops": Zap, "Food Shorts": Clapperboard, "Quote opportunities": ClipboardCheck, "Delivery team": Truck,
@@ -3789,10 +3801,36 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
 }
 
 function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void; onNavigate?: (view: string) => void }) {
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as any} onNavigate={onNavigate} />;
   const vendor = vendorFor(state, session)!;
+
+  useEffect(() => {
+    if (!vendor?.scheduledPlanChange) return;
+    if (isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate)) {
+      const outcome = applyScheduledPlanDowngrade(vendor, state.products, state.staff, state.deliverySlots);
+      if (outcome.applied && outcome.newPlan) {
+        const nextPlan = outcome.newPlan as Vendor["plan"];
+        const deactSet = new Set(outcome.deactivatedProductIds);
+        const deactStaff = new Set(outcome.deactivatedStaffIds || []);
+        const deactSlots = new Set(outcome.deactivatedSlotIds || []);
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, plan: nextPlan, scheduledPlanChange: undefined } : v),
+          products: deactSet.size ? s.products.map((p) => deactSet.has(p.id) ? { ...p, active: false } : p) : s.products,
+          staff: deactStaff.size ? s.staff.map((st) => deactStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+          deliverySlots: deactSlots.size ? (s.deliverySlots || []).map((sl) => deactSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+          audit: [audit(session, "Vendor plan changed", outcome.auditDetail || `${vendor.businessName} plan changed to ${nextPlan}`), ...s.audit],
+        }));
+        if (isLiveSupabaseMode()) {
+          void saveLiveVendorPlan(vendor.id, nextPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+        }
+      }
+    }
+  }, [vendor?.id, vendor?.scheduledPlanChange?.effectiveDate]);
+
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={onNavigate} />;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
+  if (active === "Buy credits") return <BuyCreditsScreen vendor={vendor} state={state} setState={setState} session={session} onBack={() => onNavigate?.("Dashboard")} onNavigate={onNavigate} />;
   if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
@@ -3825,30 +3863,6 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
   const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need Crave, Thrive or Crown.", Crave: "Food Drops are on (up to 2/day). Upgrade to Thrive for 5/day or Crown for quotation requests.", Thrive: "Food Drops are on (up to 5/day). Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops (up to 15/day) and customer quotation requests are both on." };
 
-  useEffect(() => {
-    if (!vendor?.scheduledPlanChange) return;
-    if (isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate)) {
-      const outcome = applyScheduledPlanDowngrade(vendor, state.products, state.staff, state.deliverySlots);
-      if (outcome.applied && outcome.newPlan) {
-        const nextPlan = outcome.newPlan as Vendor["plan"];
-        const deactSet = new Set(outcome.deactivatedProductIds);
-        const deactStaff = new Set(outcome.deactivatedStaffIds || []);
-        const deactSlots = new Set(outcome.deactivatedSlotIds || []);
-        setState((s) => ({
-          ...s,
-          vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, plan: nextPlan, scheduledPlanChange: undefined } : v),
-          products: deactSet.size ? s.products.map((p) => deactSet.has(p.id) ? { ...p, active: false } : p) : s.products,
-          staff: deactStaff.size ? s.staff.map((st) => deactStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
-          deliverySlots: deactSlots.size ? (s.deliverySlots || []).map((sl) => deactSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
-          audit: [audit(session, "Vendor plan changed", outcome.auditDetail || `${vendor.businessName} plan changed to ${nextPlan}`), ...s.audit],
-        }));
-        if (isLiveSupabaseMode()) {
-          void saveLiveVendorPlan(vendor.id, nextPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
-        }
-      }
-    }
-  }, [vendor?.id, vendor?.scheduledPlanChange?.effectiveDate]);
-
   return <div className="space-y-5">
     {vendor.scheduledPlanChange && (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
@@ -3877,7 +3891,7 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
         </Button>
       </div>
     )}
-    <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#b42332]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#795900]"}`}>{vendor.verification}</span></div>} />
+    <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex flex-wrap items-center gap-2"><AiCreditsBadge vendor={vendor} onBuyCredits={() => onNavigate?.("Buy credits")} /><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#b42332]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#795900]"}`}>{vendor.verification}</span></div>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="Orders today" value={String(ordersToday.length)} icon={ReceiptText} note={`${orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)).length} upcoming in total`} />
       <Metric label="Sales today" value={money(ordersToday.reduce((sum, x) => sum + x.total, 0))} icon={IndianRupee} />
@@ -3925,7 +3939,7 @@ function VendorAIInsights({ vendor, state, session }: { vendor: Vendor; state: V
     } catch (error) { toast.error(errorMessage(error, "She Agent is unavailable right now")); }
     finally { setBusy(false); }
   }
-  return <div className="space-y-6"><Heading eyebrow="VENDOR AI" title="Store intelligence" body="She Agent analyses only your store workspace: your catalogue, stock, upcoming orders and delivery capacity. It cannot inspect another vendor's information or make payments, pricing or verification decisions for you." action={<Button onClick={() => void askAI()} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "Ask She Agent"}</Button>} />
+  return <div className="space-y-6"><Heading eyebrow="VENDOR AI" title="Store intelligence" body="She Agent analyses only your store workspace: your catalogue, stock, upcoming orders and delivery capacity. It cannot inspect another vendor's information or make payments, pricing or verification decisions for you." action={<div className="flex flex-wrap items-center gap-2"><AiCreditsBadge vendor={vendor} /><Button onClick={() => void askAI()} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "Ask She Agent"}</Button></div>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Open orders" value={String(openOrders.length)} icon={Package} /><Metric label="Low-stock items" value={String(lowStock.length)} icon={AlertTriangle} /><Metric label="Unassigned deliveries" value={String(unassigned.length)} icon={Truck} /><Metric label="RFQ opportunities" value={String(quoteOpportunities.length)} icon={ClipboardCheck} /></div>
     <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]"><section className="surface-card rounded-[28px] p-6"><h3 className="font-black">Signals from your store</h3><div className="mt-5 space-y-3"><Review label="Store status" value={vendor.openToday ? "Open" : "Closed"} /><Review label="Published products" value={String(products.filter((item) => item.active).length)} /><Review label="Products needing stock attention" value={lowStock.map((item) => item.name).slice(0, 3).join(", ") || "None"} /><Review label="Delivery queue without assignee" value={String(unassigned.length)} /></div></section>
       <section className="surface-dark rounded-[28px] p-6 text-white"><Activity className="text-[#D9F5E7]" /><h3 className="mt-4 text-xl font-black">AI daily recommendation</h3>{insight ? <><p className="mt-3 text-sm leading-6 text-white/70">{insight.summary}</p><div className="mt-4 rounded-2xl bg-white/8 p-4 text-sm font-bold text-[#D9F5E7]">{insight.recommendedAction}</div></> : <p className="mt-3 text-sm leading-6 text-white/60">Ask She Agent for a grounded daily review. It can flag stock risk, fulfilment load and quote opportunities using your own store data.</p>}</section></div>
@@ -6439,7 +6453,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
                   d.documentType === "food_certificate" || (d.documentType as string) === "fssai"
                     ? { ...d, documentNumber: updatedCertificate, expiryDate: expiry || d.expiryDate, verificationStatus: "submitted", fileName: fileName || d.fileName }
                     : d
-                )
+                  )
               : [...x.documents, { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }]
           ) : [
             { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }
@@ -7181,7 +7195,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   }
 
   const metrics: Array<[keyof Nutrition, string]> = [["calories","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fibre","Fibre g"]];
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></DialogHeader>
+  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
       <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
         
@@ -7436,8 +7450,9 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
 function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
 function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as any} onNavigate={navigate} />;
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={navigate} />;
   if (active === "AI insights") return <AIInsights role="operations" state={state} />;
+  if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
   if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
   if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
@@ -8079,8 +8094,9 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
 
 function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void; onNavigate?: (view: string) => void }) {
   const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as any} onNavigate={onNavigate} />;
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={onNavigate} />;
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
+  if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
   if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;

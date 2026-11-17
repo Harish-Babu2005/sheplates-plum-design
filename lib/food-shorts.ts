@@ -218,7 +218,7 @@ export function useFoodShorts(user: ShortsUser, vendors: ShortsVendor[], viewer:
       if (!["https:", "http:"].includes(parsedShopLink.protocol)) throw new Error("Shop links must use http:// or https://");
     }
     const vendorObj = vendorById(vendorId);
-    const vendorPlan = (vendorObj as any)?.plan || "crave";
+    const vendorPlan = (vendorObj as { plan?: string } | undefined)?.plan || "crave";
     const today = mine.filter((s) => isSameIstDay(s.createdAt)).length;
     const limitCheck = canUploadFoodShort(vendorPlan, today);
     if (!limitCheck.allowed) throw new Error(limitCheck.message);

@@ -402,7 +402,12 @@ function finalSchema(role: Role) {
   return { type: "object", additionalProperties: false, properties, required };
 }
 
-const apiBase = () => (process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "");
+const apiBase = () =>
+  (
+    process.env.AI_API_BASE ||
+    process.env.URUV_API_BASE ||
+    (process.env.OPENAI_API_KEY && !process.env.URUV_API_KEY ? "https://api.openai.com/v1" : "https://api.uruv.ai/v1")
+  ).replace(/\/$/, "");
 
 /** Latency settings for the reasoning model family: minimal reasoning effort and short answers. A shopping
  * assistant that picks tools and writes two sentences does not need deep reasoning, and each reasoning

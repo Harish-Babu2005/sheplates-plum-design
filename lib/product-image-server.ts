@@ -116,8 +116,7 @@ export async function ensureConceptImage(admin: SupabaseClient, input: { name: s
     if (cached.data?.url) return { imageUrl: cached.data.url as string, source: "cache" };
   }
 
-  const usage = await usageToday(admin, input.vendorId);
-  if (usage.total >= DAILY_LIMIT()) throw new ImageError(429, "The daily limit for AI product images has been reached. It resets tomorrow.");
+  // Daily limit is replaced by the AI credits system (checkVendorAiCredits / deductVendorAiCredits)
 
 
   const apiKeyValue = apiKey();

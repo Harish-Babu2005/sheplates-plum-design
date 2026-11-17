@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Device Notifications client helper
  * Handles permission requests, state detection (enabled, blocked, unsupported, iOS home-screen note),

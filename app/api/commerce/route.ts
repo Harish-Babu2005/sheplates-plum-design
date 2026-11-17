@@ -5,7 +5,7 @@ import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
 import { validateSkuSelection } from "@/lib/sku-master";
-import { getPlanLimits, canAddDeliveryStaff, canAddDeliverySlot, extractPlanCode } from "@/lib/plans";
+import { canAddDeliveryStaff, canAddDeliverySlot, extractPlanCode } from "@/lib/plans";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -517,7 +517,6 @@ export async function POST(request: Request) {
         if (claims.error) return NextResponse.json({ error: claims.error.message || "Food Drops could not be reserved." }, { status: 409 });
       }
       const orderIds: string[] = [];
-      let customerTotal = 0;
       for (const [vendorId, items] of grouped.entries()) {
         const isFoodDrop = items.some((item) => Boolean(item.food_drop_id));
         const fulfilmentMode = isFoodDrop ? "self_pickup" : vendorFulfilments.get(vendorId);

@@ -22,6 +22,7 @@ export interface PlanLimits {
   foodStories: boolean; // true for Crave, Thrive, Crown
   priorityAlerts: boolean; // Crown only
   defaultCommissionPercent: number; // 10%
+  includedAiCredits: number; // 0 for Taster, 200 for Crave, 400 for Thrive, 800 for Crown
 }
 
 export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
@@ -42,6 +43,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     foodStories: false,
     priorityAlerts: false,
     defaultCommissionPercent: 0,
+    includedAiCredits: 0,
   },
   crave: {
     code: "crave",
@@ -60,6 +62,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     foodStories: true,
     priorityAlerts: false,
     defaultCommissionPercent: 10,
+    includedAiCredits: 200,
   },
   thrive: {
     code: "thrive",
@@ -78,6 +81,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     foodStories: true,
     priorityAlerts: false,
     defaultCommissionPercent: 10,
+    includedAiCredits: 400,
   },
   crown: {
     code: "crown",
@@ -96,6 +100,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     foodStories: true,
     priorityAlerts: true,
     defaultCommissionPercent: 10,
+    includedAiCredits: 800,
   },
 };
 
@@ -303,9 +308,9 @@ export function canCreateFoodDrop(plan: string, countTodayIst: number = 0): { al
  * Deactivates products, staff, and slots exceeding the new plan limit (newest first, setting active: false, never deleting).
  */
 export function applyScheduledPlanDowngrade<
-  TProduct extends { id: string; vendorId: string; active: boolean; createdAt?: string } = any,
-  TStaff extends { id: string; vendorId?: string; active?: boolean; createdAt?: string } = any,
-  TSlot extends { id: string; vendorId?: string; active?: boolean; isActive?: boolean; createdAt?: string } = any,
+  TProduct extends { id: string; vendorId: string; active: boolean; createdAt?: string } = { id: string; vendorId: string; active: boolean; createdAt?: string },
+  TStaff extends { id: string; vendorId?: string; active?: boolean; createdAt?: string } = { id: string; vendorId?: string; active?: boolean; createdAt?: string },
+  TSlot extends { id: string; vendorId?: string; active?: boolean; isActive?: boolean; createdAt?: string } = { id: string; vendorId?: string; active?: boolean; isActive?: boolean; createdAt?: string },
 >(
   vendor: { id: string; businessName: string; plan: string; scheduledPlanChange?: { nextPlan: string; effectiveDate: string; requestedAt: string } },
   products: TProduct[],

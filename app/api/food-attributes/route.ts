@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { TASTE_DIMENSIONS, inferAttributesLocally, type TasteWeights } from "@/lib/taste-match";
 import { uruvChat, uruvApiKey } from "@/lib/uruv-ai";
+import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 
 function clients(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
   if (!c) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const { data: authData } = await c.caller.auth.getUser(c.token);
   if (!authData.user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const { data: profile } = await c.caller.from("profiles").select("role,vendor_id").eq("id", authData.user.id).maybeSingle();
 
   const body = await request.json().catch(() => null) as { products?: ProductInput[] } | null;
   const products = (body?.products || []).filter((p) => p?.id && p?.name).slice(0, 16);
@@ -94,7 +96,24 @@ export async function POST(request: Request) {
 
   const uncached = products.filter((p) => !cached[p.id]);
   if (uncached.length) {
+    if (profile?.role === "vendor" && profile.vendor_id) {
+      const creditCheck = await checkVendorAiCredits(c.admin, profile.vendor_id, "food_attributes");
+      if (!creditCheck.allowed) {
+        return NextResponse.json({
+          error: creditCheck.message,
+          code: "insufficient_credits",
+          buyCreditsUrl: "/?view=Buy+credits",
+          balance: creditCheck.balance,
+          cost: creditCheck.cost,
+        }, { status: 402 });
+      }
+    }
+
     const aiResult = await classifyWithAI(uncached);
+    if (aiResult && Object.keys(aiResult).length > 0 && profile?.role === "vendor" && profile.vendor_id) {
+      await deductVendorAiCredits(c.admin, profile.vendor_id, "food_attributes", `Classified ${uncached.length} products`);
+    }
+
     const rowsToInsert = uncached.map((p) => {
       const attributes = aiResult?.[p.id] && Object.keys(aiResult[p.id]).length ? aiResult[p.id] : inferAttributesLocally(p.name, p.category);
       cached[p.id] = attributes;

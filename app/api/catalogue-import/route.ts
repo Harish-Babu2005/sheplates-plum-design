@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { uruvChat, uruvApiKey, UruvAiError } from "@/lib/uruv-ai";
+import { adminClient } from "@/lib/product-image-server";
+import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 
 function extractText(payload: Record<string, unknown>) {
   const choices = Array.isArray(payload.choices) ? (payload.choices as Array<Record<string, unknown>>) : [];
@@ -31,6 +33,20 @@ export async function POST(request: Request) {
   if (!raw) return NextResponse.json({ error: "The uploaded list is empty." }, { status: 400 });
   if (!uruvApiKey()) return NextResponse.json({ error: "Smart list reading is temporarily unavailable." }, { status: 503 });
 
+  const admin = adminClient();
+  if (profile.role === "vendor" && profile.vendor_id && admin) {
+    const creditCheck = await checkVendorAiCredits(admin, profile.vendor_id, "catalogue_import");
+    if (!creditCheck.allowed) {
+      return NextResponse.json({
+        error: creditCheck.message || "Insufficient AI credits to import catalogue.",
+        code: "insufficient_credits",
+        buyCreditsUrl: "/?view=Buy+credits",
+        balance: creditCheck.balance,
+        cost: creditCheck.cost,
+      }, { status: 402 });
+    }
+  }
+
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -60,6 +76,11 @@ export async function POST(request: Request) {
       response_format: { type: "json_schema", json_schema: { name: "catalogue_import", strict: true, schema } },
     });
     const parsed = JSON.parse(extractText(json)) as { items?: unknown[] };
+
+    if (profile.role === "vendor" && profile.vendor_id && admin) {
+      await deductVendorAiCredits(admin, profile.vendor_id, "catalogue_import", "Smart catalogue list import");
+    }
+
     return NextResponse.json({ items: parsed.items || [] });
   } catch (err) {
     if (err instanceof UruvAiError && (err.status === 400 || err.status === 422)) {

@@ -1,22 +1,45 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { uruvImageEdit, uruvApiKey, UruvAiError } from "@/lib/uruv-ai";
+import { adminClient } from "@/lib/product-image-server";
+import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 
-async function authoriseVendorOrAdmin(request: Request) {
+async function callerFromRequest(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!url || !anon || !token) return process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
+  if (!url || !anon || !token) {
+    if (process.env.NEXT_PUBLIC_DEMO_MODE !== "false") return { role: "vendor", vendorId: null };
+    return null;
+  }
   const supabase = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } });
   const { data: authData } = await supabase.auth.getUser(token);
-  if (!authData.user) return false;
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", authData.user.id).maybeSingle();
-  return profile?.role === "vendor" || profile?.role === "admin";
+  if (!authData.user) return null;
+  const { data: profile } = await supabase.from("profiles").select("role,vendor_id").eq("id", authData.user.id).maybeSingle();
+  if (!profile) return null;
+  return { role: String(profile.role), vendorId: (profile.vendor_id as string | null) ?? null };
 }
 
 export async function POST(request: Request) {
-  if (!(await authoriseVendorOrAdmin(request))) return NextResponse.json({ error: "Vendor or Super Admin access is required." }, { status: 403 });
+  const caller = await callerFromRequest(request);
+  if (!caller || !["vendor", "admin", "operations"].includes(caller.role)) {
+    return NextResponse.json({ error: "Vendor or Super Admin access is required." }, { status: 403 });
+  }
   if (!uruvApiKey()) return NextResponse.json({ error: "Image enhancement is temporarily unavailable." }, { status: 503 });
+
+  const admin = adminClient();
+  if (caller.role === "vendor" && caller.vendorId && admin) {
+    const creditCheck = await checkVendorAiCredits(admin, caller.vendorId, "image_enhance");
+    if (!creditCheck.allowed) {
+      return NextResponse.json({
+        error: creditCheck.message || "Insufficient AI credits to enhance images.",
+        code: "insufficient_credits",
+        buyCreditsUrl: "/?view=Buy+credits",
+        balance: creditCheck.balance,
+        cost: creditCheck.cost,
+      }, { status: 402 });
+    }
+  }
 
   const body = await request.json() as { imageDataUrl?: string; productName?: string; name?: string; category?: string };
   const match = body.imageDataUrl?.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -38,6 +61,12 @@ export async function POST(request: Request) {
   try {
     const json = await uruvImageEdit(form);
     const item = json.data?.[0];
+
+    // Deduct credits only upon success
+    if (caller.role === "vendor" && caller.vendorId && admin) {
+      await deductVendorAiCredits(admin, caller.vendorId, "image_enhance", `Enhanced image for ${productName || "product"}`);
+    }
+
     if (item?.b64_json) return NextResponse.json({ imageDataUrl: `data:image/png;base64,${item.b64_json}`, source: "uruv" });
     if (item?.url) return NextResponse.json({ imageUrl: item.url, source: "uruv" });
     return NextResponse.json({ error: "Image enhancement returned no image." }, { status: 502 });
