@@ -117,6 +117,8 @@ import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts
 import { AUTO_REFRESH_INTERVAL_MS, startAutoRefresh } from "@/lib/auto-refresh";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
 import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
+import { resolveNotificationTarget, executeNotificationNavigation } from "@/lib/notification-router";
+import { getDeviceNotificationStatus, requestAndRegisterDeviceNotifications, deregisterDeviceNotifications, type DeviceNotificationStatus } from "@/lib/device-notifications";
 
 function CategoryBadge({ name, className = "size-5" }: { name: string; className?: string }) {
   const { Icon, fg } = categoryVisual(name);
@@ -127,7 +129,7 @@ function ProductGlyph({ category, iconClassName = "size-6" }: { category: string
   return <Icon className={iconClassName} style={{ color: fg }} strokeWidth={1.6} />;
 }
 
-type Role = DemoSession["role"];
+export type Role = DemoSession["role"];
 type DeliveryMode = "Vendor delivery" | "Self pickup" | "Third-party delivery";
 
 
@@ -269,7 +271,7 @@ type Assignment = { id: string; orderId: string; staffId: string; assignedAt: st
 type RequirementItem = { id: string; name: string; quantity: number; unit: string; brand: string };
 type Requirement = { id: string; customerEmail: string; title: string; deliveryDate: string; closingDate?: string; sourceFileName?: string; items: RequirementItem[]; status: "Draft" | "Quoting" | "Quotes received" | "Awarded"; invitedVendorIds?: string[] };
 type Quote = { id: string; requirementId: string; vendorId: string; total: number; deliveryFee: number; note: string; status: "Submitted" | "Selected" | "Not selected" };
-type Notification = { id: string; recipient: string; recipientRole: Role; title: string; body: string; at: string; read: boolean; href?: string; entityType?: string | null; entityId?: string | null };
+type Notification = { id: string; recipient: string; recipientRole: Role; title: string; body: string; at: string; read: boolean; href?: string; entityType?: string | null; entityId?: string | null; type?: string };
 type Cancellation = { id: string; orderId: string; customerEmail: string; reason: string; aiDecision: string; confidence: number; status: "Awaiting operations" | "Approved" | "Rejected" | "Refunded"; kind?: "cancellation" | "quality_complaint"; recommendedRefundAmount?: number; attachmentName?: string };
 type Audit = { id: string; actor: string; action: string; detail: string; at: string };
 type CartItem = { id: string; customerEmail: string; productId: string; quantity: number; foodDropId?: string; unitPrice?: number };
@@ -478,10 +480,10 @@ const STORE_KEY = "sheplates-v3-state";
 const SESSION_KEY = "sheplates-v3-session";
 const roleName: Record<Role, string> = { customer: "Customer", vendor: "Vendor", operations: "Operations", admin: "Super admin" };
 const nav: Record<Role, string[]> = {
-  customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre"],
-  vendor: ["Dashboard", "AI insights", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre"],
-  operations: ["Command centre", "AI insights", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
-  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log"],
+  customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre", "Notifications"],
+  vendor: ["Dashboard", "AI insights", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre", "Notifications"],
+  operations: ["Command centre", "Notifications", "AI insights", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
+  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log", "Notifications"],
 };
 const navIcons: Record<string, typeof Store> = {
   "Stories monitor": Play,
@@ -493,6 +495,7 @@ const navIcons: Record<string, typeof Store> = {
   "Item pricing": Percent, "RFQ desk": ClipboardCheck, Cancellations: RefreshCcw, "Executive view": LayoutDashboard,
   Users, Vendors: Store, "Vendor plans": WalletCards, "Pricing policies": Settings, "Audit log": Activity, "Ticket centre": TicketCheck, "AI insights": Sparkles, "Homepage & campaigns": Megaphone,
   Settlements: WalletCards, "Vendor payments": IndianRupee, Reports: FileSpreadsheet,
+  Notifications: Bell,
 };
 type SellingSpec = { key: string; label: string; amount: number; measure: string; emoji: string };
 const weightPacks = (emoji: string): SellingSpec[] => [
@@ -1125,7 +1128,13 @@ export function SheplatesV3() {
   useEffect(() => {
     if (!hydrated || !session || initializedNavigationKey.current === navigationKey) return;
     const validPages = nav[session.role] ?? [];
-    const parameters = new URLSearchParams(window.location.search);
+    let pendingUrl: string | null = null;
+    try {
+      pendingUrl = sessionStorage.getItem("sheplates_pending_notification_url");
+      if (pendingUrl) sessionStorage.removeItem("sheplates_pending_notification_url");
+    } catch {}
+
+    const parameters = new URLSearchParams(pendingUrl ? (pendingUrl.split("?")[1] || "") : window.location.search);
     const requested = parameters.get("view");
     const initialPage = requested && validPages.includes(requested)
       ? requested
@@ -1138,10 +1147,29 @@ export function SheplatesV3() {
     if (initialPage !== validPages[0]) parameters.set("view", initialPage);
     const target = `${window.location.pathname}${parameters.toString() ? `?${parameters.toString()}` : ""}`;
     const current = `${window.location.pathname}${window.location.search}`;
-    if (current !== target) window.history.replaceState({ page: initialPage }, "", target);
+    if (current !== target || pendingUrl) window.history.replaceState({ page: initialPage }, "", target);
     initializedNavigationKey.current = navigationKey;
     skipNavigationSync.current = true;
   }, [active, hydrated, navigationKey, session]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === "SHEPLATES_NAVIGATE" && event.data.url) {
+        try {
+          const u = new URL(event.data.url, window.location.origin);
+          const requested = u.searchParams.get("view");
+          const validPages = session ? (nav[session.role] ?? []) : [];
+          if (requested && validPages.includes(requested)) {
+            window.history.pushState({ page: requested }, "", event.data.url);
+            setActive(requested);
+          }
+        } catch {}
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+  }, [session]);
 
   useEffect(() => {
     if (!hydrated || !session || initializedNavigationKey.current !== navigationKey) return;
@@ -1455,7 +1483,13 @@ export function SheplatesV3() {
     return startAutoRefresh(() => setSyncVersion((version) => version + 1), AUTO_REFRESH_INTERVAL_MS);
   }, [hydrated, syncSession, liveSync]);
 
-  async function signOut() { await liveSignOut(); setSession(null); setActive("Marketplace"); toast.success("Signed out"); }
+  async function signOut() {
+    if (session) void deregisterDeviceNotifications(session);
+    await liveSignOut();
+    setSession(null);
+    setActive("Marketplace");
+    toast.success("Signed out");
+  }
   function finishTour(skipped: boolean) {
     const key = tourOpen === "customer" ? CUSTOMER_TOUR_KEY : VENDOR_TOUR_KEY;
     setTourOpen(null);
@@ -1472,7 +1506,30 @@ export function SheplatesV3() {
     if (session.role === "vendor") setMenuOpen(true);
     setTourOpen(session.role);
   }
-  if (!session) return <SheplatesEntry onLogin={(next) => { setSession(next); setActive(nav[next.role][0]); }} />;
+  if (!session) {
+    return (
+      <SheplatesEntry
+        onLogin={(next) => {
+          setSession(next);
+          let targetView = nav[next.role][0];
+          try {
+            const pending = sessionStorage.getItem("sheplates_pending_notification_url");
+            if (pending) {
+              sessionStorage.removeItem("sheplates_pending_notification_url");
+              const u = new URL(pending, window.location.origin);
+              const requested = u.searchParams.get("view");
+              const valid = nav[next.role] ?? [];
+              if (requested && valid.includes(requested)) {
+                window.history.pushState({ page: requested }, "", pending);
+                targetView = requested;
+              }
+            }
+          } catch {}
+          setActive(targetView);
+        }}
+      />
+    );
+  }
   const role = session.role;
   const customer = state.customers.find((item) => item.email === session.email);
   const vendor = vendorFor(state, session);
@@ -1560,7 +1617,7 @@ export function SheplatesV3() {
   }
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
-    if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} />;
+    if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} onNavigate={setActive} />;
     if (active === "She Agent") return <div className="space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
     if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={handleOpenVendor} onConfirmLocation={() => setActive("Marketplace")} />;
     if (active === "Food Drops") return <FoodDropsTab state={state} profile={area} social={social} onClaim={claimDrop} onRefresh={() => void refreshDrops()} />;
@@ -1605,16 +1662,18 @@ export function SheplatesV3() {
   const content = role === "customer"
     ? renderCustomerPage()
     : role === "vendor"
-      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} />
+      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} onNavigate={setActive} />
       : role === "operations"
         ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} onOpenVendorProfile={setVendorProfileId} />
-        : <AdminArea active={active} session={session} state={state} setState={setState} onOpenVendorProfile={setVendorProfileId} />;
+        : <AdminArea active={active} session={session} state={state} setState={setState} onOpenVendorProfile={setVendorProfileId} onNavigate={setActive} />;
 
   const customerCartCount = role === "customer" ? state.cart.filter((item) => item.customerEmail === session.email).reduce((sum, item) => sum + item.quantity, 0) : 0;
   const customerQuoteCount = role === "customer" ? state.quotes.filter((quote) => {
     const requirement = state.requirements.find((item) => item.id === quote.requirementId);
     return requirement?.customerEmail === session.email && quote.status === "Submitted";
   }).length : 0;
+
+  const staffNavItems = (vendorNavItems || nav[role]).filter((i) => i !== "Notifications");
 
   return <div className="app-shell-bg sp-v7 min-h-screen text-[#202827]">
     <Toaster position="top-center" richColors />
@@ -1628,7 +1687,7 @@ export function SheplatesV3() {
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
       {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={handleOpenVendor} onClose={shortsViewer.close} />}
       <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { handleOpenVendor(null); setActive("Cart"); }} />
-    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={vendorNavItems} disabledItems={vendorDisabledNavItems} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
+    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={staffNavItems} disabledItems={vendorDisabledNavItems} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setActive("Notifications")} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
       onOpenVendorProfile={() => { if (vendor) handleOpenVendor(vendor.id); else setActive("Vendor profile"); }}
       vendor={vendor}
       banner={<>
@@ -1649,7 +1708,7 @@ export function SheplatesV3() {
     {!(role === "customer" && active === "She Agent") && <button data-tour="agent-desktop" onClick={() => (role === "customer" ? setActive("She Agent") : setAgentOpen(true))} className={`${role === "customer" ? "sp-desktop-agent-launcher" : "sp-staff-agent-launcher"} sp-agent-launcher group fixed bottom-5 right-4 z-30 grid size-16 place-items-center rounded-full border border-white/70 bg-white/92 p-2 shadow-[0_22px_70px_rgba(25, 19, 21,.24)] backdrop-blur-xl transition hover:shadow-[0_28px_90px_rgba(25, 19, 21,.30)] sm:right-6`} aria-label="Open She Agent">
       <span className="sp-agent-orb relative grid size-12 place-items-center rounded-full text-white"><Activity className="size-5" /></span>
     </button>}
-    <NotificationDrawerV4 open={notificationsOpen} setOpen={setNotificationsOpen} session={session} state={state} setState={setState} people={people} />
+    <NotificationDrawerV4 open={notificationsOpen} setOpen={setNotificationsOpen} session={session} state={state} setState={setState} people={people} onNavigate={setActive} />
     <SheAgent open={agentOpen} setOpen={setAgentOpen} session={session} state={state} setState={setState} navigate={setActive} />
     {tourOpen === "customer" && <ProductTour steps={CUSTOMER_TOUR_STEPS} onClose={finishTour} />}
     {tourOpen === "vendor" && <ProductTour steps={VENDOR_TOUR_STEPS} onClose={finishTour} />}
@@ -3701,7 +3760,8 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
   </div>;
 }
 
-function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void }) {
+function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void; onNavigate?: (view: string) => void }) {
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as any} onNavigate={onNavigate} />;
   const vendor = vendorFor(state, session)!;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
@@ -4116,11 +4176,11 @@ function OrderDetailsDialog({
   const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
+    <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
       <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
         <div className="border-b bg-[#155F65] p-6 text-white">
           <DialogHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 pr-10">
               <DialogTitle className="flex items-center gap-2 text-lg font-black">
                 <ReceiptText className="size-5 text-emerald-400" />
                 Order Details
@@ -4314,7 +4374,7 @@ function OrderDetailsDialog({
             </div>
           </div>
 
-          <Button onClick={close} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
+          <Button type="button" onClick={() => close()} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
             Close
           </Button>
         </div>
@@ -4367,12 +4427,12 @@ function OrderTrackingDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
+    <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
       <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
         {/* Header */}
         <div className="border-b bg-[#155F65] p-6 text-white">
           <DialogHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 pr-10">
               <DialogTitle className="flex items-center gap-2 text-lg font-black">
                 <Compass className="size-5 text-emerald-400" />
                 Live Order Tracking
@@ -4718,6 +4778,51 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
   const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const lastAutoOpenedOrderIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("orderId");
+    if (!orderId) {
+      lastAutoOpenedOrderIdRef.current = null;
+      return;
+    }
+    if (orderId === lastAutoOpenedOrderIdRef.current) return;
+    if (baseOrders.length) {
+      const match = baseOrders.find((o) => o.id === orderId || o.id.toLowerCase() === orderId.toLowerCase());
+      if (match) {
+        lastAutoOpenedOrderIdRef.current = orderId;
+        setDetailsOrder(match);
+      }
+    }
+  }, [baseOrders]);
+
+  const handleCloseDetails = useCallback(() => {
+    setDetailsOrder(null);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("orderId")) {
+        lastAutoOpenedOrderIdRef.current = params.get("orderId");
+        params.delete("orderId");
+        const target = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        window.history.replaceState({ page: "Orders" }, "", target);
+      }
+    }
+  }, []);
+
+  const handleCloseTracking = useCallback(() => {
+    setTrackingOrder(null);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("orderId")) {
+        lastAutoOpenedOrderIdRef.current = params.get("orderId");
+        params.delete("orderId");
+        const target = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        window.history.replaceState({ page: "Orders" }, "", target);
+      }
+    }
+  }, []);
   const [deliveryCodes, setDeliveryCodes] = useState<Record<string, { code: string; expiresAt: string }>>({});
   const [verificationInputs, setVerificationInputs] = useState<Record<string, string>>({});
   const [deliveryActionId, setDeliveryActionId] = useState<string | null>(null);
@@ -4928,8 +5033,8 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         </div>;
       })}
     </div> : <Empty icon={Package} title="No orders for this selection" body={scope === "vendor" ? "Try Tomorrow or All dates. Unpaid schedules stay with the customer until payment is completed." : "No paid orders are available in this view."} />}
-    <OrderDetailsDialog order={detailsOrder} close={() => setDetailsOrder(null)} state={state} session={session} />
-    <OrderTrackingDialog order={trackingOrder} close={() => setTrackingOrder(null)} state={state} />
+    <OrderDetailsDialog order={detailsOrder} close={handleCloseDetails} state={state} session={session} />
+    <OrderTrackingDialog order={trackingOrder} close={handleCloseTracking} state={state} />
     <OrderRescheduleDialog order={rescheduling} close={() => setRescheduling(null)} state={state} setState={setState} />
     <PaymentDialog order={paying} close={() => setPaying(null)} state={state} setState={setState} />
     <RateOrderDialog key={ratingOrder?.id || "closed"} order={ratingOrder} close={() => setRatingOrder(null)} state={state} setState={setState} session={session} />
@@ -7249,6 +7354,7 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
 function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
 function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as any} onNavigate={navigate} />;
   if (active === "AI insights") return <AIInsights role="operations" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
   if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
@@ -7889,8 +7995,9 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
   <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
 }
 
-function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void; onNavigate?: (view: string) => void }) {
   const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as any} onNavigate={onNavigate} />;
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
@@ -8233,12 +8340,105 @@ function ReportsCentre({ state }: { state: V3State }) {
   </div>;
 }
 
-function NotificationDrawer({ open, setOpen, session, state, setState }: { open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const items = state.notifications.filter((item) => notificationBelongsToSession(item, session)); async function enable() { if (!("Notification" in window)) return toast.error("Notifications are unavailable in this browser"); const permission = await Notification.requestPermission(); if (permission === "granted") { new Notification("Sheplates notifications enabled", { body: "Order and schedule updates can now reach this device.", icon: "/icon-192.png" }); toast.success("Device notifications enabled"); } else toast.info("Notification permission was not granted"); } return <Sheet open={open} onOpenChange={setOpen}><SheetContent className="sp-notification-sheet w-full p-0 sm:max-w-md"><SheetHeader className="border-b bg-[#155F65] p-6 text-left text-white"><SheetTitle className="text-white">Notifications</SheetTitle><SheetDescription className="text-white/55">In-app updates plus optional device notifications for this installed web app.</SheetDescription></SheetHeader><div className="p-5"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }))} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div></div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Schedule, quote, verification and order updates will appear here." />}</div></div></SheetContent></Sheet>; }
-function NotificationDrawerV4({ page = false, open, setOpen, session, state, setState, people }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; people: PeopleApi }) {
+function NotificationDrawer({ open, setOpen, session, state, setState, onNavigate }: { open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onNavigate?: (view: string) => void }) {
+  const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
+  const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
+
+  useEffect(() => {
+    setDeviceStatus(getDeviceNotificationStatus());
+  }, []);
+
+  async function enable() {
+    const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
+    setDeviceStatus(result.status);
+    if (result.status === "granted") toast.success(result.message);
+    else if (result.status === "denied") toast.error(result.message);
+    else toast.info(result.message);
+  }
+
+  async function handleNotificationClick(item: Notification) {
+    if (!item.read) {
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => {});
+      setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
+    }
+    setOpen(false);
+    const route = resolveNotificationTarget(item, session, state);
+    executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
+      if (type === "error") toast.error(msg);
+      else if (type === "warning") toast.warning(msg);
+      else if (type === "success") toast.success(msg);
+      else toast.info(msg);
+    });
+  }
+
+  return <Sheet open={open} onOpenChange={setOpen}>
+    <SheetContent className="sp-notification-sheet w-full p-0 sm:max-w-md">
+      <SheetHeader className="border-b bg-[#155F65] p-6 text-left text-white">
+        <SheetTitle className="text-white">Notifications</SheetTitle>
+        <SheetDescription className="text-white/55">In-app updates plus optional device notifications for this installed web app.</SheetDescription>
+      </SheetHeader>
+      <div className="p-5">
+        <Button type="button" onClick={enable} variant="outline" disabled={deviceStatus === "granted"} className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}>
+          {deviceStatus === "granted" ? <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></> : deviceStatus === "denied" ? <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></> : deviceStatus === "ios_pwa_required" ? <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></> : <><Bell className="size-4" /><span>Enable device notifications</span></>}
+        </Button>
+        <button onClick={() => setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }))} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={item.id} role="button" tabIndex={0} onClick={() => void handleNotificationClick(item)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }} className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}>
+              <div className="flex justify-between gap-3"><b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}</div>
+              <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+                <span>{item.at}</span>
+                <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+              </div>
+            </div>
+          ))}
+          {!items.length && <Empty icon={Bell} title="No notifications" body="Schedule, quote, verification and order updates will appear here." />}
+        </div>
+      </div>
+    </SheetContent>
+  </Sheet>;
+}
+
+function NotificationDrawerV4({ page = false, open, setOpen, session, state, setState, people, onNavigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; people: PeopleApi; onNavigate?: (view: string) => void }) {
   const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
   const [busyRequest, setBusyRequest] = useState("");
-  async function enable() { if (!("Notification" in window)) return toast.error("Notifications are unavailable in this browser"); const permission = await Notification.requestPermission(); if (permission === "granted") { new Notification("Sheplates notifications enabled", { body: "Verification, quote, schedule and tracking updates can reach this device.", icon: "/icon-192.png" }); toast.success("Device notifications enabled"); } }
-  async function markAll() { try { if (isLiveSupabaseMode()) await markLiveNotificationsRead(); setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) })); } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); } }
+  const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
+
+  useEffect(() => {
+    setDeviceStatus(getDeviceNotificationStatus());
+  }, []);
+
+  async function enable() {
+    const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
+    setDeviceStatus(result.status);
+    if (result.status === "granted") toast.success(result.message);
+    else if (result.status === "denied") toast.error(result.message);
+    else toast.info(result.message);
+  }
+
+  async function markAll() {
+    try {
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead();
+      setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }));
+    } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); }
+  }
+
+  async function handleNotificationClick(item: Notification) {
+    if (!item.read) {
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => {});
+      setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
+    }
+    setOpen(false);
+    const route = resolveNotificationTarget(item, session, state);
+    executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
+      if (type === "error") toast.error(msg);
+      else if (type === "warning") toast.warning(msg);
+      else if (type === "success") toast.success(msg);
+      else toast.info(msg);
+    });
+  }
+
   async function respondToFollowRequest(item: Notification, accept: boolean) {
     if (!item.entityId) return;
     setBusyRequest(item.id);
@@ -8250,10 +8450,98 @@ function NotificationDrawerV4({ page = false, open, setOpen, session, state, set
       toast.error(errorMessage(error, "Follow request could not be updated"));
     } finally { setBusyRequest(""); }
   }
-  if (page) return <div className="mx-auto max-w-3xl space-y-4"><div className="flex items-end justify-between gap-3"><div><h1 className="text-[28px] font-bold leading-tight">Notifications</h1><p className="mt-1 text-sm text-[#55656A]">Private updates for {session.email}.</p></div></div><div className="space-y-3"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div>{session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people.requests.some((request) => request.id === item.entityId) && <div className="mt-3 flex gap-2"><Button type="button" size="sm" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, true)} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button><Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, false)} className="rounded-full font-black">Decline</Button></div>}</div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}</div></div></div>;
-  return <Sheet open={open} onOpenChange={setOpen}><SheetContent className="w-full overflow-hidden p-0 sm:max-w-md"><SheetHeader className="shrink-0 border-b bg-[#155F65] p-6 text-left text-white"><SheetTitle className="text-white">Notifications</SheetTitle><SheetDescription className="text-white/55">Private updates for {session.email}. Vendor and customer events are never mixed.</SheetDescription></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div>{session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people.requests.some((request) => request.id === item.entityId) && <div className="mt-3 flex gap-2"><Button type="button" size="sm" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, true)} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button><Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, false)} className="rounded-full font-black">Decline</Button></div>}</div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}</div></div></SheetContent></Sheet>;
+
+  const notificationCard = (item: Notification) => (
+    <div
+      key={item.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => void handleNotificationClick(item)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }}
+      className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}
+    >
+      <div className="flex justify-between gap-3">
+        <b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>
+        {!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}
+      </div>
+      <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+      <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+        <span>{item.at}</span>
+        <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+      </div>
+      {session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people?.requests?.some?.((request) => request.id === item.entityId) && (
+        <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+          <Button type="button" size="sm" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, true); }} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button>
+          <Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, false); }} className="rounded-full font-black">Decline</Button>
+        </div>
+      )}
+    </div>
+  );
+
+  const deviceButton = (
+    <Button
+      type="button"
+      onClick={enable}
+      variant="outline"
+      disabled={deviceStatus === "granted"}
+      className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}
+    >
+      {deviceStatus === "granted" ? (
+        <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></>
+      ) : deviceStatus === "denied" ? (
+        <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></>
+      ) : deviceStatus === "ios_pwa_required" ? (
+        <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></>
+      ) : (
+        <><Bell className="size-4" /><span>Enable device notifications</span></>
+      )}
+    </Button>
+  );
+
+  if (page) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[28px] font-bold leading-tight">Notifications</h1>
+            <p className="mt-1 text-sm text-[#55656A]">Private updates for {session.email}.</p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {deviceButton}
+          <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+          <div className="space-y-3">
+            {items.map(notificationCard)}
+            {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetContent className="w-full overflow-hidden p-0 sm:max-w-md">
+        <SheetHeader className="shrink-0 border-b bg-[#155F65] p-6 text-left text-white">
+          <SheetTitle className="text-white">Notifications</SheetTitle>
+          <SheetDescription className="text-white/55">Private updates for {session.email}. Vendor and customer events are never mixed.</SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
+          {deviceButton}
+          <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+          <div className="space-y-3">
+            {items.map(notificationCard)}
+            {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
 }
-function notice(recipient: string, recipientRole: Role, title: string, body: string): Notification { return { id: id("NOT"), recipient, recipientRole, title, body, at: now(), read: false }; }
+
+function notice(recipient: string, recipientRole: Role, title: string, body: string, extra?: { entityType?: string; entityId?: string; href?: string; type?: string }): Notification {
+  return { id: id("NOT"), recipient, recipientRole, title, body, at: now(), read: false, ...extra };
+}
 function playNotificationSound() {
   try {
     const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
