@@ -113,3 +113,77 @@ export function formatCountdown(targetIso: string, now: Date = new Date()): stri
   if (hours > 0) return clock;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
+
+export function validateFoodDropUnits(
+  rawUnits: unknown,
+  productStock: number,
+  productName: string
+): { valid: boolean; quantity?: number; error?: string } {
+  if (rawUnits === undefined || rawUnits === null || String(rawUnits).trim() === "") {
+    return { valid: false, error: "Please enter the number of units available." };
+  }
+  const trimmed = String(rawUnits).trim();
+  const num = Number(trimmed);
+  if (Number.isNaN(num)) {
+    return { valid: false, error: "Please enter a valid number of units." };
+  }
+  if (!Number.isInteger(num)) {
+    return { valid: false, error: "Please enter a whole number of units." };
+  }
+  if (num < 0) {
+    return { valid: false, error: "Units available cannot be negative." };
+  }
+  if (num === 0) {
+    return { valid: false, error: "Units available must be at least 1." };
+  }
+  if (productStock <= 0) {
+    return { valid: false, error: "This product is out of stock. Add stock first." };
+  }
+  if (num > productStock) {
+    return {
+      valid: false,
+      error: `You entered ${num} units, but only ${productStock} are in stock for ${productName}. Please enter ${productStock} or fewer, or update your stock first.`,
+    };
+  }
+  return { valid: true, quantity: num };
+}
+
+export function validateFoodDropEditUnits(
+  rawUnits: unknown,
+  currentTotalQuantity: number,
+  claimedQuantity: number,
+  productStock: number,
+  productName: string
+): { valid: boolean; quantity?: number; additionalUnits?: number; error?: string } {
+  if (rawUnits === undefined || rawUnits === null || String(rawUnits).trim() === "") {
+    return { valid: false, error: "Please enter the number of units available." };
+  }
+  const trimmed = String(rawUnits).trim();
+  const num = Number(trimmed);
+  if (Number.isNaN(num)) {
+    return { valid: false, error: "Please enter a valid number of units." };
+  }
+  if (!Number.isInteger(num)) {
+    return { valid: false, error: "Please enter a whole number of units." };
+  }
+  if (num < 0) {
+    return { valid: false, error: "Units available cannot be negative." };
+  }
+  if (num === 0) {
+    return { valid: false, error: "Units available must be at least 1." };
+  }
+  if (num < claimedQuantity) {
+    return {
+      valid: false,
+      error: `Cannot reduce units below ${claimedQuantity} already claimed by customers.`,
+    };
+  }
+  const diff = num - currentTotalQuantity;
+  if (diff > 0 && diff > productStock) {
+    return {
+      valid: false,
+      error: `You entered ${num} units, but only ${productStock} more are in stock for ${productName}. Please enter ${currentTotalQuantity + productStock} or fewer, or update your stock first.`,
+    };
+  }
+  return { valid: true, quantity: num, additionalUnits: diff };
+}

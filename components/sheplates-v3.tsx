@@ -74,7 +74,7 @@ import {
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct, updateLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, clearLiveVendorProducts, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, saveLiveItemMarkup, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
-  loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
+  loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, updateLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
  subscribeLiveNotifications,} from "@/lib/supabase";
 import {
@@ -95,6 +95,7 @@ import {
 } from "@/lib/taste-match";
 import {
   dropDisplayStatus, discountPercent, claimedPercent, formatCountdown, foodDropSchedule, nextFoodDropWindow,
+  validateFoodDropUnits, validateFoodDropEditUnits,
   type FoodDrop, type FoodDropClaim,
 } from "@/lib/food-drops";
 import { calculateBillingSummary, INVOICE_LABELS, normalizeGstMode, settlementFor, commissionPercentFor, type BillingSummary } from "@/lib/billing";
@@ -1869,7 +1870,7 @@ export const STANDARD_GOALS = [
   "Heart friendly",
 ] as const;
 
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) { return <label className="sp-field block"><span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-stone-400">{hint}</span>}</label>; }
+function Field({ label, children, hint }: { label: React.ReactNode; children: React.ReactNode; hint?: string }) { return <label className="sp-field block"><span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-stone-400">{hint}</span>}</label>; }
 const inputClass = "h-11 w-full rounded-2xl border border-stone-200/80 bg-white/90 px-3.5 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,.6)] focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10";
 
 function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSession; onSave: (profile: CustomerProfile) => void; onLogout: () => void }) {
@@ -3682,7 +3683,8 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
   const [productId, setProductId] = useState("");
   const [title, setTitle] = useState("");
   const [dropPrice, setDropPrice] = useState(0);
-  const [quantity, setQuantity] = useState(10);
+  const [quantityInput, setQuantityInput] = useState("10");
+  const [stockError, setStockError] = useState("");
   const [busy, setBusy] = useState(false);
   const product = products.find((p) => p.id === productId);
   const originalPrice = product ? finalPrice(product, state) : 0;
@@ -3690,8 +3692,30 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
     setProductId("");
     setTitle("");
     setDropPrice(0);
-    setQuantity(10);
+    setQuantityInput("10");
+    setStockError("");
     close();
+  }
+
+  function handleProductSelect(value: string) {
+    setProductId(value);
+    const selected = products.find((item) => item.id === value);
+    if (selected) {
+      setTitle(`${selected.name} — flash drop`);
+      setDropPrice(Math.max(1, Math.round(finalPrice(selected, state) * 0.7)));
+      const check = validateFoodDropUnits(quantityInput, selected.stock ?? 0, selected.name);
+      setStockError(check.error || "");
+    } else {
+      setStockError("");
+    }
+  }
+
+  function handleQuantityChange(value: string) {
+    setQuantityInput(value);
+    if (product) {
+      const check = validateFoodDropUnits(value, product.stock ?? 0, product.name);
+      setStockError(check.error || "");
+    }
   }
 
   async function submit() {
@@ -3701,7 +3725,15 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
     if (!product) return toast.error("Choose a product");
     if (!title.trim()) return toast.error("Enter a title");
     if (!dropPrice || dropPrice <= 0 || dropPrice >= originalPrice) return toast.error("Drop price must be positive and below the current price");
-    if (!Number.isInteger(quantity) || quantity <= 0) return toast.error("Enter a whole number of units available");
+
+    // Strict stock validation
+    const unitCheck = validateFoodDropUnits(quantityInput, product.stock ?? 0, product.name);
+    if (!unitCheck.valid) {
+      setStockError(unitCheck.error || "");
+      return toast.error(unitCheck.error);
+    }
+    const quantity = unitCheck.quantity!;
+
     setBusy(true);
     try {
       const dropWindow = nextFoodDropWindow();
@@ -3709,7 +3741,12 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
       const drop: FoodDrop = isLiveSupabaseMode()
         ? await createLiveFoodDrop({ vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity })
         : { id: id("DROP"), vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity, remainingQuantity: quantity, startsAt: dropWindow.startsAt.toISOString(), endsAt: dropWindow.endsAt.toISOString(), status: "active" };
-      setState((s) => ({ ...s, foodDrops: [drop, ...s.foodDrops] }));
+
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) => p.id === product.id ? { ...p, stock: Math.max(0, p.stock - quantity) } : p),
+        foodDrops: [drop, ...s.foodDrops],
+      }));
       toast.success(dropDisplayStatus(drop) === "live" ? "Food Drop is live" : "Food Drop scheduled for 12:00 PM");
       dismiss();
     } catch (error) { toast.error(errorMessage(error, "Drop could not be created")); }
@@ -3718,25 +3755,146 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
 
   return <Dialog open={open} onOpenChange={(v) => !v && dismiss()}><DialogContent className="rounded-[26px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-lg font-black">New Food Drop</DialogTitle><DialogDescription>Prepare a discounted quantity of one of your products in advance. Customers can claim it only on the day you create it, from 12:00 PM to 6:00 PM IST.. Stock is enforced by the database, even under simultaneous requests.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Product"><Select value={productId} onValueChange={(value) => {
-        setProductId(value);
-        const selected = products.find((item) => item.id === value);
-        if (selected) {
-          setTitle(`${selected.name} — flash drop`);
-          setDropPrice(Math.max(1, Math.round(finalPrice(selected, state) * 0.7)));
-        }
-      }}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Product"><Select value={productId} onValueChange={handleProductSelect}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
       <Field label="Drop title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field>
-      <div className="grid grid-cols-2 gap-3"><Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}><input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} /></Field><Field label="Units available"><input type="number" min="1" step="1" value={quantity || ""} onChange={(e) => setQuantity(Number(e.target.value))} className={inputClass} /></Field></div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}><input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} /></Field>
+        <div>
+          <Field label={<span>Units available {product ? <span className="font-semibold text-stone-500">(In stock: {product.stock ?? 0})</span> : null}</span>}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={quantityInput}
+              onChange={(e) => handleQuantityChange(e.target.value)}
+              className={`${inputClass} ${stockError ? "border-red-500 ring-2 ring-red-100" : ""}`}
+            />
+          </Field>
+          {stockError && (
+            <p className="mt-1 text-xs font-semibold text-red-600 leading-tight">
+              {stockError}
+            </p>
+          )}
+        </div>
+      </div>
       <p className="rounded-xl bg-[#EEF2F2] p-3 text-xs font-bold text-stone-600">Scheduled — starts at 12:00 PM. A drop is claimable only today and stops at 6:00 PM.</p>
       <Button onClick={() => void submit()} disabled={busy || !products.length} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Zap />{busy ? "Publishing…" : "Schedule drop"}</Button>
     </div>
   </DialogContent></Dialog>;
 }
 
+function EditFoodDropDialog({
+  open,
+  close,
+  drop,
+  product,
+  state,
+  setState,
+}: {
+  open: boolean;
+  close: () => void;
+  drop: FoodDrop;
+  product?: Product;
+  state: V3State;
+  setState: React.Dispatch<React.SetStateAction<V3State>>;
+}) {
+  const [title, setTitle] = useState(drop.title);
+  const [dropPrice, setDropPrice] = useState(drop.dropPrice);
+  const [quantityInput, setQuantityInput] = useState(String(drop.totalQuantity));
+  const [stockError, setStockError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const originalPrice = product ? finalPrice(product, state) : drop.originalPrice;
+  const claimed = drop.totalQuantity - drop.remainingQuantity;
+
+  function handleQuantityChange(value: string) {
+    setQuantityInput(value);
+    const check = validateFoodDropEditUnits(value, drop.totalQuantity, claimed, product?.stock ?? 0, product?.name ?? "Product");
+    setStockError(check.error || "");
+  }
+
+  async function submit() {
+    if (!title.trim()) return toast.error("Enter a title");
+    if (!dropPrice || dropPrice <= 0 || (originalPrice && dropPrice >= originalPrice)) {
+      return toast.error("Drop price must be positive and below the current price");
+    }
+    const check = validateFoodDropEditUnits(quantityInput, drop.totalQuantity, claimed, product?.stock ?? 0, product?.name ?? "Product");
+    if (!check.valid) {
+      setStockError(check.error || "");
+      return toast.error(check.error);
+    }
+    const newQty = check.quantity!;
+    const diff = check.additionalUnits ?? 0;
+
+    setBusy(true);
+    try {
+      if (isLiveSupabaseMode()) {
+        await updateLiveFoodDrop({ dropId: drop.id, title: title.trim(), dropPrice, totalQuantity: newQty });
+      }
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) => p.id === drop.productId ? { ...p, stock: Math.max(0, p.stock - diff) } : p),
+        foodDrops: s.foodDrops.map((d) => d.id === drop.id ? {
+          ...d,
+          title: title.trim(),
+          dropPrice,
+          totalQuantity: newQty,
+          remainingQuantity: d.remainingQuantity + diff,
+        } : d),
+      }));
+      toast.success("Food Drop updated");
+      close();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update drop"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="rounded-[26px] sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black">Edit Food Drop</DialogTitle>
+          <DialogDescription>Update drop pricing or adjust units. Additional units are reserved from your available stock.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Field label="Drop title">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}>
+              <input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} />
+            </Field>
+            <div>
+              <Field label={<span>Units available {product ? <span className="font-semibold text-stone-500">(In stock: {product.stock ?? 0})</span> : null}</span>}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={quantityInput}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  className={`${inputClass} ${stockError ? "border-red-500 ring-2 ring-red-100" : ""}`}
+                />
+              </Field>
+              {claimed > 0 && <p className="mt-0.5 text-[11px] text-stone-500">{claimed} unit(s) already claimed</p>}
+              {stockError && (
+                <p className="mt-1 text-xs font-semibold text-red-600 leading-tight">
+                  {stockError}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button onClick={() => void submit()} disabled={busy} className="h-12 w-full rounded-xl bg-[#155F65] font-black">
+            {busy ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const loadedRef = useRef(false);
   const [creating, setCreating] = useState(false);
+  const [editingDrop, setEditingDrop] = useState<FoodDrop | null>(null);
   const now = useTicker();
   const drops = state.foodDrops.filter((d) => d.vendorId === vendor.id).sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const dropIds = drops.map((d) => d.id);
@@ -3761,8 +3919,12 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
     if (!confirm(`End "${drop.title}" now? Customers will no longer be able to claim it.`)) return;
     try {
       if (isLiveSupabaseMode()) await cancelLiveFoodDrop(drop.id);
-      setState((s) => ({ ...s, foodDrops: s.foodDrops.map((d) => d.id === drop.id ? { ...d, status: "cancelled" as const } : d) }));
-      toast.success("Drop ended");
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) => p.id === drop.productId ? { ...p, stock: p.stock + drop.remainingQuantity } : p),
+        foodDrops: s.foodDrops.map((d) => d.id === drop.id ? { ...d, status: "cancelled" as const } : d),
+      }));
+      toast.success("Drop ended. Unclaimed units returned to stock.");
     } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
   }
 
@@ -3793,10 +3955,29 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><Review label="Price" value={`${money(drop.dropPrice)} (was ${money(drop.originalPrice)})`} /><Review label="Discount" value={`${discountPercent(drop)}%`} /><Review label="Claimed" value={`${claimedUnits} / ${drop.totalQuantity}`} /><Review label="Revenue" value={money(revenue)} /></div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
         {status === "live" && <p className="mt-3 text-xs font-bold text-stone-500"><Timer className="mr-1 inline size-3.5" />Closes at 6:00 PM· {formatCountdown(foodDropSchedule(drop).endsAt.toISOString(), currentTime)}</p>}
-        {(status === "live" || status === "scheduled") && <Button size="sm" variant="outline" onClick={() => void cancel(drop)} className="mt-4 rounded-xl text-red-600">End drop now</Button>}
+        {(status === "live" || status === "scheduled") && (
+          <div className="mt-4 flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setEditingDrop(drop)} className="rounded-xl">
+              <Pencil className="mr-1 size-3.5" />Edit drop
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void cancel(drop)} className="rounded-xl text-red-600 hover:text-red-700">
+              End drop now
+            </Button>
+          </div>
+        )}
       </div>;
     })}</div> : <Empty icon={Zap} title="No drops yet" body="Create a flash offer on one of your products to drive same-day demand." />}
     {creating && <CreateFoodDropDialog open close={() => setCreating(false)} vendor={vendor} products={products} state={state} setState={setState} />}
+    {editingDrop && (
+      <EditFoodDropDialog
+        open
+        close={() => setEditingDrop(null)}
+        drop={editingDrop}
+        product={state.products.find((p) => p.id === editingDrop.productId)}
+        state={state}
+        setState={setState}
+      />
+    )}
   </div>;
 }
 

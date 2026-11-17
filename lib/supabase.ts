@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
-import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
+import { nextFoodDropWindow, normalizeDropWindow, validateFoodDropUnits, validateFoodDropEditUnits } from "./food-drops";
 import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode, getIstMidnightDate, canAccessWhatsAppLeads } from "./plans";
 import { PLAN_INCLUDED_CREDITS } from "./ai-credits-config";
 
@@ -1702,14 +1702,56 @@ export async function createLiveFoodDrop(input: {
   if (!dailyCheck.allowed) {
     throw new Error(dailyCheck.message);
   }
+
+  // 1. Check Product Stock
+  const { data: prodRow, error: prodErr } = await supabase.from("vendor_menu_items").select("id, name, stock_quantity, active").eq("id", input.productId).maybeSingle();
+  if (prodErr || !prodRow) throw new Error("Product not found");
+
+  const validation = validateFoodDropUnits(input.totalQuantity, prodRow.stock_quantity ?? 0, prodRow.name);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+  const validQty = validation.quantity!;
+
+  // 2. Try stored procedure if available, else standard transaction
+  try {
+    const { data: rpcDrop, error: rpcErr } = await supabase.rpc("create_food_drop_with_stock", {
+      p_vendor_id: input.vendorId,
+      p_product_id: input.productId,
+      p_title: input.title.trim(),
+      p_drop_price: input.dropPrice,
+      p_original_price: input.originalPrice,
+      p_total_quantity: validQty,
+      p_description: input.description || null,
+    });
+    if (!rpcErr && rpcDrop) {
+      return mapFoodDropRow(rpcDrop as FoodDropRow);
+    }
+  } catch {}
+
+  // Reserve stock
+  const { data: updatedProd, error: stockErr } = await supabase
+    .from("vendor_menu_items")
+    .update({ stock_quantity: (prodRow.stock_quantity ?? 0) - validQty, updated_at: new Date().toISOString() })
+    .eq("id", input.productId)
+    .gte("stock_quantity", validQty)
+    .select("stock_quantity")
+    .maybeSingle();
+
+  if (stockErr || !updatedProd) {
+    throw new Error(`You entered ${validQty} units, but only ${prodRow.stock_quantity ?? 0} are in stock for ${prodRow.name}. Please enter ${prodRow.stock_quantity ?? 0} or fewer, or update your stock first.`);
+  }
+
   const { startsAt, endsAt } = nextFoodDropWindow();
   const result = await supabase.from("food_drops").insert({
     vendor_id: input.vendorId, product_id: input.productId, title: input.title, description: input.description || null,
     drop_price: input.dropPrice, original_price: input.originalPrice,
-    total_quantity: input.totalQuantity, remaining_quantity: input.totalQuantity,
+    total_quantity: validQty, remaining_quantity: validQty,
     starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(),
   }).select(FOOD_DROP_COLUMNS).single();
   if (result.error || !result.data) {
+    // Rollback stock reservation
+    await supabase.from("vendor_menu_items").update({ stock_quantity: prodRow.stock_quantity }).eq("id", input.productId);
     const failure = result.error;
     if (failure && (failure.code === "42501" || /row-level security|permission denied/i.test(failure.message || ""))) {
       // The database only lets a store publish a Food Drop when its plan includes the feature. Say which of the two it is.
@@ -1734,11 +1776,95 @@ export async function createLiveFoodDrop(input: {
   return mapFoodDropRow(created);
 }
 
+export async function updateLiveFoodDrop(input: {
+  dropId: string;
+  title?: string;
+  dropPrice?: number;
+  totalQuantity: number;
+}): Promise<import("@/lib/food-drops").FoodDrop> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+
+  // Try RPC first
+  try {
+    const { data: rpcDrop, error: rpcErr } = await supabase.rpc("update_food_drop_with_stock", {
+      p_drop_id: input.dropId,
+      p_title: input.title || null,
+      p_drop_price: input.dropPrice ?? null,
+      p_new_quantity: input.totalQuantity,
+    });
+    if (!rpcErr && rpcDrop) {
+      return mapFoodDropRow(rpcDrop as FoodDropRow);
+    }
+  } catch {}
+
+  const { data: dropRow, error: dropErr } = await supabase.from("food_drops").select(FOOD_DROP_COLUMNS).eq("id", input.dropId).maybeSingle();
+  if (dropErr || !dropRow) throw new Error("Food Drop not found");
+
+  const { data: prodRow, error: prodErr } = await supabase.from("vendor_menu_items").select("id, name, stock_quantity").eq("id", dropRow.product_id).maybeSingle();
+  if (prodErr || !prodRow) throw new Error("Product not found");
+
+  const claimed = dropRow.total_quantity - dropRow.remaining_quantity;
+  const validation = validateFoodDropEditUnits(input.totalQuantity, dropRow.total_quantity, claimed, prodRow.stock_quantity ?? 0, prodRow.name);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  const diff = validation.additionalUnits ?? 0;
+  if (diff > 0) {
+    const { error: reserveErr } = await supabase.from("vendor_menu_items").update({
+      stock_quantity: (prodRow.stock_quantity ?? 0) - diff,
+      updated_at: new Date().toISOString(),
+    }).eq("id", dropRow.product_id).gte("stock_quantity", diff);
+    if (reserveErr) {
+      throw new Error(`You entered ${input.totalQuantity} units, but only ${prodRow.stock_quantity ?? 0} more are in stock for ${prodRow.name}. Please enter ${dropRow.total_quantity + (prodRow.stock_quantity ?? 0)} or fewer, or update your stock first.`);
+    }
+  } else if (diff < 0) {
+    await supabase.from("vendor_menu_items").update({
+      stock_quantity: (prodRow.stock_quantity ?? 0) + (-diff),
+      updated_at: new Date().toISOString(),
+    }).eq("id", dropRow.product_id);
+  }
+
+  const newRemaining = dropRow.remaining_quantity + diff;
+  const updates: Record<string, unknown> = {
+    total_quantity: validation.quantity ?? input.totalQuantity,
+    remaining_quantity: newRemaining,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.title) updates.title = input.title;
+  if (typeof input.dropPrice === "number") updates.drop_price = input.dropPrice;
+
+  const { data: updated, error: updateErr } = await supabase.from("food_drops").update(updates).eq("id", input.dropId).select(FOOD_DROP_COLUMNS).single();
+  if (updateErr || !updated) throw updateErr || new Error("Failed to update Food Drop");
+  return mapFoodDropRow(updated);
+}
+
 export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+
+  // Try RPC first
+  try {
+    const { data: rpcDrop, error: rpcErr } = await supabase.rpc("cancel_food_drop_with_stock", { p_drop_id: dropId });
+    if (!rpcErr && rpcDrop) return;
+  } catch {}
+
+  const { data: dropRow } = await supabase.from("food_drops").select("id, product_id, remaining_quantity, status").eq("id", dropId).maybeSingle();
+  if (!dropRow || dropRow.status === "cancelled") return;
+
   const result = await supabase.from("food_drops").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", dropId);
   if (result.error) throw result.error;
+
+  if (dropRow.product_id && (dropRow.remaining_quantity ?? 0) > 0) {
+    const { data: prod } = await supabase.from("vendor_menu_items").select("stock_quantity").eq("id", dropRow.product_id).maybeSingle();
+    if (prod) {
+      await supabase.from("vendor_menu_items").update({
+        stock_quantity: (prod.stock_quantity ?? 0) + dropRow.remaining_quantity,
+        updated_at: new Date().toISOString(),
+      }).eq("id", dropRow.product_id);
+    }
+  }
 }
 
 /** The write path for a claim: calls commerce API with admin service role, with fallback for direct DB. */
