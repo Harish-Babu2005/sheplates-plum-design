@@ -34,6 +34,7 @@ export type LiveMarketplaceRow = {
   sku_group_name?: string | null;
   pack_size?: string | null;
   unit_type?: string | null;
+  description?: string | null;
 };
 
 export type MarketplaceDiagnostics = {
@@ -68,6 +69,7 @@ export type LiveMenuItemRow = {
   dietary_tags: string[]; pack_amount: number | null; pack_measure: string | null; image_url: string | null;
   nutrition_status?: string | null; nutrition_confidence?: number | null; nutrition_note?: string | null;
   sku_group_id?: string | null; sku_id?: string | null; sku_group_name?: string | null; pack_size?: string | null; unit_type?: string | null;
+  description?: string | null;
 };
 
 export function getSupabaseBrowserClient() {
@@ -270,7 +272,7 @@ export async function clearLiveCustomerMemory(userId: string) {
  * Adds each product's food type (veg, non_veg, egg) to rows already loaded. It reads through one small function so it
  * respects who may see what, and it is quiet when the function or column is not deployed yet: products then show no mark.
  */
-async function attachFoodTypes<T extends { food_type?: string | null }>(supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>, rows: T[], idOf: (row: T) => string) {
+async function attachFoodTypes<T extends { food_type?: string | null; description?: string | null }>(supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>, rows: T[], idOf: (row: T) => string) {
   const ids = rows.map(idOf).filter(Boolean).slice(0, 1000);
   if (!ids.length) return;
   try {
@@ -281,17 +283,19 @@ async function attachFoodTypes<T extends { food_type?: string | null }>(supabase
         const val = types.get(idOf(row));
         if (val !== undefined) row.food_type = val;
       }
-      return;
     }
   } catch { /* not deployed yet */ }
 
   try {
-    const { data, error } = await supabase.from("vendor_menu_items").select("id, food_type").in("id", ids);
+    const { data, error } = await supabase.from("vendor_menu_items").select("id, food_type, description").in("id", ids);
     if (!error && Array.isArray(data) && data.length) {
-      const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
+      const itemsMap = new Map((data as Array<{ id: string; food_type: string | null; description: string | null }>).map((row) => [row.id, row]));
       for (const row of rows) {
-        const val = types.get(idOf(row));
-        if (val !== undefined) row.food_type = val;
+        const val = itemsMap.get(idOf(row));
+        if (val) {
+          if (val.food_type !== undefined && row.food_type === undefined) row.food_type = val.food_type;
+          if (val.description !== undefined && !row.description) row.description = val.description;
+        }
       }
     }
   } catch { /* direct select fallback failed */ }
@@ -463,7 +467,10 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
-  const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  let productResult: { data: any; error: any } = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id,description").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  if (productResult.error && /description/i.test(productResult.error.message || "")) {
+    productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  }
   let productRows = productResult.data as LiveMenuItemRow[] | null;
   let productError = productResult.error;
   if (productError && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(productError.message || "")) {
@@ -529,7 +536,7 @@ export async function loadLiveOperationsWorkspace() {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
-    supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type").order("created_at", { ascending: false }),
+    supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type,description").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
     supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
@@ -718,6 +725,7 @@ export async function saveLiveVendorProduct(input: {
   vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
   dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
+  description?: string;
   nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
   skuGroupName?: string; packSize?: string; unitType?: string; skuId?: string; skuGroupId?: string;
 }) {
@@ -736,6 +744,7 @@ export async function saveLiveVendorProduct(input: {
     calories_per_unit: input.calories, protein_g: input.protein, carbs_g: input.carbs,
     fat_g: input.fat, fibre_g: input.fibre, dietary_tags: input.dietaryTags,
     pack_amount: input.packAmount, pack_measure: input.packMeasure, image_url: input.imageUrl || null,
+    description: input.description ? input.description.slice(0, 200) : null,
     nutrition_status: input.nutritionStatus || "pending_review",
     nutrition_confidence: input.nutritionConfidence ?? null,
     nutrition_note: input.nutritionNote || null,
@@ -747,9 +756,14 @@ export async function saveLiveVendorProduct(input: {
   };
   const payload = input.foodType ? { ...basePayload, food_type: input.foodType } : basePayload;
   let result = await supabase.from("vendor_menu_items").insert(payload).select("id").single();
+  // If description column doesn't exist yet, retry without description
+  if (result.error && /description/i.test(result.error.message || "")) {
+    const { description: _d, ...withoutDesc } = payload;
+    result = await supabase.from("vendor_menu_items").insert(withoutDesc).select("id").single();
+  }
   // If SKU columns don't exist yet, retry without SKU columns
   if (result.error && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(result.error.message || "")) {
-    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, ...withoutSku } = payload;
+    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, description: _d, ...withoutSku } = payload;
     result = await supabase.from("vendor_menu_items").insert(withoutSku).select("id").single();
   }
   // Same idea for the food type column: save the product even if the V9_18 migration has not been applied yet.
@@ -771,6 +785,7 @@ export async function updateLiveVendorProduct(input: {
   id: string; vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
   dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
+  description?: string;
   nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
   skuGroupName?: string; packSize?: string; unitType?: string; skuId?: string; skuGroupId?: string;
 }) {
@@ -783,6 +798,7 @@ export async function updateLiveVendorProduct(input: {
     fat_g: input.fat, fibre_g: input.fibre, dietary_tags: input.dietaryTags,
     pack_amount: input.packAmount, pack_measure: input.packMeasure, image_url: input.imageUrl || null,
     food_type: input.foodType || null,
+    description: input.description ? input.description.slice(0, 200) : null,
     nutrition_status: input.nutritionStatus || "pending_review",
     nutrition_confidence: input.nutritionConfidence ?? null,
     nutrition_note: input.nutritionNote || null,
@@ -794,8 +810,12 @@ export async function updateLiveVendorProduct(input: {
     updated_at: new Date().toISOString(),
   };
   let result = await supabase.from("vendor_menu_items").update(payload).eq("id", input.id).select("id").maybeSingle();
+  if (result.error && /description/i.test(result.error.message || "")) {
+    const { description: _d, ...withoutDesc } = payload;
+    result = await supabase.from("vendor_menu_items").update(withoutDesc).eq("id", input.id).select("id").maybeSingle();
+  }
   if (result.error && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(result.error.message || "")) {
-    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, ...fallbackPayload } = payload;
+    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, description: _d, ...fallbackPayload } = payload;
     result = await supabase.from("vendor_menu_items").update(fallbackPayload).eq("id", input.id).select("id").maybeSingle();
   }
   if (result.error) throw result.error;

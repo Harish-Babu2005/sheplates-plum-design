@@ -86,6 +86,7 @@ import {
   formatProductPackLabel,
   parsePackSpec,
 } from "@/lib/sku-master";
+import { PRODUCT_DESCRIPTION_MAX_LENGTH, sanitizeProductDescription } from "@/lib/product-description";
 import {
   TASTE_SETUP_CHOICES, TASTE_DIMENSION_LABELS, tasteMatchScore, applyTasteSignal, weightsFromSetupChoices, inferAttributesLocally,
   type TasteWeights, type TasteSignal,
@@ -139,6 +140,7 @@ export type Product = {
   id: string; vendorId: string; name: string; category: string; emoji: string; baseUnit: string;
   quantityStep: number; vendorPrice: number; stock: number; active: boolean; calories: number;
   protein: number; carbs: number; fat: number; fibre: number; dietaryTags: string[];
+  description?: string;
   packAmount?: number; packMeasure?: string; liveDistanceKm?: number; imageUrl?: string; originalImageUrl?: string;
   nutritionStatus?: "Verified" | "Estimated" | "Pending review"; nutritionConfidence?: number; nutritionNote?: string;
   /** Chosen by the vendor; never guessed. No mark is shown while it is unset. */
@@ -731,6 +733,7 @@ function productFromLive(row: LiveMenuItemRow): Product {
     stock: Number(row.stock_quantity), active: row.active, calories: Number(row.calories_per_unit),
     protein: Number(row.protein_g), carbs: Number(row.carbs_g), fat: Number(row.fat_g), fibre: Number(row.fibre_g),
     dietaryTags: row.dietary_tags || [], packAmount: row.pack_amount === null ? undefined : Number(row.pack_amount),
+    description: row.description || undefined,
     packMeasure: row.pack_measure || undefined, imageUrl: row.image_url || undefined,
     nutritionStatus: row.nutrition_status === "verified" ? "Verified" : row.nutrition_status === "estimated" ? "Estimated" : (Number(row.calories_per_unit) > 0 ? "Estimated" : "Pending review"),
     nutritionConfidence: row.nutrition_confidence == null ? undefined : Number(row.nutrition_confidence),
@@ -751,6 +754,7 @@ function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
     stock: Number(row.stock_quantity), active: true, calories: Number(row.calories_per_unit),
     protein: Number(row.protein_g), carbs: Number(row.carbs_g), fat: Number(row.fat_g), fibre: Number(row.fibre_g),
     dietaryTags: row.dietary_tags || [], packAmount: row.pack_amount === null ? undefined : Number(row.pack_amount),
+    description: row.description || undefined,
     packMeasure: row.pack_measure || undefined, liveDistanceKm: Number(row.distance_km), imageUrl: row.image_url || undefined,
     nutritionStatus: Number(row.calories_per_unit) > 0 ? "Estimated" : "Pending review",
     foodType: normalizeFoodType(row.food_type),
@@ -2086,6 +2090,25 @@ async function addProductToCart(state: V3State, setState: React.Dispatch<React.S
   }
 }
 
+function MarketplaceProductDescription({ description }: { description: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = description.length > 70;
+  return (
+    <div className="my-1 text-xs text-stone-600">
+      <p className={expanded ? "whitespace-pre-wrap break-words" : "line-clamp-2 break-words"}>{description}</p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          className="mt-0.5 text-[11px] font-bold text-[#155F65] hover:underline"
+        >
+          {expanded ? "less" : "more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Marketplace({ session, state, setState, navigate, openAgent, openVendor, locationSignal = 0, shorts, shortsRadius, openShorts, onSeeAllShorts, view = "home" }: { view?: "home" | "search"; onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; openShorts: (list: FoodShort[], index: number) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number }) {
   const profile = state.customers.find((x) => x.email === session.email)!;
   const [query, setQuery] = useState("");
@@ -2280,7 +2303,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     .sort((a, b) => (distanceKm(profile.latitude, profile.longitude, a.latitude, a.longitude) ?? 99) - (distanceKm(profile.latitude, profile.longitude, b.latitude, b.longitude) ?? 99));
   const filtered = serviceable.filter((product) => {
     const vendor = state.vendors.find((v) => v.id === product.vendorId)!;
-    const text = `${product.name} ${product.category} ${vendor.businessName} ${product.dietaryTags.join(" ")}`.toLowerCase();
+    const text = `${product.name} ${product.category} ${product.description || ""} ${vendor.businessName} ${product.dietaryTags.join(" ")}`.toLowerCase();
     return groupMatches(category, product.category)
       && (!query || text.includes(query.toLowerCase()))
       && (!maxPrice || finalPrice(product, state) <= maxPrice)
@@ -2333,6 +2356,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       </div>
       <div className="k-pr-body">
         <h3 className="break-words [overflow-wrap:anywhere]"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3>
+        {product.description?.trim() ? <MarketplaceProductDescription description={product.description.trim()} /> : null}
         <p className="s m">{vendor.businessName} · {product.baseUnit} · {distance?.toFixed(1)} km {vendor.pickup && !vendor.delivery ? "to pick up" : "away"} · {fulfilmentLabel}</p>
         <div className="k-pr-tags">
           {product.nutritionStatus === "Pending review" || product.calories <= 0 ? <span className="pill warn">Nutrition pending</span> : <><span className="pill">{product.calories} kcal</span><span className="pill">{product.protein}g protein</span></>}
@@ -2871,7 +2895,11 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
                 <X className="size-4" />
               </button>
               <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product?.imageUrl ? undefined : categoryVisual(category).bg }}>{product?.imageUrl ? <img src={product.imageUrl} alt={displayName} className="h-full w-full object-cover" /> : <ProductGlyph category={category} />}</div>
-              <div className="min-w-35 flex-1 pr-2"><b className="text-[15px]">{product ? <FoodTypeMark type={product.foodType} className="mr-1.5" /> : null}{displayName}</b><div className="text-xs text-[#55656A]">{displayUnit} · {money(price)} each</div></div>
+              <div className="min-w-35 flex-1 pr-2">
+                <b className="text-[15px]">{product ? <FoodTypeMark type={product.foodType} className="mr-1.5" /> : null}{displayName}</b>
+                {product?.description?.trim() ? <div className="text-xs text-stone-600 my-0.5 line-clamp-2">{product.description.trim()}</div> : null}
+                <div className="text-xs text-[#55656A]">{displayUnit} · {money(price)} each</div>
+              </div>
               <div className="flex items-center gap-1 rounded-full bg-white p-1"><button type="button" aria-label={`Decrease ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, -1)} className="grid size-9 place-items-center rounded-full bg-[#EEF2F2] text-lg font-semibold disabled:opacity-50">−</button><b className="min-w-8 text-center tabular-nums">{item.quantity}</b><button type="button" aria-label={`Increase ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, 1)} className="grid size-9 place-items-center rounded-full bg-[#EEF2F2] text-lg font-semibold disabled:opacity-50">+</button></div>
               <b className="w-20 text-right tabular-nums">{money(price * item.quantity)}</b>
             </div>;
@@ -4177,11 +4205,11 @@ function OrderDetailsDialog({
 
   return (
     <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
+      <DialogContent showCloseButton={false} className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
         <div className="border-b bg-[#155F65] p-6 text-white">
           <DialogHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3 pr-10">
-              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black text-white">
                 <ReceiptText className="size-5 text-emerald-400" />
                 Order Details
               </DialogTitle>
@@ -4190,6 +4218,14 @@ function OrderDetailsDialog({
                   {displayOrderNo}
                 </span>
                 <Status className={orderStatusTone(order.status)}>{order.status}</Status>
+                <button
+                  type="button"
+                  onClick={() => close()}
+                  aria-label="Close order details"
+                  className="ml-1 grid size-8 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 active:scale-95"
+                >
+                  <X className="size-4" />
+                </button>
               </div>
             </div>
             <DialogDescription className="text-stone-300 text-xs mt-1">
@@ -4281,22 +4317,35 @@ function OrderDetailsDialog({
             <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Ordered Items</div>
             <div className="mt-3 divide-y divide-stone-100">
               {order.items && order.items.length > 0 ? (
-                order.items.map((it, idx) => (
-                  <div key={idx} className="flex items-center justify-between py-2 text-sm">
-                    <div className="font-bold text-stone-900">
-                      {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
+                order.items.map((it, idx) => {
+                  const matchedProd = state.products.find((p) => p.name === it.name || p.id === (it as any).productId);
+                  return (
+                    <div key={idx} className="py-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-stone-900">
+                          {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
+                        </div>
+                        <div className="font-mono text-stone-700 font-semibold">
+                          {money(((it.price != null ? it.price : (order.subtotal != null ? order.subtotal / Math.max(1, order.quantity) : (order.totalAmount ?? order.total) / Math.max(1, order.quantity)))) * it.quantity)}
+                        </div>
+                      </div>
+                      {matchedProd?.description?.trim() ? (
+                        <p className="mt-0.5 text-xs text-stone-600">{matchedProd.description.trim()}</p>
+                      ) : null}
                     </div>
-                    <div className="font-mono text-stone-700 font-semibold">
-                      {money(((it.price != null ? it.price : (order.subtotal != null ? order.subtotal / Math.max(1, order.quantity) : (order.totalAmount ?? order.total) / Math.max(1, order.quantity)))) * it.quantity)}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                <div className="flex items-center justify-between py-2 text-sm">
-                  <div className="font-bold text-stone-900">
-                    {order.quantity} × {orderItemLabel(product?.name, order.description)} {order.unit ? `(${order.unit})` : ""}
+                <div className="py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-stone-900">
+                      {order.quantity} × {orderItemLabel(product?.name, order.description)} {order.unit ? `(${order.unit})` : ""}
+                    </div>
+                    <div className="font-mono text-stone-700 font-semibold">{money(order.totalAmount ?? order.total)}</div>
                   </div>
-                  <div className="font-mono text-stone-700 font-semibold">{money(order.totalAmount ?? order.total)}</div>
+                  {product?.description?.trim() ? (
+                    <p className="mt-0.5 text-xs text-stone-600">{product.description.trim()}</p>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -4778,21 +4827,17 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
   const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
-  const lastAutoOpenedOrderIdRef = useRef<string | null>(null);
+  const dismissedOrderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const orderId = params.get("orderId");
-    if (!orderId) {
-      lastAutoOpenedOrderIdRef.current = null;
-      return;
-    }
-    if (orderId === lastAutoOpenedOrderIdRef.current) return;
+    if (!orderId) return;
+    if (orderId === dismissedOrderIdRef.current) return;
     if (baseOrders.length) {
       const match = baseOrders.find((o) => o.id === orderId || o.id.toLowerCase() === orderId.toLowerCase());
       if (match) {
-        lastAutoOpenedOrderIdRef.current = orderId;
         setDetailsOrder(match);
       }
     }
@@ -4802,10 +4847,12 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     setDetailsOrder(null);
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      if (params.has("orderId")) {
-        lastAutoOpenedOrderIdRef.current = params.get("orderId");
+      const currentOrderId = params.get("orderId");
+      if (currentOrderId) {
+        dismissedOrderIdRef.current = currentOrderId;
         params.delete("orderId");
-        const target = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        const query = params.toString();
+        const target = `${window.location.pathname}${query ? `?${query}` : ""}`;
         window.history.replaceState({ page: "Orders" }, "", target);
       }
     }
@@ -4815,10 +4862,12 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     setTrackingOrder(null);
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      if (params.has("orderId")) {
-        lastAutoOpenedOrderIdRef.current = params.get("orderId");
+      const currentOrderId = params.get("orderId");
+      if (currentOrderId) {
+        dismissedOrderIdRef.current = currentOrderId;
         params.delete("orderId");
-        const target = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        const query = params.toString();
+        const target = `${window.location.pathname}${query ? `?${query}` : ""}`;
         window.history.replaceState({ page: "Orders" }, "", target);
       }
     }
@@ -4956,8 +5005,14 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
               order={order}
               state={state}
               session={session}
-              onViewDetails={(ord) => setDetailsOrder(ord)}
-              onTrackOrder={(ord) => setTrackingOrder(ord)}
+              onViewDetails={(ord) => {
+                dismissedOrderIdRef.current = null;
+                setDetailsOrder(ord);
+              }}
+              onTrackOrder={(ord) => {
+                dismissedOrderIdRef.current = null;
+                setTrackingOrder(ord);
+              }}
               onReschedule={(ord) => setRescheduling(ord)}
               onRateOrder={(ord) => setRatingOrder(ord)}
               onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
@@ -6608,11 +6663,11 @@ function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: 
 
   const unsetFoodType = items.filter((item) => !item.foodType).length;
   const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
-  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { const check = canAddProduct(vendor.plan, items.length); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { const check = canAddProduct(vendor.plan, 0); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} existingProductsCount={items.length} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
+  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { const check = canAddProduct(vendor.plan, items.length); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div>{product.description?.trim() ? <div className="text-xs text-stone-500 line-clamp-1 italic max-w-xs">{product.description.trim()}</div> : null}</div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { const check = canAddProduct(vendor.plan, 0); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} existingProductsCount={items.length} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
 }
 
 
-type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; imageUrl?: string; generating?: boolean; error?: string };
+type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; description?: string; imageUrl?: string; generating?: boolean; error?: string };
 const bulkCatalogGridClass = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.85fr)_minmax(0,.7fr)_minmax(0,.5fr)_minmax(0,.5fr)_minmax(0,.8fr)_6rem]";
 const BULK_FILE_LIMIT = 2 * 1024 * 1024;
 function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { open: boolean; close: () => void; vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
@@ -6624,7 +6679,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   const [replaceExisting, setReplaceExisting] = useState(false);
   const defaultCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
   const patch = (rowId: string, change: Partial<BulkCatalogDraft>) => setRows((current) => current.map((item) => item.id === rowId ? { ...item, ...change, error: undefined } : item));
-  const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType });
+  const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType, description: item.description });
 
   async function fileToText(file: File): Promise<string> {
     if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
@@ -6704,9 +6759,9 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
         const nutritionNote = "Bulk-imported product published without verified nutrition. Operations review requested.";
         let imageUrl = row.imageUrl;
         if (imageUrl?.startsWith("data:") && isLiveSupabaseMode()) imageUrl = await uploadLiveProductImage(vendor.id, imageUrl);
-        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
+        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
         if (isLiveSupabaseMode()) { try { await notifyLiveNutritionReview({ productId, productName: row.name, reason: nutritionNote }); } catch (error) { console.error("Bulk nutrition review notification", error); } }
-        created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, nutritionStatus: "Pending review", nutritionNote });
+        created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "Pending review", nutritionNote });
       } catch (error) { failed.set(row.id, errorMessage(error, "This item could not be saved")); }
     }
     if (created.length) {
@@ -6768,6 +6823,7 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
 function ProductDialog({ open, close, vendor, setState, session, editingProduct, existingProductsCount }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null; existingProductsCount?: number }) {
   const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [category, setCategory] = useState<string>(defaultCategory);
   const [skuGroup, setSkuGroup] = useState<string>("");
   const [packSize, setPackSize] = useState<string>("");
@@ -6838,6 +6894,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
         setCustomUnit(editingProduct.unitType as SkuUnitType);
       }
       setName(editingProduct.name);
+      setDescription(editingProduct.description || "");
       setPrice(editingProduct.vendorPrice);
       setStock(editingProduct.stock);
       setFoodType(editingProduct.foodType || "");
@@ -6866,6 +6923,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
       setCustomPackSize("");
       setCustomUnit("pack/set/loaf");
       setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
+      setDescription("");
       setPrice(0);
       setStock(0);
       setFoodType("");
@@ -6994,6 +7052,10 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   async function save() {
     if (!name.trim()) return toast.error("Enter the product display name");
     if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
+    const cleanDesc = sanitizeProductDescription(description);
+    if (cleanDesc.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
+      return toast.error(`Description must be within ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`);
+    }
     if (!baseReady) return toast.error("Select the category, SKU group, pack size, and enter price & stock");
     if (!foodType) return toast.error("Choose Vegetarian, Non-vegetarian or Contains egg");
     if (skuGroup === "Other" && !customGroup.trim()) return toast.error("Please enter your custom product / SKU group name");
@@ -7039,6 +7101,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
             packMeasure: packSpec.measure,
             imageUrl: publishedImage,
             foodType,
+            description: cleanDesc || undefined,
             nutritionStatus: statusForDb,
             nutritionConfidence,
             nutritionNote: note,
@@ -7056,6 +7119,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
           vendorPrice: price,
           stock,
           foodType,
+          description: cleanDesc || undefined,
           imageUrl: publishedImage,
           originalImageUrl: originalImageUrl || undefined,
           nutritionStatus,
@@ -7082,6 +7146,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
         vendorId: vendor.id, name: name.trim(), category, unit: effectivePack, price, stock, active,
         calories: nutrition.calories, protein: nutrition.protein, carbs: nutrition.carbs, fat: nutrition.fat, fibre: nutrition.fibre,
         dietaryTags: [], packAmount: packSpec.amount, packMeasure: packSpec.measure, imageUrl: publishedImage, foodType,
+        description: cleanDesc || undefined,
         nutritionStatus: statusForDb, nutritionConfidence, nutritionNote: note,
         skuGroupName: effectiveGroup,
         packSize: effectivePack,
@@ -7091,6 +7156,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
         id: productId, vendorId: vendor.id, name: name.trim(), category, emoji: unitsByCategory[category]?.[0]?.emoji || "📦", baseUnit: effectivePack,
         quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: packSpec.amount,
         packMeasure: packSpec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
+        description: cleanDesc || undefined,
         nutritionStatus, nutritionConfidence, nutritionNote: note,
         skuGroupName: effectiveGroup,
         packSize: effectivePack,
@@ -7205,18 +7271,34 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
           </Field>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-4">
           <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
             <input maxLength={60} value={name} onChange={(e) => { setName(e.target.value.slice(0, 60)); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
             <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>
           </Field>
+          <Field
+            label="Description (optional)"
+            hint={`Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam. (${description.length}/${PRODUCT_DESCRIPTION_MAX_LENGTH})`}
+          >
+            <Textarea
+              maxLength={PRODUCT_DESCRIPTION_MAX_LENGTH}
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, PRODUCT_DESCRIPTION_MAX_LENGTH))}
+              className="min-h-20 rounded-xl resize-y text-sm bg-white"
+              placeholder="Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam."
+            />
+            <p className="mt-1 text-xs text-stone-500">Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam.</p>
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label={`Your price for one ${packSize || "pack"}`}>
             <input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} placeholder="₹" />
           </Field>
           <Field label="Available sealed packs" hint={`Count of ${packSize || "pack"} items ready to sell`}>
             <input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} placeholder="Stock quantity" />
           </Field>
-          <div className="flex items-end">
+          <div className="flex items-end sm:col-span-2">
             <Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button>
           </div>
         </div>
