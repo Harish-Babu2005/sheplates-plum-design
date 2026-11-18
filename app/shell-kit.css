@@ -27,10 +27,34 @@ body { overflow-x: hidden; }
 .k-menurow button.on { background: var(--selected); color: var(--on-brand); }
 
 .k-pill, .k-fab { display: none; }
-.k-foot { background: var(--brand-primary); color: #fff; padding: 26px 48px; display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
-.k-foot .fl { display: flex; gap: 22px; flex-wrap: wrap; }
-.k-foot .fl a, .k-foot .fl span { color: var(--brand-mint); font: 500 13px "Outfit", sans-serif; }
+.k-foot {
+  background: var(--brand-primary);
+  color: #fff;
+  padding: 26px 48px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
 
+.k-foot .fl {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.k-foot .fl a, .k-foot .fl span {
+  color: var(--brand-mint);
+  font: 500 13px "Outfit", sans-serif;
+}
+
+/* Keep footer links away from the floating She Agent button */
+@media (min-width: 1101px) {
+  .k-foot .fl {
+    margin-right: 110px;
+  }
+}
 /* tablet: icons only in the action row, search shrinks */
 @media (max-width: 1100px) {
   .k-head .k-agent span, .k-head .k-wish { display: none; }

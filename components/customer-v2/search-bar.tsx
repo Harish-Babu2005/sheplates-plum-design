@@ -345,9 +345,8 @@ export function CustomerSearchBar({
                             handleSelectDropdownItem({ type: "product", product, key: `p-${product.id}` });
                           }}
                           onMouseEnter={() => setActiveIndex(itemIdx)}
-                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${
-                            isSelected ? "bg-[#EAF4F2] text-[#155F65]" : "hover:bg-stone-50"
-                          }`}
+                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${isSelected ? "bg-[#EAF4F2] text-[#155F65]" : "hover:bg-stone-50"
+                            }`}
                         >
                           <div
                             className="size-10 rounded-lg overflow-hidden grid place-items-center shrink-0 border border-stone-200/60"
@@ -396,9 +395,8 @@ export function CustomerSearchBar({
                             handleSelectDropdownItem({ type: "vendor", vendor, key: `v-${vendor.id}` });
                           }}
                           onMouseEnter={() => setActiveIndex(itemIdx)}
-                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${
-                            isSelected ? "bg-[#EAF4F2] text-[#155F65]" : "hover:bg-stone-50"
-                          }`}
+                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${isSelected ? "bg-[#EAF4F2] text-[#155F65]" : "hover:bg-stone-50"
+                            }`}
                         >
                           <div className="size-10 rounded-full bg-stone-100 grid place-items-center shrink-0 text-[#155F65] border border-stone-200/60">
                             {vendor.logoUrl ? (
@@ -442,9 +440,8 @@ export function CustomerSearchBar({
                             handleSelectDropdownItem({ type: "category", categoryName: cat.name, key: `c-${cat.name}` });
                           }}
                           onMouseEnter={() => setActiveIndex(itemIdx)}
-                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${
-                            isSelected ? "bg-[#EAF4F2] text-[#155F65]" : "hover:bg-stone-50"
-                          }`}
+                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${isSelected ? "bg-[#EAF4F2] text-[#155F65]" : "hover:bg-stone-50"
+                            }`}
                         >
                           <span className="text-xl shrink-0">{cat.emoji}</span>
                           <div className="min-w-0 flex-1 font-bold text-sm text-[#202827]">{cat.name}</div>
@@ -465,11 +462,10 @@ export function CustomerSearchBar({
                     setIsOpen(false);
                     onNavigateToSearch(localQuery);
                   }}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm font-black transition ${
-                    activeIndex === dropdownItems.length - 1
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left text-sm font-black transition ${activeIndex === dropdownItems.length - 1
                       ? "bg-[#155F65] text-white"
                       : "text-[#155F65] hover:bg-[#EAF4F2]"
-                  }`}
+                    }`}
                 >
                   <span className="truncate">See all results for &ldquo;{localQuery}&rdquo;</span>
                   <ArrowRight className="size-4 shrink-0 ml-2" />
