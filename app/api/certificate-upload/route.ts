@@ -20,9 +20,9 @@ export async function POST(request: Request) {
   const expiryDate = String(form.get("expiryDate") || "").trim();
   if (!(file instanceof File) || !vendorId) return NextResponse.json({ error: "Choose a certificate file." }, { status: 400 });
   if (profile.role === "vendor" && profile.vendor_id !== vendorId) return NextResponse.json({ error: "This certificate belongs to another store." }, { status: 403 });
-  if (file.size > 12 * 1024 * 1024) return NextResponse.json({ error: "Certificate must be under 12 MB." }, { status: 413 });
-  const allowed = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
-  if (!allowed.includes(file.type)) return NextResponse.json({ error: "Upload a PDF, PNG, JPG or WebP file." }, { status: 400 });
+  if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Certificate must be under 10 MB." }, { status: 413 });
+  // Enforce PDF-only by real MIME type, not just file extension
+  if (file.type !== "application/pdf") return NextResponse.json({ error: "Only PDF files are accepted for certificates. Upload a .pdf file." }, { status: 400 });
 
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: vendor, error: vendorError } = await admin.from("vendors")
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   const buckets = await admin.storage.listBuckets();
   if (!buckets.data?.some((bucket) => bucket.name === "vendor-certificates")) {
-    const created = await admin.storage.createBucket("vendor-certificates", { public: false, fileSizeLimit: "12MB", allowedMimeTypes: allowed });
+    const created = await admin.storage.createBucket("vendor-certificates", { public: false, fileSizeLimit: "10MB", allowedMimeTypes: ["application/pdf"] });
     if (created.error && !/already exists/i.test(created.error.message)) return NextResponse.json({ error: "Certificate storage could not be prepared." }, { status: 500 });
   }
   const ext = file.name.split(".").pop()?.replace(/[^a-zA-Z0-9]/g, "") || (file.type === "application/pdf" ? "pdf" : "jpg");

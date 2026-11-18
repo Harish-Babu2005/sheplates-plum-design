@@ -72,6 +72,43 @@ export const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 export const BANK_ACCOUNT_PATTERN = /^\d{9,18}$/;
 export const FSSAI_PATTERN = /^\d{14}$/;
 
+/** Exactly 10 digits, first digit must be 6–9 (Indian mobile numbers). */
+export const INDIAN_MOBILE_PATTERN = /^[6-9]\d{9}$/;
+
+/**
+ * Normalize a raw phone/WhatsApp string into exactly 10 digits.
+ * - Strips spaces, dashes, dots.
+ * - Strips +91 / 0091 / leading 91 prefix when total is 12 digits.
+ * Returns the 10-digit string, or null if it cannot be normalised.
+ */
+export function normalizeIndianMobile(raw: string): string | null {
+  let s = raw.trim().replace(/[\s\-\.]/g, "");
+  if (s.startsWith("+91")) s = s.slice(3);
+  else if (s.startsWith("0091")) s = s.slice(4);
+  else if (/^91\d{10}$/.test(s)) s = s.slice(2);
+  return /^\d{10}$/.test(s) ? s : null;
+}
+
+/**
+ * Returns an error message string when a phone/WhatsApp field value is invalid,
+ * or null when it is acceptable.
+ * @param raw   - value as typed/pasted by the user
+ * @param label - "contact phone number" | "WhatsApp number" etc.
+ * @param required - when false an empty value is accepted
+ */
+export function phoneFieldProblem(raw: string, label = "mobile number", required = true): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return required ? `Enter a 10-digit ${label}.` : null;
+  const digits = normalizeIndianMobile(trimmed);
+  if (digits === null) {
+    const stripped = trimmed.replace(/^(\+91|0091|91)/, "").replace(/[\s\-\.]/g, "");
+    if (/[^\d]/.test(stripped)) return `${label.charAt(0).toUpperCase() + label.slice(1)} must contain digits only — no letters or symbols.`;
+    return `Enter a valid 10-digit ${label} (got ${stripped.length} digit${stripped.length === 1 ? "" : "s"}).`;
+  }
+  if (!INDIAN_MOBILE_PATTERN.test(digits)) return `${label.charAt(0).toUpperCase() + label.slice(1)} must start with 6, 7, 8 or 9.`;
+  return null;
+}
+
 /** Format checks for the FSSAI licence number. */
 export function fssaiFieldProblem(fssai: string, required = false): string | null {
   const value = fssai.trim();

@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { getAccessToken, normalizeWhatsAppNumber, uploadLiveCertificate } from "@/lib/supabase";
+import { fssaiFieldProblem, phoneFieldProblem, normalizeIndianMobile } from "@/lib/vendor-compliance";
 import { P0VendorLocationPicker } from "@/components/p0-vendor-location-picker";
 import {
   Select,
@@ -134,6 +135,14 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
   const [otherCategory, setOtherCategory] = useState("");
   const [shopImage, setShopImage] = useState<File | null>(null);
   const shopImageInput = useRef<HTMLInputElement>(null);
+  const certInputRef = useRef<HTMLInputElement>(null);
+  // Per-field inline validation errors (kept even after submit so the user sees what to fix)
+  const [phoneError, setPhoneError] = useState("");
+  const [waError, setWaError] = useState("");
+  const [fssaiError, setFssaiError] = useState("");
+  const [expiryError, setExpiryError] = useState("");
+  const [certError, setCertError] = useState("");
+  const [shopImageError, setShopImageError] = useState("");
   const [upgrade, setUpgrade] = useState<Record<string, { email: string; planCode: string }>>({});
   const [certificateInputs, setCertificateInputs] = useState<Record<string, { number: string; expiry: string; file: File | null }>>({});
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, Permissions>>({});
@@ -181,20 +190,59 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
   async function createVendor(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!permissions.can_create && !isAdmin) return setError("Your account is not authorized to create P0 vendors.");
-    const whatsappNumber = normalizeWhatsAppNumber(form.whatsappNumber);
-    if (!whatsappNumber) return setError("Enter a valid WhatsApp number. Use international format, for example +919XXXXXXXXX; 10-digit Indian numbers are normalized to +91.");
-    if (form.fssaiRequired && !isAdmin && !permissions.can_upload) return setError("Your Operations account also needs certificate-upload permission.");
-    if (form.fssaiRequired && (!form.fssaiNumber.trim() || !form.expiryDate || !certificate)) {
-      return setError("Add the required FSSAI number, expiry date and certificate file.");
+
+    // --- client-side field validation (values are kept on error) ---
+    const phoneProblem = phoneFieldProblem(form.contactPhone, "contact phone number");
+    const waProblem = phoneFieldProblem(form.whatsappNumber, "WhatsApp number");
+    const fssaiProblem = form.fssaiRequired ? fssaiFieldProblem(form.fssaiNumber, true) : null;
+    const today = new Date().toISOString().slice(0, 10);
+    const expiredProblem = form.fssaiRequired && form.expiryDate && form.expiryDate < today
+      ? "This certificate has expired. Use a date that is today or later."
+      : null;
+    const certMissing = form.fssaiRequired && !certificate ? "Upload the FSSAI certificate PDF to continue." : null;
+
+    setPhoneError(phoneProblem ?? "");
+    setWaError(waProblem ?? "");
+    setFssaiError(fssaiProblem ?? "");
+    setExpiryError(expiredProblem ?? "");
+    if (certMissing) setCertError(certMissing);
+
+    if (phoneProblem || waProblem || fssaiProblem || expiredProblem || certMissing) return;
+
+    // Certificate file type / size checks
+    if (certificate) {
+      if (certificate.type !== "application/pdf") {
+        setCertError("Only PDF files are accepted for FSSAI certificates.");
+        return;
+      }
+      if (certificate.size > 10 * 1024 * 1024) {
+        setCertError("FSSAI certificate must be under 10 MB.");
+        return;
+      }
     }
+    if (shopImage) {
+      if (!["image/png", "image/jpeg", "image/webp"].includes(shopImage.type)) {
+        setShopImageError("Choose a PNG, JPG or WebP image.");
+        return;
+      }
+      if (shopImage.size > 10 * 1024 * 1024) {
+        setShopImageError("Image must be under 10 MB.");
+        return;
+      }
+    }
+
+    // Build canonical WhatsApp +91XXXXXXXXXX
+    const rawWaDigits = normalizeIndianMobile(form.whatsappNumber)!;
+    const whatsappNumber = `+91${rawWaDigits}`;
+    const contactPhone = normalizeIndianMobile(form.contactPhone)!;
+
+    if (form.fssaiRequired && !isAdmin && !permissions.can_upload) return setError("Your Operations account also needs certificate-upload permission.");
+
     setBusy(true);
     setError("");
     setNotice("");
     let createdVendorId: string | null = null;
     try {
-      if (shopImage && (!["image/png", "image/jpeg", "image/webp"].includes(shopImage.type) || shopImage.size > 10 * 1024 * 1024)) {
-        return setError("Choose a PNG, JPG or WebP shop image under 10 MB.");
-      }
       const request = new FormData();
       request.append("action", "create");
       request.append("name", form.name);
@@ -208,10 +256,9 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       request.append("longitude", String(Number(form.longitude)));
       request.append("serviceRadiusKm", String(Number(form.radius)));
       request.append("contactName", form.contactName);
-      request.append("contactPhone", form.contactPhone);
+      request.append("contactPhone", contactPhone);
       request.append("whatsappNumber", whatsappNumber);
       request.append("durationHours", form.durationHours);
-      // durationHours: form.durationHours
       request.append("fssaiRequired", String(form.fssaiRequired));
       if (shopImage) request.append("shopImage", shopImage);
       const result = await p0Request<{ vendorId: string }>("create", request);
@@ -228,7 +275,9 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setCertificate(null);
       setShopImage(null);
       if (shopImageInput.current) shopImageInput.current.value = "";
+      if (certInputRef.current) certInputRef.current.value = "";
       setOtherCategory("");
+      setPhoneError(""); setWaError(""); setFssaiError(""); setExpiryError(""); setCertError(""); setShopImageError("");
       setForm({
         name: "", category: "", description: "", locality: "", address: "",
         latitude: "", longitude: "", radius: "5", contactName: "", contactPhone: "",
@@ -245,7 +294,6 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
       setBusy(false);
     }
   }
-
   async function review(vendorId: string, decision: "verified" | "rejected") {
     const question = decision === "verified" ? "Approve and make this eligible P0 vendor visible?" : "Reject this P0 vendor application?";
     if (!window.confirm(question)) return;
@@ -489,8 +537,62 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
           </label>
         )}
         <label className="grid content-start text-xs font-bold">Contact person<input required value={form.contactName} onChange={(event) => updateForm("contactName", event.target.value)} className={inputClass} /></label>
-        <label className="grid content-start text-xs font-bold">Contact phone<input required type="tel" value={form.contactPhone} onChange={(event) => updateForm("contactPhone", event.target.value)} className={inputClass} /></label>
-        <label className="grid content-start text-xs font-bold">WhatsApp number<input required type="tel" value={form.whatsappNumber} onChange={(event) => updateForm("whatsappNumber", event.target.value)} placeholder="+91 98XXXXXXXX" className={inputClass} /></label>
+        <div className="grid content-start gap-1 text-xs font-bold">
+          <label htmlFor="p0-contact-phone">Contact phone</label>
+          <input
+            id="p0-contact-phone"
+            required
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            value={form.contactPhone}
+            onChange={(event) => {
+              const v = event.target.value.replace(/[^\d]/g, "").slice(0, 10);
+              updateForm("contactPhone", v);
+              if (phoneError) setPhoneError("");
+            }}
+            onPaste={(event) => {
+              event.preventDefault();
+              const pasted = event.clipboardData.getData("text");
+              const digits = normalizeIndianMobile(pasted) ?? pasted.replace(/[^\d]/g, "").slice(0, 10);
+              updateForm("contactPhone", digits);
+              if (phoneError) setPhoneError("");
+            }}
+            onBlur={() => setPhoneError(phoneFieldProblem(form.contactPhone, "contact phone number") ?? "")}
+            placeholder="98XXXXXXXX"
+            className={inputClass}
+          />
+          <span className="mt-0.5 font-normal text-stone-500">10 digits · first digit 6–9</span>
+          {phoneError && <p role="alert" className="text-xs font-semibold text-red-600">{phoneError}</p>}
+        </div>
+        <div className="grid content-start gap-1 text-xs font-bold">
+          <label htmlFor="p0-whatsapp-number">WhatsApp number</label>
+          <input
+            id="p0-whatsapp-number"
+            required
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            value={form.whatsappNumber}
+            onChange={(event) => {
+              const v = event.target.value.replace(/[^\d]/g, "").slice(0, 10);
+              updateForm("whatsappNumber", v);
+              if (waError) setWaError("");
+            }}
+            onPaste={(event) => {
+              event.preventDefault();
+              const pasted = event.clipboardData.getData("text");
+              const digits = normalizeIndianMobile(pasted) ?? pasted.replace(/[^\d]/g, "").slice(0, 10);
+              updateForm("whatsappNumber", digits);
+              if (waError) setWaError("");
+            }}
+            onBlur={() => setWaError(phoneFieldProblem(form.whatsappNumber, "WhatsApp number") ?? "")}
+            placeholder="98XXXXXXXX"
+            className={inputClass}
+          />
+          <span className="mt-0.5 font-normal text-stone-500">Stored as +91XXXXXXXXXX</span>
+          {waError && <p role="alert" className="text-xs font-semibold text-red-600">{waError}</p>}
+        </div>
         <label className="grid content-start text-xs font-bold">Locality<input required value={form.locality} onChange={(event) => {
           updateForm("locality", event.target.value);
           updateForm("latitude", "");
@@ -518,16 +620,104 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
         <label className="grid content-start text-xs font-bold">Longitude<input required type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateForm("longitude", event.target.value)} className={inputClass} /></label>
         <label className="grid content-start text-xs font-bold">Service radius (km)<input required type="number" step="0.5" min="0.5" max="100" value={form.radius} onChange={(event) => updateForm("radius", event.target.value)} className={inputClass} /></label>
         <label className="grid content-start text-xs font-bold">Operating duration (hours/day)<input required type="number" min="1" max="24" value={form.durationHours} onChange={(event) => updateForm("durationHours", event.target.value)} className={inputClass} /></label>
-        <label className="grid content-start text-xs font-bold">Shop image (optional)<input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setShopImage(event.target.files?.[0] || null)} className={inputClass} /><span className="mt-1 block font-normal text-stone-500">PNG, JPG or WebP · max 10 MB{shopImage ? ` · ${shopImage.name}` : ""}</span></label>
+        <div className="grid content-start gap-1 text-xs font-bold">
+          <span>Shop image (optional)</span>
+          {shopImage ? (
+            <div className="mt-1 flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5">
+              <span className="grid size-5 place-items-center rounded-full bg-emerald-600 text-white shrink-0">✓</span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-emerald-800">{shopImage.name}</span>
+              <span className="shrink-0 font-mono text-[10px] text-stone-500">{(shopImage.size / 1024).toFixed(0)} KB</span>
+              <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50">
+                Replace
+                <input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const f = event.target.files?.[0]; if (!f) return; if (!["image/png","image/jpeg","image/webp"].includes(f.type)) { setShopImageError("Choose a PNG, JPG or WebP image."); return; } if (f.size > 10*1024*1024) { setShopImageError("Image must be under 10 MB."); return; } setShopImage(f); setShopImageError(""); event.target.value = ""; }} />
+              </label>
+              <button type="button" aria-label="Remove shop image" onClick={() => { setShopImage(null); setShopImageError(""); if (shopImageInput.current) shopImageInput.current.value = ""; }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">Remove</button>
+            </div>
+          ) : (
+            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-stone-300 bg-white px-3 py-2.5 transition hover:border-[#155F65]">
+              <span className="text-stone-400">↑</span>
+              <span className="font-normal text-stone-600">Choose PNG, JPG or WebP · max 10 MB</span>
+              <input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const f = event.target.files?.[0] || null; if (f && !["image/png","image/jpeg","image/webp"].includes(f.type)) { setShopImageError("Choose a PNG, JPG or WebP image."); return; } if (f && f.size > 10*1024*1024) { setShopImageError("Image must be under 10 MB."); return; } setShopImage(f); setShopImageError(""); }} />
+            </label>
+          )}
+          {shopImageError && <p role="alert" className="text-xs font-semibold text-red-600">{shopImageError}</p>}
+        </div>
         <label className="grid content-start text-xs font-bold md:col-span-2">Description<textarea value={form.description} onChange={(event) => updateForm("description", event.target.value)} className={inputClass} /></label>
       </div>
       <label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.fssaiRequired} onChange={(event) => updateForm("fssaiRequired", event.target.checked)} />FSSAI certificate is required for this business</label>
       {form.fssaiRequired && <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <label className="grid content-start text-xs font-bold">FSSAI number<input required value={form.fssaiNumber} onChange={(event) => updateForm("fssaiNumber", event.target.value)} className={inputClass} /></label>
-        <label className="grid content-start text-xs font-bold">Expiry date<input required type="date" value={form.expiryDate} onChange={(event) => updateForm("expiryDate", event.target.value)} className={inputClass} /></label>
-        <label className="grid content-start text-xs font-bold">Certificate file<input required type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => setCertificate(event.target.files?.[0] || null)} className={inputClass} /></label>
+        <div className="grid content-start gap-1 text-xs font-bold">
+          <label htmlFor="p0-fssai-number">FSSAI number</label>
+          <input
+            id="p0-fssai-number"
+            required
+            type="text"
+            inputMode="numeric"
+            maxLength={14}
+            value={form.fssaiNumber}
+            onChange={(event) => {
+              const v = event.target.value.replace(/[^\d]/g, "").slice(0, 14);
+              updateForm("fssaiNumber", v);
+              if (fssaiError) setFssaiError("");
+            }}
+            onBlur={() => setFssaiError(fssaiFieldProblem(form.fssaiNumber, true) ?? "")}
+            placeholder="14-digit FSSAI licence number"
+            className={inputClass}
+          />
+          <span className="mt-0.5 font-normal text-stone-500">{form.fssaiNumber.length}/14 digits</span>
+          {fssaiError && <p role="alert" className="text-xs font-semibold text-red-600">{fssaiError}</p>}
+        </div>
+        <div className="grid content-start gap-1 text-xs font-bold">
+          <label htmlFor="p0-expiry-date">Expiry date</label>
+          <input
+            id="p0-expiry-date"
+            required
+            type="date"
+            min={new Date().toISOString().slice(0, 10)}
+            value={form.expiryDate}
+            onChange={(event) => { updateForm("expiryDate", event.target.value); if (expiryError) setExpiryError(""); }}
+            onBlur={() => {
+              const today = new Date().toISOString().slice(0, 10);
+              setExpiryError(form.expiryDate && form.expiryDate < today ? "This certificate has expired." : "");
+            }}
+            className={inputClass}
+          />
+          {expiryError && <p role="alert" className="text-xs font-semibold text-red-600">{expiryError}</p>}
+        </div>
+        <div className="grid content-start gap-1 text-xs font-bold">
+          <span>Certificate file (PDF only)</span>
+          {certificate ? (
+            <div className="mt-1 flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5">
+              <span className="grid size-5 place-items-center rounded-full bg-emerald-600 text-white shrink-0">✓</span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-emerald-800">{certificate.name}</span>
+              <span className="shrink-0 font-mono text-[10px] text-stone-500">{(certificate.size / 1024).toFixed(0)} KB</span>
+              <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50">
+                Replace
+                <input ref={certInputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { const f = event.target.files?.[0]; if (!f) return; if (f.type !== "application/pdf") { setCertError("Only PDF files are accepted."); return; } if (f.size > 10*1024*1024) { setCertError("File must be under 10 MB."); return; } setCertificate(f); setCertError(""); event.target.value = ""; }} />
+              </label>
+              <button type="button" aria-label="Remove certificate" onClick={() => { setCertificate(null); setCertError(""); if (certInputRef.current) certInputRef.current.value = ""; }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">Remove</button>
+            </div>
+          ) : (
+            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-stone-300 bg-white px-3 py-2.5 transition hover:border-[#155F65]">
+              <span className="text-stone-400">↑</span>
+              <span className="font-normal text-stone-600">PDF only · max 10 MB</span>
+              <input ref={certInputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { const f = event.target.files?.[0] || null; if (!f) return; if (f.type !== "application/pdf") { setCertError("Only PDF files are accepted."); return; } if (f.size > 10*1024*1024) { setCertError("File must be under 10 MB."); return; } setCertificate(f); setCertError(""); event.target.value = ""; }} />
+            </label>
+          )}
+          {certError && <p role="alert" className="text-xs font-semibold text-red-600">{certError}</p>}
+        </div>
       </div>}
-      <button disabled={busy} className="mt-4 h-12 w-full rounded-full bg-[#155F65] px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? "Saving…" : "Create pending P0 vendor"}</button>
+      {(phoneError || waError || fssaiError || expiryError || certError) && (
+        <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700">
+          Correct the highlighted fields above before creating the vendor.
+        </p>
+      )}
+      <button
+        disabled={busy || Boolean(phoneError || waError || fssaiError || expiryError || certError)}
+        className="mt-4 h-12 w-full rounded-full bg-[#155F65] px-5 text-sm font-bold text-white disabled:opacity-50"
+      >
+        {busy ? "Saving…" : "Create pending P0 vendor"}
+      </button>
     </form>}
     </div>
   </div>;
