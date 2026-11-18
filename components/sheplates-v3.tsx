@@ -494,7 +494,7 @@ const STORE_KEY = "sheplates-v3-state";
 const SESSION_KEY = "sheplates-v3-session";
 const roleName: Record<Role, string> = { customer: "Customer", vendor: "Vendor", operations: "Operations", admin: "Super admin" };
 const nav: Record<Role, string[]> = {
-  customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre", "Notifications"],
+  customer: ["Marketplace", "Search", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre", "Notifications"],
   vendor: ["Dashboard", "AI insights", "Buy credits", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre", "Notifications"],
   operations: ["Command centre", "Notifications", "AI insights", "Vendor credits", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
   admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor credits", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log", "Notifications"],
@@ -1094,6 +1094,11 @@ export function SheplatesV3() {
   const [locationSignal, setLocationSignal] = useState(0);
   const [planProduct, setPlanProduct] = useState<Product | null>(null);
   const [planPreset, setPlanPreset] = useState<PlanPreset | undefined>(undefined);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [customerSearchCategory, setCustomerSearchCategory] = useState("All");
+  const [customerFiltersOpen, setCustomerFiltersOpen] = useState(false);
+  const [customerVendorFilter, setCustomerVendorFilter] = useState("");
+  const [customerActiveFilterCount, setCustomerActiveFilterCount] = useState(0);
   const social = useSocial({ email: session?.role === "customer" ? session.email : "", name: session?.name ?? "", userId: session?.userId }, state.vendors, state.products);
   // Food Shorts: vendors post, customers see them by distance (the rule lives in lib/food-shorts-rules.ts and the database)
   const shortsVendor = session?.role === "vendor" ? state.vendors.find((v) => v.ownerEmail === session.email) : undefined;
@@ -1641,7 +1646,30 @@ export function SheplatesV3() {
     if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={handleOpenVendor} />;
     if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={handleOpenVendor} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
     if (active === "Schedules" || active === "Orders" || active === "My schedule") return <SchedulesTab initial={active === "My schedule" ? "Subscriptions" : "Orders"} orders={<OrdersV4 session={session!} state={state} setState={setState} scope="customer" />} subscriptions={<SchedulesV4 session={session!} state={state} setState={setState} navigate={setActive} />} />;
-    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={handleOpenVendor} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
+    return <CustomerArea
+      active={active}
+      session={session!}
+      state={state}
+      setState={setState}
+      navigate={setActive}
+      openAgent={() => setAgentOpen(true)}
+      openVendor={handleOpenVendor}
+      locationSignal={locationSignal}
+      shorts={shorts}
+      shortsRadius={shortsRadius}
+      onShortsRadius={setShortsRadius}
+      openShorts={openShorts}
+      onSeeAllShorts={() => setActive("Stories")}
+      query={customerSearchQuery}
+      setQuery={setCustomerSearchQuery}
+      category={customerSearchCategory}
+      setCategory={setCustomerSearchCategory}
+      filtersOpen={customerFiltersOpen}
+      setFiltersOpen={setCustomerFiltersOpen}
+      vendorFilter={customerVendorFilter}
+      setVendorFilter={setCustomerVendorFilter}
+      onFilterCountChange={setCustomerActiveFilterCount}
+    />;
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
@@ -1694,7 +1722,42 @@ export function SheplatesV3() {
 
   return <div className="app-shell-bg sp-v7 min-h-screen text-[#202827]">
     <Toaster position="top-center" richColors />
-    {role === "customer" && <CustomerHeader active={active} name={session.name} email={session.email} area={shortArea(customer?.address)} unread={unread} cartCount={customerCartCount} accountOpen={customerMenuOpen} onToggleAccount={() => setCustomerMenuOpen((value) => !value)} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} onNotifications={() => setActive("Notifications")} onLocation={() => { setActive("Marketplace"); setLocationSignal((n) => n + 1); }} onReplayTour={() => { replayTour(); setCustomerMenuOpen(false); }} onSignOut={signOut} />}
+    {role === "customer" && <CustomerHeader
+      active={active}
+      name={session.name}
+      email={session.email}
+      area={shortArea(customer?.address)}
+      unread={unread}
+      cartCount={customerCartCount}
+      accountOpen={customerMenuOpen}
+      onToggleAccount={() => setCustomerMenuOpen((value) => !value)}
+      onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }}
+      onAgent={() => setActive("She Agent")}
+      onNotifications={() => setActive("Notifications")}
+      onLocation={() => { setActive("Marketplace"); setLocationSignal((n) => n + 1); }}
+      onReplayTour={() => { replayTour(); setCustomerMenuOpen(false); }}
+      onSignOut={signOut}
+      searchQuery={customerSearchQuery}
+      onSearchQueryChange={setCustomerSearchQuery}
+      onNavigateToSearch={(q) => { setCustomerSearchQuery(q); setActive("Search"); }}
+      onOpenProduct={(product) => setPlanProduct(product)}
+      onOpenVendor={handleOpenVendor}
+      onSelectCategory={(cat) => { setCustomerSearchCategory(cat); setActive("Search"); }}
+      onToggleFilters={() => {
+        if (active !== "Search") {
+          setActive("Search");
+          setCustomerFiltersOpen(true);
+        } else {
+          setCustomerFiltersOpen((v) => !v);
+        }
+      }}
+      activeFilterCount={customerActiveFilterCount}
+      products={state.products}
+      vendors={state.vendors}
+      profile={customer ? { latitude: customer.latitude, longitude: customer.longitude, address: customer.address, allergies: customer.allergies } : null}
+      locationConfirmed={hasPin}
+      markups={state.markups}
+    />}
 
     {role === "customer" ? <><main className="sp-customer-main mx-auto min-w-0 max-w-385 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-8 lg:pb-28">
       {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card mb-4 flex items-center gap-3 rounded-2xl border border-sky-200/70 bg-sky-50/90 p-3 text-sm text-sky-900"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
@@ -2072,7 +2135,17 @@ function MapPreview({ lat, lng, radius, label = "Selected location", onPinChange
 }
 function ToggleCard({ icon: Icon, title, body, checked, setChecked }: { icon: typeof Store; title: string; body: string; checked: boolean; setChecked: (v: boolean) => void }) { return <div className={`rounded-2xl border p-5 ${checked ? "border-[#155F65] bg-[#EAF4F2]" : "bg-white"}`}><div className="flex items-center justify-between"><Icon className="text-[#155F65]" /><Switch checked={checked} onCheckedChange={setChecked} /></div><h3 className="mt-4 font-black">{title}</h3><p className="mt-2 text-sm text-stone-500">{body}</p></div>; }
 
-function CustomerArea({ active, session, state, setState, navigate, openAgent, openVendor, locationSignal, shorts, shortsRadius, onShortsRadius, openShorts, onSeeAllShorts }: { onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; onShortsRadius: (km: number) => void; openShorts: (list: FoodShort[], index: number) => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number }) {
+function CustomerArea({
+  active, session, state, setState, navigate, openAgent, openVendor, locationSignal, shorts, shortsRadius, onShortsRadius, openShorts, onSeeAllShorts,
+  query, setQuery, category, setCategory, filtersOpen, setFiltersOpen, vendorFilter, setVendorFilter, onFilterCountChange,
+}: {
+  onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; onShortsRadius: (km: number) => void; openShorts: (list: FoodShort[], index: number) => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number;
+  query?: string; setQuery?: (q: string) => void;
+  category?: string; setCategory?: (c: string) => void;
+  filtersOpen?: boolean; setFiltersOpen?: React.Dispatch<React.SetStateAction<boolean>>;
+  vendorFilter?: string; setVendorFilter?: (v: string) => void;
+  onFilterCountChange?: (count: number) => void;
+}) {
   if (active === "Cart") return <CartView session={session} state={state} setState={setState} navigate={navigate}  />;
   if (active === "My schedule") return <SchedulesV4 session={session} state={state} setState={setState} navigate={navigate} />;
   if (active === "Monthly requirement") return <RequirementsV4 session={session} state={state} setState={setState} />;
@@ -2081,7 +2154,29 @@ function CustomerArea({ active, session, state, setState, navigate, openAgent, o
   if (active === "Profile & food") return <CustomerProfileV4 session={session} state={state} setState={setState} />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} />;
   if (active === "Wishlist") return <WishlistView session={session} state={state} setState={setState} />;
-  return <Marketplace view={active === "Search" ? "search" : "home"} session={session} state={state} setState={setState} navigate={navigate} openAgent={openAgent} openVendor={openVendor} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} openShorts={openShorts} onSeeAllShorts={onSeeAllShorts} />;
+  return <Marketplace
+    view={active === "Search" ? "search" : "home"}
+    session={session}
+    state={state}
+    setState={setState}
+    navigate={navigate}
+    openAgent={openAgent}
+    openVendor={openVendor}
+    locationSignal={locationSignal}
+    shorts={shorts}
+    shortsRadius={shortsRadius}
+    openShorts={openShorts}
+    onSeeAllShorts={onSeeAllShorts}
+    externalQuery={query}
+    setExternalQuery={setQuery}
+    externalCategory={category}
+    setExternalCategory={setCategory}
+    externalFiltersOpen={filtersOpen}
+    setExternalFiltersOpen={setFiltersOpen}
+    externalVendorFilter={vendorFilter}
+    setExternalVendorFilter={setVendorFilter}
+    onFilterCountChange={onFilterCountChange}
+  />;
 }
 
 /** Add one pack of a product to the signed-in customer's saved basket (optimistic locally, then synced). */
@@ -2122,10 +2217,37 @@ function MarketplaceProductDescription({ description }: { description: string })
   );
 }
 
-function Marketplace({ session, state, setState, navigate, openAgent, openVendor, locationSignal = 0, shorts, shortsRadius, openShorts, onSeeAllShorts, view = "home" }: { view?: "home" | "search"; onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; openShorts: (list: FoodShort[], index: number) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number }) {
+function Marketplace({
+  session, state, setState, navigate, openAgent, openVendor, locationSignal = 0, shorts, shortsRadius, openShorts, onSeeAllShorts, view = "home",
+  externalQuery, setExternalQuery,
+  externalCategory, setExternalCategory,
+  externalFiltersOpen, setExternalFiltersOpen,
+  externalVendorFilter, setExternalVendorFilter,
+  onFilterCountChange,
+}: {
+  view?: "home" | "search"; onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; openShorts: (list: FoodShort[], index: number) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number;
+  externalQuery?: string; setExternalQuery?: (q: string) => void;
+  externalCategory?: string; setExternalCategory?: (c: string) => void;
+  externalFiltersOpen?: boolean; setExternalFiltersOpen?: React.Dispatch<React.SetStateAction<boolean>>;
+  externalVendorFilter?: string; setExternalVendorFilter?: (v: string) => void;
+  onFilterCountChange?: (count: number) => void;
+}) {
   const profile = state.customers.find((x) => x.email === session.email)!;
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("All");
+  const [internalQuery, setInternalQuery] = useState("");
+  const query = externalQuery !== undefined ? externalQuery : internalQuery;
+  const setQuery = setExternalQuery ?? setInternalQuery;
+
+  const [internalCategory, setInternalCategory] = useState("All");
+  const category = externalCategory !== undefined ? externalCategory : internalCategory;
+  const setCategory = setExternalCategory ?? setInternalCategory;
+
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false);
+  const filtersOpen = externalFiltersOpen !== undefined ? externalFiltersOpen : internalFiltersOpen;
+  const setFiltersOpen = setExternalFiltersOpen ?? setInternalFiltersOpen;
+
+  const [internalVendorFilter, setInternalVendorFilter] = useState("");
+  const vendorFilter = externalVendorFilter !== undefined ? externalVendorFilter : internalVendorFilter;
+  const setVendorFilter = setExternalVendorFilter ?? setInternalVendorFilter;
   // Live campaigns set by the Super Admin: shown to this customer only when live and inside their audience
   const hasOrdered = state.orders.some((o) => o.customerEmail === session.email);
   const campaigns = useCustomerCampaigns(state.campaigns, hasOrdered);
@@ -2145,7 +2267,6 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
   const [refreshing, setRefreshing] = useState(false);
   const [diagnostics, setDiagnostics] = useState<MarketplaceDiagnostics | null>(null);
   const [catalogueError, setCatalogueError] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [maxPrice, setMaxPrice] = useState(profile.agentMemory?.lastBudget || 0);
   const [maxCalories, setMaxCalories] = useState(profile.agentMemory?.calorieTarget || 0);
   const [minProtein, setMinProtein] = useState(profile.agentMemory?.minProtein || 0);
@@ -2160,7 +2281,6 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
   const [draftAddress, setDraftAddress] = useState(profile.address);
   const [draftCoords, setDraftCoords] = useState<{ lat?: number; lng?: number }>({ lat: profile.latitude, lng: profile.longitude });
   const locationConfirmed = Number.isFinite(profile.latitude) && Number.isFinite(profile.longitude);
-  const [vendorFilter, setVendorFilter] = useState("");
   const locationDraftRef = useRef({ address: profile.address, latitude: profile.latitude, longitude: profile.longitude });
   useEffect(() => { locationDraftRef.current = { address: profile.address, latitude: profile.latitude, longitude: profile.longitude }; }, [profile.address, profile.latitude, profile.longitude]);
   useEffect(() => {
@@ -2316,9 +2436,10 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     .sort((a, b) => (distanceKm(profile.latitude, profile.longitude, a.latitude, a.longitude) ?? 99) - (distanceKm(profile.latitude, profile.longitude, b.latitude, b.longitude) ?? 99));
   const filtered = serviceable.filter((product) => {
     const vendor = state.vendors.find((v) => v.id === product.vendorId)!;
-    const text = `${product.name} ${product.category} ${product.description || ""} ${vendor.businessName} ${product.dietaryTags.join(" ")}`.toLowerCase();
+    const normQuery = query.normalize("NFC").toLowerCase().trim();
+    const text = `${product.name} ${product.category} ${product.description || ""} ${vendor?.businessName || ""} ${product.dietaryTags.join(" ")}`.normalize("NFC").toLowerCase();
     return groupMatches(category, product.category)
-      && (!query || text.includes(query.toLowerCase()))
+      && (!normQuery || text.includes(normQuery))
       && (!maxPrice || finalPrice(product, state) <= maxPrice)
       && (!maxCalories || product.calories <= maxCalories)
       && (!minProtein || product.protein >= minProtein)
@@ -2349,6 +2470,9 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
   const featured = state.merchandising.featuredProductIds.map((productId) => serviceable.find((product) => product.id === productId)).filter(Boolean) as Product[];
   const periodEndDate = addDaysISO(deliveryDate, Math.max(0, periodDays - 1));
   const activeFilterCount = [category !== "All", maxPrice > 0, maxCalories > 0, minProtein > 0, dietary !== "All", deliveryDate !== tomorrow(), periodDays !== 1].filter(Boolean).length;
+  useEffect(() => {
+    onFilterCountChange?.(activeFilterCount);
+  }, [activeFilterCount, onFilterCountChange]);
   const emptyReason = !diagnostics ? "Refresh to check verification, store status, stock and service radius from the live marketplace."
     : diagnostics.verified_vendors === 0 ? "No vendor has been verified by Operations yet."
       : diagnostics.open_vendors === 0 ? "A verified vendor exists, but its store is closed or marketplace access is not enabled."
@@ -2390,20 +2514,16 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     </article>;
   };
   return <div className="sp-marketplace space-y-6">
-    <div className="sp-market-toolbar rounded-[28px] p-3">
-      <div className="sp-market-toolbar-grid grid grid-cols-[minmax(0,1fr)_auto] gap-2.5 md:grid-cols-[.8fr_1.2fr_auto] xl:grid-cols-[.72fr_1.28fr_auto]">
-        <button data-tour="location" onClick={() => { setDraftAddress(profile.address); setDraftCoords({ lat: profile.latitude, lng: profile.longitude }); setLocationOpen(true); }} className={`col-span-2 h-12 min-w-0 items-center rounded-2xl px-3 text-left md:col-span-1 md:flex ${locationConfirmed ? "hidden bg-[#EEF2F2]" : "flex bg-amber-50 ring-1 ring-amber-300"}`}><MapPin className={`mr-2 size-5 shrink-0 ${locationConfirmed ? "text-[#155F65]" : "text-amber-700"}`} /><span className="min-w-0 flex-1 truncate text-sm font-bold">{locationConfirmed ? profile.address : "Confirm your delivery location"}</span><LocateFixed className="ml-2 size-4 shrink-0 text-[#155F65]" /></button>
-        <div data-tour="search" className="flex h-12 items-center rounded-2xl bg-stone-100/90 px-3"><Search className="mr-2 size-5 text-stone-500" /><input value={query} onChange={(e) => { setQuery(e.target.value); if (view === "home" && e.target.value) navigate("Search"); }} placeholder="Search food, vendor, category, dietary tag…" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />{query && <button onClick={() => setQuery("")}><X className="size-4" /></button>}</div>
-        <div className="flex gap-2">
-          <button data-tour="filters" onClick={() => { if (view === "home") navigate("Search"); setFiltersOpen((value) => view === "home" ? true : !value); }} className={`flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-black ${filtersOpen || activeFilterCount ? "border-[#155F65] bg-[#EAF4F2] text-[#155F65]" : "bg-white"}`}><Filter className="size-4" />Filters {activeFilterCount > 0 && <span className="grid size-5 place-items-center rounded-full bg-[#155F65] text-[10px] text-white">{activeFilterCount}</span>}</button>
-        </div>
+    {/* sp-market-toolbar removed in favor of top search bar and filters */}
+    {vendorFilter && (
+      <div className="flex flex-wrap items-center gap-2 px-1 text-xs font-bold text-stone-500">
+        <button type="button" onClick={() => setVendorFilter("")} className="flex items-center gap-1.5 rounded-full bg-stone-100 hover:bg-stone-200 px-3 py-1.5 text-stone-700">
+          <MapPin className="size-3.5 text-[#155F65]" />
+          Viewing {state.vendors.find((v) => v.id === vendorFilter)?.businessName || "vendor"}
+          <X className="size-3.5 ml-1" />
+        </button>
       </div>
-      {vendorFilter && (
-        <div className="flex flex-wrap items-center gap-2 px-1 text-xs font-bold text-stone-500">
-          {vendorFilter && <button onClick={() => setVendorFilter("")} className="flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1.5 text-stone-700"><MapPin className="size-3.5" />Viewing {state.vendors.find((v) => v.id === vendorFilter)?.businessName || "vendor"}<X className="size-3.5" /></button>}
-        </div>
-      )}
-    </div>
+    )}
 
     {view === "search" ? <div className="k-search-layout">
       <aside className={`k-filters sh${filtersOpen ? " open" : ""}`} aria-label="Filters"><div className="k-filters-head"><h2>Filters</h2><button type="button" className="k-filters-x" onClick={() => setFiltersOpen(false)} aria-label="Close filters"><X className="size-5" /></button></div>
