@@ -26,11 +26,7 @@ test.describe("Vendor Delivery Slot Configuration", () => {
     await dismissTourIfOpen(page);
 
     await openStaffNavIfCollapsed(page);
-    // Open mobile sidebar if needed
-    const toggleNav = page.getByRole("button", { name: "Toggle navigation" });
-    if (await toggleNav.isVisible()) {
-      await toggleNav.click();
-    }
+    // (openStaffNavIfCollapsed above already opened the phone menu; clicking the toggle again would hit the open drawer)
 
     // Navigate to "Store & radius"
     const storeRadiusBtn = page.getByRole("button", { name: "Store & radius" }).first();

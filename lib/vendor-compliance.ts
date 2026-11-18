@@ -70,6 +70,22 @@ export function pdfProblem(file: Pick<File, "name" | "type" | "size">, label: st
 export const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 export const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 export const BANK_ACCOUNT_PATTERN = /^\d{9,18}$/;
+export const FSSAI_PATTERN = /^\d{14}$/;
+
+/** Format checks for the FSSAI licence number. */
+export function fssaiFieldProblem(fssai: string, required = false): string | null {
+  const value = fssai.trim();
+  if (!value) {
+    return required ? "FSSAI licence number is required." : null;
+  }
+  if (!/^\d+$/.test(value)) {
+    return "FSSAI licence number must contain digits only.";
+  }
+  if (value.length !== 14) {
+    return "FSSAI licence number must be 14 digits.";
+  }
+  return null;
+}
 
 /** Format checks for whatever the vendor typed. Empty values are fine because these fields are optional. */
 export function complianceFieldProblems(fields: ComplianceFields): string[] {

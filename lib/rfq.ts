@@ -2,6 +2,7 @@
 // (supabase/V9_1_RFQ_LIVE.sql): Package 3 only, matching inside each vendor's own radius,
 // sealed vendor prices, and the customer choosing the winner. These functions only call it.
 import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { canAccessRfq } from "@/lib/plans";
 
 export type RfqItem = { id: string; name: string; quantity: number; unit: string; brand?: string };
 export type CustomerRfqDocument = { id: string; fileName: string; contentType?: string; createdAt: string; url: string };
@@ -112,7 +113,8 @@ export async function acceptQuote(quoteId: string): Promise<{ orderId: string; o
 }
 
 /** RFQs sent to this vendor. Rows the database hides (plan lost Package 3, not invited) simply do not come back. */
-export async function loadVendorRfqs(vendorId: string): Promise<VendorRfq[]> {
+export async function loadVendorRfqs(vendorId: string, vendorPlan?: string): Promise<VendorRfq[]> {
+  if (vendorPlan && !canAccessRfq(vendorPlan).allowed) return [];
   const sb = client();
   const inv = await sb.from("rfq_vendor_invitations").select("status,invited_at,customer_requirements(id,title,locality,delivery_date,fulfilment_mode,quote_deadline,status,requirement_items(id,product_name,quantity,unit,preferred_brand))").eq("vendor_id", vendorId).order("invited_at", { ascending: false }).limit(40);
   if (inv.error) throw new Error(inv.error.message);
@@ -131,7 +133,11 @@ export async function loadVendorRfqs(vendorId: string): Promise<VendorRfq[]> {
   });
 }
 
-export async function submitQuote(requirementId: string, lines: QuoteLine[], deliveryFee: number): Promise<string> {
+export async function submitQuote(requirementId: string, lines: QuoteLine[], deliveryFee: number, vendorPlan?: string): Promise<string> {
+  if (vendorPlan) {
+    const check = canAccessRfq(vendorPlan);
+    if (!check.allowed) throw new Error(check.message);
+  }
   const res = await client().rpc("submit_quote", { p_requirement: requirementId, p_items: lines.map((l) => ({ requirement_item_id: l.requirementItemId, available: l.available, unit_price: l.unitPrice })), p_delivery_fee: deliveryFee, p_valid_until: null });
   if (res.error) throw new Error(res.error.message);
   return String(res.data);

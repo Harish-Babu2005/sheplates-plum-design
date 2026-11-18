@@ -14,7 +14,7 @@ test("Customer onboarding and profile options are standardized, prefilled, and r
   const customerEmail = `profile-test-${Date.now()}@example.com`;
   const customerPassword = "CustomerTest@123";
 
-  await page.getByRole("button", { name: /Customer login|^Sign in$/ }).click();
+  await page.getByRole("button", { name: /Customer login|^Sign in$/i }).first().click();
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await page.getByLabel("Full name").fill("Profile Test Customer");
   await page.getByLabel("Email").fill(customerEmail);
@@ -101,7 +101,7 @@ test("Customer onboarding and profile options are standardized, prefilled, and r
   await expect(page.getByText("Signed out")).toBeVisible();
 
   // 8. Sign back in as the same customer
-  await page.getByRole("button", { name: /Customer login|^Sign in$/ }).click();
+  await page.getByRole("button", { name: /Customer login|^Sign in$/i }).first().click();
   await page.getByLabel("Email").fill(customerEmail);
   await page.locator('input[type="password"]').fill(customerPassword);
   await page.locator("form").getByRole("button", { name: "Sign in" }).click();

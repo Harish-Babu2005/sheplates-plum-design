@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminClient, callerFromRequest, ensureConceptImage, ImageError, setProductImage } from "@/lib/product-image-server";
+import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 
 export const maxDuration = 120;
 
@@ -16,8 +17,8 @@ export async function POST(request: Request) {
     const admin = adminClient();
     if (!admin) return NextResponse.json({ error: "Image storage is unavailable." }, { status: 503 });
 
-    const body = await request.json() as { productId?: string; name?: string; category?: string; force?: boolean };
-    let name = String(body.name ?? "");
+    const body = await request.json() as { productId?: string; name?: string; productName?: string; category?: string; force?: boolean };
+    let name = String(body.name ?? body.productName ?? "").slice(0, 60);
     let category = String(body.category ?? "");
     const productId = body.productId?.trim();
     if (productId) {
@@ -25,11 +26,29 @@ export async function POST(request: Request) {
       if (!product) return NextResponse.json({ error: "That product was not found." }, { status: 404 });
       if (caller.role === "vendor" && caller.vendorId !== product.vendor_id) return NextResponse.json({ error: "This product belongs to another store." }, { status: 403 });
       if (product.image_url && !body.force) return NextResponse.json({ imageUrl: product.image_url, source: "existing" });
-      name = String(product.name); category = String(product.category);
+      name = String(product.name).slice(0, 60); category = String(product.category);
+    }
+
+    if (caller.role === "vendor" && caller.vendorId) {
+      const creditCheck = await checkVendorAiCredits(admin, caller.vendorId, "product_image_generate");
+      if (!creditCheck.allowed) {
+        return NextResponse.json({
+          error: creditCheck.message || "Insufficient AI credits to generate product images.",
+          code: "insufficient_credits",
+          buyCreditsUrl: "/?view=Buy+credits",
+          balance: creditCheck.balance,
+          cost: creditCheck.cost,
+        }, { status: 402 });
+      }
     }
 
     const result = await ensureConceptImage(admin, { name, category, vendorId: caller.role === "vendor" ? caller.vendorId : null, force: !!body.force });
     if (productId) await setProductImage(admin, [productId], result.imageUrl, !body.force);
+
+    if (caller.role === "vendor" && caller.vendorId) {
+      await deductVendorAiCredits(admin, caller.vendorId, "product_image_generate", `Image generated for ${name}`);
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof ImageError) return NextResponse.json({ error: error.message }, { status: error.status });

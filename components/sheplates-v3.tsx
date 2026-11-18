@@ -1,6 +1,8 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Wordmark } from "@/components/brand";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,14 +11,14 @@ import { createPortal } from "react-dom";
 import type * as React from "react";
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Bell, CalendarDays,
-  Check, ClipboardCheck, FileCheck2, HeartPulse,
+  Check, ClipboardCheck, FileCheck2, HeartPulse, Info,
   IndianRupee, LayoutDashboard, ListChecks, LocateFixed, LogOut, MapPin, Menu,
   MessageSquareText, Package, Pause, Percent, Play, Plus, RefreshCcw, Search, Send, Settings,
   ShieldCheck, ShoppingBag, Sparkles, Store, Truck, Upload, UserPlus, Users,
   WalletCards, X, MapPinned, TicketCheck, ShoppingCart, Building2, ImageUp,
   FileSpreadsheet, Download, CreditCard, UserCog, CheckCircle2, Lightbulb, Eye, EyeOff, Copy,
   ChevronDown, Filter, Megaphone, Star, Flame, CircleUserRound, Pencil, Trash2, FileUp, Volume2, Clock3, HelpCircle,
-  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound,
+  Heart, MessagesSquare, ThumbsUp, ThumbsDown, SlidersHorizontal, Zap, Timer, Clapperboard, ReceiptText, Compass, PhoneCall, FileText, ExternalLink, Crown, MessageCircle, KeyRound, QrCode, Coins,
 } from "lucide-react";
 import { downloadWorkbook } from "@/lib/excel-export";
 import { MARKET_GROUPS } from "@/lib/market-groups";
@@ -32,7 +34,7 @@ import { CommercialTermsPanel } from "@/components/vendor-commercial";
 import { AgreementPanel, OpsAgreementPanel } from "@/components/vendor-signing";
 import { WeeklyMenuManager, type PlanPreset } from "@/components/weekly-menu";
 import { dayPrice, isOrderable, orderItemLabel, parsePlanName, weekdayOfDate, withMarkup, type MenuCell } from "@/lib/weekly-menu";
-import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
+import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, fssaiFieldProblem, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
 import { CATALOGUE_TEMPLATE_CSV, MAX_IMPORT_ROWS, matchCategory, readCatalogueText, rowProblems, type CatalogueDraftRow } from "@/lib/catalogue-import";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -48,6 +50,20 @@ import { P0VendorManagement } from "@/components/p0-vendor-management";
 import { P0UpgradeAcceptance } from "@/components/p0-upgrade-acceptance";
 
 import { categories, categoryVisual } from "@/lib/sheplates-data";
+import {
+  canAddProduct,
+  canAddDeliveryStaff,
+  canAddDeliverySlot,
+  canCreateFoodDrop,
+  canAccessRfq,
+  getPlanLimits,
+  getPlanDisplayName,
+  getNextMonthFirstIst,
+  formatIstEffectiveDate,
+  isScheduledDowngradeDue,
+  applyScheduledPlanDowngrade,
+  isSameIstDay,
+} from "@/lib/plans";
 import { demoAccounts, type DemoSession } from "@/lib/sheplates-v2-data";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import {
@@ -55,18 +71,31 @@ import {
   decideLiveVendorVerification, getAccessToken, isLiveSupabaseMode, isSupabaseConfigured,
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
-  liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct, updateLiveVendorProduct,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, clearLiveVendorProducts, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, saveLiveItemMarkup, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
-  loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
+  loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, updateLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
  subscribeLiveNotifications,} from "@/lib/supabase";
+import {
+  SKU_CATEGORIES,
+  SKU_UNIT_TYPES,
+  type SkuUnitType,
+  getSkuGroups,
+  getSkusForGroup,
+  findSkuDefinition,
+  validateSkuSelection,
+  formatProductPackLabel,
+  parsePackSpec,
+} from "@/lib/sku-master";
+import { PRODUCT_DESCRIPTION_MAX_LENGTH, sanitizeProductDescription } from "@/lib/product-description";
 import {
   TASTE_SETUP_CHOICES, TASTE_DIMENSION_LABELS, tasteMatchScore, applyTasteSignal, weightsFromSetupChoices, inferAttributesLocally,
   type TasteWeights, type TasteSignal,
 } from "@/lib/taste-match";
 import {
   dropDisplayStatus, discountPercent, claimedPercent, formatCountdown, foodDropSchedule, nextFoodDropWindow,
+  validateFoodDropUnits, validateFoodDropEditUnits,
   type FoodDrop, type FoodDropClaim,
 } from "@/lib/food-drops";
 import { calculateBillingSummary, INVOICE_LABELS, normalizeGstMode, settlementFor, commissionPercentFor, type BillingSummary } from "@/lib/billing";
@@ -92,6 +121,10 @@ import { useFoodShorts, type FoodShort, type ShortsApi } from "@/lib/food-shorts
 import { AUTO_REFRESH_INTERVAL_MS, startAutoRefresh } from "@/lib/auto-refresh";
 import { ProfileTab, VendorProfileDialog } from "@/components/customer-v2/profile";
 import { shortArea, useTicker, PhotoTile } from "@/components/customer-v2/kit";
+import { resolveNotificationTarget, executeNotificationNavigation } from "@/lib/notification-router";
+import { getDeviceNotificationStatus, requestAndRegisterDeviceNotifications, deregisterDeviceNotifications, type DeviceNotificationStatus } from "@/lib/device-notifications";
+import { BuyCreditsScreen, AiCreditsBadge, AdminVendorCreditsManagement } from "@/components/vendor/ai-credits-view";
+import { PLAN_INCLUDED_CREDITS, isLowCreditBalance, CREDIT_PACKS } from "@/lib/ai-credits-config";
 
 function CategoryBadge({ name, className = "size-5" }: { name: string; className?: string }) {
   const { Icon, fg } = categoryVisual(name);
@@ -102,7 +135,7 @@ function ProductGlyph({ category, iconClassName = "size-6" }: { category: string
   return <Icon className={iconClassName} style={{ color: fg }} strokeWidth={1.6} />;
 }
 
-type Role = DemoSession["role"];
+export type Role = DemoSession["role"];
 type DeliveryMode = "Vendor delivery" | "Self pickup" | "Third-party delivery";
 
 
@@ -112,10 +145,17 @@ export type Product = {
   id: string; vendorId: string; name: string; category: string; emoji: string; baseUnit: string;
   quantityStep: number; vendorPrice: number; stock: number; active: boolean; calories: number;
   protein: number; carbs: number; fat: number; fibre: number; dietaryTags: string[];
+  description?: string;
   packAmount?: number; packMeasure?: string; liveDistanceKm?: number; imageUrl?: string; originalImageUrl?: string;
   nutritionStatus?: "Verified" | "Estimated" | "Pending review"; nutritionConfidence?: number; nutritionNote?: string;
   /** Chosen by the vendor; never guessed. No mark is shown while it is unset. */
   foodType?: FoodType;
+  /** SKU Master predefined fields */
+  skuGroupId?: string;
+  skuId?: string;
+  skuGroupName?: string;
+  packSize?: string;
+  unitType?: string;
 };
 type AgentMemory = { lastBudget?: number; favoriteCategories?: string[]; lastComplaintAt?: string; calorieTarget?: number; minProtein?: number; preferredDietaryTags?: string[]; preferredDeliveryPeriod?: string; favoriteProducts?: string[] };
 type AgentMessage = { role: "user" | "agent"; text: string; productIds?: string[]; basketTotal?: number; intent?: string; streaming?: boolean };
@@ -178,6 +218,18 @@ export type Vendor = {
   termsAcceptedAt?: string;
   termsDocumentReference?: string;
   documents?: VendorComplianceDocument[];
+  scheduledPlanChange?: {
+    nextPlan: "Taster" | "Crave" | "Thrive" | "Crown";
+    effectiveDate: string;
+    requestedAt: string;
+  };
+  aiCredits?: {
+    planCredits: number;
+    purchasedCredits: number;
+    totalCredits: number;
+    includedAllowance: number;
+    isLow?: boolean;
+  };
 };
 type VendorOutlet = { id: string; name: string; address: string; latitude?: number; longitude?: number; radiusKm: number; openToday: boolean; certificateNumber?: string; certificateName?: string; certificateExpiry?: string };
 type Schedule = {
@@ -233,7 +285,7 @@ type Assignment = { id: string; orderId: string; staffId: string; assignedAt: st
 type RequirementItem = { id: string; name: string; quantity: number; unit: string; brand: string };
 type Requirement = { id: string; customerEmail: string; title: string; deliveryDate: string; closingDate?: string; sourceFileName?: string; items: RequirementItem[]; status: "Draft" | "Quoting" | "Quotes received" | "Awarded"; invitedVendorIds?: string[] };
 type Quote = { id: string; requirementId: string; vendorId: string; total: number; deliveryFee: number; note: string; status: "Submitted" | "Selected" | "Not selected" };
-type Notification = { id: string; recipient: string; recipientRole: Role; title: string; body: string; at: string; read: boolean; href?: string; entityType?: string | null; entityId?: string | null };
+type Notification = { id: string; recipient: string; recipientRole: Role; title: string; body: string; at: string; read: boolean; href?: string; entityType?: string | null; entityId?: string | null; type?: string };
 type Cancellation = { id: string; orderId: string; customerEmail: string; reason: string; aiDecision: string; confidence: number; status: "Awaiting operations" | "Approved" | "Rejected" | "Refunded"; kind?: "cancellation" | "quality_complaint"; recommendedRefundAmount?: number; attachmentName?: string };
 type Audit = { id: string; actor: string; action: string; detail: string; at: string };
 type CartItem = { id: string; customerEmail: string; productId: string; quantity: number; foodDropId?: string; unitPrice?: number };
@@ -442,13 +494,14 @@ const STORE_KEY = "sheplates-v3-state";
 const SESSION_KEY = "sheplates-v3-session";
 const roleName: Record<Role, string> = { customer: "Customer", vendor: "Vendor", operations: "Operations", admin: "Super admin" };
 const nav: Record<Role, string[]> = {
-  customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre"],
-  vendor: ["Dashboard", "AI insights", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre"],
-  operations: ["Command centre", "AI insights", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
-  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor plans", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log"],
+  customer: ["Marketplace", "Maps", "Schedules", "Food Drops", "Stories", "Profile", "Cart", "Wishlist", "My schedule", "Monthly requirement", "My quotations", "Orders", "Profile & food", "Ticket centre", "Notifications"],
+  vendor: ["Dashboard", "AI insights", "Buy credits", "Online shop & POS", "Store & radius", "Verification", "Catalog", "Food Drops", "Food Shorts", "Quote opportunities", "Orders", "Delivery team", "People followers", "Settlements", "Ticket centre", "Notifications"],
+  operations: ["Command centre", "Notifications", "AI insights", "Vendor credits", "P0 Connect vendors", "Vendor onboarding", "Vendor verification", "Store & radius", "Item pricing", "RFQ desk", "Orders", "Cancellations", "Vendor payments", "Reports", "Stories monitor", "Ticket centre"],
+  admin: ["Executive view", "AI insights", "Homepage & campaigns", "Users", "P0 Connect vendors", "Vendors", "Vendor credits", "Vendor plans", "Item pricing", "Pricing policies", "Orders", "Vendor payments", "Reports", "Stories monitor", "Ticket centre", "Audit log", "Notifications"],
 };
 const navIcons: Record<string, typeof Store> = {
   "Stories monitor": Play,
+  "Buy credits": Coins, "AI credits": Coins, "Vendor credits": Coins,
   Marketplace: ShoppingBag, Cart: ShoppingCart, Wishlist: Heart, "My schedule": CalendarDays, "Monthly requirement": ListChecks, "My quotations": ClipboardCheck,
   Orders: Package, "Profile & food": HeartPulse, Dashboard: LayoutDashboard, "Vendor workspace": LayoutDashboard, "Store & radius": MapPin, "People followers": Users,
   "Weekly menu": CalendarDays, Verification: BadgeCheck, Catalog: ShoppingBag, "Online shop & POS": Building2, "Food Drops": Zap, "Food Shorts": Clapperboard, "Quote opportunities": ClipboardCheck, "Delivery team": Truck,
@@ -457,6 +510,7 @@ const navIcons: Record<string, typeof Store> = {
   "Item pricing": Percent, "RFQ desk": ClipboardCheck, Cancellations: RefreshCcw, "Executive view": LayoutDashboard,
   Users, Vendors: Store, "Vendor plans": WalletCards, "Pricing policies": Settings, "Audit log": Activity, "Ticket centre": TicketCheck, "AI insights": Sparkles, "Homepage & campaigns": Megaphone,
   Settlements: WalletCards, "Vendor payments": IndianRupee, Reports: FileSpreadsheet,
+  Notifications: Bell,
 };
 type SellingSpec = { key: string; label: string; amount: number; measure: string; emoji: string };
 const weightPacks = (emoji: string): SellingSpec[] => [
@@ -485,25 +539,38 @@ const unitsByCategory: Record<string, SellingSpec[]> = {
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const categoryNames = Object.keys(unitsByCategory);
 
-let nextSequenceValue = 0;
-function nextSequenceToken() {
-  nextSequenceValue += 1;
-  return nextSequenceValue;
+/** Cryptographically random numbers (never Math.random or the clock), for ids, codes and generated passwords. */
+function randomBelow(max: number) {
+  const limit = Math.floor(0x100000000 / max) * max; // avoids modulo bias
+  const bucket = new Uint32Array(1);
+  do { crypto.getRandomValues(bucket); } while (bucket[0] >= limit);
+  return bucket[0] % max;
 }
 function id(prefix: string) {
-  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${nextSequenceToken().toString(36).toUpperCase().padStart(4, "0")}`;
+  const suffix = Array.from({ length: 4 }, () => "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[randomBelow(36)]).join("");
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
 }
-function sixDigitCode() {
-  const base = Number(String(Date.now()).slice(-6)) + nextSequenceToken();
-  return String((base % 900000) + 100000);
+/** Household size is a whole number from 1 to 20. */
+const HOUSEHOLD_MESSAGE = "Household size must be a whole number from 1 to 20.";
+const validHousehold = (value: number) => Number.isInteger(value) && value >= 1 && value <= 20;
+function householdProblem(value: unknown): string | null {
+  if (value === "" || value === undefined || value === null) return "Household size is required.";
+  const num = typeof value === "string" ? Number(value.trim()) : Number(value);
+  if (!Number.isFinite(num)) return "Household size must be a valid number.";
+  if (!Number.isInteger(num)) return "Household size must be a whole number.";
+  if (num < 1) return "Household size must be at least 1.";
+  if (num > 20) return "Household size must be at most 20.";
+  return null;
 }
+function sixDigitCode() { return String(100000 + randomBelow(900000)); }
 function now() { return new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); }
 function localDateISO(date = new Date()) { const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return shifted.toISOString().slice(0, 10); }
 function tomorrow() { const date = new Date(); date.setDate(date.getDate() + 1); return localDateISO(date); }
 /** Orders and schedules can be planned from tomorrow up to 15 days ahead (the database enforces the same window). */
 const ORDER_WINDOW_DAYS = 15;
 function latestOrderDate() { return addDaysISO(todayISO(), ORDER_WINDOW_DAYS); }
-function money(value: number) { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value); }
+/** Rupees: consistent two-decimal display across cart, orders, invoices and marketplace. */
+function money(value: number) { const safe = Number.isFinite(value) ? value : 0; return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe); }
 function finalPrice(product: Product, state: V3State) { return Math.round(product.vendorPrice * (1 + (state.markups[product.id] || 0) / 100) * 100) / 100; }
 function vendorFor(state: V3State, session: DemoSession) { return state.vendors.find((v) => (session.vendorId && (v.id === session.vendorId || String(v.id).toLowerCase() === String(session.vendorId).toLowerCase())) || (session.email && v.ownerEmail && v.ownerEmail.toLowerCase() === session.email.toLowerCase())); }
 function notificationBelongsToSession(item: Notification, session: DemoSession) {
@@ -620,12 +687,7 @@ function writeLocalStaffAccounts(list: (StaffAccount & { password: string })[]) 
 }
 function generatePassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < 12; i++) {
-    const index = (Date.now() + nextSequenceToken() + i) % chars.length;
-    out += chars[index];
-  }
-  return out;
+  return Array.from({ length: 12 }, () => chars[randomBelow(chars.length)]).join("");
 }
 function verificationFromLive(value: string): Verification {
   const labels: Record<string, Verification> = { draft: "Draft", submitted: "Submitted", under_review: "Under review", changes_required: "Changes required", verified: "Verified", rejected: "Rejected", expired: "Changes required" };
@@ -654,6 +716,8 @@ function complianceDocumentsFromLive(rows: Array<Record<string, unknown>> | unde
   });
 }
 function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: string }, document?: Record<string, unknown>, documents?: Array<Record<string, unknown>>): Vendor {
+  const fssaiDoc = (documents || []).find((d) => d.document_type === "food_certificate" || d.document_type === "fssai");
+  const effectiveDoc = fssaiDoc || document;
   return {
     id: row.id, ownerEmail: identity?.email || "vendor@sheplates.local", ownerName: identity?.name || "Vendor",
     businessName: row.name, category: row.category, address: row.address || row.locality,
@@ -665,8 +729,8 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     logoUrl: row.logo_url || undefined,
     bannerUrl: row.banner_url || undefined,
     bio: row.description || undefined,
-    fssaiNumber: String(document?.document_number || "Submitted"),
-    certificateName: String(document?.storage_path || "Private certificate"), expiryDate: String(document?.expiry_date || "—"),
+    fssaiNumber: String(effectiveDoc?.document_number || document?.document_number || "Submitted"),
+    certificateName: String(effectiveDoc?.storage_path || document?.storage_path || "Private certificate"), expiryDate: String(effectiveDoc?.expiry_date || document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
     termsVersion: row.terms_version || undefined,
     termsAcceptedAt: row.terms_accepted_at || undefined,
@@ -677,29 +741,41 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
 function productFromLive(row: LiveMenuItemRow): Product {
   return {
     id: row.id, vendorId: row.vendor_id, name: row.name, category: row.category,
-    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.unit,
+    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.pack_size || row.unit,
     quantityStep: Number(row.quantity_step || 1), vendorPrice: Number(row.vendor_base_price),
     stock: Number(row.stock_quantity), active: row.active, calories: Number(row.calories_per_unit),
     protein: Number(row.protein_g), carbs: Number(row.carbs_g), fat: Number(row.fat_g), fibre: Number(row.fibre_g),
     dietaryTags: row.dietary_tags || [], packAmount: row.pack_amount === null ? undefined : Number(row.pack_amount),
+    description: row.description || undefined,
     packMeasure: row.pack_measure || undefined, imageUrl: row.image_url || undefined,
     nutritionStatus: row.nutrition_status === "verified" ? "Verified" : row.nutrition_status === "estimated" ? "Estimated" : (Number(row.calories_per_unit) > 0 ? "Estimated" : "Pending review"),
     nutritionConfidence: row.nutrition_confidence == null ? undefined : Number(row.nutrition_confidence),
     nutritionNote: row.nutrition_note || undefined,
     foodType: normalizeFoodType(row.food_type),
+    skuGroupId: row.sku_group_id || undefined,
+    skuId: row.sku_id || undefined,
+    skuGroupName: row.sku_group_name || undefined,
+    packSize: row.pack_size || undefined,
+    unitType: row.unit_type || undefined,
   };
 }
 function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
   return {
     id: row.item_id, vendorId: row.vendor_id, name: row.item_name, category: row.category,
-    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.unit,
+    emoji: unitsByCategory[row.category]?.[0]?.emoji || "📦", baseUnit: row.pack_size || row.unit,
     quantityStep: Number(row.quantity_step || 1), vendorPrice: Number(row.customer_price),
     stock: Number(row.stock_quantity), active: true, calories: Number(row.calories_per_unit),
     protein: Number(row.protein_g), carbs: Number(row.carbs_g), fat: Number(row.fat_g), fibre: Number(row.fibre_g),
     dietaryTags: row.dietary_tags || [], packAmount: row.pack_amount === null ? undefined : Number(row.pack_amount),
+    description: row.description || undefined,
     packMeasure: row.pack_measure || undefined, liveDistanceKm: Number(row.distance_km), imageUrl: row.image_url || undefined,
     nutritionStatus: Number(row.calories_per_unit) > 0 ? "Estimated" : "Pending review",
     foodType: normalizeFoodType(row.food_type),
+    skuGroupId: row.sku_group_id || undefined,
+    skuId: row.sku_id || undefined,
+    skuGroupName: row.sku_group_name || undefined,
+    packSize: row.pack_size || undefined,
+    unitType: row.unit_type || undefined,
   };
 }
 
@@ -858,7 +934,7 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   if (!visibleSuggestions.length) return null;
   return (
     <div className="relative z-30 mt-2 w-full">
-      <div className="absolute inset-x-0 top-full z-50 mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-[0_18px_40px_rgba(32,40,39,0.12)] backdrop-blur">
+      <div className="absolute inset-x-0 top-full z-50 mt-1 min-w-0 max-w-full space-y-1 overflow-hidden rounded-2xl border border-stone-200 bg-white/95 max-h-64 overflow-y-auto overscroll-contain p-1.5 shadow-[0_18px_40px_rgba(32,40,39,0.12)] backdrop-blur">
         {visibleSuggestions.map((item, index) => {
           const [primary, ...rest] = item.address.split(",");
           return (
@@ -900,13 +976,121 @@ export function SheplatesV3() {
   const storageWarningShown = useRef(false);
   const storageUnavailable = useRef(false);
   const [liveSync, setLiveSync] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  useEffect(() => { liveSyncRef.current = liveSync; }, [liveSync]);
   const [liveSyncError, setLiveSyncError] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
+  const liveSyncRef = useRef<"idle" | "loading" | "ready" | "error">("idle");
   const [tourOpen, setTourOpen] = useState<null | "customer" | "vendor">(null);
   const initializedNavigationKey = useRef("");
   const skipNavigationSync = useRef(false);
   const lastAlertedNotification = useRef<string>("");
-  const [vendorProfileId, setVendorProfileId] = useState<string | null>(null);
+  const [vendorProfileId, setVendorProfileIdState] = useState<string | null>(null);
+
+  const handleOpenVendor = useCallback((id: string | null) => {
+    if (id) {
+      const vendor = state.vendors.find((v) => v.id === id);
+      if (!vendor) {
+        toast.error("That vendor's store is not available right now.");
+        setVendorProfileIdState(null);
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          if (params.has("vendor")) {
+            params.delete("vendor");
+            const query = params.toString();
+            const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+            window.history.replaceState({ page: active }, "", next);
+          }
+        }
+        return;
+      }
+      setVendorProfileIdState(id);
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const currentVendor = params.get("vendor");
+        if (currentVendor !== id) {
+          params.set("vendor", id);
+          const next = `${window.location.pathname}?${params.toString()}`;
+          window.history.pushState({ page: active, vendor: id }, "", next);
+        }
+      }
+    } else {
+      setVendorProfileIdState(null);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const currentVendor = params.get("vendor");
+        if (currentVendor) {
+          params.delete("vendor");
+          const query = params.toString();
+          const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+          window.history.pushState({ page: active }, "", next);
+        }
+      }
+    }
+  }, [active, state.vendors]);
+  const setVendorProfileId = handleOpenVendor;
+
+  const qrVendorAttempted = useRef(false);
+  useEffect(() => {
+    if (!hydrated || !state.vendors.length) return;
+    if (qrVendorAttempted.current) return;
+
+    let targetVendorId: string | null = null;
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      targetVendorId = params.get("vendor");
+      if (!targetVendorId) {
+        try {
+          targetVendorId = sessionStorage.getItem("sheplates_pending_vendor");
+        } catch {}
+      }
+    }
+    if (!targetVendorId) return;
+    qrVendorAttempted.current = true;
+
+    const vendor = state.vendors.find((v) => v.id === targetVendorId);
+    if (vendor) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a vendor deep link opens that store once, after the vendors load
+      setVendorProfileIdState(vendor.id);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("vendor") === vendor.id && !window.history.state?.vendor) {
+          params.delete("vendor");
+          const baseQuery = params.toString();
+          const baseUrl = `${window.location.pathname}${baseQuery ? `?${baseQuery}` : ""}`;
+          window.history.replaceState({ page: active }, "", baseUrl);
+          params.set("vendor", vendor.id);
+          const vendorUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.pushState({ page: active, vendor: vendor.id }, "", vendorUrl);
+        } else if (params.get("vendor") !== vendor.id) {
+          params.set("vendor", vendor.id);
+          const next = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ page: active, vendor: vendor.id }, "", next);
+        }
+      }
+      toast.success(`Welcome to ${vendor.businessName}'s store`);
+    } else {
+      toast.error("That vendor's store is not available right now.");
+      setVendorProfileIdState(null);
+      try {
+        sessionStorage.removeItem("sheplates_pending_vendor");
+      } catch {}
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("vendor")) {
+          params.delete("vendor");
+          const query = params.toString();
+          const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+          window.history.replaceState({ page: active }, "", next);
+        }
+      }
+    }
+  }, [active, hydrated, state.vendors]);
   const [locationSignal, setLocationSignal] = useState(0);
   const [planProduct, setPlanProduct] = useState<Product | null>(null);
   const [planPreset, setPlanPreset] = useState<PlanPreset | undefined>(undefined);
@@ -961,22 +1145,48 @@ export function SheplatesV3() {
   useEffect(() => {
     if (!hydrated || !session || initializedNavigationKey.current === navigationKey) return;
     const validPages = nav[session.role] ?? [];
-    const parameters = new URLSearchParams(window.location.search);
+    let pendingUrl: string | null = null;
+    try {
+      pendingUrl = sessionStorage.getItem("sheplates_pending_notification_url");
+      if (pendingUrl) sessionStorage.removeItem("sheplates_pending_notification_url");
+    } catch {}
+
+    const parameters = new URLSearchParams(pendingUrl ? (pendingUrl.split("?")[1] || "") : window.location.search);
     const requested = parameters.get("view");
     const initialPage = requested && validPages.includes(requested)
       ? requested
       : validPages.includes(active)
         ? active
         : validPages[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the first page comes from the address bar, read once in the browser
     if (initialPage !== active) setActive(initialPage);
     parameters.delete("view");
     if (initialPage !== validPages[0]) parameters.set("view", initialPage);
     const target = `${window.location.pathname}${parameters.toString() ? `?${parameters.toString()}` : ""}`;
     const current = `${window.location.pathname}${window.location.search}`;
-    if (current !== target) window.history.replaceState({ page: initialPage }, "", target);
+    if (current !== target || pendingUrl) window.history.replaceState({ page: initialPage }, "", target);
     initializedNavigationKey.current = navigationKey;
     skipNavigationSync.current = true;
   }, [active, hydrated, navigationKey, session]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === "SHEPLATES_NAVIGATE" && event.data.url) {
+        try {
+          const u = new URL(event.data.url, window.location.origin);
+          const requested = u.searchParams.get("view");
+          const validPages = session ? (nav[session.role] ?? []) : [];
+          if (requested && validPages.includes(requested)) {
+            window.history.pushState({ page: requested }, "", event.data.url);
+            setActive(requested);
+          }
+        } catch {}
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+  }, [session]);
 
   useEffect(() => {
     if (!hydrated || !session || initializedNavigationKey.current !== navigationKey) return;
@@ -1001,6 +1211,8 @@ export function SheplatesV3() {
       const parameters = new URLSearchParams(window.location.search);
       const requested = parameters.get("view");
       setActive(requested && validPages.includes(requested) ? requested : validPages[0]);
+      const vendorParam = parameters.get("vendor");
+      setVendorProfileIdState(vendorParam || null);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -1156,13 +1368,16 @@ export function SheplatesV3() {
     if (!hydrated || !syncSession) return;
     if (!isLiveSupabaseMode()) { queueMicrotask(() => setLiveSync("ready")); return; }
     let cancelled = false;
+    // The first load and a manual retry show progress. The quiet refresh every 30 seconds changes nothing on screen unless it brings new data,
+    // and never flashes the loading card or an error banner: if it fails, the next one simply tries again.
+    const quiet = syncVersion > 0 && liveSyncRef.current === "ready";
     const syncTimeout = window.setTimeout(() => {
-      if (!cancelled) {
+      if (!cancelled && !quiet) {
         setLiveSync("error");
         setLiveSyncError("The account service did not respond within 10 seconds. You can continue using the page and retry.");
       }
     }, 10000);
-    queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
+    if (!quiet) queueMicrotask(() => { setLiveSync("loading"); setLiveSyncError(""); });
     (async () => {
       if (syncSession.role === "customer") {
         const preference = syncSession.userId ? await loadLiveCustomerPreference(syncSession.userId) : null;
@@ -1177,10 +1392,10 @@ export function SheplatesV3() {
           if (row.memory_key === "dietary_preference") liveMemory.preferredDietaryTags = row.memory_value.split(",").map((item) => item.trim()).filter(Boolean);
           if (row.memory_key === "delivery_window") liveMemory.preferredDeliveryPeriod = row.memory_value;
         }
-        let products: Product[] = []; let vendors: Vendor[] = []; let merchandising = { featuredProductIds: [] as string[], recommendationPopupEnabled: true, maxFeatured: 6 }; let merchandisingError: string | null = null;
+        let products: Product[] = []; let vendors: Vendor[] = []; let liveMarketplaceMarkups: Record<string, number> = {}; let merchandising = { featuredProductIds: [] as string[], recommendationPopupEnabled: true, maxFeatured: 6 }; let merchandisingError: string | null = null;
         if (preference && Number.isFinite(Number(preference.latitude)) && Number.isFinite(Number(preference.longitude))) {
           const marketplace = await loadLiveMarketplace(Number(preference.latitude), Number(preference.longitude));
-          products = marketplace.items.map(marketplaceProductFromLive); merchandising = marketplace.merchandising; merchandisingError = marketplace.merchandisingError || null;
+          products = marketplace.items.map(marketplaceProductFromLive); liveMarketplaceMarkups = marketplace.markups || {}; merchandising = marketplace.merchandising; merchandisingError = marketplace.merchandisingError || null;
           const unique = new Map<string, Vendor>();
           const brandMap = new Map((marketplace.vendorBranding || []).map((b) => [b.id, b]));
           const commercialMap = new Map((marketplace.vendorCommercial || []).map((c) => [c.id, c]));
@@ -1234,7 +1449,7 @@ export function SheplatesV3() {
               bannerUrl: v.bannerUrl || existing?.bannerUrl,
               bio: v.bio || existing?.bio,
             };
-          }), products, markups: {}, merchandising, merchandisingError,
+          }), products, markups: { ...current.markups, ...liveMarketplaceMarkups }, merchandising, merchandisingError,
         }));
       } else if (syncSession.role === "vendor" && syncSession.vendorId) {
         const workspace = await loadLiveVendorWorkspace(syncSession.vendorId);
@@ -1258,9 +1473,10 @@ export function SheplatesV3() {
           vendors: workspace.vendors.map((row) => {
             const profile = workspace.profiles.find((item) => item.vendor_id === row.id || item.id === row.owner_id);
             const own = workspace.documents.filter((item) => item.vendor_id === row.id);
-            return vendorFromLive(row, { name: profile?.full_name }, own.find((item) => item.document_type === "food_certificate") || own[0], own as Array<Record<string, unknown>>);
+            return vendorFromLive(row, { name: profile?.full_name }, own.find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || own[0], own as Array<Record<string, unknown>>);
           }),
           products: workspace.products.map(productFromLive),
+          markups: { ...current.markups, ...(workspace.markups || {}) },
           merchandising: workspace.merchandising || current.merchandising,
           merchandisingError: workspace.merchandisingError || null,
           campaigns: (workspace.campaigns || []).map((row: Record<string, unknown>) => ({
@@ -1275,7 +1491,7 @@ export function SheplatesV3() {
       if (!cancelled) setState((current) => mergeLiveCommerce(current, commerce, syncSession));
       window.clearTimeout(syncTimeout);
       if (!cancelled) setLiveSync("ready");
-    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
+    })().catch((error) => { window.clearTimeout(syncTimeout); if (!cancelled && !quiet) { setLiveSync("error"); setLiveSyncError(errorMessage(error, "Your latest account data could not be loaded")); } });
     return () => { cancelled = true; window.clearTimeout(syncTimeout); };
   }, [hydrated, syncSession, syncVersion]);
 
@@ -1284,7 +1500,13 @@ export function SheplatesV3() {
     return startAutoRefresh(() => setSyncVersion((version) => version + 1), AUTO_REFRESH_INTERVAL_MS);
   }, [hydrated, syncSession, liveSync]);
 
-  async function signOut() { await liveSignOut(); setSession(null); setActive("Marketplace"); toast.success("Signed out"); }
+  async function signOut() {
+    if (session) void deregisterDeviceNotifications(session);
+    await liveSignOut();
+    setSession(null);
+    setActive("Marketplace");
+    toast.success("Signed out");
+  }
   function finishTour(skipped: boolean) {
     const key = tourOpen === "customer" ? CUSTOMER_TOUR_KEY : VENDOR_TOUR_KEY;
     setTourOpen(null);
@@ -1301,18 +1523,41 @@ export function SheplatesV3() {
     if (session.role === "vendor") setMenuOpen(true);
     setTourOpen(session.role);
   }
-  if (!session) return <SheplatesEntry onLogin={(next) => { setSession(next); setActive(nav[next.role][0]); }} />;
+  if (!session) {
+    return (
+      <SheplatesEntry
+        onLogin={(next) => {
+          setSession(next);
+          let targetView = nav[next.role][0];
+          try {
+            const pending = sessionStorage.getItem("sheplates_pending_notification_url");
+            if (pending) {
+              sessionStorage.removeItem("sheplates_pending_notification_url");
+              const u = new URL(pending, window.location.origin);
+              const requested = u.searchParams.get("view");
+              const valid = nav[next.role] ?? [];
+              if (requested && valid.includes(requested)) {
+                window.history.pushState({ page: requested }, "", pending);
+                targetView = requested;
+              }
+            }
+          } catch {}
+          setActive(targetView);
+        }}
+      />
+    );
+  }
   const role = session.role;
   const customer = state.customers.find((item) => item.email === session.email);
   const vendor = vendorFor(state, session);
   const needsRemoteIdentity = (role === "customer" && !customer) || (role === "vendor" && Boolean(session.vendorId) && !vendor);
   if (isLiveSupabaseMode() && liveSync === "loading" && needsRemoteIdentity) return <div className="sp-v7 grid min-h-screen place-items-center bg-[#EEF2F2] p-5"><div className="text-center"><RefreshCcw className="mx-auto size-8 animate-spin text-[#155F65]" /><div className="mt-4 font-black">Loading your Sheplates profile…</div><p className="mt-1 text-sm text-stone-500">You can continue if the account service is temporarily unavailable.</p><Button variant="outline" onClick={() => setLiveSync("ready")} className="mt-5 rounded-xl">Continue to setup</Button></div></div>;
   if (isLiveSupabaseMode() && liveSync === "error" && needsRemoteIdentity) return <div className="sp-v7 grid min-h-screen place-items-center bg-[#EEF2F2] p-5"><div className="surface-card max-w-lg rounded-[28px] p-6 text-center"><AlertTriangle className="mx-auto text-amber-600" /><h1 className="mt-4 text-xl font-black">Account sync is unavailable</h1><p className="mt-2 text-sm text-stone-500">{liveSyncError}</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setSyncVersion((value) => value + 1)} className="rounded-xl bg-[#155F65]"><RefreshCcw />Try again</Button><Button variant="outline" onClick={() => setLiveSync("ready")} className="rounded-xl">Continue to setup</Button></div></div></div>;
-  if (role === "customer" && !customer?.onboardingComplete) return <CustomerOnboarding session={session} onSave={(profile) => setState((s) => ({ ...s, customers: [...s.customers.filter((x) => x.email !== profile.email), profile], audit: [audit(session, "Completed customer food profile", profile.diet), ...s.audit] }))} onLogout={signOut} />;
+  if (role === "customer" && !customer?.onboardingComplete) return <><Toaster position="top-center" richColors /><CustomerOnboarding session={session} onSave={(profile) => setState((s) => ({ ...s, customers: [...s.customers.filter((x) => x.email !== profile.email), profile], audit: [audit(session, "Completed customer food profile", profile.diet), ...s.audit] }))} onLogout={signOut} /></>;
   if (role === "vendor" && !vendor && session.p0UpgradeInvitationId) {
     return <P0UpgradeAcceptance invitationId={session.p0UpgradeInvitationId} />;
   }
-  if (role === "vendor" && !vendor) return <VendorOnboarding session={session} setState={setState} onLogout={signOut} />;
+  if (role === "vendor" && !vendor) return <><Toaster position="top-center" richColors /><VendorOnboarding session={session} setState={setState} onLogout={signOut} /></>;
 
   const unread = state.notifications.filter((item) => notificationBelongsToSession(item, session) && !item.read).length;
   const hasPin = Boolean(customer && Number.isFinite(customer.latitude) && Number.isFinite(customer.longitude));
@@ -1389,14 +1634,14 @@ export function SheplatesV3() {
   }
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
-    if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} />;
+    if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} onNavigate={setActive} />;
     if (active === "She Agent") return <div className="space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
-    if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={setVendorProfileId} onConfirmLocation={() => setActive("Marketplace")} />;
+    if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={handleOpenVendor} onConfirmLocation={() => setActive("Marketplace")} />;
     if (active === "Food Drops") return <FoodDropsTab state={state} profile={area} social={social} onClaim={claimDrop} onRefresh={() => void refreshDrops()} />;
-    if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={setVendorProfileId} />;
-    if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={setVendorProfileId} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
+    if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={handleOpenVendor} />;
+    if (active === "Profile") return <ProfileTab session={session!} state={state} setState={setState} social={social} people={people} statuses={statuses} onSetLocation={() => setActive("Marketplace")} onOpenVendor={handleOpenVendor} onNavigate={setActive} onReplayTour={replayTour} onSignOut={signOut} />;
     if (active === "Schedules" || active === "Orders" || active === "My schedule") return <SchedulesTab initial={active === "My schedule" ? "Subscriptions" : "Orders"} orders={<OrdersV4 session={session!} state={state} setState={setState} scope="customer" />} subscriptions={<SchedulesV4 session={session!} state={state} setState={setState} navigate={setActive} />} />;
-    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={setVendorProfileId} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
+    return <CustomerArea active={active} session={session!} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} openVendor={handleOpenVendor} locationSignal={locationSignal} shorts={shorts} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} openShorts={openShorts} onSeeAllShorts={() => setActive("Stories")} />;
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
@@ -1404,19 +1649,48 @@ export function SheplatesV3() {
     : role === "operations"
       ? { "Vendor verification": state.vendors.filter((v) => v.vendorKind !== "p0_connect" && ["Submitted", "Under review"].includes(v.verification)).length, "Ticket centre": openTicketCount, Cancellations: state.cancellations.filter((x) => x.status === "Awaiting operations").length }
       : role === "admin" ? { "Ticket centre": openTicketCount } : {};
+
+  let vendorNavItems = nav[role];
+  if (role === "vendor") {
+    let list = nav.vendor;
+    if (vendor?.plan !== "Crown") {
+      if (vendor?.plan !== "Thrive") {
+        list = list.filter((item) => item !== "Quote opportunities");
+      }
+    }
+    if (vendor?.category === "Home food") {
+      list = list.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]);
+    }
+    vendorNavItems = list;
+  }
+
+  let vendorDisabledNavItems: Record<string, { badge: string; reason?: string }> | undefined = undefined;
+  if (role === "vendor" && vendor) {
+    const res: Record<string, { badge: string; reason?: string }> = {};
+    if (!canCreateFoodDrop(vendor.plan).allowed) {
+      res["Food Drops"] = { badge: "Upgrade to Crave", reason: "Food Drops are available on Crave, Thrive and Crown. Upgrade to Crave to unlock daily Food Drops." };
+    }
+    if (vendor.plan === "Thrive") {
+      res["Quote opportunities"] = { badge: "Upgrade to Crown", reason: "Quotation opportunities and RFQ tools are exclusive to Crown. Upgrade to Crown to unlock." };
+    }
+    if (Object.keys(res).length) vendorDisabledNavItems = res;
+  }
+
   const content = role === "customer"
     ? renderCustomerPage()
     : role === "vendor"
-      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} />
+      ? <VendorArea active={active} session={session} state={state} setState={setState} shorts={shorts} onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); }} onNavigate={setActive} />
       : role === "operations"
         ? <OperationsArea active={active} session={session} state={state} setState={setState} navigate={setActive} openAgent={() => setAgentOpen(true)} onOpenVendorProfile={setVendorProfileId} />
-        : <AdminArea active={active} session={session} state={state} setState={setState} onOpenVendorProfile={setVendorProfileId} />;
+        : <AdminArea active={active} session={session} state={state} setState={setState} onOpenVendorProfile={setVendorProfileId} onNavigate={setActive} />;
 
   const customerCartCount = role === "customer" ? state.cart.filter((item) => item.customerEmail === session.email).reduce((sum, item) => sum + item.quantity, 0) : 0;
   const customerQuoteCount = role === "customer" ? state.quotes.filter((quote) => {
     const requirement = state.requirements.find((item) => item.id === quote.requirementId);
     return requirement?.customerEmail === session.email && quote.status === "Submitted";
   }).length : 0;
+
+  const staffNavItems = (vendorNavItems || nav[role]).filter((i) => i !== "Notifications");
 
   return <div className="app-shell-bg sp-v7 min-h-screen text-[#202827]">
     <Toaster position="top-center" richColors />
@@ -1428,17 +1702,17 @@ export function SheplatesV3() {
       {content}
       {!notificationsOpen && <CustomerBottomNav active={active} onNavigate={(key) => { if (key === "Maps") setMapsStart(undefined); setActive(key); setCustomerMenuOpen(false); }} onAgent={() => setActive("She Agent")} />}
       {customerMenuOpen && <button className="fixed inset-0 z-30 hidden md:block" onClick={() => setCustomerMenuOpen(false)} aria-label="Close account menu" />}
-      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={setVendorProfileId} onClose={shortsViewer.close} />}
-      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { setVendorProfileId(null); setActive("Cart"); }} />
-    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={role === "vendor" && vendor?.category === "Home food" ? nav.vendor.flatMap((item) => item === "Catalog" ? [item, "Weekly menu"] : [item]) : nav[role]} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setNotificationsOpen(true)} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
-      onOpenVendorProfile={() => { if (vendor) setVendorProfileId(vendor.id); else setActive("Vendor profile"); }}
+      {shortsViewer.state && <ShortsViewer shorts={shortsViewer.state.shorts} startIndex={shortsViewer.state.start} liked={shorts.liked} onLike={(id) => void shorts.toggleLike(id).catch((e) => toast.error(errorMessage(e, "Could not save your like")))} onView={(id) => { void shorts.recordView(id).catch((e) => { toast.error(errorMessage(e, "Could not record this view")); }); }} onOpenVendor={handleOpenVendor} onClose={shortsViewer.close} />}
+      <ScheduleDialog product={planProduct} preset={planPreset} close={() => { setPlanProduct(null); setPlanPreset(undefined); }} session={session} state={state} setState={setState} initialStartDate={tomorrow()} onCreated={() => { handleOpenVendor(null); setActive("Cart"); }} />
+    </main><CustomerFooter /></> : <StaffShell role={role} roleLabel={roleName[role]} items={staffNavItems} disabledItems={vendorDisabledNavItems} icons={navIcons} active={active} onNavigate={setActive} unread={unread} name={session.name} email={session.email} menuOpen={menuOpen} onMenu={setMenuOpen} onNotifications={() => setActive("Notifications")} onSignOut={signOut} onReplayTour={role === "vendor" ? replayTour : undefined} counts={staffCounts}
+      onOpenVendorProfile={() => { if (vendor) handleOpenVendor(vendor.id); else setActive("Vendor profile"); }}
       vendor={vendor}
       banner={<>
         {isLiveSupabaseMode() && liveSync === "loading" && <div className="surface-card flex items-center gap-3 rounded-2xl p-3 text-sm"><RefreshCcw className="size-4 animate-spin" /><span className="flex-1 font-bold">Refreshing your latest data…</span></div>}
         {isLiveSupabaseMode() && liveSync === "error" && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="size-4" /><span className="min-w-0 flex-1"><b>Account sync paused.</b> {liveSyncError}</span><Button size="sm" variant="outline" onClick={() => setSyncVersion((value) => value + 1)}><RefreshCcw />Retry</Button></div>}
       </>}>{content}</StaffShell>}
 
-    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => setVendorProfileId(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { setVendorProfileId(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
+    <VendorProfileDialog vendorId={vendorProfileId} onClose={() => handleOpenVendor(null)} state={state} customerEmail={session.email} social={social} profile={{ latitude: customer?.latitude || vendor?.latitude, longitude: customer?.longitude || vendor?.longitude, address: customer?.address || vendor?.address }} onAdd={(product) => { void addProductToCart(state, setState, session, product); }} cartLines={state.cart.filter((item) => item.customerEmail === session.email).map((item) => { const product = state.products.find((x) => x.id === item.productId); return { id: item.id, name: product?.name || "Item", quantity: item.quantity, total: product ? finalPrice(product, state) * item.quantity : 0 }; })} onViewCart={() => { handleOpenVendor(null); if (role === "customer") setActive("Cart"); }} onPlan={(product, preset) => { setPlanPreset(preset); setPlanProduct(product); }} tomorrow={tomorrow()} onToggleWishlist={(product) => setState((current) => {
       const alreadySaved = current.wishlist.some((item) => item.customerEmail === session.email && item.productId === product.id);
       return {
         ...current,
@@ -1451,7 +1725,7 @@ export function SheplatesV3() {
     {!(role === "customer" && active === "She Agent") && <button data-tour="agent-desktop" onClick={() => (role === "customer" ? setActive("She Agent") : setAgentOpen(true))} className={`${role === "customer" ? "sp-desktop-agent-launcher" : "sp-staff-agent-launcher"} sp-agent-launcher group fixed bottom-5 right-4 z-30 grid size-16 place-items-center rounded-full border border-white/70 bg-white/92 p-2 shadow-[0_22px_70px_rgba(25, 19, 21,.24)] backdrop-blur-xl transition hover:shadow-[0_28px_90px_rgba(25, 19, 21,.30)] sm:right-6`} aria-label="Open She Agent">
       <span className="sp-agent-orb relative grid size-12 place-items-center rounded-full text-white"><Activity className="size-5" /></span>
     </button>}
-    <NotificationDrawerV4 open={notificationsOpen} setOpen={setNotificationsOpen} session={session} state={state} setState={setState} people={people} />
+    <NotificationDrawerV4 open={notificationsOpen} setOpen={setNotificationsOpen} session={session} state={state} setState={setState} people={people} onNavigate={setActive} />
     <SheAgent open={agentOpen} setOpen={setAgentOpen} session={session} state={state} setState={setState} navigate={setActive} />
     {tourOpen === "customer" && <ProductTour steps={CUSTOMER_TOUR_STEPS} onClose={finishTour} />}
     {tourOpen === "vendor" && <ProductTour steps={VENDOR_TOUR_STEPS} onClose={finishTour} />}
@@ -1596,31 +1870,56 @@ export const STANDARD_GOALS = [
   "Heart friendly",
 ] as const;
 
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) { return <label className="sp-field block"><span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-stone-400">{hint}</span>}</label>; }
+function Field({ label, children, hint }: { label: React.ReactNode; children: React.ReactNode; hint?: string }) { return <label className="sp-field block"><span className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-stone-500">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-stone-400">{hint}</span>}</label>; }
 const inputClass = "h-11 w-full rounded-2xl border border-stone-200/80 bg-white/90 px-3.5 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,.6)] focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10";
 
 function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSession; onSave: (profile: CustomerProfile) => void; onLogout: () => void }) {
   const [step, setStep] = useState(1), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
   const [address, setAddress] = useState(""), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({});
   const pinLookup = useRef(0);
-  const [household, setHousehold] = useState(2), [diet, setDiet] = useState("No preference"), [allergies, setAllergies] = useState<string[]>([]), [goals, setGoals] = useState<string[]>([]), [dislikes, setDislikes] = useState("");
+  const householdRef = useRef<HTMLInputElement>(null);
+  const householdStep2Ref = useRef<HTMLInputElement>(null);
+  const [household, setHousehold] = useState(2), [householdError, setHouseholdError] = useState("");
+  const [diet, setDiet] = useState("No preference"), [allergies, setAllergies] = useState<string[]>([]), [goals, setGoals] = useState<string[]>([]), [dislikes, setDislikes] = useState("");
   const [privateAccount, setPrivateAccount] = useState(session.privateAccount ?? false);
   const roundPoint = (point: { lat: number; lng: number }) => ({ lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) });
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); const request = ++pinLookup.current; setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = roundPoint({ lat: position.coords.latitude, lng: position.coords.longitude }); setCoords(point); setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); } toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { if (request === pinLookup.current) toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the street details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search your full address manually"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!address.trim()) return toast.error("Enter the delivery address first"); const request = ++pinLookup.current; setMapBusy(true); try { const place = await findLocation({ address }); const next = roundPoint({ lat: place.latitude, lng: place.longitude }); if (request === pinLookup.current) { setCoords(next); setAddress(place.address); toast.success("Address pinned on the map"); } } catch (error) { if (request === pinLookup.current) toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  function movePin(point: { lat: number; lng: number }) {
+  async function movePin(point: { lat: number; lng: number }) {
     const next = roundPoint(point);
     setCoords(next);
-    setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+    const request = ++pinLookup.current;
+    try {
+      const place = await findLocation(next);
+      if (request === pinLookup.current && place?.address) {
+        setAddress(place.address);
+      }
+    } catch {
+      if (request === pinLookup.current) {
+        setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+      }
+    }
   }
   function continueSetup() {
     if (step === 1 && !address.trim()) return toast.error("Enter your delivery address first");
     if (step === 1 && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng))) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before continuing");
+    const hhErr = householdProblem(household);
+    if (hhErr) {
+      setHouseholdError(hhErr);
+      (step === 2 ? householdStep2Ref.current : householdRef.current)?.focus();
+      return toast.error(hhErr);
+    }
     setStep((current) => current + 1);
   }
   async function finish() {
     if (!address.trim()) return toast.error("Enter your delivery address first");
     if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Confirm your delivery pin with GPS, an address suggestion, or the map before saving");
+    const hhErr = householdProblem(household);
+    if (hhErr) {
+      setHouseholdError(hhErr);
+      (householdStep2Ref.current || householdRef.current)?.focus();
+      return toast.error(hhErr);
+    }
     const latitude = Number(coords.lat?.toFixed(6));
     const longitude = Number(coords.lng?.toFixed(6));
     try {
@@ -1661,8 +1960,8 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
       toast.success("Your food profile and exact service pin are ready");
     } catch (error) { toast.error(errorMessage(error, "Profile could not be saved")); }
   }
-  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#155F65]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input type="number" min="1" max="20" value={household} onChange={(e) => setHousehold(Number(e.target.value))} className={inputClass} /></Field></div>}
-  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
+  return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#155F65]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input ref={householdRef} id="customer-household-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field></div>}
+  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Household size"><input ref={householdStep2Ref} id="customer-household-step2-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
   {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#EEF2F2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
   <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Check />Save profile</Button>}</div></div></div></div>;
 }
@@ -1679,31 +1978,32 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   const [form, setForm] = useState({ businessName: "", ownerName: operationsCreated ? firstVendorAccount.name : session.name, ownerEmail: operationsCreated ? firstVendorAccount.email : session.email, category: "Groceries", address: "", lat: undefined as number | undefined, lng: undefined as number | undefined, radius: 5, delivery: true, pickup: true, fssai: "", expiry: "", ownerRole: "Proprietor", phone: "", bio: "" });
   const [otherCategory, setOtherCategory] = useState("");
   const [invite, setInvite] = useState(false), [inviteEmail, setInviteEmail] = useState(""), [termsAccepted, setTermsAccepted] = useState(false);
+
+  const businessNameRef = useRef<HTMLInputElement>(null), otherCategoryRef = useRef<HTMLInputElement>(null), addressRef = useRef<HTMLTextAreaElement>(null), fssaiRef = useRef<HTMLInputElement>(null), expiryRef = useRef<HTMLInputElement>(null);
+  const [businessNameError, setBusinessNameError] = useState(""), [addressError, setAddressError] = useState(""), [fssaiError, setFssaiError] = useState(""), [expiryError, setExpiryError] = useState(""), [certificateError, setCertificateError] = useState("");
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm((f) => ({ ...f, [key]: value })); }
-  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  function continueOnboarding() {
-    if (step === 1 && !form.businessName.trim()) return toast.error("Please enter your business name");
-    if (step === 1 && form.category === "Other" && !otherCategory.trim()) return toast.error("Enter your business category");
-    if (step === 2 && !form.address.trim()) return toast.error("Please enter the store address");
-    setStep((current) => current + 1);
-  }
   async function submit() {
-    if (!form.businessName.trim()) { setStep(1); return toast.error("Please enter your business name in Step 1."); }
-    if (!form.address.trim()) { setStep(2); return toast.error("Please enter your store address in Step 2."); }
-    if (!form.fssai.trim()) { setStep(4); return toast.error("Please enter your 14-digit FSSAI licence number in Step 4."); }
-    if (!form.expiry) { setStep(4); return toast.error("Please choose the FSSAI certificate expiry date in Step 4."); }
+    const focus = (ref?: { current: HTMLElement | null } | null, id?: string) => setTimeout(() => (ref?.current || (id ? document.getElementById(id) : null))?.focus(), 50);
+    if (!form.businessName.trim()) { setStep(1); setBusinessNameError("Please enter your business name."); focus(businessNameRef, "vendor-business-name-input"); return toast.error("Please enter your business name in Step 1."); }
+    if (form.category === "Other" && !otherCategory.trim()) { setStep(1); focus(otherCategoryRef, "vendor-other-category-input"); return toast.error("Enter your business category"); }
+    if (!form.address.trim()) { setStep(2); setAddressError("Please enter the store address."); focus(addressRef, "vendor-store-address-input"); return toast.error("Please enter your store address in Step 2."); }
+    if (!form.delivery && !form.pickup) { setStep(3); return toast.error("Enable delivery or pickup."); }
+    const fssaiErr = fssaiFieldProblem(form.fssai, true);
+    if (fssaiErr) { setStep(4); setFssaiError(fssaiErr); focus(fssaiRef, "fssai-number-input"); return toast.error(fssaiErr); }
+    if (!form.expiry) { setStep(4); setExpiryError("Please choose the FSSAI certificate expiry date."); focus(expiryRef, "fssai-expiry-input"); return toast.error("Please choose the FSSAI certificate expiry date in Step 4."); }
     const certFile = file || Object.values(docFiles).find((f): f is File => Boolean(f));
-    if (!certFile) { setStep(4); return toast.error("Please upload your Food Safety Certificate (FSSAI) PDF."); }
-    const certificateProblem = pdfProblem(certFile, "The Food Safety Certificate"); if (certificateProblem) return toast.error(certificateProblem);
+    if (!certFile) { setStep(4); setCertificateError("Please upload your Food Safety Certificate (FSSAI) PDF."); focus(null, "fssai-file-input"); return toast.error("Please upload your Food Safety Certificate (FSSAI) PDF."); }
+    const certificateProblem = pdfProblem(certFile, "The Food Safety Certificate");
+    if (certificateProblem) { setStep(4); setCertificateError(certificateProblem); focus(null, "fssai-file-input"); return toast.error(certificateProblem); }
     const fieldProblems = complianceFieldProblems(docFields); if (fieldProblems.length) return toast.error(fieldProblems[0]);
-    if (form.category === "Other" && !otherCategory.trim()) { setStep(1); return toast.error("Enter your business category"); }
+    if (form.category === "Other" && !otherCategory.trim()) { setStep(1); focus(otherCategoryRef, "vendor-other-category-input"); return toast.error("Enter your business category"); }
     const lat = Number.isFinite(form.lat) ? form.lat! : 13.0827;
     const lng = Number.isFinite(form.lng) ? form.lng! : 80.2707;
     const delivery = form.delivery || (!form.delivery && !form.pickup);
     const pickup = form.pickup;
+    if (!termsAccepted) { setStep(4); focus(null, "vendor-terms-checkbox"); }
     if (!termsAccepted) return toast.error("Accept the Vendor Terms and Conditions to submit");
-    if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to");
+    if (operationsCreated && invite && !/^\S+@\S+\.\S+$/.test(inviteEmail.trim())) return toast.error("Enter the email address the invitation should go to.");
     setBusy(true);
     let vendorId = id("VEN");
     try {
@@ -1727,11 +2027,32 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
       close?.();
     } catch (caught) { toast.error(errorMessage(caught, "Application could not be submitted")); } finally { setBusy(false); }
   }
+  function continueOnboarding() {
+    if (step === 1 && !form.businessName.trim()) { setBusinessNameError("Please enter your business name."); businessNameRef.current?.focus(); return toast.error("Please enter your business name"); }
+    if (step === 1 && form.category === "Other" && !otherCategory.trim()) { otherCategoryRef.current?.focus(); return toast.error("Enter your business category"); }
+    if (step === 2 && !form.address.trim()) { setAddressError("Please enter the store address."); addressRef.current?.focus(); return toast.error("Please enter the store address"); }
+    if (step === 3 && !form.delivery && !form.pickup) return toast.error("Enable delivery or pickup.");
+    setStep((current) => current + 1);
+  }
+  function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
+  async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#EEF2F2] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="k-stepper-wrap"><p className="sr-only">Vendor onboarding · {step}/4</p><ol className="k-stepper" aria-label="Onboarding steps">{["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => { const n = index + 1; const done = n < step; return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>; })}</ol><h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div>
-  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Business name"><input value={form.businessName} onChange={(e) => set("businessName", e.target.value)} className={inputClass} /></Field><Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>{form.category === "Other" && <Field label="Your category"><input value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}<Field label="Designation" hint="Proprietor, Director, Partner, etc."><Select value={form.ownerRole || "Proprietor"} onValueChange={(val) => set("ownerRole", val)}><SelectTrigger className="h-11 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{VENDOR_DESIGNATION_OPTIONS.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></Field><Field label="Representative / Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} placeholder="Full legal name" /></Field><Field label="Contact Phone / WhatsApp"><input value={form.phone} onChange={(e) => set("phone", e.target.value)} className={inputClass} placeholder="+91 98765 43210" /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#EEF2F2] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#55656A]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
-  {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4"><Field label="Full store address"><Textarea value={form.address} onChange={(e) => set("address", e.target.value)} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" /></Field><LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
+  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2">
+    <Field label="Business name">
+      <input ref={businessNameRef} id="vendor-business-name-input" value={form.businessName} onChange={(e) => { set("businessName", e.target.value); if (businessNameError) setBusinessNameError(""); }} className={inputClass} />
+      {businessNameError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{businessNameError}</p>}
+    </Field>
+    <Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>
+    {form.category === "Other" && <Field label="Your category"><input ref={otherCategoryRef} id="vendor-other-category-input" value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}
+    <Field label="Designation" hint="Proprietor, Director, Partner, etc."><Select value={form.ownerRole || "Proprietor"} onValueChange={(val) => set("ownerRole", val)}><SelectTrigger className="h-11 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{VENDOR_DESIGNATION_OPTIONS.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></Field><Field label="Representative / Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} placeholder="Full legal name" /></Field><Field label="Contact Phone / WhatsApp"><input value={form.phone} onChange={(e) => set("phone", e.target.value)} className={inputClass} placeholder="+91 98765 43210" /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#EEF2F2] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#55656A]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
+  {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4">
+    <Field label="Full store address">
+      <Textarea ref={addressRef} id="vendor-store-address-input" value={form.address} onChange={(e) => { set("address", e.target.value); if (addressError) setAddressError(""); }} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" />
+      {addressError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{addressError}</p>}
+    </Field>
+    <LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
   {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#155F65]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
-  {step === 4 && <ComplianceStep fssai={form.fssai} setFssai={(value) => set("fssai", value)} expiry={form.expiry} setExpiry={(value) => set("expiry", value)} minExpiry={tomorrow()} certificate={file} setCertificate={setFile} fields={docFields} setField={(key, value) => setDocFields((current) => ({ ...current, [key]: value }))} files={docFiles} setFile={(key, next) => setDocFiles((current) => ({ ...current, [key]: next }))} termsAccepted={termsAccepted} setTermsAccepted={setTermsAccepted} />}
+  {step === 4 && <ComplianceStep fssai={form.fssai} setFssai={(value) => { set("fssai", value); if (fssaiError) setFssaiError(""); }} expiry={form.expiry} setExpiry={(value) => { set("expiry", value); if (expiryError) setExpiryError(""); }} minExpiry={tomorrow()} certificate={file} setCertificate={(next) => { setFile(next); if (certificateError) setCertificateError(""); }} fields={docFields} setField={(key, value) => setDocFields((current) => ({ ...current, [key]: value }))} files={docFiles} setFile={(key, next) => setDocFiles((current) => ({ ...current, [key]: next }))} termsAccepted={termsAccepted} setTermsAccepted={setTermsAccepted} fssaiError={fssaiError} expiryError={expiryError} certificateError={certificateError} fssaiInputRef={fssaiRef} expiryInputRef={expiryRef} />}
   <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div>{operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#155F65]" : "bg-[#DDE3E4]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}</div></div>;
 }
 
@@ -1780,6 +2101,25 @@ async function addProductToCart(state: V3State, setState: React.Dispatch<React.S
     toast.error(errorMessage(error, "Cart could not be saved"));
     if (isLiveSupabaseMode()) { try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch {} }
   }
+}
+
+function MarketplaceProductDescription({ description }: { description: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = description.length > 70;
+  return (
+    <div className="my-1 text-xs text-stone-600">
+      <p className={expanded ? "whitespace-pre-wrap break-words" : "line-clamp-2 break-words"}>{description}</p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          className="mt-0.5 text-[11px] font-bold text-[#155F65] hover:underline"
+        >
+          {expanded ? "less" : "more"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Marketplace({ session, state, setState, navigate, openAgent, openVendor, locationSignal = 0, shorts, shortsRadius, openShorts, onSeeAllShorts, view = "home" }: { view?: "home" | "search"; onSeeAllShorts: () => void; shorts: ShortsApi; shortsRadius: number; openShorts: (list: FoodShort[], index: number) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void; openAgent: () => void; openVendor: (vendorId: string) => void; locationSignal?: number }) {
@@ -1832,25 +2172,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
       setLocationOpen(true);
     });
   }, [locationSignal]);
-  const qrVendorHandled = useRef(false);
 
-  // A vendor's QR code links to "<origin>/?vendor=<id>" (there is no path
-  // router in this app, so a query param is the deep-link mechanism). Once
-  // this customer's marketplace vendors are loaded, jump straight to that
-  // vendor's products and drop the param so it doesn't linger in the URL.
-  useEffect(() => {
-    if (qrVendorHandled.current || !state.vendors.length) return;
-    const params = new URLSearchParams(window.location.search);
-    const vendorId = params.get("vendor");
-    if (!vendorId) return;
-    qrVendorHandled.current = true;
-    const vendor = state.vendors.find((v) => v.id === vendorId);
-    if (vendor) { queueMicrotask(() => setVendorFilter(vendorId)); toast.success(`Showing ${vendor.businessName}'s shop`); }
-    else toast.error("That vendor's shop is not available right now.");
-    params.delete("vendor");
-    const next = params.toString();
-    window.history.replaceState({}, "", next ? `?${next}` : window.location.pathname);
-  }, [state.vendors]);
 
   // Dummy ratings so the marketplace never shows an unreviewed, unproven-
   // looking product — generates deterministic sample reviews for whatever
@@ -1914,7 +2236,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
             bio: v.bio || existing?.bio,
           };
         }),
-        markups: {},
+        markups: { ...current.markups, ...(live.markups || {}) },
         merchandising: live.merchandising || current.merchandising,
         merchandisingError: live.merchandisingError || null,
       }));
@@ -1923,8 +2245,8 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     finally { setRefreshing(false); }
   }
   function detectLocation() { if (!navigator.geolocation) return toast.error("Location is unavailable in this browser"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; setDraftCoords(point); setDraftAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add flat/street details`); try { const place = await findLocation(point); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success(`Actual GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still shown.` : "The exact GPS pin is shown; add street details."); } finally { setLocating(false); } }, (error) => { setLocating(false); toast.error(error.code === 1 ? "Allow precise location for localhost in Chrome, then try again" : "GPS could not get a fresh position. Search your complete address instead."); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
-  async function findTypedLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first"); setMapBusy(true); try { const place = await findLocation({ address: draftAddress }); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address located on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
-  async function saveLocation() { if (!Number.isFinite(draftCoords.lat) || !Number.isFinite(draftCoords.lng)) return toast.error("Detect GPS or find the typed address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address: draftAddress, latitude: draftCoords.lat!, longitude: draftCoords.lng! }); setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, address: draftAddress, latitude: draftCoords.lat, longitude: draftCoords.lng } : item) })); setLocationOpen(false); toast.success("Delivery location and service pin updated"); } catch (error) { toast.error(errorMessage(error, "Location could not be saved")); } }
+  async function findTypedLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first."); setMapBusy(true); try { const place = await findLocation({ address: draftAddress }); setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Address located on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
+  async function saveLocation() { if (!draftAddress.trim()) return toast.error("Enter your complete address first."); if (!Number.isFinite(draftCoords.lat) || !Number.isFinite(draftCoords.lng)) return toast.error("Detect GPS or find the typed address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveCustomerLocation({ userId: session.userId, address: draftAddress, latitude: draftCoords.lat!, longitude: draftCoords.lng! }); setState((current) => ({ ...current, customers: current.customers.map((item) => item.email === session.email ? { ...item, address: draftAddress, latitude: draftCoords.lat, longitude: draftCoords.lng } : item) })); setLocationOpen(false); toast.success("Delivery location and service pin updated"); } catch (error) { toast.error(errorMessage(error, "Location could not be saved")); } }
   function addToCart(product: Product) { return addProductToCart(state, setState, session, product); }
   function openProduct(product: Product) {
     recordTasteSignal(state, setState, session, product, "view");
@@ -1980,19 +2302,27 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
   // Serviceability, stock and price are the grounding boundary for this recommendation call.
   }, [serviceable.length, serviceableSignature, showAiPicks, recommendationsEnabled]);
 
-  const dietaryOptions = Array.from(new Set(serviceable.flatMap((product) => product.dietaryTags))).filter(Boolean).slice(0, 10);
+  // The Vegetarian / Non-vegetarian / Contains egg choices come from the mark each vendor set on the product (never guessed), so a product with
+  // no mark is never listed as vegetarian. Other dietary tags (for example "High protein") still filter by tag.
+  const foodTypeOptions = FOOD_TYPES.filter((type) => serviceable.some((product) => product.foodType === type.value));
+  const tagOptions = Array.from(new Set(serviceable.flatMap((product) => product.dietaryTags))).filter((tag) => tag && !FOOD_TYPES.some((type) => type.label.toLowerCase() === tag.toLowerCase())).slice(0, 10);
+  const dietaryOptions = [...foodTypeOptions.map((type) => type.label), ...tagOptions];
+  const matchesDietary = (product: Product, choice: string) => {
+    const type = FOOD_TYPES.find((item) => item.label === choice);
+    return type ? product.foodType === type.value : product.dietaryTags.includes(choice);
+  };
   const popularVendors = state.vendors
     .filter((vendor) => serviceable.some((product) => product.vendorId === vendor.id))
     .sort((a, b) => (distanceKm(profile.latitude, profile.longitude, a.latitude, a.longitude) ?? 99) - (distanceKm(profile.latitude, profile.longitude, b.latitude, b.longitude) ?? 99));
   const filtered = serviceable.filter((product) => {
     const vendor = state.vendors.find((v) => v.id === product.vendorId)!;
-    const text = `${product.name} ${product.category} ${vendor.businessName} ${product.dietaryTags.join(" ")}`.toLowerCase();
+    const text = `${product.name} ${product.category} ${product.description || ""} ${vendor.businessName} ${product.dietaryTags.join(" ")}`.toLowerCase();
     return groupMatches(category, product.category)
       && (!query || text.includes(query.toLowerCase()))
       && (!maxPrice || finalPrice(product, state) <= maxPrice)
       && (!maxCalories || product.calories <= maxCalories)
       && (!minProtein || product.protein >= minProtein)
-      && (dietary === "All" || product.dietaryTags.includes(dietary))
+      && (dietary === "All" || matchesDietary(product, dietary))
       && (!vendorFilter || product.vendorId === vendorFilter);
   });
 
@@ -2038,7 +2368,8 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
         {product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : <ProductGlyph category={product.category} iconClassName="size-9" />}
       </div>
       <div className="k-pr-body">
-        <h3><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3>
+        <h3 className="break-words [overflow-wrap:anywhere]"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3>
+        {product.description?.trim() ? <MarketplaceProductDescription description={product.description.trim()} /> : null}
         <p className="s m">{vendor.businessName} · {product.baseUnit} · {distance?.toFixed(1)} km {vendor.pickup && !vendor.delivery ? "to pick up" : "away"} · {fulfilmentLabel}</p>
         <div className="k-pr-tags">
           {product.nutritionStatus === "Pending review" || product.calories <= 0 ? <span className="pill warn">Nutrition pending</span> : <><span className="pill">{product.calories} kcal</span><span className="pill">{product.protein}g protein</span></>}
@@ -2087,7 +2418,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
         <div className=" flex flex-wrap items-center gap-2"><span className="text-xs font-black text-stone-500">Quick:</span>{[150, 300, 500, 1000].map((budget) => <button key={budget} onClick={() => setMaxPrice(budget)} className="rounded-full border bg-white px-3 py-1.5 text-xs font-black">Under ₹{budget}</button>)}<button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setDeliveryDate(tomorrow()); setPeriodDays(1); setSortBy("Recommended"); }} className="ml-auto rounded-full px-3 py-1.5 text-xs font-black text-red-600">Clear filters</button></div>
       </div>
       </aside>
-    <div className="k-results"><div className="flex flex-wrap items-end justify-between gap-3"><Heading eyebrow="MARKETPLACE" title={query ? `“${query}”` : category !== "All" ? category : "Food near you"} body={`${visible.length} result${visible.length === 1 ? "" : "s"} near ${shortArea(profile.address)} · ${deliveryDate}${periodDays > 1 ? ` to ${periodEndDate}` : ""} · verified, open and serviceable vendors only`} /><Button variant="outline" onClick={() => void refreshMarketplace(true)} disabled={refreshing || !isLiveSupabaseMode()} className="rounded-xl"><RefreshCcw className={refreshing ? "animate-spin" : ""} />Refresh</Button></div>{catalogueError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{catalogueError}</div>}
+    <div className="k-results"><div className="flex flex-wrap items-end justify-between gap-3"><Heading eyebrow="MARKETPLACE" title={query ? "Search results" : category !== "All" ? category : "Food near you"} body={`${visible.length} result${visible.length === 1 ? "" : "s"} near ${shortArea(profile.address)} · ${deliveryDate}${periodDays > 1 ? ` to ${periodEndDate}` : ""} · verified, open and serviceable vendors only`} /><Button variant="outline" onClick={() => void refreshMarketplace(true)} disabled={refreshing || !isLiveSupabaseMode()} className="rounded-xl"><RefreshCcw className={refreshing ? "animate-spin" : ""} />Refresh</Button></div>{catalogueError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{catalogueError}</div>}
       <div data-tour="products" className="k-plist">{visible.map(renderRow)}</div>
       {!visible.length && (locationConfirmed ? <div className="mt-5 space-y-4"><Empty icon={Store} title="No matching products" body={serviceable.length ? "Your filters are narrowing the currently serviceable marketplace. Clear one or more filters, or ask She Agent for alternatives." : emptyReason} action={serviceable.length ? <Button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setQuery(""); }} variant="outline" className="rounded-xl">Clear marketplace filters</Button> : undefined} /><div className="grid gap-3 sm:grid-cols-5">{diagnostics && [["Verified", diagnostics.verified_vendors], ["Open", diagnostics.open_vendors], ["With stock", diagnostics.vendors_with_products], ["In radius", diagnostics.vendors_in_radius], ["Products", diagnostics.serviceable_products]].map(([label, value]) => <div key={String(label)} className="surface-card rounded-2xl p-3 text-center"><div className="text-xl font-black">{value}</div><div className="text-xs text-stone-500">{label}</div></div>)}</div></div> : <Empty icon={LocateFixed} title="Confirm your actual location first" body="Products are hidden until GPS or a searched address creates a real service pin." action={<Button onClick={() => setLocationOpen(true)} className="rounded-xl bg-[#155F65]"><LocateFixed />Detect my location</Button>} />)}
     </div></div> : <>
@@ -2113,7 +2444,7 @@ function Marketplace({ session, state, setState, navigate, openAgent, openVendor
     </>}
 
     <ScheduleDialog product={selected} close={() => setSelected(null)} session={session} state={state} setState={setState} initialStartDate={deliveryDate} onCreated={() => navigate("Cart")} />
-<Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" /></div></div></DialogContent></Dialog>  </div>;
+<Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" onPinChange={async (point) => { const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) }; setDraftCoords(next); try { const place = await findLocation(next); if (place?.address) setDraftAddress(place.address); } catch { setDraftAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`); } }} /></div></div></DialogContent></Dialog>  </div>;
 }
 
 function ScheduleDialog({ product, preset, close, session, state, setState, initialStartDate, onCreated }: { product: Product | null; preset?: PlanPreset; close: () => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; initialStartDate?: string; onCreated?: () => void }) {
@@ -2194,8 +2525,32 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
       if (isLiveSupabaseMode()) {
 const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
+      const frozenUnitPrice = deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state);
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
-      const order: Order = { id: orderId, scheduleId, customerEmail: session.email, vendorId: scheduledProduct.vendorId, productId: scheduledProduct.id, description: firstDishes.length ? `${scheduledProduct.name} · ${weekdayOfDate(deliveryDates[0])}: ${firstDishes.join(", ")}` : scheduledProduct.name, quantity, unit: scheduledProduct.baseUnit, total: price, date: deliveryDates[0], slot: effectiveSlot, mode, status: "Scheduled", payment: "Pending" };
+      const order: Order = {
+        id: orderId,
+        scheduleId,
+        customerEmail: session.email,
+        vendorId: scheduledProduct.vendorId,
+        productId: scheduledProduct.id,
+        description: firstDishes.length ? `${scheduledProduct.name} · ${weekdayOfDate(deliveryDates[0])}: ${firstDishes.join(", ")}` : scheduledProduct.name,
+        quantity,
+        unit: scheduledProduct.baseUnit,
+        subtotal: price,
+        total: price,
+        totalAmount: price,
+        date: deliveryDates[0],
+        slot: effectiveSlot,
+        mode,
+        status: "Scheduled",
+        payment: "Pending",
+        items: [{
+          name: scheduledProduct.name,
+          quantity,
+          unit: scheduledProduct.baseUnit,
+          price: frozenUnitPrice,
+        }],
+      };
       setState((s) => ({ ...s, schedules: [schedule, ...s.schedules.filter((x) => x.id !== schedule.id)], orders: [order, ...s.orders.filter((x) => x.id !== order.id)], notifications: [notice(session.email, "customer", "Schedule ready for payment", `${scheduledProduct.name} has ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}. Complete payment to activate it.`), ...s.notifications], audit: [audit(session, "Created product schedule", `${scheduledProduct.name} · ${recurrence} · ${occurrences} deliveries`), ...s.audit] }));
       showDeviceNotification("Schedule ready for payment", `${scheduledProduct.name} · ${occurrences} planned deliver${occurrences === 1 ? "y" : "ies"}`);
       toast.success("Schedule saved. Complete payment to activate it."); close(); onCreated?.();
@@ -2268,7 +2623,7 @@ function WishlistView({ session, state, setState }: { session: DemoSession; stat
       const rating = productRating(product.id, state.reviews);
       return <article key={item.productId} className="sh k-pr">
         <div className="k-pr-img" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : <ProductGlyph category={product.category} iconClassName="size-9" />}</div>
-        <div className="k-pr-body"><h3><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3><p className="s m">{vendor?.businessName || "Vendor"} · {product.baseUnit}</p>
+        <div className="k-pr-body"><h3 className="break-words [overflow-wrap:anywhere]"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</h3><p className="s m">{vendor?.businessName || "Vendor"} · {product.baseUnit}</p>
           {rating && <div className="k-pr-tags"><span className="rate"><Star className="size-4" />{rating.average.toFixed(1)} ({rating.count})</span></div>}</div>
         <div className="k-pr-act"><div className="k-pr-price"><b>{money(finalPrice(product, state))}</b><span>per pack</span></div>
           <div className="k-pr-btns"><button type="button" className="btn xs" onClick={() => void addToCart(product)}><ShoppingCart className="size-4" />Add</button><button type="button" onClick={() => remove(product.id)} aria-label="Remove from wishlist" className="ibtn sm round o"><Heart className="size-5" /></button></div></div>
@@ -2285,7 +2640,7 @@ function Requirements({ session, state, setState }: { session: DemoSession; stat
   return <div className="space-y-6"><Heading eyebrow="MONTHLY REQUIREMENT" title="Request local quotations" body="Add your real household list. Eligible verified vendors on a quotation-enabled plan can submit their best price." action={<Button onClick={add} variant="outline" className="rounded-xl"><Plus />Add item</Button>} /><div className="surface-card rounded-[28px] p-5"><div className="grid gap-4 md:grid-cols-2"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Needed on"><input type="date" min={tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="mt-5 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#EEF2F2] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg", "litre", "piece", "pack", "dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} placeholder="Preferred brand" className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div><Button onClick={submit} className="mt-5 h-12 rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><Send />Send for local quotes</Button></div></div>;
 }
 
-function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created.`), ...s.notifications] })); toast.success("Quotation selected and order created"); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{state.quotes.filter((x) => x.requirementId === req.id).map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!state.quotes.some((x) => x.requirementId === req.id) && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
+function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created.`), ...s.notifications] })); toast.success("Quotation selected and order created"); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => { const reqQuotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown")); return <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{reqQuotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!reqQuotes.length && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>; }) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
 
 function CustomerProfileView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const profile = state.customers.find((x) => x.email === session.email)!; const [dislikes, setDislikes] = useState(profile.dislikes); return <div className="space-y-6"><Heading eyebrow="PRIVATE PROFILE" title="Location, diet & preferences" body="She Agent uses this information only within your customer context to personalize suggestions." /><div className="grid gap-5 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Household</h3><div className="mt-5 space-y-3"><Review label="Address" value={profile.address} /><Review label="Household size" value={String(profile.householdSize)} /><Review label="Diet" value={profile.diet} /><Review label="Allergies" value={profile.allergies.join(", ") || "None selected"} /><Review label="Goals" value={profile.goals.join(", ") || "None selected"} /></div></div><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Instructions for She Agent</h3><Textarea value={dislikes} onChange={(e) => setDislikes(e.target.value)} className="mt-4 min-h-32 rounded-xl" /><Button onClick={() => { setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? { ...x, dislikes } : x) })); toast.success("Preferences updated"); }} className="mt-4 rounded-xl bg-[#155F65]">Save changes</Button></div></div></div>; }
 
@@ -2326,28 +2681,30 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const custLat = activeSelectedAddress?.latitude ?? customer?.latitude;
   const custLng = activeSelectedAddress?.longitude ?? customer?.longitude;
 
-  const billingSummary = calculateBillingSummary({
-    items: items.map((item) => {
-      const prod = state.products.find((x) => x.id === item.productId);
-      const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
-      const price = item.unitPrice ?? (drop ? drop.dropPrice : (prod ? Math.round(prod.vendorPrice * (1 + (state.markups[prod.id] || 0) / 100) * 100) / 100 : 0));
-      return {
-        name: drop?.title || prod?.name || "Item",
-        price,
-        quantity: item.quantity,
-        category: prod?.category,
-      };
-    }),
-    mode: containsFoodDrop ? "Self pickup" : checkoutMode,
-    customerCoords: { latitude: custLat, longitude: custLng },
-    vendorCoords: { latitude: cartVendor?.latitude, longitude: cartVendor?.longitude },
-    serviceRadiusKm: cartVendor?.radiusKm,
-    vendorCustomFee: cartVendor?.deliveryFeeOverride,
-    gstMode: cartVendor?.gstMode,
-    vendorCategory: cartVendor?.category,
-    vendorPlan: cartVendor?.plan,
-    commissionPercentOverride: cartVendor?.commissionPercent,
-  });
+  const billingSummary = useMemo(() => {
+    return calculateBillingSummary({
+      items: items.map((item) => {
+        const prod = state.products.find((x) => x.id === item.productId);
+        const drop = item.foodDropId ? state.foodDrops.find((x) => x.id === item.foodDropId) : undefined;
+        const price = item.unitPrice ?? (drop ? drop.dropPrice : (prod ? finalPrice(prod, state) : 0));
+        return {
+          name: drop?.title || prod?.name || "Item",
+          price,
+          quantity: item.quantity,
+          category: prod?.category,
+        };
+      }),
+      mode: containsFoodDrop ? "Self pickup" : checkoutMode,
+      customerCoords: { latitude: custLat, longitude: custLng },
+      vendorCoords: { latitude: cartVendor?.latitude, longitude: cartVendor?.longitude },
+      serviceRadiusKm: cartVendor?.radiusKm,
+      vendorCustomFee: cartVendor?.deliveryFeeOverride,
+      gstMode: cartVendor?.gstMode,
+      vendorCategory: cartVendor?.category,
+      vendorPlan: cartVendor?.plan,
+      commissionPercentOverride: cartVendor?.commissionPercent,
+    });
+  }, [items, state.products, state.foodDrops, containsFoodDrop, checkoutMode, custLat, custLng, cartVendor?.latitude, cartVendor?.longitude, cartVendor?.radiusKm, cartVendor?.deliveryFeeOverride, cartVendor?.gstMode, cartVendor?.category, cartVendor?.plan, cartVendor?.commissionPercent, state]);
 
   async function persistOwnCart(nextOwn: CartItem[], createdBy: "customer" | "she_agent" = "customer") {
     setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));
@@ -2551,7 +2908,11 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
                 <X className="size-4" />
               </button>
               <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product?.imageUrl ? undefined : categoryVisual(category).bg }}>{product?.imageUrl ? <img src={product.imageUrl} alt={displayName} className="h-full w-full object-cover" /> : <ProductGlyph category={category} />}</div>
-              <div className="min-w-35 flex-1 pr-2"><b className="text-[15px]">{product ? <FoodTypeMark type={product.foodType} className="mr-1.5" /> : null}{displayName}</b><div className="text-xs text-[#55656A]">{displayUnit} · {money(price)} each</div></div>
+              <div className="min-w-35 flex-1 pr-2">
+                <b className="text-[15px]">{product ? <FoodTypeMark type={product.foodType} className="mr-1.5" /> : null}{displayName}</b>
+                {product?.description?.trim() ? <div className="text-xs text-stone-600 my-0.5 line-clamp-2">{product.description.trim()}</div> : null}
+                <div className="text-xs text-[#55656A]">{displayUnit} · {money(price)} each</div>
+              </div>
               <div className="flex items-center gap-1 rounded-full bg-white p-1"><button type="button" aria-label={`Decrease ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, -1)} className="grid size-9 place-items-center rounded-full bg-[#EEF2F2] text-lg font-semibold disabled:opacity-50">−</button><b className="min-w-8 text-center tabular-nums">{item.quantity}</b><button type="button" aria-label={`Increase ${displayName}`} disabled={savingCart} onClick={() => void changeQuantity(item, 1)} className="grid size-9 place-items-center rounded-full bg-[#EEF2F2] text-lg font-semibold disabled:opacity-50">+</button></div>
               <b className="w-20 text-right tabular-nums">{money(price * item.quantity)}</b>
             </div>;
@@ -2570,7 +2931,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
               Delivery fee {billingSummary.deliveryDistanceKm != null ? `(${billingSummary.deliveryDistanceKm} km)` : ""}
             </span>
             <b className="tabular-nums">
-              {billingSummary.isPickup ? "₹0 (Store Pickup)" : billingSummary.isThirdParty ? "₹0 (3rd Party)" : money(billingSummary.deliveryFee)}
+              {billingSummary.isPickup ? `${money(0)} (Store Pickup)` : billingSummary.isThirdParty ? `${money(0)} (3rd Party)` : money(billingSummary.deliveryFee)}
             </b>
           </div>
           <div className="flex justify-between">
@@ -2703,7 +3064,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
             <div className="flex justify-between text-stone-600">
               <span>Delivery fee {billingSummary.deliveryDistanceKm != null ? `(${billingSummary.deliveryDistanceKm} km)` : ""}:</span>
               <span className="font-mono font-semibold">
-                {billingSummary.isPickup ? "₹0 (Store Pickup)" : billingSummary.isThirdParty ? "₹0 (3rd Party)" : money(billingSummary.deliveryFee)}
+                {billingSummary.isPickup ? `${money(0)} (Store Pickup)` : billingSummary.isThirdParty ? `${money(0)} (3rd Party)` : money(billingSummary.deliveryFee)}
               </span>
             </div>
             <div className="flex justify-between text-stone-600">
@@ -2852,7 +3213,7 @@ function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; 
   function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId); if (!req) return; const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending", cancellationFee: 0 }; const vendor = state.vendors.find((x) => x.id === quote.vendorId); setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [order, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(order.total)} order created for ${order.date}.`), ...(vendor ? [notice(vendor.ownerEmail, "vendor", "RFQ awarded", `${order.id} was awarded to your store.`)] : []), ...s.notifications] })); toast.success("Quotation selected. Review payment and delivery before fulfilment."); }
   return <div className="space-y-5"><Heading eyebrow="RFP / RFQ TRACKING" title="My quotations" body="Compare the sealed offers from invited Crown vendors and award the winner yourself." />
     {requirements.length ? requirements.map((req) => {
-      const invited = req.invitedVendorIds || []; const quotes = state.quotes.filter((x) => x.requirementId === req.id);
+      const invited = req.invitedVendorIds || []; const quotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown"));
       const best = quotes.length ? Math.min(...quotes.map((q) => q.total + q.deliveryFee)) : 0;
       return <section key={req.id} className="space-y-3">
         <div className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-lg font-semibold">{req.title}</h3><p className="mt-0.5 text-xs text-[#55656A]">{req.id} · delivery {req.deliveryDate} · quotes close {req.closingDate || "not set"} · {req.sourceFileName || "manually entered"}</p></div>
@@ -2913,10 +3274,12 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
   const [coords, setCoords] = useState({ lat: profile.latitude, lng: profile.longitude });
   const [saving, setSaving] = useState(false);
   const [clearingMemory, setClearingMemory] = useState(false);
+  const [profileHouseholdError, setProfileHouseholdError] = useState("");
 
   // Synchronize component form state whenever profile updates from live sync or external state
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the form re-syncs when the saved profile changes
       setPhone(profile.phone || "");
       setAddress(profile.address || "");
       setDiet(profile.diet || "No preference");
@@ -2988,6 +3351,11 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
   }
 
   async function save() {
+    const hhErr = householdProblem(household);
+    if (hhErr) {
+      setProfileHouseholdError(hhErr);
+      return toast.error(hhErr);
+    }
     setSaving(true);
     const parsedCustomAllergies = customAllergies.split(",").map((x) => x.trim()).filter(Boolean);
     const finalAllergies = Array.from(new Set([...selectedAllergies, ...parsedCustomAllergies]));
@@ -3111,10 +3479,15 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
             lng={coords.lng}
             radius={0}
             label="Default delivery address"
-            onPinChange={(point) => {
+            onPinChange={async (point) => {
               const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) };
               setCoords(next);
-              setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+              try {
+                const place = await findLocation(next);
+                if (place?.address) setAddress(place.address);
+              } catch {
+                setAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`);
+              }
             }}
           />
           <div className="space-y-2">
@@ -3137,7 +3510,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                 {STANDARD_DIETS.map((x) => (
                   <SelectItem key={x} value={x}>{x}</SelectItem>
                 ))}
-                {!STANDARD_DIETS.includes(diet as any) && diet ? (
+                {!(STANDARD_DIETS as readonly string[]).includes(diet) && diet ? (
                   <SelectItem value={diet}>{diet}</SelectItem>
                 ) : null}
               </SelectContent>
@@ -3209,10 +3582,22 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
               type="number"
               min="1"
               max="20"
+              step="1"
               value={household}
-              onChange={(e) => setHousehold(Number(e.target.value))}
+              onChange={(e) => {
+                const val = e.target.value;
+                const num = Number(val);
+                setHousehold(num);
+                const prob = householdProblem(val === "" ? "" : num);
+                setProfileHouseholdError(prob || "");
+              }}
               className={inputClass}
             />
+            {profileHouseholdError && (
+              <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">
+                {profileHouseholdError}
+              </p>
+            )}
           </Field>
 
           <Field label="Instructions for She Agent">
@@ -3298,7 +3683,8 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
   const [productId, setProductId] = useState("");
   const [title, setTitle] = useState("");
   const [dropPrice, setDropPrice] = useState(0);
-  const [quantity, setQuantity] = useState(10);
+  const [quantityInput, setQuantityInput] = useState("10");
+  const [stockError, setStockError] = useState("");
   const [busy, setBusy] = useState(false);
   const product = products.find((p) => p.id === productId);
   const originalPrice = product ? finalPrice(product, state) : 0;
@@ -3306,15 +3692,48 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
     setProductId("");
     setTitle("");
     setDropPrice(0);
-    setQuantity(10);
+    setQuantityInput("10");
+    setStockError("");
     close();
   }
 
+  function handleProductSelect(value: string) {
+    setProductId(value);
+    const selected = products.find((item) => item.id === value);
+    if (selected) {
+      setTitle(`${selected.name} — flash drop`);
+      setDropPrice(Math.max(1, Math.round(finalPrice(selected, state) * 0.7)));
+      const check = validateFoodDropUnits(quantityInput, selected.stock ?? 0, selected.name);
+      setStockError(check.error || "");
+    } else {
+      setStockError("");
+    }
+  }
+
+  function handleQuantityChange(value: string) {
+    setQuantityInput(value);
+    if (product) {
+      const check = validateFoodDropUnits(value, product.stock ?? 0, product.name);
+      setStockError(check.error || "");
+    }
+  }
+
   async function submit() {
+    const todayDropCount = state.foodDrops.filter((d) => d.vendorId === vendor.id && isSameIstDay(d.startsAt)).length;
+    const planCheck = canCreateFoodDrop(vendor.plan, todayDropCount);
+    if (!planCheck.allowed) return toast.error(planCheck.message);
     if (!product) return toast.error("Choose a product");
     if (!title.trim()) return toast.error("Enter a title");
     if (!dropPrice || dropPrice <= 0 || dropPrice >= originalPrice) return toast.error("Drop price must be positive and below the current price");
-    if (!Number.isInteger(quantity) || quantity <= 0) return toast.error("Enter a whole number of units available");
+
+    // Strict stock validation
+    const unitCheck = validateFoodDropUnits(quantityInput, product.stock ?? 0, product.name);
+    if (!unitCheck.valid) {
+      setStockError(unitCheck.error || "");
+      return toast.error(unitCheck.error);
+    }
+    const quantity = unitCheck.quantity!;
+
     setBusy(true);
     try {
       const dropWindow = nextFoodDropWindow();
@@ -3322,7 +3741,12 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
       const drop: FoodDrop = isLiveSupabaseMode()
         ? await createLiveFoodDrop({ vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity })
         : { id: id("DROP"), vendorId: vendor.id, productId: product.id, title: title.trim(), dropPrice, originalPrice, totalQuantity: quantity, remainingQuantity: quantity, startsAt: dropWindow.startsAt.toISOString(), endsAt: dropWindow.endsAt.toISOString(), status: "active" };
-      setState((s) => ({ ...s, foodDrops: [drop, ...s.foodDrops] }));
+
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) => p.id === product.id ? { ...p, stock: Math.max(0, p.stock - quantity) } : p),
+        foodDrops: [drop, ...s.foodDrops],
+      }));
       toast.success(dropDisplayStatus(drop) === "live" ? "Food Drop is live" : "Food Drop scheduled for 12:00 PM");
       dismiss();
     } catch (error) { toast.error(errorMessage(error, "Drop could not be created")); }
@@ -3331,25 +3755,146 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
 
   return <Dialog open={open} onOpenChange={(v) => !v && dismiss()}><DialogContent className="rounded-[26px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-lg font-black">New Food Drop</DialogTitle><DialogDescription>Prepare a discounted quantity of one of your products in advance. Customers can claim it only on the day you create it, from 12:00 PM to 6:00 PM IST.. Stock is enforced by the database, even under simultaneous requests.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Product"><Select value={productId} onValueChange={(value) => {
-        setProductId(value);
-        const selected = products.find((item) => item.id === value);
-        if (selected) {
-          setTitle(`${selected.name} — flash drop`);
-          setDropPrice(Math.max(1, Math.round(finalPrice(selected, state) * 0.7)));
-        }
-      }}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Product"><Select value={productId} onValueChange={handleProductSelect}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
       <Field label="Drop title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field>
-      <div className="grid grid-cols-2 gap-3"><Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}><input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} /></Field><Field label="Units available"><input type="number" min="1" step="1" value={quantity || ""} onChange={(e) => setQuantity(Number(e.target.value))} className={inputClass} /></Field></div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}><input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} /></Field>
+        <div>
+          <Field label={<span>Units available {product ? <span className="font-semibold text-stone-500">(In stock: {product.stock ?? 0})</span> : null}</span>}>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={quantityInput}
+              onChange={(e) => handleQuantityChange(e.target.value)}
+              className={`${inputClass} ${stockError ? "border-red-500 ring-2 ring-red-100" : ""}`}
+            />
+          </Field>
+          {stockError && (
+            <p className="mt-1 text-xs font-semibold text-red-600 leading-tight">
+              {stockError}
+            </p>
+          )}
+        </div>
+      </div>
       <p className="rounded-xl bg-[#EEF2F2] p-3 text-xs font-bold text-stone-600">Scheduled — starts at 12:00 PM. A drop is claimable only today and stops at 6:00 PM.</p>
       <Button onClick={() => void submit()} disabled={busy || !products.length} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Zap />{busy ? "Publishing…" : "Schedule drop"}</Button>
     </div>
   </DialogContent></Dialog>;
 }
 
+function EditFoodDropDialog({
+  open,
+  close,
+  drop,
+  product,
+  state,
+  setState,
+}: {
+  open: boolean;
+  close: () => void;
+  drop: FoodDrop;
+  product?: Product;
+  state: V3State;
+  setState: React.Dispatch<React.SetStateAction<V3State>>;
+}) {
+  const [title, setTitle] = useState(drop.title);
+  const [dropPrice, setDropPrice] = useState(drop.dropPrice);
+  const [quantityInput, setQuantityInput] = useState(String(drop.totalQuantity));
+  const [stockError, setStockError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const originalPrice = product ? finalPrice(product, state) : drop.originalPrice;
+  const claimed = drop.totalQuantity - drop.remainingQuantity;
+
+  function handleQuantityChange(value: string) {
+    setQuantityInput(value);
+    const check = validateFoodDropEditUnits(value, drop.totalQuantity, claimed, product?.stock ?? 0, product?.name ?? "Product");
+    setStockError(check.error || "");
+  }
+
+  async function submit() {
+    if (!title.trim()) return toast.error("Enter a title");
+    if (!dropPrice || dropPrice <= 0 || (originalPrice && dropPrice >= originalPrice)) {
+      return toast.error("Drop price must be positive and below the current price");
+    }
+    const check = validateFoodDropEditUnits(quantityInput, drop.totalQuantity, claimed, product?.stock ?? 0, product?.name ?? "Product");
+    if (!check.valid) {
+      setStockError(check.error || "");
+      return toast.error(check.error);
+    }
+    const newQty = check.quantity!;
+    const diff = check.additionalUnits ?? 0;
+
+    setBusy(true);
+    try {
+      if (isLiveSupabaseMode()) {
+        await updateLiveFoodDrop({ dropId: drop.id, title: title.trim(), dropPrice, totalQuantity: newQty });
+      }
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) => p.id === drop.productId ? { ...p, stock: Math.max(0, p.stock - diff) } : p),
+        foodDrops: s.foodDrops.map((d) => d.id === drop.id ? {
+          ...d,
+          title: title.trim(),
+          dropPrice,
+          totalQuantity: newQty,
+          remainingQuantity: d.remainingQuantity + diff,
+        } : d),
+      }));
+      toast.success("Food Drop updated");
+      close();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update drop"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="rounded-[26px] sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black">Edit Food Drop</DialogTitle>
+          <DialogDescription>Update drop pricing or adjust units. Additional units are reserved from your available stock.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Field label="Drop title">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}>
+              <input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} />
+            </Field>
+            <div>
+              <Field label={<span>Units available {product ? <span className="font-semibold text-stone-500">(In stock: {product.stock ?? 0})</span> : null}</span>}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={quantityInput}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  className={`${inputClass} ${stockError ? "border-red-500 ring-2 ring-red-100" : ""}`}
+                />
+              </Field>
+              {claimed > 0 && <p className="mt-0.5 text-[11px] text-stone-500">{claimed} unit(s) already claimed</p>}
+              {stockError && (
+                <p className="mt-1 text-xs font-semibold text-red-600 leading-tight">
+                  {stockError}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button onClick={() => void submit()} disabled={busy} className="h-12 w-full rounded-xl bg-[#155F65] font-black">
+            {busy ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const loadedRef = useRef(false);
   const [creating, setCreating] = useState(false);
+  const [editingDrop, setEditingDrop] = useState<FoodDrop | null>(null);
   const now = useTicker();
   const drops = state.foodDrops.filter((d) => d.vendorId === vendor.id).sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const dropIds = drops.map((d) => d.id);
@@ -3374,14 +3919,24 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
     if (!confirm(`End "${drop.title}" now? Customers will no longer be able to claim it.`)) return;
     try {
       if (isLiveSupabaseMode()) await cancelLiveFoodDrop(drop.id);
-      setState((s) => ({ ...s, foodDrops: s.foodDrops.map((d) => d.id === drop.id ? { ...d, status: "cancelled" as const } : d) }));
-      toast.success("Drop ended");
+      setState((s) => ({
+        ...s,
+        products: s.products.map((p) => p.id === drop.productId ? { ...p, stock: p.stock + drop.remainingQuantity } : p),
+        foodDrops: s.foodDrops.map((d) => d.id === drop.id ? { ...d, status: "cancelled" as const } : d),
+      }));
+      toast.success("Drop ended. Unclaimed units returned to stock.");
     } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
   }
 
-  if (!["Thrive", "Crown"].includes(vendor.plan)) return <div className="space-y-6"><Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Daily evening offers on your own products." /><Empty icon={Zap} title="Food Drops are on the Thrive and Crown plans" body={`Your store is on the ${vendor.plan} plan. Ask Operations to move you to Thrive or Crown to publish Food Drops.`} /></div>;
+  const isPlanAllowed = ["Crave", "Thrive", "Crown"].includes(vendor.plan);
   return <div className="space-y-6">
-    <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={<Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button>} />
+    <Heading eyebrow="FLASH OFFERS" title="Food Drops" body="Surplus or special batches at a better price. Stock is enforced by the database: once claims reach your quantity, the drop stops selling." action={isPlanAllowed ? <Button onClick={() => setCreating(true)} disabled={!products.length}><Plus />New drop</Button> : <Button disabled variant="outline" className="opacity-60 cursor-not-allowed">Upgrade to Crave to create</Button>} />
+    {!isPlanAllowed && (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 font-semibold flex items-center gap-2">
+        <Info className="size-5 text-amber-700 shrink-0" />
+        Your store is on the {vendor.plan} plan. Your Food Drop history and details remain saved below, but active drops are paused and hidden from customers. Upgrade to Crave to publish daily Food Drops.
+      </div>
+    )}
     <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium leading-relaxed text-[#285fba]">
   How it works: Food Drops run 12:00 PM – 6:00 PM IST. Each drop is available only on the day it is created, and unclaimed units do not carry over.
 </p>
@@ -3400,17 +3955,63 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><Review label="Price" value={`${money(drop.dropPrice)} (was ${money(drop.originalPrice)})`} /><Review label="Discount" value={`${discountPercent(drop)}%`} /><Review label="Claimed" value={`${claimedUnits} / ${drop.totalQuantity}`} /><Review label="Revenue" value={money(revenue)} /></div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
         {status === "live" && <p className="mt-3 text-xs font-bold text-stone-500"><Timer className="mr-1 inline size-3.5" />Closes at 6:00 PM· {formatCountdown(foodDropSchedule(drop).endsAt.toISOString(), currentTime)}</p>}
-        {(status === "live" || status === "scheduled") && <Button size="sm" variant="outline" onClick={() => void cancel(drop)} className="mt-4 rounded-xl text-red-600">End drop now</Button>}
+        {(status === "live" || status === "scheduled") && (
+          <div className="mt-4 flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setEditingDrop(drop)} className="rounded-xl">
+              <Pencil className="mr-1 size-3.5" />Edit drop
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void cancel(drop)} className="rounded-xl text-red-600 hover:text-red-700">
+              End drop now
+            </Button>
+          </div>
+        )}
       </div>;
     })}</div> : <Empty icon={Zap} title="No drops yet" body="Create a flash offer on one of your products to drive same-day demand." />}
     {creating && <CreateFoodDropDialog open close={() => setCreating(false)} vendor={vendor} products={products} state={state} setState={setState} />}
+    {editingDrop && (
+      <EditFoodDropDialog
+        open
+        close={() => setEditingDrop(null)}
+        drop={editingDrop}
+        product={state.products.find((p) => p.id === editingDrop.productId)}
+        state={state}
+        setState={setState}
+      />
+    )}
   </div>;
 }
 
-function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void }) {
+function VendorArea({ active, session, state, setState, shorts, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; shorts: ShortsApi; onOpenVendorProfile?: () => void; onNavigate?: (view: string) => void }) {
   const vendor = vendorFor(state, session)!;
+
+  useEffect(() => {
+    if (!vendor?.scheduledPlanChange) return;
+    if (isScheduledDowngradeDue(vendor.scheduledPlanChange.effectiveDate)) {
+      const outcome = applyScheduledPlanDowngrade(vendor, state.products, state.staff, state.deliverySlots);
+      if (outcome.applied && outcome.newPlan) {
+        const nextPlan = outcome.newPlan as Vendor["plan"];
+        const deactSet = new Set(outcome.deactivatedProductIds);
+        const deactStaff = new Set(outcome.deactivatedStaffIds || []);
+        const deactSlots = new Set(outcome.deactivatedSlotIds || []);
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, plan: nextPlan, scheduledPlanChange: undefined } : v),
+          products: deactSet.size ? s.products.map((p) => deactSet.has(p.id) ? { ...p, active: false } : p) : s.products,
+          staff: deactStaff.size ? s.staff.map((st) => deactStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+          deliverySlots: deactSlots.size ? (s.deliverySlots || []).map((sl) => deactSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+          audit: [audit(session, "Vendor plan changed", outcome.auditDetail || `${vendor.businessName} plan changed to ${nextPlan}`), ...s.audit],
+        }));
+        if (isLiveSupabaseMode()) {
+          void saveLiveVendorPlan(vendor.id, nextPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+        }
+      }
+    }
+  }, [vendor?.id, vendor?.scheduledPlanChange?.effectiveDate]);
+
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={onNavigate} />;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
+  if (active === "Buy credits") return <BuyCreditsScreen vendor={vendor} state={state} setState={setState} session={session} onBack={() => onNavigate?.("Dashboard")} onNavigate={onNavigate} />;
   if (active === "Online shop & POS") return <StorefrontPos vendor={vendor} state={state} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
   if (active === "Store & radius") return <StoreRadius vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Verification" || active === "Profile" || active === "Vendor profile") return <VerificationView vendor={vendor} setState={setState} session={session} onOpenVendorProfile={onOpenVendorProfile} />;
@@ -3418,7 +4019,12 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   if (active === "Weekly menu") return <WeeklyMenuManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Drops") return <FoodDropsManager vendor={vendor} state={state} setState={setState} />;
   if (active === "Food Shorts") return <VendorShortsManager vendor={vendor} products={state.products.filter((p) => p.vendorId === vendor.id && p.active)} shorts={shorts} />;
-  if (active === "Quote opportunities") return isLiveSupabaseMode() ? <LiveVendorRfqs vendor={vendor} /> : <VendorQuotes vendor={vendor} state={state} setState={setState} session={session} />;
+  if (active === "Quote opportunities") {
+    if (!canAccessRfq(vendor.plan).allowed) {
+      return <div className="space-y-6"><Heading eyebrow="RFQ QUOTATIONS" title="Quote opportunities" body="Request for Quote (RFQ) is an exclusive Crown feature." /><Empty icon={ClipboardCheck} title="Quote opportunities are on the Crown plan" body="Upgrade to Crown to receive customer quotation requests and RFQ opportunities." /></div>;
+    }
+    return isLiveSupabaseMode() ? <LiveVendorRfqs vendor={vendor} /> : <VendorQuotes vendor={vendor} state={state} setState={setState} session={session} />;
+  }
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="vendor" vendor={vendor} />;
   if (active === "Delivery team") return <DeliveryTeam vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Settlements") return <VendorSettlements vendor={vendor} state={state} />;
@@ -3436,9 +4042,37 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const maxDay = Math.max(1, ...byDay.map((d) => d.total));
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
   async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
-  const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need the Thrive or Crown plan.", Crave: "Food Drops need the Thrive or Crown plan. Quotation requests are on Crown.", Thrive: "Food Drops are on. Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops and customer quotation requests are both on." };
+  const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need Crave, Thrive or Crown.", Crave: "Food Drops are on (up to 2/day). Upgrade to Thrive for 5/day or Crown for quotation requests.", Thrive: "Food Drops are on (up to 5/day). Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops (up to 15/day) and customer quotation requests are both on." };
+
   return <div className="space-y-5">
-    <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#b42332]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#795900]"}`}>{vendor.verification}</span></div>} />
+    {vendor.scheduledPlanChange && (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Clock3 className="size-5 shrink-0 text-amber-600" />
+          <span className="text-sm font-semibold">
+            Your plan changes to {vendor.scheduledPlanChange.nextPlan} on {formatIstEffectiveDate(vendor.scheduledPlanChange.effectiveDate)}
+          </span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-amber-300 bg-white font-bold text-amber-900 hover:bg-amber-100"
+          onClick={() => {
+            const planToKeep = vendor.plan;
+            const cancelledTarget = vendor.scheduledPlanChange?.nextPlan;
+            setState((s) => ({
+              ...s,
+              vendors: s.vendors.map((v) => v.id === vendor.id ? { ...v, scheduledPlanChange: undefined } : v),
+              audit: [audit(session, "Cancelled scheduled plan downgrade", `${vendor.businessName} cancelled scheduled plan change to ${cancelledTarget} by ${session.name} (${session.email})`), ...s.audit],
+            }));
+            toast.success(`Scheduled plan change cancelled. You will remain on ${planToKeep}.`);
+          }}
+        >
+          Cancel change
+        </Button>
+      </div>
+    )}
+    <Heading eyebrow="VENDOR WORKSPACE" title={`${greeting}, ${session.name.split(" ")[0]}`} body={`${vendor.businessName} · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`} action={<div className="flex flex-wrap items-center gap-2"><AiCreditsBadge vendor={vendor} onBuyCredits={() => onNavigate?.("Buy credits")} /><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#b42332]"}`}>{vendor.openToday ? "Open today" : "Closed today"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#eaf5ec] text-[#795900]"}`}>{vendor.verification}</span></div>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="Orders today" value={String(ordersToday.length)} icon={ReceiptText} note={`${orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)).length} upcoming in total`} />
       <Metric label="Sales today" value={money(ordersToday.reduce((sum, x) => sum + x.total, 0))} icon={IndianRupee} />
@@ -3486,7 +4120,7 @@ function VendorAIInsights({ vendor, state, session }: { vendor: Vendor; state: V
     } catch (error) { toast.error(errorMessage(error, "She Agent is unavailable right now")); }
     finally { setBusy(false); }
   }
-  return <div className="space-y-6"><Heading eyebrow="VENDOR AI" title="Store intelligence" body="She Agent analyses only your store workspace: your catalogue, stock, upcoming orders and delivery capacity. It cannot inspect another vendor's information or make payments, pricing or verification decisions for you." action={<Button onClick={() => void askAI()} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "Ask She Agent"}</Button>} />
+  return <div className="space-y-6"><Heading eyebrow="VENDOR AI" title="Store intelligence" body="She Agent analyses only your store workspace: your catalogue, stock, upcoming orders and delivery capacity. It cannot inspect another vendor's information or make payments, pricing or verification decisions for you." action={<div className="flex flex-wrap items-center gap-2"><AiCreditsBadge vendor={vendor} /><Button onClick={() => void askAI()} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "Ask She Agent"}</Button></div>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Open orders" value={String(openOrders.length)} icon={Package} /><Metric label="Low-stock items" value={String(lowStock.length)} icon={AlertTriangle} /><Metric label="Unassigned deliveries" value={String(unassigned.length)} icon={Truck} /><Metric label="RFQ opportunities" value={String(quoteOpportunities.length)} icon={ClipboardCheck} /></div>
     <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]"><section className="surface-card rounded-[28px] p-6"><h3 className="font-black">Signals from your store</h3><div className="mt-5 space-y-3"><Review label="Store status" value={vendor.openToday ? "Open" : "Closed"} /><Review label="Published products" value={String(products.filter((item) => item.active).length)} /><Review label="Products needing stock attention" value={lowStock.map((item) => item.name).slice(0, 3).join(", ") || "None"} /><Review label="Delivery queue without assignee" value={String(unassigned.length)} /></div></section>
       <section className="surface-dark rounded-[28px] p-6 text-white"><Activity className="text-[#D9F5E7]" /><h3 className="mt-4 text-xl font-black">AI daily recommendation</h3>{insight ? <><p className="mt-3 text-sm leading-6 text-white/70">{insight.summary}</p><div className="mt-4 rounded-2xl bg-white/8 p-4 text-sm font-bold text-[#D9F5E7]">{insight.recommendedAction}</div></> : <p className="mt-3 text-sm leading-6 text-white/60">Ask She Agent for a grounded daily review. It can flag stock risk, fulfilment load and quote opportunities using your own store data.</p>}</section></div>
@@ -3562,9 +4196,9 @@ function StorefrontPos({ vendor, state, setState, session, onOpenVendorProfile }
   function updateOutlet(outletId: string, patch: Partial<VendorOutlet>) { setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, outlets: outlets.map((outlet) => outlet.id === outletId ? { ...outlet, ...patch } : outlet) } : x), audit: [audit(session, "Updated outlet", `${vendor.businessName} · ${outletId}`), ...s.audit] })); }
   function editCertification(outlet: VendorOutlet) { const number = prompt("Certification / licence number", outlet.certificateNumber || "") ?? (outlet.certificateNumber || ""); const expiry = prompt("Expiry date (YYYY-MM-DD)", outlet.certificateExpiry || "") ?? (outlet.certificateExpiry || ""); updateOutlet(outlet.id, { certificateNumber: number, certificateExpiry: expiry }); toast.success("Outlet certification saved"); }
   return <div className="space-y-6"><Heading eyebrow="ONLINE SHOP" title="Brand storefront & POS locations" body="Manage the brand and each physical POS/outlet. Each outlet can keep its own certification details." action={<div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1" />Edit Profile &amp; Branding</Button>{onOpenVendorProfile && <Button size="sm" variant="outline" onClick={onOpenVendorProfile} className="h-9 rounded-xl text-xs font-bold text-[#155F65] bg-white"><Eye className="size-3.5 mr-1" />Preview Store</Button>}<Button onClick={addOutlet} className="bg-[#155F65]"><Plus />Add POS / outlet</Button></div>} />
-    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
+    <div className="surface-card overflow-hidden rounded-4xl"><div className="relative h-40 bg-linear-to-r from-[#155F65] to-[#155F65] sm:h-52">{vendor.bannerUrl && <img src={vendor.bannerUrl} alt="Store banner" className="h-full w-full object-cover" />}<div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent" /><label className="absolute right-3 top-3 flex cursor-pointer items-center gap-2 rounded-full border border-white/60 bg-white/92 px-3 py-2 text-[11px] font-black text-[#202827] shadow-lg backdrop-blur"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("bannerUrl", e.target.files?.[0])} /><ImageUp className="size-4" /><span className="hidden sm:inline">Update cover</span></label></div><div className="relative p-5 pt-12 sm:p-6 sm:pt-14"><div className="absolute -top-10 left-5 size-20 sm:-top-12 sm:left-6 sm:size-24"><div className="grid h-full w-full place-items-center overflow-hidden rounded-3xl border-4 border-white bg-[#EAF4F2] text-3xl font-black text-[#155F65] shadow-xl">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : vendor.businessName[0]}</div><button type="button" onClick={() => { const el = document.getElementById("vendor-store-qr"); if (el) el.scrollIntoView({ behavior: "smooth" }); else toast.info("Store QR Code is available below"); }} className="absolute -top-2 -right-2 grid size-8 place-items-center rounded-full border-2 border-white bg-white text-[#155F65] shadow-lg hover:bg-stone-50" title="View Store QR Code"><QrCode className="size-4" /></button><label className="absolute -bottom-2 -right-2 grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow-lg" title="Update logo"><input type="file" accept="image/*" className="hidden" onChange={(e) => asset("logoUrl", e.target.files?.[0])} /><Pencil className="size-3.5" /></label></div><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{vendor.businessName}</h2><p className="mt-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{vendor.ownerName}</span>{vendor.phone ? ` · 📞 ${vendor.phone}` : ""}</p><p className="mt-1 text-sm text-stone-500">{vendor.category} · {state.products.filter((x) => x.vendorId === vendor.id && x.active).length} published products · {vendor.radiusKm} km radius</p></div><Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)} className="rounded-xl text-xs font-bold"><Store className="size-3.5 mr-1" />Edit Profile</Button></div>{vendor.bio && <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-200/60">“{vendor.bio}”</p>}</div></div>
     <div className="grid gap-4 lg:grid-cols-2">{outlets.map((outlet) => <div key={outlet.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Building2 /></div><div className="min-w-0 flex-1"><b>{outlet.name}</b><p className="mt-1 text-sm text-stone-500">{outlet.address}</p></div><Status>{outlet.openToday ? "Open" : "Closed"}</Status></div><div className="mt-3 text-xs text-stone-500">Service radius: {outlet.radiusKm} km · {Number.isFinite(outlet.latitude) ? "Pinned" : "Needs map pin"}</div><div className="mt-4 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><div className="flex items-center justify-between gap-3"><div><b>Outlet certification</b><div className="mt-1 text-xs text-stone-500">{outlet.certificateNumber || "Not added"}{outlet.certificateExpiry ? ` · expires ${outlet.certificateExpiry}` : ""}</div></div><Button size="sm" variant="outline" onClick={() => editCertification(outlet)}><Pencil />Edit</Button></div><label className="mt-3 inline-flex cursor-pointer items-center text-xs font-black text-[#155F65]"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => updateOutlet(outlet.id, { certificateName: e.target.files?.[0]?.name || outlet.certificateName })} /><Upload className="mr-1 size-3.5" />{outlet.certificateName || "Upload certificate"}</label></div></div>)}</div>
-    <VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} />
+    <div id="vendor-store-qr"><VendorQrCode vendorId={vendor.id} vendorName={vendor.businessName} vendor={vendor} onOpenStore={onOpenVendorProfile} /></div>
     {editProfileOpen && <EditVendorProfileDialog open onClose={() => setEditProfileOpen(false)} vendor={vendor} setState={setState} session={session} />}
   </div>;
 }
@@ -3765,12 +4399,12 @@ function OrderDetailsDialog({
   const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
+    <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
+      <DialogContent showCloseButton={false} className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
         <div className="border-b bg-[#155F65] p-6 text-white">
           <DialogHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black text-white">
                 <ReceiptText className="size-5 text-emerald-400" />
                 Order Details
               </DialogTitle>
@@ -3779,6 +4413,14 @@ function OrderDetailsDialog({
                   {displayOrderNo}
                 </span>
                 <Status className={orderStatusTone(order.status)}>{order.status}</Status>
+                <button
+                  type="button"
+                  onClick={() => close()}
+                  aria-label="Close order details"
+                  className="ml-1 grid size-8 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 active:scale-95"
+                >
+                  <X className="size-4" />
+                </button>
               </div>
             </div>
             <DialogDescription className="text-stone-300 text-xs mt-1">
@@ -3870,22 +4512,35 @@ function OrderDetailsDialog({
             <div className="text-[11px] font-black uppercase tracking-wider text-stone-400">Ordered Items</div>
             <div className="mt-3 divide-y divide-stone-100">
               {order.items && order.items.length > 0 ? (
-                order.items.map((it, idx) => (
-                  <div key={idx} className="flex items-center justify-between py-2 text-sm">
-                    <div className="font-bold text-stone-900">
-                      {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
+                order.items.map((it, idx) => {
+                  const matchedProd = state.products.find((p) => p.name === it.name || p.id === (it as any).productId);
+                  return (
+                    <div key={idx} className="py-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-stone-900">
+                          {it.quantity} × {it.name} {it.unit ? `(${it.unit})` : ""}
+                        </div>
+                        <div className="font-mono text-stone-700 font-semibold">
+                          {money(((it.price != null ? it.price : (order.subtotal != null ? order.subtotal / Math.max(1, order.quantity) : (order.totalAmount ?? order.total) / Math.max(1, order.quantity)))) * it.quantity)}
+                        </div>
+                      </div>
+                      {matchedProd?.description?.trim() ? (
+                        <p className="mt-0.5 text-xs text-stone-600">{matchedProd.description.trim()}</p>
+                      ) : null}
                     </div>
-                    {it.price != null && (
-                      <div className="font-mono text-stone-700 font-semibold">{money(it.price * it.quantity)}</div>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                <div className="flex items-center justify-between py-2 text-sm">
-                  <div className="font-bold text-stone-900">
-                    {order.quantity} × {orderItemLabel(product?.name, order.description)} {order.unit ? `(${order.unit})` : ""}
+                <div className="py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-stone-900">
+                      {order.quantity} × {orderItemLabel(product?.name, order.description)} {order.unit ? `(${order.unit})` : ""}
+                    </div>
+                    <div className="font-mono text-stone-700 font-semibold">{money(order.totalAmount ?? order.total)}</div>
                   </div>
-                  <div className="font-mono text-stone-700 font-semibold">{money(order.total)}</div>
+                  {product?.description?.trim() ? (
+                    <p className="mt-0.5 text-xs text-stone-600">{product.description.trim()}</p>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -3900,7 +4555,7 @@ function OrderDetailsDialog({
                 <div className="flex justify-between text-stone-600">
                   <span>Delivery Fee {order.deliveryDistanceKm != null ? `(${order.deliveryDistanceKm} km)` : ""}</span>
                   <span className="font-mono font-semibold">
-                    {order.mode === "Self pickup" ? "₹0 (Store Pickup)" : order.mode === "Third-party delivery" ? "₹0 (3rd Party)" : money(order.deliveryFee)}
+                    {order.mode === "Self pickup" ? `${money(0)} (Store Pickup)` : order.mode === "Third-party delivery" ? `${money(0)} (3rd Party)` : money(order.deliveryFee)}
                   </span>
                 </div>
               )}
@@ -3963,7 +4618,7 @@ function OrderDetailsDialog({
             </div>
           </div>
 
-          <Button onClick={close} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
+          <Button type="button" onClick={() => close()} className="w-full h-11 rounded-xl bg-stone-900 font-bold text-white hover:bg-stone-800">
             Close
           </Button>
         </div>
@@ -4016,12 +4671,12 @@ function OrderTrackingDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
+    <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
       <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-2xl">
         {/* Header */}
         <div className="border-b bg-[#155F65] p-6 text-white">
           <DialogHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 pr-10">
               <DialogTitle className="flex items-center gap-2 text-lg font-black">
                 <Compass className="size-5 text-emerald-400" />
                 Live Order Tracking
@@ -4211,7 +4866,7 @@ function CustomerOrderCard({
           <div className="text-xl sm:text-2xl font-black text-stone-900">{money(order.totalAmount ?? order.total)}</div>
           {order.deliveryFee != null && (
             <div className="text-[11px] text-stone-500 font-medium">
-              Delivery: {order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)}
+              Delivery: {money(order.deliveryFee)}
               {order.gstAmount != null ? ` · GST: ${money(order.gstAmount)}` : ""}
             </div>
           )}
@@ -4367,6 +5022,51 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
   const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const dismissedOrderIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("orderId");
+    if (!orderId) return;
+    if (orderId === dismissedOrderIdRef.current) return;
+    if (baseOrders.length) {
+      const match = baseOrders.find((o) => o.id === orderId || o.id.toLowerCase() === orderId.toLowerCase());
+      if (match) {
+        setDetailsOrder(match);
+      }
+    }
+  }, [baseOrders]);
+
+  const handleCloseDetails = useCallback(() => {
+    setDetailsOrder(null);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const currentOrderId = params.get("orderId");
+      if (currentOrderId) {
+        dismissedOrderIdRef.current = currentOrderId;
+        params.delete("orderId");
+        const query = params.toString();
+        const target = `${window.location.pathname}${query ? `?${query}` : ""}`;
+        window.history.replaceState({ page: "Orders" }, "", target);
+      }
+    }
+  }, []);
+
+  const handleCloseTracking = useCallback(() => {
+    setTrackingOrder(null);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const currentOrderId = params.get("orderId");
+      if (currentOrderId) {
+        dismissedOrderIdRef.current = currentOrderId;
+        params.delete("orderId");
+        const query = params.toString();
+        const target = `${window.location.pathname}${query ? `?${query}` : ""}`;
+        window.history.replaceState({ page: "Orders" }, "", target);
+      }
+    }
+  }, []);
   const [deliveryCodes, setDeliveryCodes] = useState<Record<string, { code: string; expiresAt: string }>>({});
   const [verificationInputs, setVerificationInputs] = useState<Record<string, string>>({});
   const [deliveryActionId, setDeliveryActionId] = useState<string | null>(null);
@@ -4500,8 +5200,14 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
               order={order}
               state={state}
               session={session}
-              onViewDetails={(ord) => setDetailsOrder(ord)}
-              onTrackOrder={(ord) => setTrackingOrder(ord)}
+              onViewDetails={(ord) => {
+                dismissedOrderIdRef.current = null;
+                setDetailsOrder(ord);
+              }}
+              onTrackOrder={(ord) => {
+                dismissedOrderIdRef.current = null;
+                setTrackingOrder(ord);
+              }}
               onReschedule={(ord) => setRescheduling(ord)}
               onRateOrder={(ord) => setRatingOrder(ord)}
               onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
@@ -4523,7 +5229,7 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
           ["Total", money(order.totalAmount ?? order.total)],
           ["Mode", order.mode],
           ...(order.subtotal != null ? [["Subtotal", money(order.subtotal)] as const] : []),
-          ...(order.deliveryFee != null ? [["Delivery Fee", order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)] as const] : []),
+          ...(order.deliveryFee != null ? [["Delivery Fee", money(order.deliveryFee)] as const] : []),
           ...(order.gstAmount != null ? [["GST", `${money(order.gstAmount)} (${order.gstRate ?? 5}%)`] as const] : []),
           ["Delivery person", person ? <Fragment key="delivery-person"><span className="block">{person.name}</span><span className="mt-1 block break-all text-xs font-semibold text-stone-600">{person.phone}</span></Fragment> : "Not assigned"],
         ] as const;
@@ -4577,8 +5283,8 @@ return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope 
         </div>;
       })}
     </div> : <Empty icon={Package} title="No orders for this selection" body={scope === "vendor" ? "Try Tomorrow or All dates. Unpaid schedules stay with the customer until payment is completed." : "No paid orders are available in this view."} />}
-    <OrderDetailsDialog order={detailsOrder} close={() => setDetailsOrder(null)} state={state} session={session} />
-    <OrderTrackingDialog order={trackingOrder} close={() => setTrackingOrder(null)} state={state} />
+    <OrderDetailsDialog order={detailsOrder} close={handleCloseDetails} state={state} session={session} />
+    <OrderTrackingDialog order={trackingOrder} close={handleCloseTracking} state={state} />
     <OrderRescheduleDialog order={rescheduling} close={() => setRescheduling(null)} state={state} setState={setState} />
     <PaymentDialog order={paying} close={() => setPaying(null)} state={state} setState={setState} />
     <RateOrderDialog key={ratingOrder?.id || "closed"} order={ratingOrder} close={() => setRatingOrder(null)} state={state} setState={setState} session={session} />
@@ -4667,7 +5373,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
 
     if (isLive) {
       try {
-        let liveRzpOrder: any = null;
+        let liveRzpOrder: Awaited<ReturnType<typeof createLiveRazorpayOrder>> | null = null;
         try {
           const loaded = await loadRazorpayScript();
           if (loaded && (window as unknown as { Razorpay?: unknown }).Razorpay) {
@@ -4810,7 +5516,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
       <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery</span><b className="text-right">{order.date} · {order.slot}</b></div>
       <div className="flex justify-between gap-4"><span className="text-[#55656A]">Items</span><b className="text-right">{order.description}</b></div>
       {order.subtotal != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Item subtotal</span><b className="tabular-nums">{money(order.subtotal)}</b></div>}
-      {order.deliveryFee != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery fee</span><b className="tabular-nums">{order.deliveryFee === 0 ? "₹0" : money(order.deliveryFee)}</b></div>}
+      {order.deliveryFee != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">Delivery fee</span><b className="tabular-nums">{money(order.deliveryFee)}</b></div>}
       {order.gstAmount != null && <div className="flex justify-between gap-4"><span className="text-[#55656A]">GST ({order.gstRate ?? 5}%)</span><b className="tabular-nums">{money(order.gstAmount)}</b></div>}
       <div className="flex justify-between gap-4"><span className="text-[#55656A]">Paid {isLive ? "with Razorpay" : `with ${method}`}</span><b className="tabular-nums">{money(order.totalAmount ?? order.total)}</b></div>
     </div>
@@ -4827,7 +5533,7 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
         {order.deliveryFee != null && (
           <Review
             label={`Delivery fee${order.deliveryDistanceKm != null ? ` (${order.deliveryDistanceKm} km)` : ""}`}
-            value={order.mode === "Self pickup" ? "₹0 (Store Pickup)" : order.mode === "Third-party delivery" ? "₹0 (3rd Party)" : money(order.deliveryFee)}
+            value={order.mode === "Self pickup" ? `${money(0)} (Store Pickup)` : order.mode === "Third-party delivery" ? `${money(0)} (3rd Party)` : money(order.deliveryFee)}
           />
         )}
         {order.gstAmount != null && (
@@ -5029,6 +5735,9 @@ function DeliverySlotsSection({
   const [actionId, setActionId] = useState<string | null>(null);
 
   function handleOpenAdd() {
+    const currentSlots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+    const check = canAddDeliverySlot(vendor.plan, currentSlots.length);
+    if (!check.allowed) return toast.error(check.message);
     setEditingSlot(null);
     setSlotName("");
     setStartTime("09:00");
@@ -5049,6 +5758,14 @@ function DeliverySlotsSection({
   }
 
   async function handleSave() {
+    if (!editingSlot) {
+      const currentSlots = (state.deliverySlots || []).filter((s) => s.vendorId === vendor.id);
+      const check = canAddDeliverySlot(vendor.plan, currentSlots.length);
+      if (!check.allowed) {
+        setFormError(check.message || "");
+        return toast.error(check.message);
+      }
+    }
     const validation = validateDeliverySlot({
       slotName,
       startTime,
@@ -5420,8 +6137,8 @@ function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; sta
       }
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
-  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first"); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
-  async function saveStorePin() { if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving"); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
+  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first."); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
+  async function saveStorePin() { if (!address.trim()) return toast.error("Enter the complete store address first."); if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving."); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
   return <div className="space-y-6">
     <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
     <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
@@ -5451,30 +6168,31 @@ const THREE_VENDOR_PLANS = [
   {
     name: "Crave" as const,
     price: 699,
-    description: "Pre-orders, subscriptions, delivery fleet management and Food Stories.",
+    description: "Pre-orders, subscriptions, delivery fleet management, Food Stories and daily Food Drops (up to 2/day).",
     features: [
       "Pre-orders & scheduled subscriptions",
       "Delivery fleet & staff assignment",
       "Customer Food Stories & storefront",
+      "Daily Food Drops (up to 2 per day)",
     ],
   },
   {
     name: "Thrive" as const,
     price: 799,
     popular: true,
-    description: "Everything in Crave, plus daily Food Drops for surplus promotions.",
+    description: "Everything in Crave, plus up to 5 daily Food Drops for surplus promotions.",
     features: [
       "Everything in Crave plan",
-      "Daily Food Drops (evening promotions)",
+      "Daily Food Drops (up to 5 per day)",
       "Surplus deals badge & live countdown",
     ],
   },
   {
     name: "Crown" as const,
     price: 999,
-    description: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance.",
+    description: "Everything in Thrive, plus up to 15 daily Food Drops, Request for Quote (RFQ) with AI assistance and demand alerts.",
     features: [
-      "Everything in Thrive plan",
+      "Everything in Thrive plan (15 Food Drops/day)",
       "Request for Quote (RFQ) opportunities",
       "AI quotation assistant & demand alerts",
     ],
@@ -5553,6 +6271,7 @@ export function EditVendorProfileDialog({
           vendorId: vendor.id,
           logoUrl: finalLogo,
           bannerUrl: finalBanner,
+          bio: bio.trim(),
         });
         if (vendor.latitude && vendor.longitude) {
           await saveLiveVendorLocation({
@@ -5798,6 +6517,46 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
   const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
+  const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
+
+  const planRank: Record<Vendor["plan"], number> = {
+    Taster: 0,
+    Crave: 1,
+    Thrive: 2,
+    Crown: 3,
+  };
+
+  function handlePlanSelection(newPlan: Vendor["plan"]) {
+    if (vendor.plan === newPlan) return;
+    if (planRank[newPlan] < planRank[vendor.plan]) {
+      setDowngradeTarget(newPlan);
+      setDowngradeConfirmOpen(true);
+      return;
+    }
+    void upgradePlan(newPlan);
+  }
+
+  function confirmDowngrade() {
+    if (!downgradeTarget) return;
+    const target = downgradeTarget;
+    setDowngradeConfirmOpen(false);
+    setDowngradeTarget(null);
+    const effectiveDate = getNextMonthFirstIst();
+    setState((s) => ({
+      ...s,
+      vendors: s.vendors.map((x) => x.id === vendor.id ? {
+        ...x,
+        scheduledPlanChange: {
+          nextPlan: target,
+          effectiveDate,
+          requestedAt: new Date().toISOString(),
+        },
+      } : x),
+      audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
+    }));
+    toast.success(`You can enjoy all ${vendor.plan} features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
+  }
 
   async function upgradePlan(newPlan: Vendor["plan"]) {
     if (vendor.plan === newPlan) return;
@@ -5806,14 +6565,35 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
       if (isLiveSupabaseMode()) {
         await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
       }
-      setState((s) => ({
-        ...s,
-        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan } : x),
-        audit: [audit(session, "Vendor upgraded plan", `${vendor.businessName} switched to ${newPlan}`), ...s.audit],
-      }));
+      const newLimits = getPlanLimits(newPlan);
+      setState((s) => {
+        const activeProds = s.products.filter((p) => p.vendorId === vendor.id && p.active);
+        const excessProds = activeProds.length > newLimits.maxProducts
+          ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+          : new Set<string>();
+
+        const activeStaff = s.staff.filter((st) => st.vendorId === vendor.id && st.active);
+        const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+          ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+          : new Set<string>();
+
+        const activeSlots = (s.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+        const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+          ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+          : new Set<string>();
+
+        return {
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan, scheduledPlanChange: undefined } : x),
+          products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+          staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+          deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+          audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${vendor.plan} to ${newPlan} by ${session.name} (${session.email})`), ...s.audit],
+        };
+      });
       toast.success(`Plan upgraded to ${newPlan}!`);
     } catch (error) {
-      toast.error(errorMessage(error, "Plan upgrade could not be saved"));
+      toast.error(errorMessage(error, "Plan update could not be saved"));
     } finally {
       setUpgradingTo(null);
     }
@@ -5838,14 +6618,37 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         if (resubmit) await resubmitLiveVendorVerification({ documentNumber: certificate.trim(), expiryDate: expiry || undefined });
       }
       const nextStatus: Verification = resubmit ? "Submitted" : vendor.verification;
-      setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, fssaiNumber: certificate.trim(), certificateName: fileName || x.certificateName, expiryDate: expiry, verification: nextStatus, operational: resubmit ? "Inactive" : x.operational } : x), audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit] }));
+      const updatedCertificate = certificate.trim();
+      setState((s) => ({
+        ...s,
+        vendors: s.vendors.map((x) => x.id === vendor.id ? {
+          ...x,
+          fssaiNumber: updatedCertificate,
+          certificateName: fileName || x.certificateName,
+          expiryDate: expiry,
+          verification: nextStatus,
+          operational: resubmit ? "Inactive" : x.operational,
+          documents: x.documents ? (
+            x.documents.some((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai")
+              ? x.documents.map((d) =>
+                  d.documentType === "food_certificate" || (d.documentType as string) === "fssai"
+                    ? { ...d, documentNumber: updatedCertificate, expiryDate: expiry || d.expiryDate, verificationStatus: "submitted", fileName: fileName || d.fileName }
+                    : d
+                  )
+              : [...x.documents, { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }]
+          ) : [
+            { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }
+          ],
+        } : x),
+        audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit]
+      }));
       setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
     } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
   }
   return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
     <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">"{vendor.bio}"</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
       {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
     </div>
     <div className="surface-card rounded-[28px] p-6">
@@ -5905,7 +6708,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
                 ) : (
                   <Button
                     type="button"
-                    onClick={() => void upgradePlan(plan.name)}
+                    onClick={() => handlePlanSelection(plan.name)}
                     disabled={upgradingTo === plan.name}
                     className={`w-full rounded-xl font-black ${
                       isHigher
@@ -5928,6 +6731,44 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         })}
       </div>
     </div>
+    {profileEditOpen && (
+      <EditVendorProfileDialog
+        open
+        onClose={() => setProfileEditOpen(false)}
+        vendor={vendor}
+        setState={setState}
+        session={session}
+      />
+    )}
+    <Dialog open={downgradeConfirmOpen} onOpenChange={(v) => { if (!v) { setDowngradeConfirmOpen(false); setDowngradeTarget(null); } }}>
+      <DialogContent className="rounded-[28px] sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-black">Change to Crave plan</DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed text-stone-600 pt-2">
+            {vendor.plan === "Crown"
+              ? `You can enjoy all the features of the Crown plan until the end of this month. Your plan will change to ${downgradeTarget || "selected plan"} from the 1st of next month.`
+              : "You can enjoy all the features of the Thrive plan until the end of this month. Your plan will change to Crave from the 1st of next month."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap justify-end gap-3 pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => { setDowngradeConfirmOpen(false); setDowngradeTarget(null); }}
+            className="rounded-xl font-bold"
+          >
+            {vendor.plan === "Crown" ? "Keep Crown" : "Keep Thrive"}
+          </Button>
+          <Button
+            type="button"
+            onClick={confirmDowngrade}
+            className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#114b50]"
+          >
+            Confirm
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 
@@ -5944,14 +6785,31 @@ function FoodTypeSelect({ product, setState }: { product: Product; setState: Rea
     }
   }
   return <Select value={product.foodType ?? "unset"} onValueChange={(value) => void choose(value === "unset" ? "" : value)}>
-    <SelectTrigger aria-label={`Food type of ${product.name}`} className="h-10 w-44 rounded-xl"><SelectValue placeholder="Set food type" /></SelectTrigger>
-    <SelectContent>{!product.foodType && <SelectItem value="unset">Not set</SelectItem>}{FOOD_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectContent>
+    <SelectTrigger aria-label={`Food type of ${product.name}`} className="h-10 w-48 rounded-xl">
+      <div className="flex items-center gap-1.5 truncate">
+        {product.foodType ? <FoodTypeMark type={product.foodType} /> : null}
+        <SelectValue placeholder="Set food type" />
+      </div>
+    </SelectTrigger>
+    <SelectContent>
+      {!product.foodType && <SelectItem value="unset">Not set</SelectItem>}
+      {FOOD_TYPES.map((type) => (
+        <SelectItem key={type.value} value={type.value}>
+          <div className="flex items-center gap-2">
+            <FoodTypeMark type={type.value} />
+            <span>{type.label}</span>
+          </div>
+        </SelectItem>
+      ))}
+    </SelectContent>
   </Select>;
 }
 
 function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [open, setOpen] = useState(false); const [bulkOpen, setBulkOpen] = useState(false); const items = state.products.filter((x) => x.vendorId === vendor.id);
   const [toDelete, setToDelete] = useState<Product | null>(null); const [deleting, setDeleting] = useState(false);
+  const [clearAllOpen, setClearAllOpen] = useState(false); const [clearingAll, setClearingAll] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   async function setActive(product: Product, value: boolean) {
     setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: value } : x) }));
     try { if (isLiveSupabaseMode()) await setLiveProductActive(product.id, value); }
@@ -5973,13 +6831,38 @@ function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: 
     } catch (error) { toast.error(errorMessage(error, "The product could not be deleted")); }
     finally { setDeleting(false); }
   }
+
+  async function confirmClearAll() {
+    if (!items.length) return;
+    setClearingAll(true);
+    const itemIds = items.map((x) => x.id);
+    const count = items.length;
+    try {
+      if (isLiveSupabaseMode()) {
+        await clearLiveVendorProducts(itemIds);
+      }
+      setState((s) => ({
+        ...s,
+        products: s.products.filter((x) => x.vendorId !== vendor.id),
+        cart: s.cart.filter((x) => !itemIds.includes(x.productId)),
+        audit: [audit(session, "Cleared all catalogue products", `Cleared all ${count} products for ${vendor.businessName}`), ...s.audit],
+      }));
+      toast.success(`Cleared all ${count} product${count === 1 ? "" : "s"} from your catalogue`);
+      setClearAllOpen(false);
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not clear all products"));
+    } finally {
+      setClearingAll(false);
+    }
+  }
+
   const unsetFoodType = items.filter((item) => !item.foodType).length;
   const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
-  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2"><Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Delete</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div></div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><ProductDialog open={open} close={() => setOpen(false)} vendor={vendor} setState={setState} session={session} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
+  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { const check = canAddProduct(vendor.plan, items.length); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div>{product.description?.trim() ? <div className="text-xs text-stone-500 line-clamp-1 italic max-w-xs">{product.description.trim()}</div> : null}</div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { const check = canAddProduct(vendor.plan, 0); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} existingProductsCount={items.length} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
 }
 
 
-type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; imageUrl?: string; generating?: boolean; error?: string };
+type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; description?: string; imageUrl?: string; generating?: boolean; error?: string };
 const bulkCatalogGridClass = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.85fr)_minmax(0,.7fr)_minmax(0,.5fr)_minmax(0,.5fr)_minmax(0,.8fr)_6rem]";
 const BULK_FILE_LIMIT = 2 * 1024 * 1024;
 function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { open: boolean; close: () => void; vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
@@ -5987,9 +6870,11 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [note, setNote] = useState("");
+  const existingProducts = state.products.filter((item) => item.vendorId === vendor.id);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const defaultCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
   const patch = (rowId: string, change: Partial<BulkCatalogDraft>) => setRows((current) => current.map((item) => item.id === rowId ? { ...item, ...change, error: undefined } : item));
-  const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType });
+  const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType, description: item.description });
 
   async function fileToText(file: File): Promise<string> {
     if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
@@ -6021,9 +6906,21 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
           if (response.ok && json.items?.length) list = json.items.map((item) => { const draft = { name: String(item.name || "").trim(), category: matchCategory(item.category, categoryNames, defaultCategory), pack: item.pack || "1 pack", price: Number(item.price || 0), stock: Math.max(1, Number(item.stock || 1)) }; return { ...draft, problems: rowProblems(draft) } as CatalogueDraftRow; }).filter((item) => item.name);
         } catch { /* keep the rows read directly from the file */ }
       }
+      const currentCount = replaceExisting ? 0 : existingProducts.length;
+      const maxProducts = getPlanLimits(vendor.plan).maxProducts;
+      if (currentCount >= maxProducts) {
+        return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Upgrade to Thrive to add more.`);
+      }
+      let trimmed = false;
+      if (currentCount + list.length > maxProducts) {
+        const allowed = Math.max(0, maxProducts - currentCount);
+        list = list.slice(0, allowed);
+        trimmed = true;
+        toast.warning(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Trimming upload to ${allowed} products.`);
+      }
       setRows(list.map(toDraft));
       const missing = list.filter((item) => item.problems.length).length;
-      setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
+      setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.${trimmed ? ` (Trimmed to meet ${getPlanDisplayName(vendor.plan)} limit of ${maxProducts})` : ""}`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
       toast.success(`${list.length} item(s) prepared. Review every row before publishing.`);
     } catch (error) { toast.error(errorMessage(error, "That file could not be read. Try saving it as CSV.")); }
     finally { setReading(false); }
@@ -6037,11 +6934,16 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   }
   async function generateImage(row: BulkCatalogDraft) {
     setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: true } : item));
-    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ productName: row.name, category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
+    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ name: row.name.slice(0, 60), productName: row.name.slice(0, 60), category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
   }
   async function publishAll() {
     const valid = rows.filter((row) => rowProblems(row).length === 0);
     if (!valid.length) return toast.error("Add a price and stock for at least one item");
+    const currentCount = replaceExisting ? 0 : existingProducts.length;
+    const maxProducts = getPlanLimits(vendor.plan).maxProducts;
+    if (currentCount + valid.length > maxProducts) {
+      return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${existingProducts.length}. Upgrade to Thrive to add more.`);
+    }
     setBusy(true);
     const created: Product[] = [];
     const failed = new Map<string, string>();
@@ -6052,14 +6954,26 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
         const nutritionNote = "Bulk-imported product published without verified nutrition. Operations review requested.";
         let imageUrl = row.imageUrl;
         if (imageUrl?.startsWith("data:") && isLiveSupabaseMode()) imageUrl = await uploadLiveProductImage(vendor.id, imageUrl);
-        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
+        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
         if (isLiveSupabaseMode()) { try { await notifyLiveNutritionReview({ productId, productName: row.name, reason: nutritionNote }); } catch (error) { console.error("Bulk nutrition review notification", error); } }
-        created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, nutritionStatus: "Pending review", nutritionNote });
+        created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "Pending review", nutritionNote });
       } catch (error) { failed.set(row.id, errorMessage(error, "This item could not be saved")); }
     }
     if (created.length) {
+      if (replaceExisting && existingProducts.length > 0) {
+        if (isLiveSupabaseMode()) {
+          try { await clearLiveVendorProducts(existingProducts.map((p) => p.id)); }
+          catch (error) { console.error("Clearing previous products during replacement", error); }
+        }
+      }
+      const replacedIds = replaceExisting ? new Set(existingProducts.map((p) => p.id)) : new Set<string>();
       if (isLiveSupabaseMode()) void drawSampleImages(created.filter((item) => !item.imageUrl).map((item) => item.id).slice(0, 10), setState);
-      setState((current) => ({ ...current, products: [...created, ...current.products.filter((item) => !created.some((next) => next.id === item.id))], audit: [audit(session, "Bulk catalogue approved", `${created.length} item(s) published by human approval`), ...current.audit] }));
+      setState((current) => ({
+        ...current,
+        products: [...created, ...current.products.filter((item) => !replacedIds.has(item.id) && !created.some((next) => next.id === item.id))],
+        cart: current.cart.filter((x) => !replacedIds.has(x.productId)),
+        audit: [audit(session, replaceExisting ? "Bulk catalogue replaced" : "Bulk catalogue approved", `${created.length} item(s) published by human approval`), ...current.audit]
+      }));
     }
     setBusy(false);
     if (!failed.size) { toast.success(`${created.length} item(s) published`); setRows([]); setNote(""); close(); return; }
@@ -6071,28 +6985,43 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
   const incomplete = rows.filter((row) => rowProblems(row).length > 0).length;
   const readyCount = rows.length - incomplete;
   return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-6xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload a CSV, Excel (.xlsx) or text file. Each line becomes a draft product. Review every row, set the food type, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
-    <div className="flex flex-wrap items-center gap-2"><label className="surface-card flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl border-dashed p-6 text-sm font-black"><input type="file" data-testid="bulk-file" className="sr-only" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,text/csv,text/plain" onChange={(e) => { const input = e.target; const file = input.files?.[0]; void readList(file).finally(() => { input.value = ""; }); }} /><FileUp className="mr-2 shrink-0" />{reading ? "Reading the file…" : "Upload product list"}</label><Button type="button" variant="outline" onClick={downloadTemplate} className="rounded-xl"><Download />Download template</Button></div>
-    <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. The first row is read as headings.</p>
+    <div className="flex flex-wrap items-center gap-2"><label className="surface-card flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl border-dashed p-6 text-sm font-black"><input type="file" data-testid="bulk-file" className="sr-only" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,text/csv,text/plain" onChange={(e) => { const input = e.target; const file = input.files?.[0]; void readList(file).finally(() => { input.value = ""; }); }} /><FileUp className="mr-2 shrink-0" />{reading ? "Reading the file…" : "Upload product list"}</label><Button type="button" variant="outline" onClick={downloadTemplate} className="rounded-xl"><Download />Download template</Button>{rows.length > 0 && <Button type="button" variant="outline" onClick={() => { setRows([]); setNote(""); }} className="rounded-xl border-stone-200 text-stone-600 hover:text-red-600 hover:bg-red-50"><Trash2 className="size-4" />Clear draft rows ({rows.length})</Button>}</div>
+    <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. Product names must be within 60 characters. The first row is read as headings.</p>
     {note && <p role="status" data-testid="bulk-summary" className="rounded-2xl bg-[#EAF4F2] p-3 text-sm font-medium text-[#202827]">{note}</p>}
     {rows.length > 0 && <div className="space-y-3">
       <div className={`hidden gap-3 px-4 text-xs font-black tracking-wide text-stone-500 lg:grid ${bulkCatalogGridClass}`}>
         <div className="min-w-0">Product name</div><div className="min-w-0">Category</div><div className="min-w-0">Pack size</div><div className="min-w-0">Price (₹)</div><div className="min-w-0">Stock (packs)</div><div className="min-w-0">Food type</div><div className="w-24" aria-hidden="true" />
       </div>
-      {rows.map((row, index) => { const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
+      {rows.map((row, index) => { const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} maxLength={60} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value.slice(0, 60) })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
         <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
         <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
         {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
       </div>; })}
     </div>}
+    {existingProducts.length > 0 && rows.length > 0 && (
+      <label className="flex items-center gap-2 rounded-2xl bg-amber-50 p-3.5 text-xs font-bold text-amber-900 border border-amber-200 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={replaceExisting}
+          onChange={(e) => setReplaceExisting(e.target.checked)}
+          className="size-4 rounded border-amber-400 text-[#155F65] focus:ring-[#155F65]"
+        />
+        <span>
+          Replace existing catalogue: remove {existingProducts.length} previously published product{existingProducts.length === 1 ? "" : "s"} when publishing this new list
+        </span>
+      </label>
+    )}
     <Button onClick={() => void publishAll()} disabled={busy || !readyCount} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Check />{busy ? "Publishing…" : readyCount ? `Approve & publish ${readyCount} item${readyCount === 1 ? "" : "s"}${incomplete ? ` (${incomplete} incomplete will wait)` : ""}` : "Approve & publish selected catalogue"}</Button>
   </DialogContent></Dialog>;
 }
 
-function ProductDialog({ open, close, vendor, setState, session }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const initialCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
+function ProductDialog({ open, close, vendor, setState, session, editingProduct, existingProductsCount }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null; existingProductsCount?: number }) {
+  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(initialCategory);
-  const [packKey, setPackKey] = useState(unitsByCategory[initialCategory][0].key);
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<string>(defaultCategory);
+  const [skuGroup, setSkuGroup] = useState<string>("");
+  const [packSize, setPackSize] = useState<string>("");
   const [price, setPrice] = useState(0);
   const [stock, setStock] = useState(0);
   const [nutrition, setNutrition] = useState<Nutrition>({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
@@ -6104,29 +7033,164 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
   const [busy, setBusy] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [foodType, setFoodType] = useState<FoodType | "">("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [originalImageUrl, setOriginalImageUrl] = useState("");
+
+  const [customGroup, setCustomGroup] = useState("");
+  const [customPackSize, setCustomPackSize] = useState("");
+  const [customUnit, setCustomUnit] = useState<SkuUnitType>("pack/set/loaf");
+
+  const groupsForCat = useMemo(() => {
+    const list = getSkuGroups(category);
+    return list.includes("Other") ? list : [...list, "Other"];
+  }, [category]);
+  const skusForGroup = useMemo(() => (skuGroup === "Other" ? [] : getSkusForGroup(category, skuGroup)), [category, skuGroup]);
+  const currentSku = useMemo(() => (skuGroup === "Other" || packSize === "Other" ? undefined : findSkuDefinition(category, skuGroup, packSize)), [category, skuGroup, packSize]);
+  const unitType = currentSku?.unitType || "";
+
+  const effectiveGroup = skuGroup === "Other" ? (customGroup.trim() || "Other") : skuGroup;
+  const effectivePack = packSize === "Other" ? (customPackSize.trim() || "1 pack") : packSize;
+  const effectiveUnit = (packSize === "Other" || skuGroup === "Other") ? (customUnit || "pack/set/loaf") : (unitType || "pack/set/loaf");
+
+  useEffect(() => {
+    if (editingProduct) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- editing a product fills the form once from that product
+      setCategory(editingProduct.category);
+      const groups = getSkuGroups(editingProduct.category);
+      const grp = editingProduct.skuGroupName || "";
+      if (grp && groups.includes(grp)) {
+        setSkuGroup(grp);
+        setCustomGroup("");
+        const skus = getSkusForGroup(editingProduct.category, grp);
+        const pk = editingProduct.packSize || editingProduct.baseUnit || "";
+        if (pk && skus.some((s) => s.packSize.toLowerCase() === pk.toLowerCase())) {
+          setPackSize(pk);
+          setCustomPackSize("");
+        } else if (pk) {
+          setPackSize("Other");
+          setCustomPackSize(pk);
+        } else {
+          setPackSize(skus[0]?.packSize || "Other");
+          setCustomPackSize("");
+        }
+      } else if (grp) {
+        setSkuGroup("Other");
+        setCustomGroup(grp);
+        setPackSize("Other");
+        setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
+      } else {
+        const fallbackGrp = groups[0] || "Other";
+        setSkuGroup(fallbackGrp);
+        setCustomGroup("");
+        setPackSize(editingProduct.packSize || editingProduct.baseUnit || "Other");
+        setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
+      }
+      if (editingProduct.unitType && (SKU_UNIT_TYPES as readonly string[]).includes(editingProduct.unitType)) {
+        setCustomUnit(editingProduct.unitType as SkuUnitType);
+      }
+      setName(editingProduct.name);
+      setDescription(editingProduct.description || "");
+      setPrice(editingProduct.vendorPrice);
+      setStock(editingProduct.stock);
+      setFoodType(editingProduct.foodType || "");
+      setImageUrl(editingProduct.imageUrl || "");
+      setOriginalImageUrl(editingProduct.originalImageUrl || editingProduct.imageUrl || "");
+      setNutrition({
+        calories: editingProduct.calories || 0,
+        protein: editingProduct.protein || 0,
+        carbs: editingProduct.carbs || 0,
+        fat: editingProduct.fat || 0,
+        fibre: editingProduct.fibre || 0,
+      });
+      setNutritionConfidence(editingProduct.nutritionConfidence);
+      setNutritionNote(editingProduct.nutritionNote || "");
+      setConfirmed(editingProduct.nutritionStatus === "Verified");
+    } else if (open) {
+      const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
+      setCategory(initialCat);
+      const groups = getSkuGroups(initialCat);
+      const firstGrp = groups[0] || "Other";
+      setSkuGroup(firstGrp);
+      setCustomGroup("");
+      const skus = getSkusForGroup(initialCat, firstGrp);
+      const firstPack = skus[0]?.packSize || "Other";
+      setPackSize(firstPack);
+      setCustomPackSize("");
+      setCustomUnit("pack/set/loaf");
+      setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
+      setDescription("");
+      setPrice(0);
+      setStock(0);
+      setFoodType("");
+      setImageUrl("");
+      setOriginalImageUrl("");
+      setNutrition({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
+      setNutritionConfidence(undefined);
+      setNutritionNote("");
+      setConfirmed(false);
+    }
+  }, [editingProduct, open, vendor.category]);
+
+  function handleCategoryChange(newCat: string) {
+    setCategory(newCat);
+    const groups = getSkuGroups(newCat);
+    const firstGrp = groups[0] || "Other";
+    setSkuGroup(firstGrp);
+    setCustomGroup("");
+    const skus = getSkusForGroup(newCat, firstGrp);
+    const firstPack = skus[0]?.packSize || "Other";
+    setPackSize(firstPack);
+    setCustomPackSize("");
+    if (!editingProduct) setName((firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "").slice(0, 60));
+    setConfirmed(false);
+  }
+
+  function handleGroupChange(newGrp: string) {
+    setSkuGroup(newGrp);
+    if (newGrp === "Other") {
+      setPackSize("Other");
+      if (!editingProduct) setName((customGroup.trim() ? formatProductPackLabel(customGroup.trim(), customPackSize.trim() || "") : "").slice(0, 60));
+    } else {
+      setCustomGroup("");
+      const skus = getSkusForGroup(category, newGrp);
+      const firstPack = skus[0]?.packSize || "Other";
+      setPackSize(firstPack);
+      setCustomPackSize("");
+      if (!editingProduct) setName(formatProductPackLabel(newGrp, firstPack !== "Other" ? firstPack : "").slice(0, 60));
+    }
+    setConfirmed(false);
+  }
+
+  function handlePackChange(newPack: string) {
+    setPackSize(newPack);
+    if (newPack === "Other") {
+      if (!editingProduct && effectiveGroup) setName((customPackSize.trim() ? formatProductPackLabel(effectiveGroup, customPackSize.trim()) : effectiveGroup).slice(0, 60));
+    } else {
+      setCustomPackSize("");
+      if (!editingProduct && effectiveGroup) setName(formatProductPackLabel(effectiveGroup, newPack).slice(0, 60));
+    }
+    setConfirmed(false);
+  }
+
   async function draftImage() {
     if (!name.trim()) return toast.error("Enter the product name first");
     if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
     setImageBusy(true);
     try {
-      setImageUrl(await generateLiveProductImage({ name, category }));
+      setImageUrl(await generateLiveProductImage({ name: name.trim().slice(0, 60), category }));
       toast.success("A sample image is ready. Replace it any time with a real photo.");
     } catch (error) { toast.error(errorMessage(error, "The image could not be created")); }
     finally { setImageBusy(false); }
   }
-  const [imageUrl, setImageUrl] = useState("");
-  const [originalImageUrl, setOriginalImageUrl] = useState("");
-  const options = unitsByCategory[category] || unitsByCategory.Groceries;
-  const spec = options.find((x) => x.key === packKey) || options[0];
-  useEffect(() => { if (!options.some((x) => x.key === packKey)) queueMicrotask(() => setPackKey(options[0].key)); }, [category, options, packKey]);
 
+  const packSpec = parsePackSpec(effectivePack, effectiveUnit);
   const nutritionPresent = Object.values(nutrition).some((value) => Number(value) > 0);
   const nutritionConsistent = nutritionPresent && nutritionLooksConsistent(nutrition);
   const nutritionStatus: Product["nutritionStatus"] = confirmed && nutritionConsistent ? "Verified" : nutritionConsistent ? "Estimated" : "Pending review";
-  const baseReady = Boolean(name.trim()) && price > 0 && Number.isInteger(stock) && stock > 0;
+  const baseReady = Boolean(name.trim()) && name.trim().length <= 60 && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
   const foodTypeReady = Boolean(foodType);
-  const measurable = nutritionPresent && ["g","kg","ml","litre"].includes(spec.measure);
-  const packBase = spec.measure === "kg" || spec.measure === "litre" ? spec.amount * 1000 : spec.amount;
+  const measurable = nutritionPresent && ["g","kg","ml","L"].includes(packSpec.measure);
+  const packBase = packSpec.measure === "kg" || packSpec.measure === "L" ? packSpec.amount * 1000 : packSpec.amount;
   const per100 = measurable && packBase > 0 ? Object.fromEntries(Object.entries(nutrition).map(([key, value]) => [key, Math.round(Number(value) * 100 / packBase * 10) / 10])) as Nutrition : null;
 
   async function calculate() {
@@ -6137,7 +7201,7 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
       const response = await fetchWithDeadline("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: spec.amount, measurementUnit: spec.measure, servingLabel: spec.label, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
+        body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: packSpec.amount, measurementUnit: packSpec.measure, servingLabel: effectivePack, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
       }, 60000);
       const json = await response.json() as { result?: { nutritionAvailable?: boolean; nutrition?: Nutrition | null; confidence?: number; summary?: string; recommendedAction?: string }; error?: string };
       if (!response.ok) throw new Error(json.error || "Nutrition could not be estimated");
@@ -6181,8 +7245,28 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
   }
 
   async function save() {
-    if (!baseReady) return toast.error("Enter the product, price and whole pack stock");
+    if (!name.trim()) return toast.error("Enter the product display name");
+    if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
+    const cleanDesc = sanitizeProductDescription(description);
+    if (cleanDesc.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
+      return toast.error(`Description must be within ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`);
+    }
+    if (!baseReady) return toast.error("Select the category, SKU group, pack size, and enter price & stock");
     if (!foodType) return toast.error("Choose Vegetarian, Non-vegetarian or Contains egg");
+    if (skuGroup === "Other" && !customGroup.trim()) return toast.error("Please enter your custom product / SKU group name");
+    if (packSize === "Other" && !customPackSize.trim()) return toast.error("Please enter your custom pack size");
+    const skuValidation = validateSkuSelection(category, effectiveGroup, effectivePack, effectiveUnit);
+    if (!skuValidation.valid) {
+      return toast.error(skuValidation.error || "Invalid Category, SKU Group, or Pack Size selection.");
+    }
+
+    if (!editingProduct) {
+      const planCheck = canAddProduct(vendor.plan, existingProductsCount ?? 0);
+      if (!planCheck.allowed) {
+        return toast.error(planCheck.reason);
+      }
+    }
+
     setBusy(true);
     try {
       const active = vendor.verification === "Verified";
@@ -6190,23 +7274,94 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
       if (publishedImage && isLiveSupabaseMode()) publishedImage = await uploadLiveProductImage(vendor.id, publishedImage);
       const statusForDb = nutritionStatus === "Verified" ? "verified" : nutritionStatus === "Estimated" ? "estimated" : "pending_review";
       const note = nutritionStatus === "Pending review" ? (nutritionNote || (nutritionPresent ? "Entered nutrition needs review." : "Nutrition was not supplied or could not be estimated reliably.")) : (nutritionNote || "Nutrition supplied for this selling pack.");
+
+      if (editingProduct) {
+        if (isLiveSupabaseMode()) {
+          await updateLiveVendorProduct({
+            id: editingProduct.id,
+            vendorId: vendor.id,
+            name: name.trim(),
+            category,
+            unit: effectivePack,
+            price,
+            stock,
+            active: editingProduct.active,
+            calories: nutrition.calories,
+            protein: nutrition.protein,
+            carbs: nutrition.carbs,
+            fat: nutrition.fat,
+            fibre: nutrition.fibre,
+            dietaryTags: editingProduct.dietaryTags || [],
+            packAmount: packSpec.amount,
+            packMeasure: packSpec.measure,
+            imageUrl: publishedImage,
+            foodType,
+            description: cleanDesc || undefined,
+            nutritionStatus: statusForDb,
+            nutritionConfidence,
+            nutritionNote: note,
+            skuGroupName: effectiveGroup,
+            packSize: effectivePack,
+            unitType: effectiveUnit,
+          });
+        }
+        const updatedProduct: Product = {
+          ...editingProduct,
+          name: name.trim(),
+          category,
+          emoji: unitsByCategory[category]?.[0]?.emoji || "📦",
+          baseUnit: effectivePack,
+          vendorPrice: price,
+          stock,
+          foodType,
+          description: cleanDesc || undefined,
+          imageUrl: publishedImage,
+          originalImageUrl: originalImageUrl || undefined,
+          nutritionStatus,
+          nutritionConfidence,
+          nutritionNote: note,
+          ...nutrition,
+          packAmount: packSpec.amount,
+          packMeasure: packSpec.measure,
+          skuGroupName: effectiveGroup,
+          packSize: effectivePack,
+          unitType: effectiveUnit,
+        };
+        setState((current) => ({
+          ...current,
+          products: current.products.map((p) => p.id === editingProduct.id ? updatedProduct : p),
+          audit: [audit(session, "Updated product pack", `${name.trim()} · ${effectivePack}`), ...current.audit],
+        }));
+        toast.success("Product pack updated successfully");
+        close();
+        return;
+      }
+
       const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({
-        vendorId: vendor.id, name, category, unit: spec.label, price, stock, active,
+        vendorId: vendor.id, name: name.trim(), category, unit: effectivePack, price, stock, active,
         calories: nutrition.calories, protein: nutrition.protein, carbs: nutrition.carbs, fat: nutrition.fat, fibre: nutrition.fibre,
-        dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl: publishedImage, foodType,
+        dietaryTags: [], packAmount: packSpec.amount, packMeasure: packSpec.measure, imageUrl: publishedImage, foodType,
+        description: cleanDesc || undefined,
         nutritionStatus: statusForDb, nutritionConfidence, nutritionNote: note,
+        skuGroupName: effectiveGroup,
+        packSize: effectivePack,
+        unitType: effectiveUnit,
       }) : id("PRD");
       const product: Product = {
-        id: productId, vendorId: vendor.id, name, category, emoji: spec.emoji, baseUnit: spec.label,
-        quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: spec.amount,
-        packMeasure: spec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
+        id: productId, vendorId: vendor.id, name: name.trim(), category, emoji: unitsByCategory[category]?.[0]?.emoji || "📦", baseUnit: effectivePack,
+        quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: packSpec.amount,
+        packMeasure: packSpec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
+        description: cleanDesc || undefined,
         nutritionStatus, nutritionConfidence, nutritionNote: note,
+        skuGroupName: effectiveGroup,
+        packSize: effectivePack,
+        unitType: effectiveUnit,
       };
       setState((current) => ({
         ...current,
         products: [product, ...current.products.filter((x) => x.id !== product.id)],
         markups: { ...current.markups, [product.id]: 0 },
-        audit: [audit(session, "Published product pack", `${name} · ${spec.label} · nutrition ${nutritionStatus?.toLowerCase()}${publishedImage ? " · image attached" : ""}`), ...current.audit],
+        audit: [audit(session, "Published product pack", `${name.trim()} · ${effectivePack} · nutrition ${nutritionStatus?.toLowerCase()}${publishedImage ? " · image attached" : ""}`), ...current.audit],
       }));
       if (!publishedImage && isLiveSupabaseMode()) void drawSampleImages([productId], setState);
       if (nutritionStatus === "Pending review") {
@@ -6221,21 +7376,218 @@ function ProductDialog({ open, close, vendor, setState, session }: { open: boole
   }
 
   const metrics: Array<[keyof Nutrition, string]> = [["calories","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fibre","Fibre g"]];
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><DialogTitle className="text-lg font-black">Add a sellable product pack</DialogTitle><DialogDescription>Set the exact pack and price. Nutrition is helpful but not mandatory; uncertain or missing nutrition is automatically marked for Operations review.</DialogDescription></DialogHeader>
+  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} /></span>{type.label}</button>)}</div></fieldset><div className="grid gap-4 sm:grid-cols-2"><Field label="Exact product name"><input value={name} onChange={(e) => { setName(e.target.value); setConfirmed(false); }} className={inputClass} placeholder="Example: Full cream cow milk" /></Field><Field label="Category"><Select value={category} onValueChange={(value) => { setCategory(value); setConfirmed(false); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Field label="Customer selling pack" hint="Example: 250 ml pouch = one pack. Customers choose 1, 2, 3 packs."><Select value={spec.key} onValueChange={(value) => { setPackKey(value); setConfirmed(false); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{options.map((x) => <SelectItem key={x.key} value={x.key}>{x.label}</SelectItem>)}</SelectContent></Select></Field><Field label={`Your price for one ${spec.label}`}><input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} /></Field><Field label="Available sealed packs" hint={`20 = twenty ${spec.label} packs.`}><input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} /></Field><div className="flex items-end"><Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button></div></div>
+      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
+        
+        {/* SKU Master Cascading Selection */}
+        <div className="grid gap-4 sm:grid-cols-2 rounded-2xl bg-[#F7FAFA] border border-stone-200/80 p-4">
+          <Field label="Category">
+            <Select value={category} onValueChange={handleCategoryChange}>
+              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SKU_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Product / SKU group" hint={skuGroup === "Other" ? "Custom product group" : `Groups in ${category}`}>
+            <Select value={skuGroup} onValueChange={handleGroupChange}>
+              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose group" /></SelectTrigger>
+              <SelectContent>
+                {groupsForCat.map((grp) => <SelectItem key={grp} value={grp}>{grp}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {skuGroup === "Other" && (
+              <input
+                value={customGroup}
+                onChange={(e) => {
+                  setCustomGroup(e.target.value);
+                  if (!editingProduct) {
+                    const ep = packSize === "Other" ? (customPackSize.trim() || "") : packSize;
+                    setName(formatProductPackLabel(e.target.value.trim() || "Product", ep));
+                  }
+                  setConfirmed(false);
+                }}
+                placeholder="Enter custom product group name"
+                className={`mt-2 ${inputClass}`}
+              />
+            )}
+          </Field>
+
+          <Field label="Predefined pack size" hint={packSize === "Other" ? "Custom pack size" : "Verified pack size from SKU master"}>
+            <Select value={packSize} onValueChange={handlePackChange}>
+              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose pack size" /></SelectTrigger>
+              <SelectContent>
+                {skusForGroup.map((sku) => (
+                  <SelectItem key={sku.packSize} value={sku.packSize}>
+                    {sku.packSize} ({sku.unitType})
+                  </SelectItem>
+                ))}
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {packSize === "Other" && (
+              <input
+                value={customPackSize}
+                onChange={(e) => {
+                  setCustomPackSize(e.target.value);
+                  if (!editingProduct) {
+                    const eg = skuGroup === "Other" ? (customGroup.trim() || "Product") : skuGroup;
+                    setName(formatProductPackLabel(eg, e.target.value.trim() || ""));
+                  }
+                  setConfirmed(false);
+                }}
+                placeholder="Enter custom pack size (e.g. 350 ml, 1.5 kg, 5 pcs)"
+                className={`mt-2 ${inputClass}`}
+              />
+            )}
+          </Field>
+
+          <Field label="Unit" hint={packSize === "Other" || skuGroup === "Other" ? "Choose custom unit type" : "Locked to selected product & SKU"}>
+            {packSize === "Other" || skuGroup === "Other" ? (
+              <Select value={customUnit} onValueChange={(val) => setCustomUnit(val as SkuUnitType)}>
+                <SelectTrigger className="h-11 rounded-xl bg-white font-black text-[#155F65]">
+                  <SelectValue placeholder="Select unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SKU_UNIT_TYPES.map((u) => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-black text-[#155F65]">
+                <BadgeCheck className="size-4 shrink-0 text-[#155F65]" />
+                <span>{unitType || "—"}</span>
+                <span className="text-xs font-normal text-stone-400">· {effectivePack ? `Selected: ${effectivePack}` : "Select pack"}</span>
+              </div>
+            )}
+          </Field>
+        </div>
+
+        <div className="space-y-4">
+          <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
+            <input maxLength={60} value={name} onChange={(e) => { setName(e.target.value.slice(0, 60)); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
+            <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>
+          </Field>
+          <Field
+            label="Description (optional)"
+            hint={`Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam. (${description.length}/${PRODUCT_DESCRIPTION_MAX_LENGTH})`}
+          >
+            <Textarea
+              maxLength={PRODUCT_DESCRIPTION_MAX_LENGTH}
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, PRODUCT_DESCRIPTION_MAX_LENGTH))}
+              className="min-h-20 rounded-xl resize-y text-sm bg-white"
+              placeholder="Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam."
+            />
+            <p className="mt-1 text-xs text-stone-500">Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam.</p>
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={`Your price for one ${packSize || "pack"}`}>
+            <input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} placeholder="₹" />
+          </Field>
+          <Field label="Available sealed packs" hint={`Count of ${packSize || "pack"} items ready to sell`}>
+            <input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} placeholder="Stock quantity" />
+          </Field>
+          <div className="flex items-end sm:col-span-2">
+            <Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button>
+          </div>
+        </div>
         <div className="rounded-[22px] border border-stone-200/80 bg-[#EEF2F2] p-4"><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-stone-500">Nutrition source · optional</div><p className="mt-1 text-xs leading-5 text-stone-500">For a better estimate, paste package-label values or recipe/ingredient details, or upload a nutrition-label photo. You can also publish without nutrition.</p></div><Sparkles className="size-5 shrink-0 text-[#155F65]" /></div><Textarea value={nutritionSource} onChange={(e) => setNutritionSource(e.target.value)} className="mt-3 min-h-20 rounded-xl bg-white" placeholder="Example: 250 g cooked rice, 120 g chicken, 15 g oil... or paste label text" /><label className="mt-3 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white px-3 text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) readImage(file, setNutritionLabelImage); }} /><ImageUp className="size-4" />{nutritionLabelImage ? "Nutrition label attached" : "Upload nutrition-label photo"}</label></div>
-        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {spec.label}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key,label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml","litre"].includes(spec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
+        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {packSize}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key,label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml","litre","L"].includes(packSpec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
       </div>
       <div className="surface-card-muted rounded-[28px] p-4"><div className="flex items-center justify-between"><div><div className="text-xs font-black uppercase tracking-[.14em] text-[#155F65]">Product media</div><h3 className="mt-1 font-black">Marketplace image</h3></div><ImageUp className="text-[#155F65]" /></div><div className="mt-4 grid aspect-square place-items-center overflow-hidden rounded-3xl shadow-inner" style={{ background: imageUrl ? undefined : categoryVisual(category).bg }}>{imageUrl ? <img src={imageUrl} alt="Product preview" className="h-full w-full object-cover" /> : <ProductGlyph category={category} iconClassName="size-12" />}</div><label className="mt-4 flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => chooseImage(e.target.files?.[0])} /><ImageUp className="size-4" />Upload real product photo</label><Button onClick={enhanceImage} disabled={!imageUrl || imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "AI enhance for marketplace"}</Button><Button onClick={() => void draftImage()} disabled={imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "Create a sample image with AI"}</Button>{originalImageUrl && imageUrl !== originalImageUrl && <button onClick={() => setImageUrl(originalImageUrl)} className="mt-2 w-full text-center text-xs font-black text-stone-500">Restore original image</button>}<p className="mt-3 text-[11px] leading-5 text-stone-500">Image enhancement preserves the real product and pack while improving presentation. Review the result before publishing. If you skip the photo, a sample image is drawn for you automatically; replace it any time with a real photo.</p></div>
     </div>
     {nutritionPresent && !nutritionConsistent && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">The entered calories and macros do not align. This does not block publishing; the product will be marked “Nutrition pending” and Operations will be notified.</div>}
     {!nutritionPresent && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Nutrition is optional.</b> Publish now if you do not have it. Operations will receive a review notification and the marketplace will show nutrition as pending.</div>}
-    <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? "Publishing…" : "Publish product pack"}</Button>
+    <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? (editingProduct ? "Updating…" : "Publishing…") : (editingProduct ? "Update product pack" : "Publish product pack")}</Button>
   </DialogContent></Dialog>;
 }
 
-function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) { const opportunities = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received").filter((x) => !x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id)); const [draft, setDraft] = useState<Record<string, number>>({}); function quote(req: Requirement) { if (req.closingDate && req.closingDate < new Date().toISOString().slice(0,10)) return toast.error("This RFQ is closed"); const total = draft[req.id]; if (!total) return toast.error("Enter your best total"); const item: Quote = { id: id("QTE"), requirementId: req.id, vendorId: vendor.id, total, deliveryFee: 0, note: "Best local price", status: "Submitted" }; setState((s) => ({ ...s, quotes: [item, ...s.quotes.filter((x) => !(x.vendorId === vendor.id && x.requirementId === req.id))], requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Quotes received" } : x), notifications: [notice(req.customerEmail, "customer", "Vendor accepted your RFQ", `${vendor.businessName} submitted ${money(total)}.`), ...s.notifications], audit: [audit(session, "Accepted RFQ and submitted quote", `${req.id} · ${money(total)}`), ...s.audit] })); toast.success("RFQ accepted and quotation submitted"); } return <div className="space-y-6"><Heading eyebrow="PREMIUM FEATURE" title="Local RFQ opportunities" body="Only RFQs explicitly matched to this vendor are visible. Submit an independent best price before the customer closing date." />{vendor.plan !== "Crown" ? <Empty icon={WalletCards} title="Quotation access is on the Crown plan" body="Ask Super Admin to assign the Crown plan for testing." /> : opportunities.length ? opportunities.map((req) => <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.items.length} items · closes {req.closingDate || "not set"} · needed {req.deliveryDate}</p></div><Status>{state.quotes.some((x) => x.requirementId === req.id && x.vendorId === vendor.id) ? "Accepted / quoted" : "Invited"}</Status></div><div className="mt-4 flex flex-wrap gap-2">{req.items.map((item) => <span key={item.id} className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold">{item.name} · {item.quantity} {item.unit}</span>)}</div><div className="mt-5 flex max-w-md gap-2"><input type="number" value={draft[req.id] || ""} onChange={(e) => setDraft((x) => ({ ...x, [req.id]: Number(e.target.value) }))} placeholder="Your best total ₹" className={inputClass} /><Button onClick={() => quote(req)} className="rounded-xl bg-[#155F65]">Accept & quote</Button></div></div>) : <Empty icon={ClipboardCheck} title="No RFQs matched to your store" body="Only serviceable customer requests sent to this vendor account will appear here." />}</div>; }
+function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+  const isCrown = vendor.plan === "Crown";
+  const opportunities = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received").filter((x) => !x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id));
+  const myQuotes = state.quotes.filter((x) => x.vendorId === vendor.id);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+
+  function quote(req: Requirement) {
+    if (!isCrown) return toast.error("Quotation requests (RFQ) and AI quotation assistance are exclusive to the Crown plan.");
+    if (req.closingDate && req.closingDate < new Date().toISOString().slice(0, 10)) return toast.error("This RFQ is closed");
+    const total = draft[req.id];
+    if (!total) return toast.error("Enter your best total");
+    const item: Quote = { id: id("QTE"), requirementId: req.id, vendorId: vendor.id, total, deliveryFee: 0, note: "Best local price", status: "Submitted" };
+    setState((s) => ({
+      ...s,
+      quotes: [item, ...s.quotes.filter((x) => !(x.vendorId === vendor.id && x.requirementId === req.id))],
+      requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Quotes received" } : x),
+      notifications: [notice(req.customerEmail, "customer", "Vendor accepted your RFQ", `${vendor.businessName} submitted ${money(total)}.`), ...s.notifications],
+      audit: [audit(session, "Accepted RFQ and submitted quote", `${req.id} · ${money(total)}`), ...s.audit],
+    }));
+    toast.success("RFQ accepted and quotation submitted");
+  }
+
+  return (
+    <div className="space-y-6">
+      <Heading eyebrow="PREMIUM FEATURE" title="Local RFQ opportunities" body="Only RFQs explicitly matched to this vendor are visible. Submit an independent best price before the customer closing date." />
+      {!isCrown && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+          <p className="text-sm font-semibold">
+            Quotation requests (RFQ) and new quote opportunities are exclusive to the Crown plan. Upgrade to Crown to accept customer quotation requests.
+          </p>
+        </div>
+      )}
+      {myQuotes.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-bold text-sm text-stone-700">Your Quotation History ({myQuotes.length})</h3>
+          <div className="grid gap-3">
+            {myQuotes.map((q) => {
+              const req = state.requirements.find((r) => r.id === q.requirementId);
+              return (
+                <div key={q.id} className="surface-card rounded-2xl p-4 flex justify-between items-center">
+                  <div>
+                    <h4 className="font-bold text-sm">{req?.title || `Requirement ${q.requirementId}`}</h4>
+                    <p className="text-xs text-stone-500">{q.id} · {money(q.total + (q.deliveryFee || 0))}</p>
+                  </div>
+                  <Status>{q.status}</Status>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {!isCrown && myQuotes.length === 0 ? (
+        <Empty icon={WalletCards} title="Quotation access is on the Crown plan" body="Upgrade to Crown to receive customer quotation requests and submit quotes." />
+      ) : isCrown && opportunities.length ? (
+        opportunities.map((req) => (
+          <div key={req.id} className="surface-card rounded-[28px] p-5">
+            <div className="flex justify-between">
+              <div>
+                <h3 className="font-black">{req.title}</h3>
+                <p className="text-xs text-stone-500">{req.items.length} items · closes {req.closingDate || "not set"} · needed {req.deliveryDate}</p>
+              </div>
+              <Status>{state.quotes.some((x) => x.requirementId === req.id && x.vendorId === vendor.id) ? "Accepted / quoted" : "Invited"}</Status>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {req.items.map((item) => (
+                <span key={item.id} className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold">{item.name} · {item.quantity} {item.unit}</span>
+              ))}
+            </div>
+            <div className="mt-5 flex max-w-md gap-2">
+              <input type="number" value={draft[req.id] || ""} onChange={(e) => setDraft((x) => ({ ...x, [req.id]: Number(e.target.value) }))} placeholder="Your best total ₹" className={inputClass} />
+              <Button onClick={() => quote(req)} className="rounded-xl bg-[#155F65]">Accept & quote</Button>
+            </div>
+          </div>
+        ))
+      ) : isCrown ? (
+        <Empty icon={ClipboardCheck} title="No RFQs matched to your store" body="Only serviceable customer requests sent to this vendor account will appear here." />
+      ) : null}
+    </div>
+  );
+}
 
 function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
   const [name, setName] = useState("");
@@ -6244,6 +7596,12 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
   const people = state.staff.filter((x) => x.vendorId === vendor.id);
   async function savePerson() {
     if (!name || !/^\+?[0-9 ]{10,15}$/.test(phone)) return toast.error("Enter a staff name and valid phone number");
+    if (!editing) {
+      const staffCheck = canAddDeliveryStaff(vendor.plan, people.length);
+      if (!staffCheck.allowed) {
+        return toast.error(staffCheck.reason);
+      }
+    }
     try {
       let staffId = editing?.id || id("STF");
       if (isLiveSupabaseMode()) { const result = await saveLiveDeliveryStaff({ staffId: editing?.id, name, phone, active: editing?.active ?? true }); staffId = String(result.id); }
@@ -6253,6 +7611,9 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
     } catch (error) { toast.error(errorMessage(error, "Delivery person could not be saved")); }
   }
   async function remove(person: Staff) {
+    // A delivery person with an open order cannot be removed: that would leave the order with nobody to deliver it.
+    const openOrders = state.assignments.filter((x) => x.staffId === person.id).map((x) => state.orders.find((o) => o.id === x.orderId)).filter((o): o is Order => Boolean(o) && !["Completed", "Delivered", "Cancelled"].includes(o!.status));
+    if (openOrders.length) { toast.error(`${person.name} is assigned to ${openOrders.length} open order${openOrders.length === 1 ? "" : "s"}. Assign ${openOrders.length === 1 ? "it" : "them"} to someone else or finish ${openOrders.length === 1 ? "it" : "them"} before deleting this person.`); return; }
     if (!confirm(`Delete ${person.name} from the delivery team? Existing completed-order history is retained.`)) return;
     try { if (isLiveSupabaseMode()) await deleteLiveDeliveryStaff(person.id); setState((s) => ({ ...s, staff: s.staff.filter((x) => x.id !== person.id), assignments: s.assignments.filter((x) => x.staffId !== person.id), audit: [audit(session, "Deleted delivery staff", `${person.name} · ${person.phone}`), ...s.audit] })); toast.success("Delivery person deleted"); }
     catch (error) { toast.error(errorMessage(error, "Delivery person could not be deleted")); }
@@ -6270,7 +7631,9 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
 function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
 function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={navigate} />;
   if (active === "AI insights") return <AIInsights role="operations" state={state} />;
+  if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
   if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
   if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
@@ -6418,6 +7781,7 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
   const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
   const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
   const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
@@ -6491,9 +7855,13 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
         {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}</div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
-        <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
-        <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {picked.fssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {picked.expiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
+        {picked && (() => {
+          const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
+          const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
+          const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
+          return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+          <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
+          <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
@@ -6513,7 +7881,7 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
         </div>
         <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
         {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
-      </section>}
+      </section>; })()}
     </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
 
     <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
@@ -6591,9 +7959,230 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {editingProfileVendor && (
+      <EditVendorProfileDialog
+        open
+        onClose={() => setEditingProfileVendor(null)}
+        vendor={editingProfileVendor}
+        setState={setState}
+        session={session}
+      />
+    )}
   </div>;
 }
-function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const [vendorId, setVendorId] = useState(state.vendors[0]?.id || ""); const [q, setQ] = useState(""); const [onlyCustom, setOnlyCustom] = useState(false); const products = state.products.filter((x) => x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0); const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length; return <div className="space-y-6"><Heading eyebrow="ITEM-LEVEL PRICING" title="Operational percentage by vendor item" body="Select a vendor, inspect its menu and add a percentage on top of each vendor base price. Customer prices update only for future schedules." /><div className="grid gap-4 sm:grid-cols-3"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(customCount)} icon={Percent} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div><div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger className="w-full max-w-sm rounded-xl"><SelectValue placeholder="Select vendor" /></SelectTrigger><SelectContent>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" /><button type="button" onClick={() => setOnlyCustom(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>All</button><button type="button" onClick={() => setOnlyCustom(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}>Custom %</button></div>{products.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{products.map((product) => <TableRow key={product.id}><TableCell><b>{product.name}</b><div className="text-xs text-stone-500">per {product.baseUnit}</div></TableCell><TableCell>{money(product.vendorPrice)}</TableCell><TableCell><div className="flex items-center gap-2"><input type="number" min="0" max="100" step=".5" value={state.markups[product.id] || 0} onChange={(e) => { const value = Number(e.target.value); setState((s) => ({ ...s, markups: { ...s.markups, [product.id]: value }, audit: [audit(session, "Updated item percentage", `${product.name} → ${value}%`), ...s.audit] })); }} className="h-10 w-24 rounded-xl border px-3 font-black" />%</div></TableCell><TableCell className="text-lg font-bold">{money(finalPrice(product, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title="No vendor products selected" body="Choose a vendor with products, or wait for a vendor to add their catalogue." />}</div>; }
+function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+  const [vendorId, setVendorId] = useState(state.vendors[0]?.id || "");
+  const [q, setQ] = useState("");
+  const [onlyCustom, setOnlyCustom] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState(false);
+
+  const products = state.products
+    .filter((x) => x.vendorId === vendorId)
+    .filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()))
+    .filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0);
+
+  const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length;
+  const hasDraftChanges = Object.keys(drafts).length > 0;
+
+  async function saveSingleMarkup(product: Product, markupVal: number) {
+    setSaving(true);
+    try {
+      const safeVal = Math.max(0, markupVal);
+      if (isLiveSupabaseMode()) {
+        await saveLiveItemMarkup(product.id, safeVal);
+      }
+      const newCustomerPrice = Math.round(product.vendorPrice * (1 + safeVal / 100) * 100) / 100;
+      setState((s) => ({
+        ...s,
+        markups: { ...s.markups, [product.id]: safeVal },
+        audit: [
+          audit(
+            session,
+            "Pricing change: item markup",
+            `${product.name} · Base: ${money(product.vendorPrice)} + ${safeVal}% markup → Customer: ${money(newCustomerPrice)}`
+          ),
+          ...s.audit,
+        ],
+      }));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[product.id];
+        return next;
+      });
+      toast.success("Pricing changes saved successfully");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save pricing changes"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAllPricingChanges() {
+    setSaving(true);
+    try {
+      const changedProducts = state.products.filter((p) => p.id in drafts);
+      if (!changedProducts.length) {
+        toast.info("No pricing changes to save");
+        return;
+      }
+      for (const p of changedProducts) {
+        if (isLiveSupabaseMode()) {
+          await saveLiveItemMarkup(p.id, Math.max(0, drafts[p.id]));
+        }
+      }
+      const newAudits = changedProducts.map((p) => {
+        const val = Math.max(0, drafts[p.id]);
+        const custPrice = Math.round(p.vendorPrice * (1 + val / 100) * 100) / 100;
+        return audit(
+          session,
+          "Pricing change: item markup",
+          `${p.name} · Base: ${money(p.vendorPrice)} + ${val}% markup → Customer: ${money(custPrice)}`
+        );
+      });
+      setState((s) => ({
+        ...s,
+        markups: { ...s.markups, ...drafts },
+        audit: [...newAudits, ...s.audit],
+      }));
+      setDrafts({});
+      toast.success("Pricing changes saved successfully");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save pricing changes"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Heading
+        eyebrow="ITEM-LEVEL PRICING"
+        title="Operational percentage by vendor item"
+        body="Select a vendor, inspect its menu and apply a markup percentage on top of each vendor base price. Customer prices update only for future schedules."
+        action={
+          <Button
+            onClick={() => void saveAllPricingChanges()}
+            disabled={!hasDraftChanges || saving}
+            className="rounded-xl bg-[#155F65]"
+          >
+            <Check className="size-4 mr-1.5" />
+            Save pricing changes
+          </Button>
+        }
+      />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Metric label="Items on the platform" value={String(state.products.length)} icon={Package} />
+        <Metric label="Items with their own %" value={String(customCount)} icon={Percent} />
+        <Metric label="Vendors" value={String(state.vendors.length)} icon={Store} />
+      </div>
+      <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4">
+        <Select value={vendorId} onValueChange={setVendorId}>
+          <SelectTrigger className="w-full max-w-sm rounded-xl">
+            <SelectValue placeholder="Select vendor" />
+          </SelectTrigger>
+          <SelectContent>
+            {state.vendors.map((x) => (
+              <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search item"
+          aria-label="Search item"
+          className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => setOnlyCustom(false)}
+          className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={() => setOnlyCustom(true)}
+          className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+        >
+          Custom %
+        </button>
+      </div>
+      {products.length ? (
+        <div className="surface-card overflow-x-auto rounded-[28px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead>Vendor base</TableHead>
+                <TableHead>Operations %</TableHead>
+                <TableHead>Customer price</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {products.map((product) => {
+                const markupVal = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                const isDraftModified = product.id in drafts && drafts[product.id] !== (state.markups[product.id] || 0);
+                const previewPrice = Math.round(product.vendorPrice * (1 + markupVal / 100) * 100) / 100;
+                return (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <b>{product.name}</b>
+                      <div className="text-xs text-stone-500">per {product.baseUnit}</div>
+                    </TableCell>
+                    <TableCell>{money(product.vendorPrice)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step=".5"
+                          value={markupVal}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDrafts((prev) => ({ ...prev, [product.id]: val }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                              void saveSingleMarkup(product, val);
+                            }
+                          }}
+                          className="h-10 w-24 rounded-xl border px-3 font-black"
+                          aria-label={`Markup for ${product.name}`}
+                        />
+                        <span>%</span>
+                        {isDraftModified && (
+                          <Button
+                            size="sm"
+                            onClick={() => void saveSingleMarkup(product, drafts[product.id])}
+                            disabled={saving}
+                            className="h-8 rounded-lg bg-[#155F65] px-2.5 text-xs text-white"
+                          >
+                            Save
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-lg font-bold">{money(previewPrice)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <Empty
+          icon={Percent}
+          title="No vendor products selected"
+          body="Choose a vendor with products, or wait for a vendor to add their catalogue."
+        />
+      )}
+    </div>
+  );
+}
 function RFQDesk({ state }: { state: V3State }) {
   const open = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received");
   const awarded = state.requirements.filter((x) => x.status === "Awarded");
@@ -6684,14 +8273,18 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
   <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
 }
 
-function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void; onNavigate?: (view: string) => void }) {
+  const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={onNavigate} />;
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
+  if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
   if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
   if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
   if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
-  if (active === "Vendors") return <AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
-  if (active === "Vendor plans") return <Plans state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Vendors") return <AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Vendor plans") return <Plans session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+  if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
   if (active === "Pricing policies") return <AdminPricing state={state} />;
   if (active === "Stories monitor") return <StoriesMonitor />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
@@ -6699,7 +8292,6 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile }: { 
   if (active === "Reports") return <ReportsCentre state={state} />;
   if (active === "Audit log") return <AuditLog items={state.audit} />;
   const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
-  const [range, setRange] = useState<7 | 30 | 90>(30);
   const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
   const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
   const gross = inRange.reduce((sum, x) => sum + x.total, 0);
@@ -6872,10 +8464,11 @@ function CreateUserDialog({ open, close, session, setState, live }: { open: bool
     </div>}
   </DialogContent></Dialog>;
 }
-function AdminVendors({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+function AdminVendors({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
   const allVendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
   const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
   const [vQuery, setVQuery] = useState("");
+  const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
   const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
   return <div className="space-y-6">
     <Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." />
@@ -6896,19 +8489,55 @@ function AdminVendors({ state, setState, onOpenVendorProfile }: { state: V3State
           <TableCell><div className="flex min-w-32 flex-col items-start gap-1">
             <span className="text-sm font-semibold">{state.products.filter((x) => x.vendorId === vendor.id).length} products</span>
             <span className="text-xs text-stone-500">{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</span>
-            {onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="mt-1 h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="mr-1 size-3.5 text-[#155F65]" />Preview</Button>}
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              {onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="mr-1 size-3.5 text-[#155F65]" />Preview</Button>}
+              <Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(vendor)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="mr-1 size-3.5 text-[#155F65]" />Edit Branding</Button>
+            </div>
           </div></TableCell>
           <TableCell><Select value={vendor.plan} onValueChange={(value) => {
             const plan = value as Vendor["plan"];
-            setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x) }));
+            const oldPlan = vendor.plan;
+            const newLimits = getPlanLimits(plan);
+            const activeProds = state.products.filter((p) => p.vendorId === vendor.id && p.active);
+            const excessProds = activeProds.length > newLimits.maxProducts
+              ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+              : new Set<string>();
+
+            const activeStaff = state.staff.filter((st) => st.vendorId === vendor.id && st.active);
+            const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+              ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+              : new Set<string>();
+
+            const activeSlots = (state.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+            const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+              ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+              : new Set<string>();
+
+            setState((s) => ({
+              ...s,
+              vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x),
+              products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+              staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+              deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+              audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${oldPlan} to ${plan} by ${session.name} (${session.email})`), ...s.audit],
+            }));
             if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => {
-              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: vendor.plan } : x) }));
+              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x) }));
               toast.error(error.message || "Could not save the plan change");
             });
           }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
         </TableRow>)}</TableBody>
       </Table>
     </div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}
+    {editingProfileVendor && (
+      <EditVendorProfileDialog
+        open
+        onClose={() => setEditingProfileVendor(null)}
+        vendor={editingProfileVendor}
+        setState={setState}
+        session={session}
+      />
+    )}
   </div>;
 }
 function PlanFeatureTable() {
@@ -6918,12 +8547,12 @@ function PlanFeatureTable() {
     ["Leads through WhatsApp", [true, false, false, false]],
     ["Pre-orders, subscriptions, delivery fleet", [false, true, true, true]],
     ["Food Shorts (Food Stories)", [false, true, true, true]],
-    ["Food Drops", [false, false, true, true]],
+    ["Food Drops", [false, true, true, true]],
     ["Request for Quote with AI assistance", [false, false, false, true]],
   ];
   return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
 }
-function Plans({ state, setState, onOpenVendorProfile }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management and Food Stories." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive, plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
+function Plans({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management, Food Stories and Food Drops (2/day)." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus 5 daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive (15 Food Drops/day), plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
 function AdminPricing({ state }: { state: V3State }) {
   const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
   const pct = (id: string) => state.markups[id] || 0;
@@ -6943,7 +8572,7 @@ function AuditLog({ items }: { items: Audit[] }) {
   const [trailError, setTrailError] = useState("");
   useEffect(() => { if (!isLiveSupabaseMode()) return; let alive = true; loadAuditTrail().then((rows) => { if (alive) setDbTrail(rows); }).catch((e) => { if (alive) setTrailError(errorMessage(e, "The audit trail could not be loaded")); }); return () => { alive = false; }; }, []);
   const allItems = [...dbTrail, ...items];
-  const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
+  const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|pricing|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
   const shown = allItems.filter((item) => (kind === "All" || kindOf(item) === kind) && (!auditQuery.trim() || `${item.actor} ${item.action} ${item.detail}`.toLowerCase().includes(auditQuery.trim().toLowerCase())));
   return <div className="space-y-5"><Heading eyebrow="AUDITABILITY" title="Platform activity trail" body="Who did what, and when. Verification, pricing, catalogue, schedule and order actions are recorded." action={<Button variant="outline" onClick={download} disabled={!allItems.length}><Download />Download Excel</Button>} />{trailError && <p role="alert" className="rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{trailError}</p>}
     <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Kind of action">{(["All", "Permissions", "Vendors", "Plans and pricing"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={kind === name} onClick={() => setKind(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${kind === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name}</button>)}<input value={auditQuery} onChange={(e) => setAuditQuery(e.target.value)} placeholder="Search actor or action" aria-label="Search actor or action" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>
@@ -6990,12 +8619,105 @@ function ReportsCentre({ state }: { state: V3State }) {
   </div>;
 }
 
-function NotificationDrawer({ open, setOpen, session, state, setState }: { open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const items = state.notifications.filter((item) => notificationBelongsToSession(item, session)); async function enable() { if (!("Notification" in window)) return toast.error("Notifications are unavailable in this browser"); const permission = await Notification.requestPermission(); if (permission === "granted") { new Notification("Sheplates notifications enabled", { body: "Order and schedule updates can now reach this device.", icon: "/icon-192.png" }); toast.success("Device notifications enabled"); } else toast.info("Notification permission was not granted"); } return <Sheet open={open} onOpenChange={setOpen}><SheetContent className="sp-notification-sheet w-full p-0 sm:max-w-md"><SheetHeader className="border-b bg-[#155F65] p-6 text-left text-white"><SheetTitle className="text-white">Notifications</SheetTitle><SheetDescription className="text-white/55">In-app updates plus optional device notifications for this installed web app.</SheetDescription></SheetHeader><div className="p-5"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }))} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div></div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Schedule, quote, verification and order updates will appear here." />}</div></div></SheetContent></Sheet>; }
-function NotificationDrawerV4({ page = false, open, setOpen, session, state, setState, people }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; people: PeopleApi }) {
+function NotificationDrawer({ open, setOpen, session, state, setState, onNavigate }: { open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onNavigate?: (view: string) => void }) {
+  const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
+  const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
+
+  useEffect(() => {
+    setDeviceStatus(getDeviceNotificationStatus());
+  }, []);
+
+  async function enable() {
+    const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
+    setDeviceStatus(result.status);
+    if (result.status === "granted") toast.success(result.message);
+    else if (result.status === "denied") toast.error(result.message);
+    else toast.info(result.message);
+  }
+
+  async function handleNotificationClick(item: Notification) {
+    if (!item.read) {
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => {});
+      setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
+    }
+    setOpen(false);
+    const route = resolveNotificationTarget(item, session, state);
+    executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
+      if (type === "error") toast.error(msg);
+      else if (type === "warning") toast.warning(msg);
+      else if (type === "success") toast.success(msg);
+      else toast.info(msg);
+    });
+  }
+
+  return <Sheet open={open} onOpenChange={setOpen}>
+    <SheetContent className="sp-notification-sheet w-full p-0 sm:max-w-md">
+      <SheetHeader className="border-b bg-[#155F65] p-6 text-left text-white">
+        <SheetTitle className="text-white">Notifications</SheetTitle>
+        <SheetDescription className="text-white/55">In-app updates plus optional device notifications for this installed web app.</SheetDescription>
+      </SheetHeader>
+      <div className="p-5">
+        <Button type="button" onClick={enable} variant="outline" disabled={deviceStatus === "granted"} className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}>
+          {deviceStatus === "granted" ? <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></> : deviceStatus === "denied" ? <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></> : deviceStatus === "ios_pwa_required" ? <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></> : <><Bell className="size-4" /><span>Enable device notifications</span></>}
+        </Button>
+        <button onClick={() => setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }))} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={item.id} role="button" tabIndex={0} onClick={() => void handleNotificationClick(item)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }} className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}>
+              <div className="flex justify-between gap-3"><b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}</div>
+              <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+                <span>{item.at}</span>
+                <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+              </div>
+            </div>
+          ))}
+          {!items.length && <Empty icon={Bell} title="No notifications" body="Schedule, quote, verification and order updates will appear here." />}
+        </div>
+      </div>
+    </SheetContent>
+  </Sheet>;
+}
+
+function NotificationDrawerV4({ page = false, open, setOpen, session, state, setState, people, onNavigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; people: PeopleApi; onNavigate?: (view: string) => void }) {
   const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
   const [busyRequest, setBusyRequest] = useState("");
-  async function enable() { if (!("Notification" in window)) return toast.error("Notifications are unavailable in this browser"); const permission = await Notification.requestPermission(); if (permission === "granted") { new Notification("Sheplates notifications enabled", { body: "Verification, quote, schedule and tracking updates can reach this device.", icon: "/icon-192.png" }); toast.success("Device notifications enabled"); } }
-  async function markAll() { try { if (isLiveSupabaseMode()) await markLiveNotificationsRead(); setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) })); } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); } }
+  const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
+
+  useEffect(() => {
+    setDeviceStatus(getDeviceNotificationStatus());
+  }, []);
+
+  async function enable() {
+    const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
+    setDeviceStatus(result.status);
+    if (result.status === "granted") toast.success(result.message);
+    else if (result.status === "denied") toast.error(result.message);
+    else toast.info(result.message);
+  }
+
+  async function markAll() {
+    try {
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead();
+      setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }));
+    } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); }
+  }
+
+  async function handleNotificationClick(item: Notification) {
+    if (!item.read) {
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => {});
+      setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
+    }
+    setOpen(false);
+    const route = resolveNotificationTarget(item, session, state);
+    executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
+      if (type === "error") toast.error(msg);
+      else if (type === "warning") toast.warning(msg);
+      else if (type === "success") toast.success(msg);
+      else toast.info(msg);
+    });
+  }
+
   async function respondToFollowRequest(item: Notification, accept: boolean) {
     if (!item.entityId) return;
     setBusyRequest(item.id);
@@ -7007,10 +8729,98 @@ function NotificationDrawerV4({ page = false, open, setOpen, session, state, set
       toast.error(errorMessage(error, "Follow request could not be updated"));
     } finally { setBusyRequest(""); }
   }
-  if (page) return <div className="mx-auto max-w-3xl space-y-4"><div className="flex items-end justify-between gap-3"><div><h1 className="text-[28px] font-bold leading-tight">Notifications</h1><p className="mt-1 text-sm text-[#55656A]">Private updates for {session.email}.</p></div></div><div className="space-y-3"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div>{session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people.requests.some((request) => request.id === item.entityId) && <div className="mt-3 flex gap-2"><Button type="button" size="sm" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, true)} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button><Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, false)} className="rounded-full font-black">Decline</Button></div>}</div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}</div></div></div>;
-  return <Sheet open={open} onOpenChange={setOpen}><SheetContent className="w-full overflow-hidden p-0 sm:max-w-md"><SheetHeader className="shrink-0 border-b bg-[#155F65] p-6 text-left text-white"><SheetTitle className="text-white">Notifications</SheetTitle><SheetDescription className="text-white/55">Private updates for {session.email}. Vendor and customer events are never mixed.</SheetDescription></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5"><Button onClick={enable} variant="outline" className="mb-5 w-full rounded-xl"><Bell />Enable device notifications</Button><button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button><div className="space-y-3">{items.map((item) => <div key={item.id} className={`rounded-2xl border p-4 ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}><div className="flex justify-between gap-3"><b className="text-sm">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332]" />}</div><p className="mt-1 text-sm leading-6 text-stone-500">{item.body}</p><div className="mt-2 text-[11px] text-stone-400">{item.at}</div>{session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people.requests.some((request) => request.id === item.entityId) && <div className="mt-3 flex gap-2"><Button type="button" size="sm" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, true)} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button><Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={() => void respondToFollowRequest(item, false)} className="rounded-full font-black">Decline</Button></div>}</div>)}{!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}</div></div></SheetContent></Sheet>;
+
+  const notificationCard = (item: Notification) => (
+    <div
+      key={item.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => void handleNotificationClick(item)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }}
+      className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}
+    >
+      <div className="flex justify-between gap-3">
+        <b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>
+        {!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}
+      </div>
+      <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+      <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+        <span>{item.at}</span>
+        <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+      </div>
+      {session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people?.requests?.some?.((request) => request.id === item.entityId) && (
+        <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+          <Button type="button" size="sm" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, true); }} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button>
+          <Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, false); }} className="rounded-full font-black">Decline</Button>
+        </div>
+      )}
+    </div>
+  );
+
+  const deviceButton = (
+    <Button
+      type="button"
+      onClick={enable}
+      variant="outline"
+      disabled={deviceStatus === "granted"}
+      className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}
+    >
+      {deviceStatus === "granted" ? (
+        <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></>
+      ) : deviceStatus === "denied" ? (
+        <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></>
+      ) : deviceStatus === "ios_pwa_required" ? (
+        <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></>
+      ) : (
+        <><Bell className="size-4" /><span>Enable device notifications</span></>
+      )}
+    </Button>
+  );
+
+  if (page) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[28px] font-bold leading-tight">Notifications</h1>
+            <p className="mt-1 text-sm text-[#55656A]">Private updates for {session.email}.</p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {deviceButton}
+          <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+          <div className="space-y-3">
+            {items.map(notificationCard)}
+            {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetContent className="w-full overflow-hidden p-0 sm:max-w-md">
+        <SheetHeader className="shrink-0 border-b bg-[#155F65] p-6 text-left text-white">
+          <SheetTitle className="text-white">Notifications</SheetTitle>
+          <SheetDescription className="text-white/55">Private updates for {session.email}. Vendor and customer events are never mixed.</SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
+          {deviceButton}
+          <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+          <div className="space-y-3">
+            {items.map(notificationCard)}
+            {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
 }
-function notice(recipient: string, recipientRole: Role, title: string, body: string): Notification { return { id: id("NOT"), recipient, recipientRole, title, body, at: now(), read: false }; }
+
+function notice(recipient: string, recipientRole: Role, title: string, body: string, extra?: { entityType?: string; entityId?: string; href?: string; type?: string }): Notification {
+  return { id: id("NOT"), recipient, recipientRole, title, body, at: now(), read: false, ...extra };
+}
 function playNotificationSound() {
   try {
     const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;

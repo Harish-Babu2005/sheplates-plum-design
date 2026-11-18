@@ -20,6 +20,21 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- App Links (Android 6.0+) for production and staging domains -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="app.sheplates.com" />
+                <data android:scheme="https" android:host="staging.sheplates.com" />
+            </intent-filter>
+            <!-- Custom scheme deep link (sheplates://) for notifications -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sheplates" />
+            </intent-filter>
         </activity>
 
         <provider
@@ -34,6 +49,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ Notification permission -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Find kitchens near you and set the delivery pin -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />

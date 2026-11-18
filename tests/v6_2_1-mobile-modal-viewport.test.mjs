@@ -15,10 +15,14 @@ test('mobile dialogs are viewport anchored and no longer use translated centerin
 });
 
 test('modal layers stay above the mobile bottom navigation', () => {
-  assert.match(dialog, /z-\[90\]/);
-  assert.match(dialog, /z-\[91\]/);
-  assert.match(sheet, /z-\[90\]/);
-  assert.match(sheet, /z-\[91\]/);
+  // Dialogs and sheets sit above the Leaflet map layers (z-index 1000): overlay 1100, content 1101. On phones the stylesheet pins them to 90 / 91,
+  // which is still above the bottom navigation (58).
+  assert.match(dialog, /z-\[1100\]/);
+  assert.match(dialog, /z-\[1101\]/);
+  assert.match(sheet, /z-\[1100\]/);
+  assert.match(sheet, /z-\[1101\]/);
+  assert.match(css, /\[data-slot="dialog-overlay"\][\s\S]*?z-index: 90 !important/);
+  assert.match(css, /\[data-slot="dialog-content"\][\s\S]*?z-index: 91 !important/);
   assert.match(css, /\.sp-mobile-bottom-nav[\s\S]*?z-index: 58/);
 });
 

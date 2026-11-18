@@ -11,7 +11,8 @@ const UNIT_WORDS = new Set([
 
 /** Product name reduced to letters, numbers, spaces and a few harmless marks, at most 60 characters. Empty when unusable. */
 export function sanitizeProductName(name: string): string {
-  const cleaned = String(name ?? "")
+  const input60 = String(name ?? "").slice(0, 60);
+  const cleaned = input60
     .normalize("NFKC")
     .replace(/[^\p{L}\p{N}\s&'()\-.,]/gu, " ")
     .replace(/\s+/g, " ")

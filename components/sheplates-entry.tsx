@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { Wordmark } from "@/components/brand";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import {
   Activity, ArrowRight, BadgeCheck, ChevronRight, LocateFixed, MapPin,
@@ -157,7 +157,11 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
       return;
     }
     const params = new URLSearchParams(search);
-    if (params.get("vendor")) {
+    const vendorParam = params.get("vendor");
+    if (vendorParam) {
+      try {
+        sessionStorage.setItem("sheplates_pending_vendor", vendorParam);
+      } catch {}
       queueMicrotask(() => setAuthAudience("customer"));
       toast.info("Sign in to view and order from this vendor's shop.");
     } else if (params.get("forgot") === "true") {
@@ -216,7 +220,7 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
         </nav>
         <button type="button" className="btn sm sec e-vendor" onClick={() => setAuthAudience("team")}>Vendor</button>
         <button type="button" className="btn sm sec" onClick={openCustomer}>Sign In</button>
-        <button type="button" className="btn sm" onClick={openCustomer}>Get Started</button>
+        <button type="button" className="btn sm e-start" onClick={openCustomer}>Get Started</button>
       </header>
 
       <section className="e-hero">
@@ -263,6 +267,10 @@ function AuthDialog({ audience, close, onLogin, setAudience }: { audience: Audie
   const [resetSent, setResetSent] = useState(false);
   const liveMode = process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured();
 
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
   function revealField(event: React.FocusEvent<HTMLInputElement>) {
     const element = event.currentTarget;
     window.setTimeout(() => element.scrollIntoView({ block: "center", behavior: "smooth" }), 180);
@@ -307,29 +315,85 @@ useEffect(() => {
   const registrationRole = audience === "customer" ? "customer" : "vendor";
 
   async function submit(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
-    try {
-      if (mode === "forgot") {
-        const normalizedEmail = email.trim().toLowerCase();
-        if (!normalizedEmail) throw new Error("Enter your registered email address.");
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error("Enter a valid email address.");
+    event.preventDefault();
+    setError("");
 
+    if (mode === "forgot") {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail) {
+        setError("Enter your registered email address.");
+        emailInputRef.current?.focus();
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        setError("Enter a valid email address.");
+        emailInputRef.current?.focus();
+        return;
+      }
+
+      setBusy(true);
+      try {
         if (!isSupabaseConfigured()) {
           throw new Error("Supabase authentication is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local and set NEXT_PUBLIC_DEMO_MODE=false to send real password reset emails.");
         }
 
-await sendPasswordResetEmail(
-  normalizedEmail,
-  `${window.location.origin}/reset-password?audience=${audience}`
-);
+        await sendPasswordResetEmail(
+          normalizedEmail,
+          `${window.location.origin}/reset-password?audience=${audience}`
+        );
         setResetSent(true);
         toast.success("Password reset instructions sent to your email.");
         return;
+      } catch (caught) {
+        setError(authErrorMessage(caught));
+      } finally {
+        setBusy(false);
       }
+      return;
+    }
 
+    if (mode === "login") {
+      const hasEmail = Boolean(email.trim());
+      const hasPassword = Boolean(password);
+
+      if (!hasEmail && !hasPassword) {
+        setError("Enter your email and password.");
+        emailInputRef.current?.focus();
+        return;
+      }
+      if (!hasEmail) {
+        setError("Enter your email address.");
+        emailInputRef.current?.focus();
+        return;
+      }
+      if (!hasPassword) {
+        setError("Enter your password.");
+        passwordInputRef.current?.focus();
+        return;
+      }
+    }
+
+    if (mode === "create") {
+      if (!name.trim()) {
+        setError("Enter your full name.");
+        nameInputRef.current?.focus();
+        return;
+      }
+      if (!email.trim()) {
+        setError("Enter your email address.");
+        emailInputRef.current?.focus();
+        return;
+      }
+      if (password.length < 8) {
+        setError("Use a password with at least 8 characters.");
+        passwordInputRef.current?.focus();
+        return;
+      }
+    }
+
+    setBusy(true);
+    try {
       if (mode === "create") {
-        if (!name.trim()) throw new Error("Enter your full name.");
-        if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
         if (!liveMode) {
           const normalizedEmail = email.trim().toLowerCase();
           if (registrationRole === "customer") {
@@ -450,7 +514,7 @@ await sendPasswordResetEmail(
                   If <b>{email}</b> is registered with Sheplates, you will receive a password reset link shortly. Please check your inbox.
                 </p>
                 <p className="mt-2 text-[11px] text-emerald-700">
-                  Didn't see it? Check your spam or promotions folder.
+                  Didn&apos;t see it? Check your spam or promotions folder.
                 </p>
               </div>
             </div>
@@ -479,6 +543,7 @@ await sendPasswordResetEmail(
           </p>
           <InputField label="Registered Email">
             <input
+              ref={emailInputRef}
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -487,7 +552,6 @@ await sendPasswordResetEmail(
               inputMode="email"
               className="entry-input"
               placeholder="customer@example.com"
-              required
             />
           </InputField>
           {error && <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
@@ -511,8 +575,8 @@ await sendPasswordResetEmail(
       <>
         {mode === "create" && audience === "customer" && !liveMode && <div className="mt-4 rounded-xl bg-sky-50 p-3 text-xs leading-5 text-sky-900">This test account is saved in this browser only. Configure Supabase for secure sign-in across devices.</div>}
         <form onSubmit={submit} className="sp-auth-form mt-5 space-y-4">
-          {mode === "create" && <InputField label="Full name"><input value={name} onChange={(event) => setName(event.target.value)} onFocus={revealField} autoComplete="name" className="entry-input" placeholder="Your name" /></InputField>}
-          <InputField label="Email"><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} onFocus={revealField} autoComplete="email" inputMode="email" className="entry-input" /></InputField>
+          {mode === "create" && <InputField label="Full name"><input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} onFocus={revealField} autoComplete="name" className="entry-input" placeholder="Your name" /></InputField>}
+          <InputField label="Email"><input ref={emailInputRef} type="email" value={email} onChange={(event) => setEmail(event.target.value)} onFocus={revealField} autoComplete="email" inputMode="email" className="entry-input" /></InputField>
           <InputField
             label="Password"
             rightAction={
@@ -532,7 +596,7 @@ mode === "login" ? (
               ) : undefined
             }
           >
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} onFocus={revealField} autoComplete={mode === "create" ? "new-password" : "current-password"} className="entry-input" />
+            <input ref={passwordInputRef} type="password" value={password} onChange={(event) => setPassword(event.target.value)} onFocus={revealField} autoComplete={mode === "create" ? "new-password" : "current-password"} className="entry-input" />
           </InputField>
           {/* Supported verification flow: autoComplete="one-time-code" */}
           {mode === "create" && audience === "customer" && <fieldset className="rounded-2xl border border-stone-200 p-4"><legend className="px-1 text-xs font-black uppercase tracking-wider text-stone-500">Account privacy</legend><p className="mb-3 text-xs leading-5 text-stone-500">Choose who can follow you. You can change this later in your profile.</p><div className="grid grid-cols-2 gap-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left transition ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><span className="block text-sm font-black">Public</span><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left transition ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><span className="block text-sm font-black">Private</span><span className="mt-1 block text-xs text-stone-500">Approve customer follow requests.</span></button></div></fieldset>}

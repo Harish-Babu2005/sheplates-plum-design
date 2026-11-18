@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { canAccessWhatsAppLeads } from "@/lib/plans";
 
-type ReminderRequest = { scheduleId?: string; orderId?: string; template?: "schedule_reminder" | "order_started" | "out_for_delivery" };
+type ReminderRequest = {
+  scheduleId?: string;
+  orderId?: string;
+  template?: "schedule_reminder" | "order_started" | "out_for_delivery";
+  action?: string;
+  vendorId?: string;
+  vendorPlan?: string;
+};
 
 export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,7 +22,26 @@ export async function POST(request: Request) {
   const admin = createClient(url, service, { auth: { persistSession: false } });
   const { data: authData, error: authError } = await caller.auth.getUser(token);
   if (authError || !authData.user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
-  const body = await request.json() as ReminderRequest;
+  const body = ((await request.json().catch(() => ({}))) || {}) as ReminderRequest;
+
+  // Plan verification: WhatsApp contact and lead tracking are exclusive to Taster
+  let planToCheck = body.vendorPlan;
+  if (!planToCheck && body.vendorId) {
+    const { data: v } = await admin.from("vendors").select("plan").eq("id", body.vendorId).maybeSingle();
+    if (v?.plan) planToCheck = v.plan;
+  }
+  if (!planToCheck) {
+    const { data: v } = await admin.from("vendors").select("plan").or(`id.eq.${authData.user.id},owner_id.eq.${authData.user.id},profile_id.eq.${authData.user.id}`).maybeSingle();
+    if (v?.plan) planToCheck = v.plan;
+  }
+
+  if (body.action === "track_lead" || body.action === "lead_tracking" || (planToCheck && !canAccessWhatsAppLeads(planToCheck).allowed)) {
+    const check = canAccessWhatsAppLeads(planToCheck || "crown");
+    if (!check.allowed) {
+      return NextResponse.json({ error: check.message }, { status: 403 });
+    }
+  }
+
   const template = body.template || "schedule_reminder";
   const { data: profile } = await admin.from("profiles").select("id,phone").eq("id", authData.user.id).single();
   if (!profile?.phone) return NextResponse.json({ error: "Add a WhatsApp phone number in Profile first." }, { status: 400 });

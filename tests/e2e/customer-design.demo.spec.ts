@@ -1,12 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
-import { buildDemoState, DEMO_CUSTOMER } from "./fixtures/demo-state";
+import { buildDemoState, DEMO_CUSTOMER, FOOD_DROP_TIME } from "./fixtures/demo-state";
 
 // Runs against the demo-mode server (playwright.demo.config.ts): no database,
 // all data comes from fixtures/demo-state.ts, so these specs cover the
 // redesigned customer portal even when Supabase is unreachable.
 
 async function openAsCustomer(page: Page, extra?: { socialPosts?: unknown[] }) {
-  const state = buildDemoState();
+  const state = buildDemoState(FOOD_DROP_TIME);
+  await page.clock.setFixedTime(FOOD_DROP_TIME); // 2 PM IST: inside the Food Drop window whatever the real time is
   const session = { email: DEMO_CUSTOMER.email, name: DEMO_CUSTOMER.name, role: "customer", toursCompleted: ["customer_v1"] };
   await page.addInitScript(([s, u, posts]) => {
     if (!sessionStorage.getItem("seeded")) {

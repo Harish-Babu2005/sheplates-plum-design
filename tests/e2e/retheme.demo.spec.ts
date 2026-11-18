@@ -72,7 +72,7 @@ for (const width of [320, 360, 390]) {
     const head = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, rights: Array.from(document.querySelector(".e-head")!.children).map((c) => Math.round(c.getBoundingClientRect().right)) }));
     expect(head.sw, "page scrolls sideways").toBeLessThanOrEqual(head.iw);
     for (const right of head.rights) expect(right, "header item runs off the screen").toBeLessThanOrEqual(head.iw);
-    await page.locator(".e-hero").getByRole("button", { name: "I already have an account" }).first().click();
+    await page.locator(".e-hero").getByRole("button", { name: "Sign In", exact: true }).first().click();
     await page.waitForSelector("[data-slot='dialog-content']");
     await page.waitForTimeout(600);
     const dialog = await page.evaluate(() => { const d = document.querySelector("[data-slot='dialog-content']")!; const r = d.getBoundingClientRect(); const t = d.querySelector("[data-slot='dialog-title']")!; return { l: r.left, r: r.right, t: r.top, b: r.bottom, vw: innerWidth, vh: innerHeight, title: getComputedStyle(t).color }; });

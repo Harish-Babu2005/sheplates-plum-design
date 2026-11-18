@@ -11,6 +11,7 @@ import { BadgeCheck, InfoIcon as Info, List, MapPin, Search, Timer, Zap, Message
 import { toast } from "sonner";
 import { MARKET_GROUPS } from "@/lib/market-groups";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
+import { canCreateFoodDrop } from "@/lib/plans";
 import type { NearbyVendorsMap as NearbyVendorsMapComponent, MapVendor, MapPerson } from "@/components/nearby-vendors-map";
 import type { Vendor, V3State } from "@/components/sheplates-v3";
 import type { SocialApi } from "@/lib/social";
@@ -82,6 +83,7 @@ export function VendorRow({ title, vendors, state, profile, onOpen, onSeeAll }: 
 
 export function VendorCard({ state, vendor, profile, onOpen, compact = false, connectVendor, onContact, contactPending = false, contactSource = "map" }: { state: V3State; vendor: Vendor; profile: Coords; onOpen: (id: string) => void; compact?: boolean; connectVendor?: ConnectVendor; onContact?: (vendor: ConnectVendor, source: WhatsAppClickSource) => void; contactPending?: boolean; contactSource?: WhatsAppClickSource }) {
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor);
+  const isTasterOrConnect = !vendor.plan || vendor.plan === "Taster" || vendor.vendorKind === "p0_connect";
   const connectNumber = connectVendor?.whatsapp_number ? normalizeWhatsAppNumber(connectVendor.whatsapp_number) : null;
   return <div className={`flex items-center gap-3 rounded-[22px] border border-stone-200/70 bg-white p-3 shadow-sm ${compact ? "" : "sm:p-4"}`}>
     <PhotoTile imageUrl={vendorPhoto(state, vendor)} category={vendor.category} initial={vendor.businessName?.[0]} className="size-18 shrink-0 rounded-2xl" emojiSize={30} />
@@ -92,7 +94,7 @@ export function VendorCard({ state, vendor, profile, onOpen, compact = false, co
     </div>
     <div className="flex shrink-0 flex-col items-end gap-2">{vendor.openToday ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Open Now</span> : <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-black text-stone-500">Closed</span>}
       <div className="flex items-center gap-2">
-        {connectVendor && connectNumber && onContact && <button type="button" disabled={contactPending} onClick={() => onContact(connectVendor, contactSource)} className="inline-flex items-center gap-1 rounded-full bg-[#155F65] px-3 py-1.5 text-xs font-black text-white disabled:opacity-60"><MessageCircle className="size-3" />{contactPending ? "Opening…" : "WhatsApp"}</button>}
+        {connectVendor && connectNumber && onContact && (isTasterOrConnect ? <button type="button" disabled={contactPending} onClick={() => onContact(connectVendor, contactSource)} className="inline-flex items-center gap-1 rounded-full bg-[#155F65] px-3 py-1.5 text-xs font-black text-white disabled:opacity-60"><MessageCircle className="size-3" />{contactPending ? "Opening…" : "WhatsApp"}</button> : null)}
         <button type="button" onClick={() => onOpen(vendor.id)} className="rounded-full bg-[#155F65] px-4 py-1.5 text-xs font-black text-white transition hover:bg-[#155F65]">View</button>
       </div></div>
   </div>;
@@ -119,7 +121,8 @@ function ConnectVendorDetails({ vendor, onContact, contactPending, source }: {
     ? normalizeWhatsAppNumber(vendor.whatsapp_number)
     : null;
   const durationHours = vendor.operating_hours?.duration_hours;
-  const whatsappUrl = whatsappNumber
+  const isTasterOrConnect = !vendor.vendor_kind || vendor.vendor_kind === "p0_connect" || vendor.vendor_kind === "taster";
+  const whatsappUrl = isTasterOrConnect && whatsappNumber
     ? `https://wa.me/${whatsappNumber.slice(1)}?text=${encodeURIComponent(`Hi ${vendor.vendor_name}, I found your business on Sheplates and would like to enquire.`)}`
     : null;
   return <section data-testid="connect-vendor-details" aria-label={`${vendor.vendor_name} details`} className="rounded-3xl bg-white p-4 ring-2 ring-[#155F65] sm:p-5">
@@ -264,7 +267,11 @@ export function MapsTab({ state, profile, social, shorts, people, peopleRadius, 
   }, [shorts, vendorRadius]);
 
   const rows = useMemo(() => {
-    const activity = (vendorId: string) => (shortsByVendor.get(vendorId)?.length || 0) * 2 + state.foodDrops.filter((d) => d.vendorId === vendorId && dropDisplayStatus(d) === "live").length * 3 + state.orders.filter((o) => o.vendorId === vendorId).length * 0.2;
+    const activity = (vendorId: string) => {
+      const v = state.vendors.find((item) => item.id === vendorId);
+      const dropsAllowed = v && canCreateFoodDrop(v.plan).allowed;
+      return (shortsByVendor.get(vendorId)?.length || 0) * 2 + (dropsAllowed ? state.foodDrops.filter((d) => d.vendorId === vendorId && dropDisplayStatus(d) === "live").length * 3 : 0) + state.orders.filter((o) => o.vendorId === vendorId).length * 0.2;
+    };
     let vendors = state.vendors.filter((v) => Number.isFinite(v.latitude) && Number.isFinite(v.longitude));
     const q = query.trim().toLowerCase(); if (q) vendors = vendors.filter((v) => `${v.businessName} ${v.category}`.toLowerCase().includes(q));
     if (tab === "Following") vendors = vendors.filter((v) => social.followed.includes(v.id));
@@ -536,8 +543,13 @@ export function FoodDropsTab({ state, profile, social, onClaim, onRefresh }: { s
   const [scope, setScope] = useState<DropScope>("Nearby");
   useEffect(() => { onRefresh(); const id = window.setInterval(onRefresh, 30_000); return () => window.clearInterval(id); }, [onRefresh]);
   const drops = useMemo(() => {
-    const live = state.foodDrops.filter((d) => ["live", "scheduled"].includes(dropDisplayStatus(d)));
-    const known = (d: FoodDrop) => state.vendors.find((v) => v.id === d.vendorId);
+    const known = (d: FoodDrop) => {
+      const v = state.vendors.find((item) => item.id === d.vendorId);
+      if (!v) return null;
+      if (!canCreateFoodDrop(v.plan).allowed) return null;
+      return v;
+    };
+    const live = state.foodDrops.filter((d) => ["live", "scheduled"].includes(dropDisplayStatus(d)) && Boolean(known(d)));
     const km = (d: FoodDrop) => { const v = known(d); return v ? vendorDistanceKm(profile, v) ?? 99 : 99; };
     if (scope === "Nearby") return live.filter((d) => known(d) && km(d) <= 8).sort((a, b) => new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime());
     if (scope === "Following") return live.filter((d) => social.followed.includes(d.vendorId));

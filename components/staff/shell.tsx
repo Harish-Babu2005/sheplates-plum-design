@@ -5,6 +5,7 @@
 import { Wordmark } from "@/components/brand";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { Bell, HelpCircle, LogOut, Menu, X, LayoutDashboard, Eye, Store, MapPin, BadgeCheck } from "@/components/icons";
+import { toast } from "sonner";
 
 type Icon = ComponentType<{ className?: string }>;
 
@@ -20,6 +21,7 @@ export function StaffShell({
   role,
   roleLabel,
   items,
+  disabledItems,
   icons,
   active,
   onNavigate,
@@ -40,6 +42,7 @@ export function StaffShell({
   role: string;
   roleLabel: string;
   items: string[];
+  disabledItems?: Record<string, { badge: string; reason?: string }>;
   icons: Record<string, Icon>;
   active: string;
   onNavigate: (label: string) => void;
@@ -58,7 +61,8 @@ export function StaffShell({
   children: ReactNode;
 }) {
   const [accountOpen, setAccountOpen] = useState(false);
-  const tabs = (PHONE_TABS[role] ?? []).filter((t) => items.includes(t));
+  const preferredTabs = role === "vendor" ? ["Dashboard", "Orders", "Catalog", "Delivery team", "Food Drops"] : (PHONE_TABS[role] ?? []);
+  const tabs = preferredTabs.filter((t) => items.includes(t) && !disabledItems?.[t]).slice(0, 4);
   const go = (label: string) => {
     onNavigate(label);
     onMenu(false);
@@ -66,6 +70,28 @@ export function StaffShell({
   };
   const navButtons = items.map((label) => {
     const Icon = icons[label] ?? LayoutDashboard;
+    const disabled = disabledItems?.[label];
+    if (disabled) {
+      return (
+        <button
+          key={label}
+          type="button"
+          data-tour-nav={label}
+          onClick={() => {
+            toast.info(disabled.reason || `Upgrade to access ${label}.`);
+          }}
+          className="k-nv opacity-60 cursor-pointer hover:bg-stone-50"
+          style={{ filter: "grayscale(80%)" }}
+          title={disabled.reason}
+        >
+          <Icon className="size-[22px] shrink-0 text-stone-400" />
+          <span className="text-stone-500 font-medium">{label}</span>
+          <span className="ml-auto rounded-full bg-stone-100 border border-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-600 whitespace-nowrap">
+            {disabled.badge}
+          </span>
+        </button>
+      );
+    }
     return (
       <button
         key={label}

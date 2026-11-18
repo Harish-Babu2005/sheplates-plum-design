@@ -1,7 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { uniqueById } from "./connect-map";
 import type { Role } from "./sheplates-data";
-import { nextFoodDropWindow, normalizeDropWindow } from "./food-drops";
+import { nextFoodDropWindow, normalizeDropWindow, validateFoodDropUnits, validateFoodDropEditUnits } from "./food-drops";
+import { canAddProduct, canCreateFoodDrop, getPlanLimits, extractPlanCode, getIstMidnightDate, canAccessWhatsAppLeads } from "./plans";
+import { PLAN_INCLUDED_CREDITS } from "./ai-credits-config";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -27,6 +29,13 @@ export type LiveMarketplaceRow = {
   vendor_lat?: number; vendor_lng?: number;
   // Added by V7_7_MARKETPLACE_NEARBY_RETURN_PLAN.sql — undefined until applied.
   vendor_plan_code?: string;
+  // Category-wise SKU Master integration
+  sku_group_id?: string | null;
+  sku_id?: string | null;
+  sku_group_name?: string | null;
+  pack_size?: string | null;
+  unit_type?: string | null;
+  description?: string | null;
 };
 
 export type MarketplaceDiagnostics = {
@@ -60,6 +69,8 @@ export type LiveMenuItemRow = {
   calories_per_unit: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number;
   dietary_tags: string[]; pack_amount: number | null; pack_measure: string | null; image_url: string | null;
   nutrition_status?: string | null; nutrition_confidence?: number | null; nutrition_note?: string | null;
+  sku_group_id?: string | null; sku_id?: string | null; sku_group_name?: string | null; pack_size?: string | null; unit_type?: string | null;
+  description?: string | null;
 };
 
 export function getSupabaseBrowserClient() {
@@ -199,6 +210,12 @@ export async function getAccessToken() {
   return data.session?.access_token ?? null;
 }
 
+/** Store branding from the server. The sign-in token is sent when there is one, so an owner also sees their own unverified store. */
+async function brandingFetch(query: string) {
+  const token = await getAccessToken();
+  return fetch(`/api/vendor/branding${query}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+}
+
 export async function saveLiveCustomerLocation(input: { userId: string; address: string; latitude: number; longitude: number }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -256,15 +273,33 @@ export async function clearLiveCustomerMemory(userId: string) {
  * Adds each product's food type (veg, non_veg, egg) to rows already loaded. It reads through one small function so it
  * respects who may see what, and it is quiet when the function or column is not deployed yet: products then show no mark.
  */
-async function attachFoodTypes<T extends { food_type?: string | null }>(supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>, rows: T[], idOf: (row: T) => string) {
+async function attachFoodTypes<T extends { food_type?: string | null; description?: string | null }>(supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>, rows: T[], idOf: (row: T) => string) {
   const ids = rows.map(idOf).filter(Boolean).slice(0, 1000);
   if (!ids.length) return;
   try {
     const { data, error } = await supabase.rpc("product_food_types", { p_ids: ids });
-    if (error || !Array.isArray(data)) return;
-    const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
-    for (const row of rows) row.food_type = types.get(idOf(row)) ?? null;
+    if (!error && Array.isArray(data) && data.length) {
+      const types = new Map((data as Array<{ id: string; food_type: string | null }>).map((row) => [row.id, row.food_type]));
+      for (const row of rows) {
+        const val = types.get(idOf(row));
+        if (val !== undefined) row.food_type = val;
+      }
+    }
   } catch { /* not deployed yet */ }
+
+  try {
+    const { data, error } = await supabase.from("vendor_menu_items").select("id, food_type, description").in("id", ids);
+    if (!error && Array.isArray(data) && data.length) {
+      const itemsMap = new Map((data as Array<{ id: string; food_type: string | null; description: string | null }>).map((row) => [row.id, row]));
+      for (const row of rows) {
+        const val = itemsMap.get(idOf(row));
+        if (val) {
+          if (val.food_type !== undefined && row.food_type === undefined) row.food_type = val.food_type;
+          if (val.description !== undefined && !row.description) row.description = val.description;
+        }
+      }
+    }
+  } catch { /* direct select fallback failed */ }
 }
 
 export type LiveVendorBranding = {
@@ -298,21 +333,52 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
   } catch { /* columns not created yet */ }
 
   let vendorBranding: LiveVendorBranding[] = [];
-  if (!brandingResult.error && Array.isArray(brandingResult.data)) {
-    vendorBranding = brandingResult.data as LiveVendorBranding[];
-  } else if (brandingResult.error) {
-    try {
-      const fallbackBranding = await supabase.from("vendors").select("id,logo_url,description");
-      if (!fallbackBranding.error && Array.isArray(fallbackBranding.data)) {
-        vendorBranding = fallbackBranding.data.map((r) => ({ ...r, banner_url: null })) as LiveVendorBranding[];
+  try {
+    const res = await brandingFetch("").catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.brandings && Array.isArray(json.brandings)) {
+        vendorBranding = json.brandings.map((b: Record<string, unknown>) => ({
+          id: String(b.id),
+          logo_url: (b.logo_url as string) || null,
+          banner_url: (b.banner_url as string) || null,
+          description: (b.description as string) || null,
+        }));
       }
-    } catch { /* ignore fallback errors */ }
+    }
+  } catch { /* ignore fetch error */ }
+
+  if (vendorBranding.length === 0) {
+    if (!brandingResult.error && Array.isArray(brandingResult.data)) {
+      vendorBranding = brandingResult.data as LiveVendorBranding[];
+    } else if (brandingResult.error) {
+      try {
+        const fallbackBranding = await supabase.from("vendors").select("id,logo_url,description");
+        if (!fallbackBranding.error && Array.isArray(fallbackBranding.data)) {
+          vendorBranding = fallbackBranding.data.map((r) => ({ ...r, banner_url: null })) as LiveVendorBranding[];
+        }
+      } catch { /* ignore fallback errors */ }
+    }
   }
+
+  let liveMarkups: Record<string, number> = {};
+  try {
+    const markupsResult = await supabase.from("vendor_item_markups").select("menu_item_id,markup_percent");
+    if (!markupsResult.error && Array.isArray(markupsResult.data)) {
+      liveMarkups = Object.fromEntries(
+        markupsResult.data.map((m: Record<string, unknown>) => [
+          String(m.menu_item_id),
+          Number(m.markup_percent || 0),
+        ])
+      );
+    }
+  } catch { /* ignore if table missing */ }
 
   return {
     items: marketplaceRows,
     vendorBranding,
     vendorCommercial,
+    markups: liveMarkups,
     diagnostics: ((diagnostics.data || [])[0] || null) as MarketplaceDiagnostics | null,
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
@@ -353,7 +419,14 @@ export type WhatsAppClickSource = "map" | "vendor_profile" | "search";
 export async function trackLiveVendorWhatsAppClick(
   vendorId: string,
   source: WhatsAppClickSource,
+  vendorPlan?: string,
 ) {
+  if (vendorPlan) {
+    const access = canAccessWhatsAppLeads(vendorPlan);
+    if (!access.allowed) {
+      throw new Error(access.message || "WhatsApp contact buttons and lead tracking are exclusive to the Taster plan.");
+    }
+  }
   const supabase = getSupabaseBrowserClient();
   if (!supabase || !isLiveSupabaseMode()) {
     throw new Error("Live WhatsApp click tracking is not available.");
@@ -395,10 +468,23 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const vendorPromise = supabase.from("vendors").select("id,owner_id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name)").eq("id", vendorId).single();
   const documentsPromise = supabase.from("vendor_documents").select("id,document_type,document_number,storage_path,expiry_date,verification_status").eq("vendor_id", vendorId).order("created_at", { ascending: false });
-  const productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  let productResult: { data: unknown; error: { message?: string } | null } = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id,description").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  if (productResult.error && /description/i.test(productResult.error.message || "")) {
+    productResult = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type,pack_size,unit_type,sku_group_name,sku_group_id,sku_id").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+  }
   let productRows = productResult.data as LiveMenuItemRow[] | null;
   let productError = productResult.error;
+  if (productError && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(productError.message || "")) {
+    const fallbackProducts = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,nutrition_status,nutrition_confidence,nutrition_note,food_type").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+    productRows = fallbackProducts.data as LiveMenuItemRow[] | null;
+    productError = fallbackProducts.error;
+  }
   if (productError && /nutrition_status|nutrition_confidence|nutrition_note/i.test(productError.message || "")) {
+    const fallbackProducts = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type").eq("vendor_id", vendorId).order("created_at", { ascending: false });
+    productRows = fallbackProducts.data as LiveMenuItemRow[] | null;
+    productError = fallbackProducts.error;
+  }
+  if (productError && /food_type/i.test(productError.message || "")) {
     const fallbackProducts = await supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").eq("vendor_id", vendorId).order("created_at", { ascending: false });
     productRows = fallbackProducts.data as LiveMenuItemRow[] | null;
     productError = fallbackProducts.error;
@@ -417,8 +503,24 @@ export async function loadLiveVendorWorkspace(vendorId: string) {
   const ownRows = productRows || [];
   await attachFoodTypes(supabase, ownRows, (row) => row.id);
   // The certificate is the vendor's FSSAI document; newer rows can be PAN, bank and so on.
-  const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate") || documents.data?.[0] || null;
-  return { vendor: vendor.data as LiveVendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
+  const certificate = (documents.data || []).find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || documents.data?.[0] || null;
+  let vendorRow = vendor.data as LiveVendorRow;
+  try {
+    const res = await brandingFetch(`?vendorId=${encodeURIComponent(vendorId)}`).catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      const b = json?.brandings?.[0];
+      if (b) {
+        vendorRow = {
+          ...vendorRow,
+          logo_url: vendorRow.logo_url || b.logo_url || null,
+          banner_url: vendorRow.banner_url || b.banner_url || null,
+          description: vendorRow.description || b.description || null,
+        };
+      }
+    }
+  } catch { /* ignore branding fetch error */ }
+  return { vendor: vendorRow, products: ownRows, document: certificate, documents: documents.data || [] };
 }
 
 export async function loadLiveVendorWorkspaceForOwner(userId: string) {
@@ -435,9 +537,9 @@ export async function loadLiveOperationsWorkspace() {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
   const [vendors, products, profiles, documents, homeConfig, campaigns] = await Promise.all([
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
-    supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url").order("created_at", { ascending: false }),
+    supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type,description").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
-    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status").order("created_at", { ascending: false }),
+    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
     supabase.from("marketing_campaigns").select("*").order("created_at", { ascending: false }).limit(100),
   ]);
@@ -456,6 +558,24 @@ export async function loadLiveOperationsWorkspace() {
   } else {
     throw vendors.error;
   }
+  try {
+    const res = await brandingFetch("").catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.brandings && Array.isArray(json.brandings)) {
+        const brandMap = new Map((json.brandings as LiveVendorBranding[]).map((b) => [b.id, b]));
+        vendorRows = vendorRows.map((r) => {
+          const b = brandMap.get(r.id);
+          return {
+            ...r,
+            logo_url: r.logo_url || b?.logo_url || null,
+            banner_url: r.banner_url || b?.banner_url || null,
+            description: r.description || b?.description || null,
+          };
+        });
+      }
+    }
+  } catch { /* ignore branding enrichment error */ }
   for (const result of [products, profiles, documents]) if (result.error) throw result.error;
   if (homeConfig.error) console.error("Homepage merchandising is unavailable:", homeConfig.error.message);
   if (campaigns.error) console.error("Marketing campaigns are unavailable:", campaigns.error.message);
@@ -463,7 +583,33 @@ export async function loadLiveOperationsWorkspace() {
   const merchandisingError = homeConfig.error?.message || campaigns.error?.message || null;
   const allProductRows = (products.data || []) as LiveMenuItemRow[];
   await attachFoodTypes(supabase, allProductRows, (row) => row.id);
-  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+  let liveMarkups: Record<string, number> = {};
+  try {
+    const markupsResult = await supabase.from("vendor_item_markups").select("menu_item_id,markup_percent");
+    if (!markupsResult.error && Array.isArray(markupsResult.data)) {
+      liveMarkups = Object.fromEntries(
+        markupsResult.data.map((m: Record<string, unknown>) => [
+          String(m.menu_item_id),
+          Number(m.markup_percent || 0),
+        ])
+      );
+    }
+  } catch { /* ignore if table missing */ }
+  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], markups: liveMarkups, merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+}
+
+export async function saveLiveItemMarkup(productId: string, markupPercent: number): Promise<void> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase || !isLiveSupabaseMode()) return;
+  try {
+    const { error } = await supabase.from("vendor_item_markups").upsert(
+      { menu_item_id: productId, markup_percent: markupPercent },
+      { onConflict: "menu_item_id" }
+    );
+    if (error) console.warn("Could not save live item markup:", error.message);
+  } catch (e) {
+    console.warn("Could not save live item markup:", e);
+  }
 }
 
 export async function saveLiveMarketplaceHome(config: { featuredProductIds: string[]; recommendationPopupEnabled: boolean; maxFeatured: number }) {
@@ -580,22 +726,47 @@ export async function saveLiveVendorProduct(input: {
   vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
   active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
   dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
+  description?: string;
   nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
+  skuGroupName?: string; packSize?: string; unitType?: string; skuId?: string; skuGroupId?: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const { count: currentProductCount } = await supabase.from("vendor_menu_items").select("id", { count: "exact", head: true }).eq("vendor_id", input.vendorId);
+  const { data: vendorData } = await supabase.from("vendors").select("plan_id,vendor_plans(code)").eq("id", input.vendorId).maybeSingle();
+  const planCode = extractPlanCode(vendorData?.vendor_plans) || "crave";
+  const limitCheck = canAddProduct(planCode, currentProductCount ?? 0);
+  if (!limitCheck.allowed) {
+    throw new Error(limitCheck.message);
+  }
   const basePayload = {
     vendor_id: input.vendorId, name: input.name, category: input.category, unit: input.unit,
     quantity_step: 1, vendor_base_price: input.price, stock_quantity: input.stock, active: input.active,
     calories_per_unit: input.calories, protein_g: input.protein, carbs_g: input.carbs,
     fat_g: input.fat, fibre_g: input.fibre, dietary_tags: input.dietaryTags,
     pack_amount: input.packAmount, pack_measure: input.packMeasure, image_url: input.imageUrl || null,
+    description: input.description ? input.description.slice(0, 200) : null,
     nutrition_status: input.nutritionStatus || "pending_review",
     nutrition_confidence: input.nutritionConfidence ?? null,
     nutrition_note: input.nutritionNote || null,
+    sku_group_name: input.skuGroupName || null,
+    pack_size: input.packSize || input.unit,
+    unit_type: input.unitType || null,
+    sku_id: input.skuId || null,
+    sku_group_id: input.skuGroupId || null,
   };
   const payload = input.foodType ? { ...basePayload, food_type: input.foodType } : basePayload;
   let result = await supabase.from("vendor_menu_items").insert(payload).select("id").single();
+  // If description column doesn't exist yet, retry without description
+  if (result.error && /description/i.test(result.error.message || "")) {
+    const { description: _d, ...withoutDesc } = payload;
+    result = await supabase.from("vendor_menu_items").insert(withoutDesc).select("id").single();
+  }
+  // If SKU columns don't exist yet, retry without SKU columns
+  if (result.error && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(result.error.message || "")) {
+    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, description: _d, ...withoutSku } = payload;
+    result = await supabase.from("vendor_menu_items").insert(withoutSku).select("id").single();
+  }
   // Same idea for the food type column: save the product even if the V9_18 migration has not been applied yet.
   if (result.error && /food_type/i.test(result.error.message || "")) result = await supabase.from("vendor_menu_items").insert(basePayload).select("id").single();
   // Backward-compatible retry lets the UI keep working if the production migration
@@ -609,6 +780,46 @@ export async function saveLiveVendorProduct(input: {
   }
   if (result.error) throw result.error;
   return result.data.id as string;
+}
+
+export async function updateLiveVendorProduct(input: {
+  id: string; vendorId: string; name: string; category: string; unit: string; price: number; stock: number;
+  active: boolean; calories: number; protein: number; carbs: number; fat: number; fibre: number;
+  dietaryTags: string[]; packAmount: number; packMeasure: string; imageUrl?: string; foodType?: "veg" | "non_veg" | "egg";
+  description?: string;
+  nutritionStatus?: "verified" | "estimated" | "pending_review"; nutritionConfidence?: number; nutritionNote?: string;
+  skuGroupName?: string; packSize?: string; unitType?: string; skuId?: string; skuGroupId?: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const payload = {
+    name: input.name, category: input.category, unit: input.unit,
+    vendor_base_price: input.price, stock_quantity: input.stock, active: input.active,
+    calories_per_unit: input.calories, protein_g: input.protein, carbs_g: input.carbs,
+    fat_g: input.fat, fibre_g: input.fibre, dietary_tags: input.dietaryTags,
+    pack_amount: input.packAmount, pack_measure: input.packMeasure, image_url: input.imageUrl || null,
+    food_type: input.foodType || null,
+    description: input.description ? input.description.slice(0, 200) : null,
+    nutrition_status: input.nutritionStatus || "pending_review",
+    nutrition_confidence: input.nutritionConfidence ?? null,
+    nutrition_note: input.nutritionNote || null,
+    sku_group_name: input.skuGroupName || null,
+    pack_size: input.packSize || input.unit,
+    unit_type: input.unitType || null,
+    sku_id: input.skuId || null,
+    sku_group_id: input.skuGroupId || null,
+    updated_at: new Date().toISOString(),
+  };
+  let result = await supabase.from("vendor_menu_items").update(payload).eq("id", input.id).select("id").maybeSingle();
+  if (result.error && /description/i.test(result.error.message || "")) {
+    const { description: _d, ...withoutDesc } = payload;
+    result = await supabase.from("vendor_menu_items").update(withoutDesc).eq("id", input.id).select("id").maybeSingle();
+  }
+  if (result.error && /sku_group_name|pack_size|unit_type|sku_id|sku_group_id/i.test(result.error.message || "")) {
+    const { sku_group_name: _g, pack_size: _p, unit_type: _u, sku_id: _s, sku_group_id: _sg, description: _d, ...fallbackPayload } = payload;
+    result = await supabase.from("vendor_menu_items").update(fallbackPayload).eq("id", input.id).select("id").maybeSingle();
+  }
+  if (result.error) throw result.error;
 }
 
 export async function notifyLiveNutritionReview(input: { productId: string; productName: string; reason: string }) {
@@ -640,6 +851,36 @@ export async function deleteLiveVendorProduct(productId: string): Promise<{ dele
   throw direct.error;
 }
 
+export async function clearLiveVendorProducts(productIds: string[]): Promise<{ deletedCount: number; deactivatedCount: number; removedFromBaskets: number }> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  let deletedCount = 0;
+  let deactivatedCount = 0;
+  let removedFromBaskets = 0;
+
+  const chunkSize = 5;
+  for (let i = 0; i < productIds.length; i += chunkSize) {
+    const chunk = productIds.slice(i, i + chunkSize);
+    const results = await Promise.all(
+      chunk.map((id) =>
+        deleteLiveVendorProduct(id).catch((err) => {
+          console.error(`Failed to delete product ${id}:`, err);
+          return { deleted: false, removedFromBaskets: 0 };
+        })
+      )
+    );
+    for (const res of results) {
+      if (res.deleted) {
+        deletedCount++;
+        removedFromBaskets += res.removedFromBaskets;
+      } else {
+        deactivatedCount++;
+      }
+    }
+  }
+  return { deletedCount, deactivatedCount, removedFromBaskets };
+}
+
 export async function setLiveProductActive(productId: string, active: boolean) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
@@ -664,10 +905,175 @@ export async function updateLiveVendorControls(vendorId: string, patch: {
 export async function saveLiveVendorPlan(vendorId: string, planCode: "taster" | "crave" | "thrive" | "crown") {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const plan = await supabase.from("vendor_plans").select("id").eq("code", planCode).single();
+  const plan = await supabase.from("vendor_plans").select("id,code,name").eq("code", planCode).single();
   if (plan.error) throw plan.error;
   const result = await supabase.from("vendors").update({ plan_id: plan.data.id, updated_at: new Date().toISOString() }).eq("id", vendorId);
   if (result.error) throw result.error;
+
+  const limits = getPlanLimits(planCode);
+
+  // Downgrade enforcement:
+  // 1. Deactivate excess active products (newest first, never delete)
+  const { data: activeProducts } = await supabase
+    .from("vendor_menu_items")
+    .select("id,created_at")
+    .eq("vendor_id", vendorId)
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+  if (activeProducts && activeProducts.length > limits.maxProducts) {
+    const excess = activeProducts.slice(0, activeProducts.length - limits.maxProducts);
+    const excessIds = excess.map((p) => p.id);
+    await supabase.from("vendor_menu_items").update({ active: false, updated_at: new Date().toISOString() }).in("id", excessIds);
+  }
+
+  // 2. Deactivate excess active delivery staff (newest first)
+  const { data: activeStaff } = await supabase
+    .from("vendor_delivery_staff")
+    .select("id,created_at")
+    .eq("vendor_id", vendorId)
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+  if (activeStaff && activeStaff.length > limits.maxDeliveryStaff) {
+    const excess = activeStaff.slice(0, activeStaff.length - limits.maxDeliveryStaff);
+    const excessIds = excess.map((s) => s.id);
+    await supabase.from("vendor_delivery_staff").update({ active: false, updated_at: new Date().toISOString() }).in("id", excessIds);
+  }
+
+  // 3. Deactivate excess active delivery slots (newest first)
+  const { data: activeSlots } = await supabase
+    .from("vendor_delivery_slots")
+    .select("id,created_at")
+    .eq("vendor_id", vendorId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  if (activeSlots && activeSlots.length > limits.maxDeliverySlots) {
+    const excess = activeSlots.slice(0, activeSlots.length - limits.maxDeliverySlots);
+    const excessIds = excess.map((s) => s.id);
+    await supabase.from("vendor_delivery_slots").update({ is_active: false, updated_at: new Date().toISOString() }).in("id", excessIds);
+  }
+
+  // 4. Record audit log entry
+  try {
+    const userRes = await supabase.auth.getUser();
+    const user = userRes?.data?.user;
+    if (user) {
+      await supabase.from("audit_logs").insert({
+        actor_id: user.id,
+        action: "Vendor plan changed",
+        entity_type: "vendor",
+        entity_id: vendorId,
+        after_data: { plan: planCode, limits, changed_at: new Date().toISOString() },
+      });
+    }
+  } catch (err) {
+    console.error("Audit log error in saveLiveVendorPlan:", err);
+  }
+
+  // 5. Update plan AI credits upon plan upgrade/change
+  try {
+    const includedCredits = PLAN_INCLUDED_CREDITS[planCode] ?? 0;
+    const { data: currentCreds } = await supabase.from("vendor_ai_credits").select("purchased_credits").eq("vendor_id", vendorId).maybeSingle();
+    const purchased = currentCreds?.purchased_credits ?? 0;
+    await supabase.from("vendor_ai_credits").upsert({
+      vendor_id: vendorId,
+      plan_credits: includedCredits,
+      purchased_credits: purchased,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "vendor_id" });
+    await supabase.from("vendor_ai_credit_ledger").insert({
+      vendor_id: vendorId,
+      entry_type: "grant",
+      action: "plan_change_grant",
+      credits_change: includedCredits,
+      plan_credits_after: includedCredits,
+      purchased_credits_after: purchased,
+      balance_after: includedCredits + purchased,
+      notes: `Updated to ${planCode} plan (${includedCredits} plan credits)`,
+    });
+  } catch (credErr) {
+    console.warn("Could not sync AI credits in saveLiveVendorPlan (migration may be pending):", credErr);
+  }
+}
+
+export async function fetchLiveVendorAiCredits(vendorId?: string) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "get_vendor_credits", vendorId }),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || "Failed to load credits.");
+  }
+  return res.json() as Promise<{
+    ok: boolean;
+    balance: {
+      vendorId: string;
+      planCode: string;
+      planCredits: number;
+      purchasedCredits: number;
+      totalCredits: number;
+      includedAllowance: number;
+      isLow: boolean;
+    };
+    ledger: Array<Record<string, unknown>>;
+  }>;
+}
+
+export async function createLiveCreditPackOrder(packId: string) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "create_credit_pack_order", packId }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Could not create credit pack order.");
+  return json as {
+    ok: boolean;
+    keyId: string;
+    razorpayOrderId: string;
+    amount: number;
+    currency: string;
+    receipt: string;
+    pack: Record<string, unknown>;
+    billing: Record<string, unknown>;
+    description: string;
+  };
+}
+
+export async function verifyLiveCreditPackPayment(payload: {
+  packId: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/payments/razorpay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: "verify_credit_pack_payment", ...payload }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Payment verification failed.");
+  return json;
+}
+
+export async function adjustLiveVendorAiCreditsAdmin(input: {
+  vendorId: string;
+  amount: number;
+  reason: string;
+}) {
+  const token = await getAccessToken();
+  const res = await fetch("/api/admin/vendor-credits", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Failed to adjust credits.");
+  return json;
 }
 
 export async function decideLiveVendorVerification(vendorId: string, verification: string) {
@@ -783,6 +1189,7 @@ export async function saveLiveVendorBranding(input: {
   vendorId: string;
   logoUrl?: string;
   bannerUrl?: string;
+  bio?: string;
 }) {
   try {
     const token = await getAccessToken();
@@ -807,10 +1214,14 @@ export async function saveLiveVendorBranding(input: {
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.logoUrl !== undefined) patch.logo_url = input.logoUrl;
   if (input.bannerUrl !== undefined) patch.banner_url = input.bannerUrl;
+  if (input.bio !== undefined) patch.description = input.bio;
 
   let result = await supabase.from("vendors").update(patch).eq("id", input.vendorId);
-  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || "")) && patch.logo_url) {
-    result = await supabase.from("vendors").update({ logo_url: patch.logo_url, updated_at: patch.updated_at }).eq("id", input.vendorId);
+  if (result.error && (result.error.code === "42703" || /banner_url/i.test(result.error.message || ""))) {
+    const fallbackPatch: Record<string, unknown> = { updated_at: patch.updated_at };
+    if (patch.logo_url) fallbackPatch.logo_url = patch.logo_url;
+    if (patch.description) fallbackPatch.description = patch.description;
+    result = await supabase.from("vendors").update(fallbackPatch).eq("id", input.vendorId);
   }
   if (result.error) throw result.error;
 }
@@ -1279,19 +1690,73 @@ export async function createLiveFoodDrop(input: {
 }): Promise<import("@/lib/food-drops").FoodDrop> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const { data: vRow } = await supabase.from("vendors").select("plan_id,vendor_plans(code)").eq("id", input.vendorId).maybeSingle();
+  const planCode = extractPlanCode(vRow?.vendor_plans) || "crave";
+  const dropCheck = canCreateFoodDrop(planCode);
+  if (!dropCheck.allowed) {
+    throw new Error(dropCheck.message);
+  }
+  const istMidnight = getIstMidnightDate();
+  const { count } = await supabase.from("food_drops").select("id", { count: "exact", head: true }).eq("vendor_id", input.vendorId).gte("created_at", istMidnight.toISOString());
+  const dailyCheck = canCreateFoodDrop(planCode, count || 0);
+  if (!dailyCheck.allowed) {
+    throw new Error(dailyCheck.message);
+  }
+
+  // 1. Check Product Stock
+  const { data: prodRow, error: prodErr } = await supabase.from("vendor_menu_items").select("id, name, stock_quantity, active").eq("id", input.productId).maybeSingle();
+  if (prodErr || !prodRow) throw new Error("Product not found");
+
+  const validation = validateFoodDropUnits(input.totalQuantity, prodRow.stock_quantity ?? 0, prodRow.name);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+  const validQty = validation.quantity!;
+
+  // 2. Try stored procedure if available, else standard transaction
+  try {
+    const { data: rpcDrop, error: rpcErr } = await supabase.rpc("create_food_drop_with_stock", {
+      p_vendor_id: input.vendorId,
+      p_product_id: input.productId,
+      p_title: input.title.trim(),
+      p_drop_price: input.dropPrice,
+      p_original_price: input.originalPrice,
+      p_total_quantity: validQty,
+      p_description: input.description || null,
+    });
+    if (!rpcErr && rpcDrop) {
+      return mapFoodDropRow(rpcDrop as FoodDropRow);
+    }
+  } catch {}
+
+  // Reserve stock
+  const { data: updatedProd, error: stockErr } = await supabase
+    .from("vendor_menu_items")
+    .update({ stock_quantity: (prodRow.stock_quantity ?? 0) - validQty, updated_at: new Date().toISOString() })
+    .eq("id", input.productId)
+    .gte("stock_quantity", validQty)
+    .select("stock_quantity")
+    .maybeSingle();
+
+  if (stockErr || !updatedProd) {
+    throw new Error(`You entered ${validQty} units, but only ${prodRow.stock_quantity ?? 0} are in stock for ${prodRow.name}. Please enter ${prodRow.stock_quantity ?? 0} or fewer, or update your stock first.`);
+  }
+
   const { startsAt, endsAt } = nextFoodDropWindow();
   const result = await supabase.from("food_drops").insert({
     vendor_id: input.vendorId, product_id: input.productId, title: input.title, description: input.description || null,
     drop_price: input.dropPrice, original_price: input.originalPrice,
-    total_quantity: input.totalQuantity, remaining_quantity: input.totalQuantity,
+    total_quantity: validQty, remaining_quantity: validQty,
     starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(),
   }).select(FOOD_DROP_COLUMNS).single();
   if (result.error || !result.data) {
+    // Rollback stock reservation
+    await supabase.from("vendor_menu_items").update({ stock_quantity: prodRow.stock_quantity }).eq("id", input.productId);
     const failure = result.error;
     if (failure && (failure.code === "42501" || /row-level security|permission denied/i.test(failure.message || ""))) {
       // The database only lets a store publish a Food Drop when its plan includes the feature. Say which of the two it is.
       const entitled = await supabase.rpc("vendor_has_entitlement", { p_vendor: input.vendorId, p_key: "food_drops" });
-      if (!entitled.error && entitled.data === false) throw new Error("Your store's plan does not include Food Drops in the database yet. Ask Operations to confirm the Thrive or Crown plan on your store, then try again.");
+      if (!entitled.error && entitled.data === false) throw new Error("Your store's plan does not include Food Drops in the database yet. Ask Operations to confirm the Crave, Thrive or Crown plan on your store, then try again.");
       throw new Error("You are not allowed to publish a Food Drop for this store. Sign in with the store owner's account, or ask Operations for help.");
     }
     if (failure && /food_drops|schema cache|does not exist/i.test(failure.message || "") && !/violates/i.test(failure.message || "")) throw new Error("Food Drops are not set up in the database yet. Ask the Super Admin to run the Food Drops update (V8_2 and V9_12).");
@@ -1311,11 +1776,95 @@ export async function createLiveFoodDrop(input: {
   return mapFoodDropRow(created);
 }
 
+export async function updateLiveFoodDrop(input: {
+  dropId: string;
+  title?: string;
+  dropPrice?: number;
+  totalQuantity: number;
+}): Promise<import("@/lib/food-drops").FoodDrop> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+
+  // Try RPC first
+  try {
+    const { data: rpcDrop, error: rpcErr } = await supabase.rpc("update_food_drop_with_stock", {
+      p_drop_id: input.dropId,
+      p_title: input.title || null,
+      p_drop_price: input.dropPrice ?? null,
+      p_new_quantity: input.totalQuantity,
+    });
+    if (!rpcErr && rpcDrop) {
+      return mapFoodDropRow(rpcDrop as FoodDropRow);
+    }
+  } catch {}
+
+  const { data: dropRow, error: dropErr } = await supabase.from("food_drops").select(FOOD_DROP_COLUMNS).eq("id", input.dropId).maybeSingle();
+  if (dropErr || !dropRow) throw new Error("Food Drop not found");
+
+  const { data: prodRow, error: prodErr } = await supabase.from("vendor_menu_items").select("id, name, stock_quantity").eq("id", dropRow.product_id).maybeSingle();
+  if (prodErr || !prodRow) throw new Error("Product not found");
+
+  const claimed = dropRow.total_quantity - dropRow.remaining_quantity;
+  const validation = validateFoodDropEditUnits(input.totalQuantity, dropRow.total_quantity, claimed, prodRow.stock_quantity ?? 0, prodRow.name);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  const diff = validation.additionalUnits ?? 0;
+  if (diff > 0) {
+    const { error: reserveErr } = await supabase.from("vendor_menu_items").update({
+      stock_quantity: (prodRow.stock_quantity ?? 0) - diff,
+      updated_at: new Date().toISOString(),
+    }).eq("id", dropRow.product_id).gte("stock_quantity", diff);
+    if (reserveErr) {
+      throw new Error(`You entered ${input.totalQuantity} units, but only ${prodRow.stock_quantity ?? 0} more are in stock for ${prodRow.name}. Please enter ${dropRow.total_quantity + (prodRow.stock_quantity ?? 0)} or fewer, or update your stock first.`);
+    }
+  } else if (diff < 0) {
+    await supabase.from("vendor_menu_items").update({
+      stock_quantity: (prodRow.stock_quantity ?? 0) + (-diff),
+      updated_at: new Date().toISOString(),
+    }).eq("id", dropRow.product_id);
+  }
+
+  const newRemaining = dropRow.remaining_quantity + diff;
+  const updates: Record<string, unknown> = {
+    total_quantity: validation.quantity ?? input.totalQuantity,
+    remaining_quantity: newRemaining,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.title) updates.title = input.title;
+  if (typeof input.dropPrice === "number") updates.drop_price = input.dropPrice;
+
+  const { data: updated, error: updateErr } = await supabase.from("food_drops").update(updates).eq("id", input.dropId).select(FOOD_DROP_COLUMNS).single();
+  if (updateErr || !updated) throw updateErr || new Error("Failed to update Food Drop");
+  return mapFoodDropRow(updated);
+}
+
 export async function cancelLiveFoodDrop(dropId: string): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
+
+  // Try RPC first
+  try {
+    const { data: rpcDrop, error: rpcErr } = await supabase.rpc("cancel_food_drop_with_stock", { p_drop_id: dropId });
+    if (!rpcErr && rpcDrop) return;
+  } catch {}
+
+  const { data: dropRow } = await supabase.from("food_drops").select("id, product_id, remaining_quantity, status").eq("id", dropId).maybeSingle();
+  if (!dropRow || dropRow.status === "cancelled") return;
+
   const result = await supabase.from("food_drops").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", dropId);
   if (result.error) throw result.error;
+
+  if (dropRow.product_id && (dropRow.remaining_quantity ?? 0) > 0) {
+    const { data: prod } = await supabase.from("vendor_menu_items").select("stock_quantity").eq("id", dropRow.product_id).maybeSingle();
+    if (prod) {
+      await supabase.from("vendor_menu_items").update({
+        stock_quantity: (prod.stock_quantity ?? 0) + dropRow.remaining_quantity,
+        updated_at: new Date().toISOString(),
+      }).eq("id", dropRow.product_id);
+    }
+  }
 }
 
 /** The write path for a claim: calls commerce API with admin service role, with fallback for direct DB. */

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { buildProductImagePrompt, conceptKey, detectImageType, sanitizeProductName, storageSlug } from "@/lib/product-image-ai";
+import { getIstMidnightDate } from "@/lib/plans";
 
 /** Server-only: draws one product image with the image model, keeps it in storage, and remembers it per product type. */
 
@@ -72,7 +73,7 @@ async function nameIsAllowed(apiKey: string, name: string, fetchImpl?: Fetch): P
 }
 
 async function usageToday(admin: SupabaseClient, vendorId: string | null) {
-  const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+  const since = getIstMidnightDate();
   const total = await admin.from("ai_product_images").select("concept_key", { count: "exact", head: true }).gte("created_at", since.toISOString());
   if (total.error) {
     if (/ai_product_images|does not exist|schema cache/i.test(total.error.message) || total.error.code === "42P01") {
@@ -101,8 +102,9 @@ async function ensureBucket(admin: SupabaseClient) {
  * (Regenerate); otherwise a previously drawn picture for the same product type is reused at no cost.
  */
 export async function ensureConceptImage(admin: SupabaseClient, input: { name: string; category: string; vendorId: string | null; force?: boolean; fetchImpl?: Fetch }): Promise<ImageResult> {
-  const clean = sanitizeProductName(input.name);
-  const key = conceptKey(input.name, input.category);
+  const boundedName = String(input.name ?? "").slice(0, 60);
+  const clean = sanitizeProductName(boundedName);
+  const key = conceptKey(boundedName, input.category);
   if (!clean || !key) throw new ImageError(422, "Give the product a clear name first.");
 
   if (!input.force) {
@@ -114,9 +116,8 @@ export async function ensureConceptImage(admin: SupabaseClient, input: { name: s
     if (cached.data?.url) return { imageUrl: cached.data.url as string, source: "cache" };
   }
 
-  const usage = await usageToday(admin, input.vendorId);
-  if (usage.total >= DAILY_LIMIT()) throw new ImageError(429, "The daily limit for AI product images has been reached. It resets tomorrow.");
-  if (input.vendorId && usage.mine >= VENDOR_DAILY_LIMIT()) throw new ImageError(429, "Your store has used its AI images for today. Try again tomorrow or upload a photo.");
+  // Daily limit is replaced by the AI credits system (checkVendorAiCredits / deductVendorAiCredits)
+
 
   const apiKeyValue = apiKey();
   if (!apiKeyValue) throw new ImageError(503, "AI images are temporarily unavailable.");

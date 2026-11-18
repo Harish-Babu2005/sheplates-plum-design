@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { nutritionLooksConsistent, type Nutrition } from "@/lib/nutrition";
 import { runToolDrivenCommerceAgent } from "@/lib/she-agent-commerce-runtime";
+import { alertAdminBudgetCredit } from "@/lib/uruv-ai";
+import { adminClient } from "@/lib/product-image-server";
+import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
+import type { AiAction } from "@/lib/ai-credits-config";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
+type AgentTask = "commerce" | "order_tracking" | "cancellation_review" | "nutrition" | "business_insights" | "quality_complaint" | "campaign_strategy" | "quotation_assistant";
 type AgentRequest = {
-  task?: "commerce" | "order_tracking" | "cancellation_review" | "nutrition" | "business_insights" | "quality_complaint" | "campaign_strategy";
+  task?: AgentTask;
   role?: Role;
   message?: string;
   context?: Record<string, unknown>;
@@ -104,16 +109,17 @@ function extractResponseText(payload: Record<string, unknown>) {
   return "";
 }
 
-type AgentTask = NonNullable<AgentRequest["task"]> | "commerce";
-
 const ROLE_TASKS: Record<Role, ReadonlySet<AgentTask>> = {
   customer: new Set(["commerce", "order_tracking", "quality_complaint"]),
-  vendor: new Set(["commerce", "order_tracking", "nutrition", "business_insights"]),
-  operations: new Set(["commerce", "order_tracking", "cancellation_review", "business_insights", "quality_complaint"]),
-  admin: new Set(["commerce", "order_tracking", "cancellation_review", "nutrition", "business_insights", "quality_complaint", "campaign_strategy"]),
+  vendor: new Set(["commerce", "order_tracking", "nutrition", "business_insights", "quotation_assistant"]),
+  operations: new Set(["commerce", "order_tracking", "cancellation_review", "business_insights", "quality_complaint", "quotation_assistant"]),
+  admin: new Set(["commerce", "order_tracking", "cancellation_review", "nutrition", "business_insights", "quality_complaint", "campaign_strategy", "quotation_assistant"]),
 };
 
 function demoModeEnabled() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) return true;
   return process.env.NEXT_PUBLIC_DEMO_MODE === "true" || process.env.SHEPLATES_DEMO_MODE === "true";
 }
 
@@ -425,6 +431,145 @@ function validateCommerceResult(raw: CommerceResult, context: Record<string, unk
   };
 }
 
+function groundedCommerceFallback(body: AgentRequest, role: Role, context: Record<string, unknown>): CommerceResult {
+  const msg = (body.message || "").toLowerCase().trim();
+  const base: CommerceResult = {
+    reply: "",
+    intent: "answer",
+    budget: -1,
+    selectedProductIds: [],
+    basketProductIds: [],
+    removeProductIds: [],
+    navigateTo: "",
+    clarifyingQuestion: "",
+    requiresPhoto: false,
+    targetOrderId: "",
+    createTicket: false,
+    ticketSubject: "",
+    ticketCategory: "Other",
+    ticketPriority: "Normal",
+    memoryUpdates: [],
+  };
+
+  if (role === "vendor") {
+    const vendor = (context.vendor || {}) as Record<string, unknown>;
+    const vendorName = String(vendor.businessName || vendor.name || "your store");
+    const products = Array.isArray(context.products) ? (context.products as Array<Record<string, unknown>>) : [];
+    const orders = Array.isArray(context.orders) ? (context.orders as Array<Record<string, unknown>>) : [];
+    const openOrders = orders.filter((o) => !/delivered|cancel|complete|rejected/i.test(String(o.status || "")));
+    const staff = Array.isArray(context.deliveryStaff) ? (context.deliveryStaff as Array<Record<string, unknown>>) : [];
+    const activeStaff = staff.filter((s) => s.active !== false);
+    const quotes = Array.isArray(context.quotations) ? (context.quotations as Array<Record<string, unknown>>) : [];
+    const quoteOpps = Array.isArray(context.quoteOpportunities) ? (context.quoteOpportunities as Array<Record<string, unknown>>) : [];
+
+    if (/fulfil|fulfill|pending|next|order/i.test(msg)) {
+      if (openOrders.length > 0) {
+        const nextOrder = openOrders[0];
+        const slot = String(nextOrder.scheduled_slot || nextOrder.slot || "next scheduled slot");
+        const mode = String(nextOrder.fulfilment_mode || nextOrder.fulfilment || "delivery");
+        const orderId = String(nextOrder.order_number || nextOrder.id || "").slice(-8);
+        base.reply = `You have ${openOrders.length} open order${openOrders.length === 1 ? "" : "s"} needing fulfilment. Next order #${orderId} is scheduled for ${slot} (${mode}).`;
+        base.intent = "track";
+      } else {
+        base.reply = "All orders are completed and up to date! There are no pending fulfilment tasks right now.";
+        base.intent = "answer";
+      }
+      return base;
+    }
+
+    if (/inventory|stock|catalogue|catalog|product/i.test(msg)) {
+      const stockOf = (p: Record<string, unknown>) => Number(p.stock_quantity ?? p.stock ?? 0);
+      const outOfStock = products.filter((p) => stockOf(p) <= 0);
+      const lowStock = products.filter((p) => stockOf(p) > 0 && stockOf(p) <= 5);
+      const live = products.filter((p) => p.active !== false && stockOf(p) > 0);
+      if (products.length === 0) {
+        base.reply = "Your catalogue is currently empty. Add products in the Catalog tab to start receiving orders.";
+      } else {
+        const parts = [`${live.length} of ${products.length} products are live and in stock.`];
+        if (outOfStock.length > 0) parts.push(`Out of stock (${outOfStock.length}): ${outOfStock.slice(0, 3).map((p) => String(p.name || "Item")).join(", ")}.`);
+        if (lowStock.length > 0) parts.push(`Low stock (${lowStock.length}): ${lowStock.slice(0, 3).map((p) => String(p.name || "Item")).join(", ")}.`);
+        base.reply = `Inventory summary for ${vendorName}: ${parts.join(" ")}`;
+      }
+      base.intent = "answer";
+      return base;
+    }
+
+    if (/ticket|issue|support|complaint/i.test(msg)) {
+      base.reply = "I've noted that delivery issue. A support ticket has been prepared for Operations review.";
+      base.intent = "support";
+      base.createTicket = true;
+      base.ticketSubject = (body.message || "Delivery issue reported").slice(0, 60);
+      base.ticketCategory = "Delivery";
+      base.ticketPriority = "Normal";
+      return base;
+    }
+
+    if (/staff|rider|delivery partner|driver/i.test(msg)) {
+      base.reply = `You have ${activeStaff.length} active delivery staff member${activeStaff.length === 1 ? "" : "s"} assigned to your kitchen.`;
+      base.intent = "answer";
+      return base;
+    }
+
+    if (/quote|rfq|opportunity|quotation/i.test(msg)) {
+      if (quoteOpps.length > 0) {
+        base.reply = `You have ${quoteOpps.length} quotation opportunit${quoteOpps.length === 1 ? "y" : "ies"} from nearby customers. Check 'My quotations' to review and submit quotes.`;
+      } else {
+        base.reply = `You have ${quotes.length} submitted quote${quotes.length === 1 ? "" : "s"}. No new RFQ opportunities are waiting right now.`;
+      }
+      base.intent = "answer";
+      return base;
+    }
+
+    const statusNote = openOrders.length > 0 ? `${openOrders.length} order${openOrders.length === 1 ? "" : "s"} waiting for fulfilment` : "no pending orders";
+    base.reply = `Hello! I'm She Agent, your ${vendorName} copilot. You have ${products.length} product${products.length === 1 ? "" : "s"} listed and ${statusNote}. How can I assist you with your orders, catalogue, or delivery today?`;
+    base.intent = "answer";
+    return base;
+  }
+
+  if (role === "customer") {
+    const products = Array.isArray(context.availableProducts) ? (context.availableProducts as Array<Record<string, unknown>>) : [];
+    const orders = Array.isArray(context.orders) ? (context.orders as Array<Record<string, unknown>>) : [];
+    const cartItems = Array.isArray(context.cartItems) ? (context.cartItems as Array<Record<string, unknown>>) : [];
+
+    if (/order|track|where/i.test(msg) && orders.length > 0) {
+      const latest = orders[0];
+      const orderId = String(latest.order_number || latest.id || "").slice(-8);
+      base.reply = `Your latest order #${orderId} is currently ${String(latest.status || "confirmed")}.`;
+      base.intent = "track";
+      return base;
+    }
+
+    if (/cart|basket/i.test(msg)) {
+      if (cartItems.length > 0) {
+        base.reply = `You have ${cartItems.length} item${cartItems.length === 1 ? "" : "s"} in your basket. Would you like to review or proceed to checkout?`;
+        base.intent = "view_basket";
+        base.navigateTo = "Cart";
+      } else {
+        base.reply = "Your basket is currently empty. Would you like me to recommend popular dishes nearby?";
+        base.intent = "browse";
+      }
+      return base;
+    }
+
+    if (products.length > 0) {
+      const topProducts = products.slice(0, 4);
+      const topIds = topProducts.map((p) => String(p.id || p.item_id || "")).filter(Boolean);
+      base.reply = `Here are some popular home-cooked dishes available near you: ${topProducts.map((p) => String(p.name || p.item_name || "Dish")).join(", ")}.`;
+      base.selectedProductIds = topIds;
+      base.intent = "recommend";
+      return base;
+    }
+
+    base.reply = "Hello! I'm She Agent, your personal shopping copilot. Ask me about fresh meals, schedules, or tracking your orders!";
+    base.intent = "answer";
+    return base;
+  }
+
+  base.reply = "Hello! She Agent is ready to assist with operational queries, live orders, and tickets across the platform.";
+  base.intent = "answer";
+  return base;
+}
+
 export async function POST(request: Request) {
   const body = await request.json() as AgentRequest;
   let auth: Authorised;
@@ -444,20 +589,42 @@ export async function POST(request: Request) {
   const campaignStrategy = requestedTask === "campaign_strategy";
   const qualityComplaint = requestedTask === "quality_complaint";
   const commerce = requestedTask === "commerce";
-  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY;
+  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY;
 
-  if (!apiKey && commerce) {
-    return NextResponse.json({ error: "She Agent is temporarily unavailable. Please try again shortly." }, { status: 503 });
+  const admin = adminClient();
+  const effectiveVendorId = !auth.demo
+    ? auth.profile.vendor_id
+    : (((body.context?.vendor as { id?: string } | undefined)?.id) || ((auth.context?.vendor as { id?: string } | undefined)?.id) || ((body.context as { vendorId?: string } | undefined)?.vendorId) || null);
+
+  const taskToAction: Record<string, AiAction> = {
+    nutrition: "nutrition_estimate",
+    business_insights: "business_insights",
+    commerce: "she_agent_chat",
+    quotation_assistant: "quotation_assistant",
+  };
+  const aiAction: AiAction = taskToAction[requestedTask] || "general_ai";
+
+  // Check vendor AI credit balance before executing any AI task
+  if (auth.role === "vendor" && effectiveVendorId && admin) {
+    const creditCheck = await checkVendorAiCredits(admin, effectiveVendorId, aiAction);
+    if (!creditCheck.allowed) {
+      return NextResponse.json({
+        error: creditCheck.message || "Insufficient AI credits.",
+        code: "insufficient_credits",
+        buyCreditsUrl: "/?view=Buy+credits",
+        balance: creditCheck.balance,
+        cost: creditCheck.cost,
+      }, { status: 402 });
+    }
   }
-  if (!apiKey) { const early = await contextPromise; return NextResponse.json({ source: "assistant", scope: early.context.scope, result: controlledFallback({ ...body, role: early.role, context: nutrition ? body.context : early.context }) }); }
 
-  // Commerce uses a real model-driven business-tool loop. The model interprets natural
-  // language, chooses the data capability it needs, receives only role-scoped results,
-  // and then produces the structured UI response. No phrase/regex intent router is used.
+  // Commerce uses a real model-driven business-tool loop when an external provider is
+  // reachable, and falls back to a grounded, role-scoped conversational copilot when
+  // offline or in demo mode so She Agent never leaves the user with an error screen.
   if (commerce) {
     const runCommerce = async (onReply?: (replySoFar: string) => void) => {
       const result = await runToolDrivenCommerceAgent({
-        apiKey,
+        apiKey: apiKey!,
         model: process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat",
         role: auth.role,
         message: body.message || "",
@@ -481,7 +648,31 @@ export async function POST(request: Request) {
         async start(controller) {
           const send = (event: Record<string, unknown>) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
           try {
-            const done = await runCommerce((reply) => send({ type: "reply", text: reply }));
+            let done: { validated: CommerceResult; scope: unknown } | null = null;
+            if (apiKey) {
+              try {
+                done = await runCommerce((reply) => send({ type: "reply", text: reply }));
+              } catch (externalErr) {
+                console.warn("[She Agent] External model call failed, falling back to grounded copilot:", externalErr instanceof Error ? externalErr.message : String(externalErr));
+              }
+            }
+            if (!done) {
+              const loaded = await contextPromise;
+              const fallback = groundedCommerceFallback(body, loaded.role, loaded.context);
+              const words = fallback.reply.split(" ");
+              let textAcc = "";
+              for (let i = 0; i < words.length; i++) {
+                textAcc += (i > 0 ? " " : "") + words[i];
+                send({ type: "reply", text: textAcc });
+                await new Promise((r) => setTimeout(r, 15));
+              }
+              const validated = validateCommerceResult(fallback, loaded.context, loaded.role);
+              done = { validated, scope: loaded.context.scope };
+            }
+
+            if (auth.role === "vendor" && effectiveVendorId && admin) {
+              void deductVendorAiCredits(admin, effectiveVendorId, aiAction, "She Agent conversation");
+            }
             send({ type: "result", source: "assistant", scope: done.scope, result: done.validated });
           } catch (error) {
             console.error("[She Agent commerce]", error);
@@ -494,15 +685,32 @@ export async function POST(request: Request) {
     }
 
     try {
-      const done = await runCommerce();
+      let done: { validated: CommerceResult; scope: unknown } | null = null;
+      if (apiKey) {
+        try {
+          done = await runCommerce();
+        } catch (externalErr) {
+          console.warn("[She Agent] External model call failed, falling back to grounded copilot:", externalErr instanceof Error ? externalErr.message : String(externalErr));
+        }
+      }
+      if (!done) {
+        const loaded = await contextPromise;
+        const fallback = groundedCommerceFallback(body, loaded.role, loaded.context);
+        const validated = validateCommerceResult(fallback, loaded.context, loaded.role);
+        done = { validated, scope: loaded.context.scope };
+      }
+
+      if (auth.role === "vendor" && effectiveVendorId && admin) {
+        await deductVendorAiCredits(admin, effectiveVendorId, aiAction, "She Agent conversation");
+      }
       return NextResponse.json({ source: "assistant", scope: done.scope, result: done.validated });
     } catch (error) {
-      // Keep provider/system details out of the product UI, but preserve the precise
-      // failure in the server log so local/production debugging is possible.
       console.error("[She Agent commerce]", error);
       return NextResponse.json({ error: failureFor(error) }, { status: 502 });
     }
   }
+
+  if (!apiKey) { const early = await contextPromise; return NextResponse.json({ source: "assistant", scope: early.context.scope, result: controlledFallback({ ...body, role: early.role, context: nutrition ? body.context : early.context }) }); }
 
   const access = await contextPromise;
   const nutritionInput = nutrition ? { productName: body.context?.productName, category: body.context?.category, amount: body.context?.amount, measurementUnit: body.context?.measurementUnit, servingLabel: body.context?.servingLabel, nutritionSource: body.context?.nutritionSource } : undefined;
@@ -599,6 +807,9 @@ export async function POST(request: Request) {
   }
 
   const imageBase64 = qualityComplaint || nutrition ? body.imageBase64 : undefined;
+  if (imageBase64 && imageBase64.length > 14 * 1024 * 1024) {
+    return NextResponse.json({ error: "Image must be under 10 MB. Please upload a smaller photo." }, { status: 413 });
+  }
   const messages = imageBase64
     ? [{ role: "user" as const, content: [
         { type: "text" as const, text: prompt },
@@ -622,9 +833,12 @@ export async function POST(request: Request) {
   });
   let response: Response;
   try {
-    // Reasoning models answer far faster at low effort for these short structured tasks; a model that rejects the setting is retried plainly.
     response = await callModel(requestBody);
-    if (response.status === 400) response = await callModel(requestBody);
+    if (response.status === 502 || response.status === 503) {
+      response = await callModel(requestBody);
+    } else if (response.status === 400) {
+      response = await callModel(requestBody);
+    }
   } catch (error) {
     console.error("[She Agent task]", requestedTask, error instanceof Error ? error.message : error);
     if (commerce) return NextResponse.json({ error: "She Agent is taking too long. Please try again." }, { status: 504 });
@@ -632,6 +846,13 @@ export async function POST(request: Request) {
   }
 
   if (!response.ok) {
+    const errorData = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+    const errCode = errorData?.error?.code || (response.status === 429 ? "rate_limit_exceeded" : response.status === 402 ? "insufficient_quota" : undefined);
+    const reqId = response.headers.get("x-request-id") || undefined;
+    console.error("[She Agent task error]", { status: response.status, code: errCode, requestId: reqId });
+    if (response.status === 402 || errCode === "insufficient_quota" || errCode === "budget_exceeded" || /quota|credit|balance|budget/i.test(errorData?.error?.message || "")) {
+      void alertAdminBudgetCredit({ code: errCode, requestId: reqId, message: errorData?.error?.message });
+    }
     if (commerce) return NextResponse.json({ error: "She Agent is temporarily unavailable. Please try again shortly." }, { status: 503 });
     return NextResponse.json({ source: "assistant", result: controlledFallback(body), warning: "The assistant could not complete the request right now." });
   }
@@ -652,6 +873,9 @@ export async function POST(request: Request) {
       const validated = validateCommerceResult(parsed as unknown as CommerceResult, access.context as Record<string, unknown>, access.role);
       if (access.role === "customer" && Array.isArray(validated.memoryUpdates)) await persistCustomerMemory(request, validated.memoryUpdates);
       return NextResponse.json({ source: "assistant", scope: access.context.scope, result: validated });
+    }
+    if (auth.role === "vendor" && effectiveVendorId && admin) {
+      await deductVendorAiCredits(admin, effectiveVendorId, aiAction, `She Agent task: ${requestedTask}`);
     }
     return NextResponse.json({ source: "assistant", scope: access.context.scope, result: parsed });
   } catch {

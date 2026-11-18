@@ -6,9 +6,12 @@ import { errorMessage } from "@/lib/error-message";
 import type * as React from "react";
 import Image from "next/image";
 import { BadgeCheck, CalendarDays, ChevronRight, ClipboardCheck, Heart, HelpCircle, ListChecks, LogOut, Package, ShoppingCart, TicketCheck, UserRound, Zap, FileText, MapPin } from "@/components/icons";
+import { QrCode } from "lucide-react";
+import { VendorQrCode } from "@/components/vendor-qr-code";
 import { toast } from "sonner";
 import { FoodTypeMark } from "@/components/food-type-mark";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { canCreateFoodDrop } from "@/lib/plans";
 import { claimedPercent, discountPercent, dropDisplayStatus, foodDropSchedule, formatCountdown, type FoodDrop } from "@/lib/food-drops";
 import type { Product, V3State } from "@/components/sheplates-v3";
 import { WeeklyMenuTab, type PlanPreset } from "@/components/weekly-menu";
@@ -103,9 +106,29 @@ type VendorTabKey = (typeof VENDOR_TABS)[number];
 
 function ProductRow({ product, state, customerEmail, onAdd, onPlan, onToggleWishlist, isNew, planLabel = "Plan" }: { product: Product; state: V3State; customerEmail: string; onAdd: (p: Product) => void; onPlan: (p: Product) => void; onToggleWishlist: (p: Product) => void; isNew?: boolean; planLabel?: string }) {
   const isWishlisted = state.wishlist.some((item) => item.customerEmail === customerEmail && item.productId === product.id);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const hasDesc = Boolean(product.description?.trim());
   return <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-3xl bg-[#EEF2F2] p-3.5">
     <PhotoTile imageUrl={product.imageUrl} category={product.category} className="size-16 shrink-0 rounded-2xl" emojiSize={28}>{isNew && <span className="absolute left-0 top-0 rounded-br-lg bg-[#155F65] px-1.5 py-0.5 text-[8px] font-black uppercase text-white">New</span>}</PhotoTile>
-    <div className="min-w-[8rem] flex-1"><div className="text-[16px] font-semibold leading-snug"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</div><div className="text-xs text-[#55656A]">{product.baseUnit}{product.calories > 0 ? ` · ${product.calories} kcal` : ""}</div>{product.dietaryTags[0] && <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]"><span className="size-2 rounded-full bg-[#26834a]" />{product.dietaryTags[0]}</span>}</div>
+    <div className="min-w-0 flex-1">
+      <div className="text-[16px] font-semibold leading-snug break-words [overflow-wrap:anywhere]"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</div>
+      {hasDesc && (
+        <div className="mt-1 text-xs text-stone-600">
+          <p className={descExpanded ? "whitespace-pre-wrap break-words" : "line-clamp-2 break-words"}>{product.description!.trim()}</p>
+          {product.description!.trim().length > 70 && (
+            <button
+              type="button"
+              onClick={() => setDescExpanded(!descExpanded)}
+              className="mt-0.5 text-[11px] font-bold text-[#155F65] hover:underline"
+            >
+              {descExpanded ? "less" : "more"}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="text-xs text-[#55656A] mt-0.5">{product.baseUnit}{product.calories > 0 ? ` · ${product.calories} kcal` : ""}</div>
+      {product.dietaryTags[0] && <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]"><span className="size-2 rounded-full bg-[#26834a]" />{product.dietaryTags[0]}</span>}
+    </div>
     <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
       <b className="text-xl tabular-nums">{money(priceOf(product, state))}</b>
       <div className="flex items-center gap-1.5"><button type="button" onClick={() => onAdd(product)} className="h-9 rounded-full bg-[#155F65] px-5 text-sm font-bold text-white">Add</button><button type="button" onClick={() => onPlan(product)} className="h-9 rounded-full bg-white px-4 text-sm font-semibold">{planLabel}</button>
@@ -130,17 +153,42 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
   onAdd: (p: Product) => void; onPlan: (p: Product, preset?: PlanPreset) => void; onToggleWishlist: (p: Product) => void; onClaimDrop: (d: FoodDrop, q: number) => Promise<void>; onFollowed?: (vendor: V3State["vendors"][number]) => void;
 }) {
   const [tab, setTab] = useState<VendorTabKey>("Menu");
+  const [qrOpen, setQrOpen] = useState(false);
   const vendor = vendorId ? state.vendors.find((v) => v.id === vendorId) : undefined;
   if (!vendor) return null;
   const products = state.products.filter((p) => p.vendorId === vendor.id && p.active);
-  const drops = state.foodDrops.filter((d) => d.vendorId === vendor.id && ["live", "scheduled"].includes(dropDisplayStatus(d)));
+  const drops = canCreateFoodDrop(vendor.plan).allowed
+    ? state.foodDrops.filter((d) => d.vendorId === vendor.id && ["live", "scheduled"].includes(dropDisplayStatus(d)))
+    : [];
   const productIds = new Set(products.map((p) => p.id)); const reviews = state.reviews.filter((r) => productIds.has(r.productId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const rating = vendorRating(state, vendor.id); const distance = vendorDistanceKm(profile, vendor); const following = social.followed.includes(vendor.id);
   const photo = vendorPhoto(state, vendor);
   return <Dialog open onOpenChange={(v) => !v && onClose()}><DialogContent className="max-h-[94vh] gap-0 overflow-y-auto overflow-x-hidden rounded-[28px] p-0 sm:max-w-5xl [&>*]:min-w-0">
     <DialogHeader className="sr-only"><DialogDescription>{vendor.businessName} — public vendor profile</DialogDescription></DialogHeader>
     <div className="relative h-40 sm:h-52"><PhotoTile imageUrl={vendor.bannerUrl} category={vendor.category} className="h-full w-full" emojiSize={90} /></div>
-    <div className="px-5 pb-5"><div className="-mt-10 flex items-end gap-3"><PhotoTile imageUrl={vendor.logoUrl || photo} category={vendor.category} initial={vendor.businessName?.[0]} className="size-20 shrink-0 rounded-2xl border-4 border-white shadow-lg bg-[#EAF4F2]" emojiSize={34} /></div>
+    <div className="px-5 pb-5"><div className="-mt-10 flex items-end justify-between gap-3">
+      <div className="relative group">
+        <PhotoTile imageUrl={vendor.logoUrl || photo} category={vendor.category} initial={vendor.businessName?.[0]} className="size-20 shrink-0 rounded-2xl border-4 border-white shadow-lg bg-[#EAF4F2]" emojiSize={34} />
+        <button
+          type="button"
+          onClick={() => setQrOpen(true)}
+          title="Kitchen QR code"
+          aria-label="Scan kitchen QR code"
+          data-testid="kitchen-profile-qr-button"
+          className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-white bg-[#155F65] text-white shadow hover:bg-[#0e4449] transition cursor-pointer"
+        >
+          <QrCode className="size-3.5" />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setQrOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1.5 text-xs font-bold text-stone-700 shadow-sm hover:bg-stone-50 transition"
+      >
+        <QrCode className="size-3.5 text-[#155F65]" />
+        <span>Kitchen QR</span>
+      </button>
+    </div>
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><DialogTitle asChild><h2 className="flex items-center gap-1.5 text-xl font-black leading-tight tracking-[-.02em]">{vendor.businessName}{vendor.verification === "Verified" && <BadgeCheck className="size-5 text-sky-500" aria-label="Verified" />}</h2></DialogTitle>
         <div className="mt-0.5 text-sm font-bold text-stone-500">{vendor.category} · {shortArea(vendor.address)}{distance !== null ? ` · ${distance.toFixed(1)} km` : ""}</div>
         <div className="mt-1 flex items-center gap-1.5 text-sm font-black">{rating ? <><Stars value={rating.average} /><span>{rating.average.toFixed(1)}</span><span className="font-bold text-stone-400">({rating.count} reviews)</span></> : <span className="text-stone-400">No reviews yet</span>}</div></div>
@@ -186,5 +234,24 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
           <button type="button" disabled={!cartLines.length} onClick={onViewCart} className="mt-3 h-12 w-full rounded-full bg-[#155F65] text-[15px] font-bold text-white disabled:opacity-50">View cart{cartLines.length ? ` · ${cartLines.reduce((sum, line) => sum + line.quantity, 0)} items · ${money(cartLines.reduce((sum, line) => sum + line.total, 0))}` : ""}</button></aside>
       </div>
     </div>
+    {qrOpen && (
+      <Dialog open onOpenChange={(v) => !v && setQrOpen(false)}>
+        <DialogContent className="max-w-md rounded-[28px] p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black">{vendor.businessName} QR Code</DialogTitle>
+            <DialogDescription>Scan to view kitchen menu, schedule orders, and share with neighbours.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-2" data-testid="kitchen-profile-qr-modal">
+            <VendorQrCode
+              vendorId={vendor.id}
+              vendorName={vendor.businessName}
+              vendorCategory={vendor.category}
+              vendorAddress={vendor.address}
+              vendorLogo={vendor.logoUrl || photo}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
   </DialogContent></Dialog>;
 }

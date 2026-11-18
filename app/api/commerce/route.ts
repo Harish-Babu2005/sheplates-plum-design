@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
+import { validateSkuSelection } from "@/lib/sku-master";
+import { canAddDeliveryStaff, canAddDeliverySlot, extractPlanCode } from "@/lib/plans";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 
@@ -515,7 +517,6 @@ export async function POST(request: Request) {
         if (claims.error) return NextResponse.json({ error: claims.error.message || "Food Drops could not be reserved." }, { status: 409 });
       }
       const orderIds: string[] = [];
-      let customerTotal = 0;
       for (const [vendorId, items] of grouped.entries()) {
         const isFoodDrop = items.some((item) => Boolean(item.food_drop_id));
         const fulfilmentMode = isFoodDrop ? "self_pickup" : vendorFulfilments.get(vendorId);
@@ -531,7 +532,7 @@ export async function POST(request: Request) {
           const quantity = Math.max(0.001, Number(item.quantity || 1));
           const base = Math.max(0, Number(product.vendor_base_price || 0));
           const price = drop ? Math.max(0, Number(drop.drop_price)) : Math.max(0, Number(item.unit_price ?? base));
-          vendorBaseTotal += base * quantity; customerTotal += price * quantity;
+          vendorBaseTotal += base * quantity;
           return { product_name: drop ? `${String(drop.title)} — ${String(product.name || "Product")}` : String(product.name || "Product"), quantity, unit: String(item.unit || product.unit || "pack"), vendor_base_price: base, markup_percent: base > 0 ? Math.max(0, ((price / base) - 1) * 100) : 0, customer_price: price };
         });
 
@@ -617,7 +618,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Enter delivery instructions (up to 1,000 characters) for third-party delivery." }, { status: 400 });
       }
       const quantity = Math.max(0.001, Number(body.quantity || 1));
-      Math.max(0, Number(body.customerPrice || product.vendor_base_price));
       const startDate = String(body.startDate || "");
       const endDate = body.endDate ? String(body.endDate) : "";
       if (!isFutureDate(startDate)) return NextResponse.json({ error: "Choose a first delivery date after today." }, { status: 400 });
@@ -869,6 +869,13 @@ export async function POST(request: Request) {
     if (action === "save_staff") {
       if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
       const staffId = body.staffId ? String(body.staffId) : "";
+      if (!staffId) {
+        const { data: vendorRow } = await admin.from("vendors").select("plan_id,vendor_plans(code)").eq("id", profile.vendor_id).maybeSingle();
+        const planCode = extractPlanCode(vendorRow?.vendor_plans) || "crave";
+        const { count: currentStaffCount } = await admin.from("vendor_delivery_staff").select("id", { count: "exact", head: true }).eq("vendor_id", profile.vendor_id);
+        const planCheck = canAddDeliveryStaff(planCode || "crave", currentStaffCount ?? 0);
+        if (!planCheck.allowed) return NextResponse.json({ error: planCheck.message }, { status: 403 });
+      }
       const row = { vendor_id: profile.vendor_id, full_name: String(body.name || "").trim(), phone: String(body.phone || "").trim(), active: body.active !== false, updated_at: new Date().toISOString() };
       if (!row.full_name || !row.phone) return NextResponse.json({ error: "Name and phone are required." }, { status: 400 });
       const result = staffId ? await admin.from("vendor_delivery_staff").update(row).eq("id", staffId).eq("vendor_id", profile.vendor_id).select("id").single() : await admin.from("vendor_delivery_staff").insert(row).select("id").single();
@@ -908,8 +915,11 @@ export async function POST(request: Request) {
       const documentNumber = String(body.documentNumber || "").trim();
       const expiryDate = body.expiryDate ? String(body.expiryDate) : null;
       const { data: existing } = await admin.from("vendor_documents").select("id").eq("vendor_id", profile.vendor_id).in("document_type", ["food_certificate", "fssai"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (existing?.id) await admin.from("vendor_documents").update({ document_number: documentNumber, expiry_date: expiryDate, verification_status: "submitted", updated_at: new Date().toISOString() }).eq("id", existing.id);
-      else await admin.from("vendor_documents").insert({ vendor_id: profile.vendor_id, document_type: "fssai", document_number: documentNumber, storage_path: "pending-upload", expiry_date: expiryDate, verification_status: "submitted" });
+      if (existing?.id) {
+        await admin.from("vendor_documents").update({ document_number: documentNumber, expiry_date: expiryDate, verification_status: "submitted", updated_at: new Date().toISOString() }).eq("vendor_id", profile.vendor_id).in("document_type", ["food_certificate", "fssai"]);
+      } else {
+        await admin.from("vendor_documents").insert({ vendor_id: profile.vendor_id, document_type: "food_certificate", document_number: documentNumber, storage_path: "pending-upload", expiry_date: expiryDate, verification_status: "submitted" });
+      }
       await admin.from("vendors").update({ verification_status: "submitted", operational_status: "inactive", marketplace_visible: false, updated_at: new Date().toISOString() }).eq("id", profile.vendor_id);
       const { data: ops } = await admin.from("profiles").select("id").in("role", ["operations", "admin"]);
       if (ops?.length) await admin.from("notifications").insert(ops.map((p) => ({ recipient_id: p.id, kind: "verification", title: "Vendor resubmitted verification", body: `${profile.full_name || "A vendor"} updated certification details for review.`, entity_type: "vendor", entity_id: profile.vendor_id })));
@@ -962,6 +972,12 @@ export async function POST(request: Request) {
         .eq("vendor_id", targetVendorId);
 
       const allSlots = existingSlots || [];
+      if (!slotId) {
+        const { data: vendorRow } = await admin.from("vendors").select("plan_id,vendor_plans(code)").eq("id", targetVendorId).maybeSingle();
+        const planCode = extractPlanCode(vendorRow?.vendor_plans) || "crave";
+        const planCheck = canAddDeliverySlot(planCode, allSlots.length);
+        if (!planCheck.allowed) return NextResponse.json({ error: planCheck.message }, { status: 403 });
+      }
       const duplicateName = allSlots.find(
         (s) => s.id !== slotId && String(s.slot_name).trim().toLowerCase() === slotName.toLowerCase()
       );
@@ -1054,6 +1070,17 @@ export async function POST(request: Request) {
       const updated = await admin.from("vendor_delivery_slots").update({ is_active: active, updated_at: new Date().toISOString() }).eq("id", slotId).eq("vendor_id", targetVendorId);
       if (updated.error) throw updated.error;
       return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "validate_sku") {
+      const category = String(body.category || "");
+      const group = String(body.group || "");
+      const packSize = String(body.packSize || "");
+      const validation = validateSkuSelection(category, group, packSize);
+      if (!validation.valid) {
+        return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true, sku: validation.sku });
     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });

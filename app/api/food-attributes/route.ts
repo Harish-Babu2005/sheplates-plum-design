@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { TASTE_DIMENSIONS, inferAttributesLocally, type TasteWeights } from "@/lib/taste-match";
+import { uruvChat, uruvApiKey } from "@/lib/uruv-ai";
+import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 
 function clients(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,56 +20,49 @@ function clients(request: Request) {
 type ProductInput = { id: string; name: string; category: string; description?: string };
 
 async function classifyWithAI(products: ProductInput[]): Promise<Record<string, TasteWeights> | null> {
-  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY;
-  if (!apiKey || !products.length) return null;
+  if (!uruvApiKey() || !products.length) return null;
   const dimensionProperties = Object.fromEntries(TASTE_DIMENSIONS.map((d) => [d, { type: "number", minimum: 0, maximum: 1 }]));
-  const prompt = `Classify each food product into weighted taste dimensions (0 to 1, 0 = not applicable, 1 = strongly applicable). Use only the listed dimensions. Base the weights strictly on the product's name, category and description ? do not invent facts about ingredients you cannot infer. Products: ${JSON.stringify(products)}`;
+  const prompt = `Classify each food product into weighted taste dimensions (0 to 1, 0 = not applicable, 1 = strongly applicable). Use only the listed dimensions. Base the weights strictly on the product's name, category and description — do not invent facts about ingredients you cannot infer. Products: ${JSON.stringify(products)}`;
   try {
-    const response = await fetch(`${(process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat",
-        messages: [
-          { role: "system", content: "Return valid JSON only." },
-          { role: "user", content: prompt },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "food_attribute_classification",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
+    const data = await uruvChat({
+      model: process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat",
+      messages: [
+        { role: "system", content: "Return valid JSON only." },
+        { role: "user", content: prompt },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "food_attribute_classification",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              items: {
+                type: "array",
                 items: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      productId: { type: "string" },
-                      attributes: {
-                        type: "object",
-                        additionalProperties: false,
-                        properties: dimensionProperties,
-                        required: [...TASTE_DIMENSIONS],
-                      },
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    productId: { type: "string" },
+                    attributes: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: dimensionProperties,
+                      required: [...TASTE_DIMENSIONS],
                     },
-                    required: ["productId", "attributes"],
                   },
+                  required: ["productId", "attributes"],
                 },
               },
-              required: ["items"],
             },
+            required: ["items"],
           },
         },
-      }),
+      },
     });
-    if (!response.ok) return null;
-    const data = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> };
-    const text = data.choices?.[0]?.message?.content || "";
+    const text = data?.choices?.[0]?.message?.content || "";
     if (!text) return null;
     const parsed = JSON.parse(text) as { items: { productId: string; attributes: TasteWeights }[] };
     const result: Record<string, TasteWeights> = {};
@@ -77,8 +72,9 @@ async function classifyWithAI(products: ProductInput[]): Promise<Record<string, 
       result[item.productId] = trimmed;
     }
     return result;
-  } catch (error) {
-    console.error("[food-attributes] AI classification failed, using local fallback", error);
+  } catch (caught) {
+    const error = caught as { code?: string; status?: number; message?: string };
+    console.error("[food-attributes] AI classification failed, using local fallback", { code: error?.code, status: error?.status, message: error?.message });
     return null;
   }
 }
@@ -88,6 +84,7 @@ export async function POST(request: Request) {
   if (!c) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const { data: authData } = await c.caller.auth.getUser(c.token);
   if (!authData.user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const { data: profile } = await c.caller.from("profiles").select("role,vendor_id").eq("id", authData.user.id).maybeSingle();
 
   const body = await request.json().catch(() => null) as { products?: ProductInput[] } | null;
   const products = (body?.products || []).filter((p) => p?.id && p?.name).slice(0, 16);
@@ -99,7 +96,24 @@ export async function POST(request: Request) {
 
   const uncached = products.filter((p) => !cached[p.id]);
   if (uncached.length) {
+    if (profile?.role === "vendor" && profile.vendor_id) {
+      const creditCheck = await checkVendorAiCredits(c.admin, profile.vendor_id, "food_attributes");
+      if (!creditCheck.allowed) {
+        return NextResponse.json({
+          error: creditCheck.message,
+          code: "insufficient_credits",
+          buyCreditsUrl: "/?view=Buy+credits",
+          balance: creditCheck.balance,
+          cost: creditCheck.cost,
+        }, { status: 402 });
+      }
+    }
+
     const aiResult = await classifyWithAI(uncached);
+    if (aiResult && Object.keys(aiResult).length > 0 && profile?.role === "vendor" && profile.vendor_id) {
+      await deductVendorAiCredits(c.admin, profile.vendor_id, "food_attributes", `Classified ${uncached.length} products`);
+    }
+
     const rowsToInsert = uncached.map((p) => {
       const attributes = aiResult?.[p.id] && Object.keys(aiResult[p.id]).length ? aiResult[p.id] : inferAttributesLocally(p.name, p.category);
       cached[p.id] = attributes;

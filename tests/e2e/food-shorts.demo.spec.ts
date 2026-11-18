@@ -118,6 +118,21 @@ test.describe("Food Shorts: distance control (demo data)", () => {
     await expect(viewer).toHaveCount(0);
   });
 
+  test("clicking Shop now in the full-screen viewer opens that vendor's store profile directly", async ({ page }) => {
+    await openAs(page, CUSTOMER, SEEDED);
+    await tab(page, "Stories").click();
+    await thumb(page, "A reach 2 km").click();
+    const viewer = page.getByRole("dialog", { name: "Food Shorts" });
+    await expect(viewer).toBeVisible();
+    const shopBtn = viewer.getByTestId("short-shop-link").first();
+    await expect(shopBtn).toBeVisible();
+    await shopBtn.click();
+    await expect(viewer).toHaveCount(0);
+    const storeDialog = page.getByRole("dialog");
+    await expect(storeDialog).toBeVisible({ timeout: 10_000 });
+    await expect(storeDialog.getByText("Your cart")).toBeVisible();
+  });
+
   test("Stories shows the Food Shorts for the chosen distance", async ({ page }) => {
     await openAs(page, CUSTOMER, SEEDED, "Stories");
     await page.getByRole("button", { name: "Stories", exact: true }).first().click();

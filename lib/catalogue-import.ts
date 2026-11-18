@@ -4,7 +4,8 @@
  * exactly; a list without one is read cell by cell. The caller may ask the AI to tidy only a list this reader cannot place.
  * The food type is taken only from a column the vendor filled in, never guessed from the name or category.
  */
-import { normalizeFoodType, type FoodType } from "./food-type";
+import { normalizeFoodType, type FoodType } from "./food-type.ts";
+import { sanitizeProductDescription } from "./product-description.ts";
 
 export type CatalogueDraftRow = {
   name: string;
@@ -13,6 +14,7 @@ export type CatalogueDraftRow = {
   price: number;
   stock: number;
   foodType?: FoodType;
+  description?: string;
   /** What the vendor still has to fill in before this row can be published. */
   problems: string[];
 };
@@ -34,6 +36,7 @@ const HEADERS: Record<string, string[]> = {
   price: ["price", "rate", "mrp", "selling price", "price per pack", "price / pack", "price/pack", "cost", "amount", "rs", "inr", "price rs", "price inr", "price ₹", "₹"],
   stock: ["stock", "qty", "quantity", "available", "available stock", "packs", "no of packs", "no. of packs", "number of packs", "inventory", "count", "pack stock"],
   foodType: ["food type", "foodtype", "veg/non-veg", "veg / non-veg", "veg or non veg", "veg non veg", "veg", "diet", "diet type", "type of food", "veg/nonveg"],
+  description: ["description", "desc", "pack contents", "contents", "details", "about pack", "ingredients", "item description"],
 };
 
 const clean = (value: unknown) => String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -191,8 +194,10 @@ export function readCatalogueText(text: string, options: { categories: string[];
       const pack = packCell || (stockIsPack ? stockCell : "");
       // No stock column at all means 1 pack, as for a plain list. A stock cell that is blank or not a number is missing stock.
       const stock = stockIsPack || mapping.stock === undefined ? 1 : stockNumber ?? 0;
+      const descText = at("description");
+      const description = descText ? sanitizeProductDescription(descText) : undefined;
       if (price > 0) sawPrice = true;
-      rows.push(finish({ name, category: matchCategory(at("category"), categories, fallbackCategory), pack: pack || "1 pack", price, stock, foodType: readFoodType(at("foodType")) }));
+      rows.push(finish({ name, category: matchCategory(at("category"), categories, fallbackCategory), pack: pack || "1 pack", price, stock, foodType: readFoodType(at("foodType")), description }));
       continue;
     }
     // No header: the first cell is the name; other cells are recognised by what they look like.
@@ -220,9 +225,10 @@ export function readCatalogueText(text: string, options: { categories: string[];
 
 /** The template a vendor can download, fill in and upload again. */
 export const CATALOGUE_TEMPLATE_CSV = [
-  "Name,Category,Pack,Price,Stock,Food type",
-  "Masala dosa,Home food,1 portion,90,20,Veg",
-  "Chicken biryani,Home food,1 complete meal,180,15,Non-veg",
-  "Farm eggs,Eggs,Tray of 12 eggs,96,30,Egg",
-  "Toor dal,Rice & staples,1 kg,155,40,Veg",
+  "Name,Category,Pack,Price,Stock,Food type,Description",
+  'Full Meals,Home food,1 pack,120,25,Veg,"Rice, dal, 2 poriyal with payasam"',
+  'Masala dosa,Home food,1 portion,90,20,Veg,"2 dosas with potato masala, sambar & chutney"',
+  'Chicken biryani,Home food,1 complete meal,180,15,Non-veg,"Seeraga samba biryani with 2 chicken pieces, raita & brinjal gravy"',
+  'Farm eggs,Eggs,Tray of 12 eggs,96,30,Egg,"Fresh brown eggs from local poultry farm"',
+  'Toor dal,Rice & staples,1 kg,155,40,Veg,"Unpolished native toor dal for everyday cooking"',
 ].join("\n") + "\n";
