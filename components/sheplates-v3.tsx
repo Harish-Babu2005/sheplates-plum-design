@@ -26,6 +26,7 @@ import { createStaffUser } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductImageBackfill } from "@/components/admin/product-image-backfill";
+import { AuditLog } from "@/components/admin/audit-log";
 import { FoodTypeMark } from "@/components/food-type-mark";
 import { FOOD_TYPES, normalizeFoodType, type FoodType } from "@/lib/food-type";
 import { fetchWithDeadline } from "@/lib/fetch-deadline";
@@ -104,7 +105,11 @@ import { groupMatches } from "@/lib/market-groups";
 import { CustomerBottomNav, CustomerFooter, CustomerHeader, tabOf } from "@/components/customer-v2/shell";
 import { StaffShell } from "@/components/staff/shell";
 import { StoriesMonitor } from "@/components/staff/stories-monitor";
-import { inviteVendorByEmail, loadAuditTrail, logCustomerView, sendVendorNote, type TrailEvent } from "@/lib/audit-trail";
+import {
+  inviteVendorByEmail, loadAuditTrail, logCustomerView, sendVendorNote,
+  createVendorPlanAuditEvent, classifyAuditCategory, extractAuditChanges,
+  type TrailEvent, type AuditCategory, type AuditChangeField,
+} from "@/lib/audit-trail";
 import { CategoryGrid, FoodDropsTab, MapsTab, PromoBanner, SchedulesTab, VendorRow } from "@/components/customer-v2/discover";
 import { StoriesTab } from "@/components/customer-v2/stories";
 import { ShortsRail, ShortsViewer, useShortsViewer } from "@/components/customer-v2/shorts";
@@ -287,7 +292,7 @@ type Requirement = { id: string; customerEmail: string; title: string; deliveryD
 type Quote = { id: string; requirementId: string; vendorId: string; total: number; deliveryFee: number; note: string; status: "Submitted" | "Selected" | "Not selected" };
 type Notification = { id: string; recipient: string; recipientRole: Role; title: string; body: string; at: string; read: boolean; href?: string; entityType?: string | null; entityId?: string | null; type?: string };
 type Cancellation = { id: string; orderId: string; customerEmail: string; reason: string; aiDecision: string; confidence: number; status: "Awaiting operations" | "Approved" | "Rejected" | "Refunded"; kind?: "cancellation" | "quality_complaint"; recommendedRefundAmount?: number; attachmentName?: string };
-type Audit = { id: string; actor: string; action: string; detail: string; at: string };
+type Audit = TrailEvent;
 type CartItem = { id: string; customerEmail: string; productId: string; quantity: number; foodDropId?: string; unitPrice?: number };
 type Ticket = { id: string; creatorEmail: string; creatorRole: Role; vendorId?: string; subject: string; category: string; priority: "Low" | "Normal" | "High" | "Urgent"; status: "Open" | "In progress" | "Waiting on user" | "Resolved"; description: string; attachmentName?: string; createdVia: "Portal" | "She Agent"; at: string };
 type PayoutStatus = "Scheduled" | "Paid" | "Reversed";
@@ -1732,7 +1737,23 @@ export function SheplatesV3() {
   </div>;
 }
 
-function audit(session: DemoSession, action: string, detail: string): Audit { return { id: id("AUD"), actor: `${session.name} · ${roleName[session.role]}`, action, detail, at: now() }; }
+function audit(session: DemoSession, action: string, detail: string): Audit {
+  const actorRole = session.role === "admin"
+    ? (session.name.toLowerCase().includes("super") || session.email.toLowerCase().includes("super") ? "Super Admin" : "Admin")
+    : (session.role === "operations" ? "Operations" : "Admin");
+  return {
+    id: id("AUD"),
+    actor: `${session.name} · ${roleName[session.role]}`,
+    actorName: session.name,
+    actorEmail: session.email,
+    actorRole,
+    action,
+    category: classifyAuditCategory(action, "", detail),
+    detail,
+    at: now(),
+    timestamp: new Date().toISOString(),
+  };
+}
 function Logo({ compact = false }: { compact?: boolean }) { return <Wordmark height={compact ? 26 : 34} />; }
 function RolePill({ children }: { children: React.ReactNode }) { return <span className="soft-chip hidden sm:inline-flex">{children}</span>; }
 
@@ -8290,7 +8311,7 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNa
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
   if (active === "Vendor payments") return <VendorPayments state={state} setState={setState} session={session} canManage={false} />;
   if (active === "Reports") return <ReportsCentre state={state} />;
-  if (active === "Audit log") return <AuditLog items={state.audit} />;
+  if (active === "Audit log") return <AuditLog items={state.audit} vendors={state.vendors} />;
   const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
   const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
   const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
@@ -8497,6 +8518,31 @@ function AdminVendors({ session, state, setState, onOpenVendorProfile }: { sessi
           <TableCell><Select value={vendor.plan} onValueChange={(value) => {
             const plan = value as Vendor["plan"];
             const oldPlan = vendor.plan;
+            if (plan === oldPlan) return;
+
+            const planPrices: Record<string, number> = { Taster: 499, Crave: 699, Thrive: 799, Crown: 999 };
+            const oldPrice = planPrices[oldPlan] ?? 0;
+            const newPrice = planPrices[plan] ?? 0;
+
+            const actorRole = session.role === "admin"
+              ? (session.name.toLowerCase().includes("super") || session.email.toLowerCase().includes("super") ? "Super Admin" : "Admin")
+              : (session.role === "operations" ? "Operations" : "Admin");
+
+            const auditEvent = createVendorPlanAuditEvent({
+              actorName: session.name,
+              actorEmail: session.email,
+              actorRole,
+              vendorId: vendor.id,
+              vendorName: vendor.businessName,
+              previousPlan: oldPlan,
+              newPlan: plan,
+              previousPrice: oldPrice,
+              newPrice: newPrice,
+              previousStatus: vendor.operational || "Active",
+              newStatus: vendor.operational || "Active",
+              reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
+            });
+
             const newLimits = getPlanLimits(plan);
             const activeProds = state.products.filter((p) => p.vendorId === vendor.id && p.active);
             const excessProds = activeProds.length > newLimits.maxProducts
@@ -8519,12 +8565,31 @@ function AdminVendors({ session, state, setState, onOpenVendorProfile }: { sessi
               products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
               staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
               deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
-              audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${oldPlan} to ${plan} by ${session.name} (${session.email})`), ...s.audit],
+              audit: [auditEvent, ...s.audit],
             }));
-            if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => {
-              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x) }));
-              toast.error(error.message || "Could not save the plan change");
-            });
+            if (isLiveSupabaseMode()) {
+              void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown", {
+                oldPlan,
+                vendorName: vendor.businessName,
+                session: {
+                  name: session.name,
+                  email: session.email,
+                  role: actorRole,
+                },
+                reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
+              }).then(() => {
+                toast.success(`${vendor.businessName} moved to ${plan}`);
+              }).catch((error: Error) => {
+                setState((s) => ({
+                  ...s,
+                  vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x),
+                  audit: s.audit.filter((a) => a.id !== auditEvent.id),
+                }));
+                toast.error(error.message || "Could not save the plan change");
+              });
+            } else {
+              toast.success(`${vendor.businessName} moved to ${plan}`);
+            }
           }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
         </TableRow>)}</TableBody>
       </Table>
@@ -8564,21 +8629,6 @@ function AdminPricing({ state }: { state: V3State }) {
     <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger aria-label="Vendor" className="w-full max-w-xs rounded-xl"><SelectValue placeholder="All vendors" /></SelectTrigger><SelectContent><SelectItem value="all">All vendors</SelectItem>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm outline-none" />{[["All", false], ["Custom %", true]].map(([label, value]) => <button key={String(label)} type="button" onClick={() => setOnlyCustom(Boolean(value))} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom === value ? "bg-[#155F65] text-white" : "bg-white"}`}>{String(label)}</button>)}</div>
     {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Vendor</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{rows.map((x) => <TableRow key={x.id}><TableCell><b>{x.name}</b><div className="text-xs text-[#55656A]">per {x.baseUnit}</div></TableCell><TableCell className="text-sm">{state.vendors.find((v) => v.id === x.vendorId)?.businessName || "Vendor"}</TableCell><TableCell>{money(x.vendorPrice)}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pct(x.id) > 0 ? "bg-[#EAF4F2] text-[#155F65]" : "bg-[#EEF2F2] text-[#55656A]"}`}>{pct(x.id)}%</span></TableCell><TableCell className="font-black">{money(finalPrice(x, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title={state.products.length ? "No items match" : "No product pricing"} body={state.products.length ? "Try another vendor or search." : "Pricing rows appear after vendors add products."} />}</div>;
 }
-function AuditLog({ items }: { items: Audit[] }) {
-  function download() { downloadWorkbook("sheplates-audit-log", [{ name: "Audit log", rows: items.map((item) => ({ ID: item.id, Actor: item.actor, Action: item.action, Detail: item.detail, "At": item.at })) }]); }
-  const [kind, setKind] = useState<"All" | "Permissions" | "Vendors" | "Plans and pricing">("All");
-  const [auditQuery, setAuditQuery] = useState("");
-  const [dbTrail, setDbTrail] = useState<TrailEvent[]>([]);
-  const [trailError, setTrailError] = useState("");
-  useEffect(() => { if (!isLiveSupabaseMode()) return; let alive = true; loadAuditTrail().then((rows) => { if (alive) setDbTrail(rows); }).catch((e) => { if (alive) setTrailError(errorMessage(e, "The audit trail could not be loaded")); }); return () => { alive = false; }; }, []);
-  const allItems = [...dbTrail, ...items];
-  const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|pricing|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
-  const shown = allItems.filter((item) => (kind === "All" || kindOf(item) === kind) && (!auditQuery.trim() || `${item.actor} ${item.action} ${item.detail}`.toLowerCase().includes(auditQuery.trim().toLowerCase())));
-  return <div className="space-y-5"><Heading eyebrow="AUDITABILITY" title="Platform activity trail" body="Who did what, and when. Verification, pricing, catalogue, schedule and order actions are recorded." action={<Button variant="outline" onClick={download} disabled={!allItems.length}><Download />Download Excel</Button>} />{trailError && <p role="alert" className="rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{trailError}</p>}
-    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Kind of action">{(["All", "Permissions", "Vendors", "Plans and pricing"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={kind === name} onClick={() => setKind(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${kind === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name}</button>)}<input value={auditQuery} onChange={(e) => setAuditQuery(e.target.value)} placeholder="Search actor or action" aria-label="Search actor or action" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>
-    {shown.length ? <div className="surface-card overflow-x-auto rounded-3xl p-3"><Table><TableHeader><TableRow><TableHead>When</TableHead><TableHead>Who</TableHead><TableHead>Action</TableHead><TableHead>Detail</TableHead></TableRow></TableHeader><TableBody>{shown.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-xs">{item.at}</TableCell><TableCell><span className="flex items-center gap-2 text-sm font-medium"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#C5E3E4] text-[11px] font-bold">{item.actor.slice(0, 1).toUpperCase()}</span>{item.actor}</span></TableCell><TableCell><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{item.action}</span></TableCell><TableCell className="text-sm text-[#2F3C3F]">{item.detail}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Activity} title="No audit events" body="Actions across the new data flow will appear here." />}</div>;
-}
-
 type ReportKey = "orders" | "zoho_orders" | "payments" | "tickets" | "vendors" | "cancellations" | "customers";
 const reportDefinitions: { key: ReportKey; label: string; dateField: string }[] = [
   { key: "orders", label: "Orders", dateField: "date" },

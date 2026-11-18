@@ -402,12 +402,17 @@ function finalSchema(role: Role) {
   return { type: "object", additionalProperties: false, properties, required };
 }
 
-const apiBase = () =>
-  (
-    process.env.AI_API_BASE ||
-    process.env.URUV_API_BASE ||
-    (process.env.OPENAI_API_KEY && !process.env.URUV_API_KEY ? "https://api.openai.com/v1" : "https://api.uruv.ai/v1")
-  ).replace(/\/$/, "");
+const apiBase = (apiKey?: string) => {
+  if (process.env.AI_API_BASE) return process.env.AI_API_BASE.replace(/\/$/, "");
+  if (process.env.URUV_API_BASE) return process.env.URUV_API_BASE.replace(/\/$/, "");
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (apiKey && apiKey.startsWith("AIza")) || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza"))) {
+    return "https://generativelanguage.googleapis.com/v1beta/openai";
+  }
+  if (process.env.OPENAI_API_KEY && !process.env.URUV_API_KEY) {
+    return "https://api.openai.com/v1";
+  }
+  return "https://api.uruv.ai/v1";
+};
 
 /** Latency settings for the reasoning model family: minimal reasoning effort and short answers. A shopping
  * assistant that picks tools and writes two sentences does not need deep reasoning, and each reasoning
@@ -420,11 +425,11 @@ function withoutFastParams(payload: Record<string, unknown>) {
   return payload;
 }
 
-/** One model call may take this long (including reading its stream). A hung provider then fails with a clear error instead of leaving the chat on "Working on the best options". */
-const MODEL_CALL_TIMEOUT_MS = Number(process.env.AGENT_MODEL_TIMEOUT_MS || 75000);
+/** One model call may take this long (including reading its stream). A hung provider then fails quickly and falls back to the grounded copilot instead of leaving the chat on "Working on the best options". */
+const MODEL_CALL_TIMEOUT_MS = Number(process.env.AGENT_MODEL_TIMEOUT_MS || 15000);
 
 async function postResponses(apiKey: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${apiBase()}/chat/completions`, {
+  const response = await fetch(`${apiBase(apiKey)}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -462,7 +467,7 @@ export function extractPartialReply(partial: string): string {
 }
 
 async function postResponsesStream(apiKey: string, payload: Record<string, unknown>, onText: (textSoFar: string) => void) {
-  const response = await fetch(`${apiBase()}/chat/completions`, {
+  const response = await fetch(`${apiBase(apiKey)}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({ ...payload, stream: true }),
