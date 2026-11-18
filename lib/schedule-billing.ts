@@ -66,7 +66,14 @@ export function orderTotals(d: Delivery) {
   };
 }
 export const missingColumn = (e: { code?: string; message?: string } | null | undefined) => Boolean(e && (e.code === "42703" || e.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(e.message || "")));
-export const isStatusEnumError = (e: { code?: string; message?: string } | null | undefined) => Boolean(e && (e.code === "22P02" || /invalid input value for enum order_status/i.test(e.message || "")));
+export const isStatusEnumError = (e: { code?: string; message?: string; details?: string } | null | undefined) =>
+  Boolean(e && (
+    e.code === "22P02" ||
+    /invalid input value for enum/i.test(e.message || "") ||
+    /invalid input syntax for type .*order_status/i.test(e.message || "") ||
+    /order_status/i.test(e.message || "") ||
+    /order_status/i.test(e.details || "")
+  ));
 
 export async function insertOrderWithBilling(admin: SupabaseClient, row: Record<string, unknown>, d: Delivery) {
   const t = orderTotals(d);

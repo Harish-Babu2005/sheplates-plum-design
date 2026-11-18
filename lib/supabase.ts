@@ -1558,6 +1558,46 @@ export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: 
   return commerceRequest({ action: "checkout_cart", ...(input || {}) });
 }
 
+export async function pauseLiveSchedule(scheduleId: string) {
+  return commerceRequest({ action: "pause_schedule", scheduleId }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    pausedAt?: string;
+    resumeBy?: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
+export async function resumeLiveSchedule(scheduleId: string, reason?: string) {
+  return commerceRequest({ action: "resume_schedule", scheduleId, reason }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    nextDeliveryDate?: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
+export async function closeLiveSchedule(scheduleId: string, reason?: string) {
+  return commerceRequest({ action: "close_schedule", scheduleId, reason }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
+export async function reopenLiveSchedule(scheduleId: string, reason: string) {
+  return commerceRequest({ action: "reopen_schedule", scheduleId, reason }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    nextDeliveryDate?: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
 export async function acceptLiveThirdPartyDelivery(orderId: string) {
   return commerceRequest({ action: "accept_third_party_delivery", orderId });
 }

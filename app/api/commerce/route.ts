@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { insertOrderWithBilling, priceSchedule } from "@/lib/schedule-billing";
+import { pauseScheduleServer, resumeScheduleServer, closeScheduleServer, processScheduleDeadlines } from "@/lib/schedule-pause";
 import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 import { calculateBillingSummary } from "@/lib/billing";
@@ -144,6 +145,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (!ctx) throw new Error("Unauthorised");
   const { admin, profile } = ctx;
   const role = profile.role;
+  await processScheduleDeadlines(admin).catch(() => {});
   const selectWithBilling = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,subtotal,gst_rate,gst_amount,discount_amount,total_amount,currency,delivery_distance,commission_percent,commission_amount,vendor_payout,invoice_type,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
   const selectBase = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
 
@@ -153,12 +155,21 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     if (!profile.vendor_id) return { orders: [], schedules: [], staff: [], assignments: [], deliverySlots: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: true };
     orderQuery = orderQuery.eq("vendor_id", profile.vendor_id);
   }
-  const schedulesQuery = admin.from("product_schedules").select("id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at").order("start_date", { ascending: true }).limit(500);
-  if (role === "customer") schedulesQuery.eq("customer_id", profile.id);
-  if (role === "vendor" && profile.vendor_id) schedulesQuery.eq("vendor_id", profile.vendor_id);
+  const schedulesSelectWithPause = "id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at,paused_at,resume_by,closed_at,closure_reason";
+  const schedulesSelectBase = "id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at";
+
+  let schedulesQuery = admin.from("product_schedules").select(schedulesSelectWithPause).order("start_date", { ascending: true }).limit(500);
+  if (role === "customer") schedulesQuery = schedulesQuery.eq("customer_id", profile.id);
+  if (role === "vendor" && profile.vendor_id) schedulesQuery = schedulesQuery.eq("vendor_id", profile.vendor_id);
 
   let orders = (await orderQuery) as Awaited<typeof orderQuery>;
-  const schedules = await schedulesQuery;
+  let schedules = await schedulesQuery;
+  if (schedules.error && (schedules.error.code === "42703" || /column .* does not exist/i.test(schedules.error.message || ""))) {
+    let fallbackSchedulesQuery = admin.from("product_schedules").select(schedulesSelectBase).order("start_date", { ascending: true }).limit(500);
+    if (role === "customer") fallbackSchedulesQuery = fallbackSchedulesQuery.eq("customer_id", profile.id);
+    if (role === "vendor" && profile.vendor_id) fallbackSchedulesQuery = fallbackSchedulesQuery.eq("vendor_id", profile.vendor_id);
+    schedules = await fallbackSchedulesQuery;
+  }
   if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
     let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
     if (role === "customer") fallbackOrderQuery = fallbackOrderQuery.eq("customer_id", profile.id);
@@ -240,7 +251,16 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   let returnedOrders = orders.data || [];
   if (role === "vendor") {
     const today = new Date().toISOString().slice(0, 10);
+    const nonActiveScheduleIds = new Set(
+      (schedules.data || [])
+        .filter((s: { status?: string }) => s.status === "paused" || s.status === "closed")
+        .map((s: { id: unknown }) => String(s.id))
+    );
     returnedOrders = returnedOrders.filter((order) => {
+      // Paused and closed schedules must not appear in vendor upcoming orders
+      if (order.schedule_id && nonActiveScheduleIds.has(String(order.schedule_id))) {
+        return false;
+      }
       const pmts = Array.isArray(order.payments) ? order.payments : [];
       const isPaid = pmts.some((p: { status?: string }) => ["paid", "captured", "success"].includes(String(p.status || "").toLowerCase()));
       const isFoodDrop = pmts.some((p: { provider?: string }) => p.provider === "food_drop_pickup");
@@ -594,8 +614,14 @@ export async function POST(request: Request) {
           commission_percent: billing.commissionPercent, commission_amount: billing.commissionAmount, vendor_payout: billing.vendorPayout,
           invoice_type: billing.invoiceType, gst_mode: billing.gstMode, discount_amount: billing.discountAmount, total_amount: billing.totalAmount, currency: billing.currency,
         };
-        const isStatusEnumError = (e: { code?: string; message?: string } | null | undefined) =>
-          Boolean(e && (e.code === "22P02" || /invalid input value for enum order_status/i.test(e.message || "")));
+        const isStatusEnumError = (e: { code?: string; message?: string; details?: string } | null | undefined) =>
+          Boolean(e && (
+            e.code === "22P02" ||
+            /invalid input value for enum/i.test(e.message || "") ||
+            /invalid input syntax for type .*order_status/i.test(e.message || "") ||
+            /order_status/i.test(e.message || "") ||
+            /order_status/i.test(e.details || "")
+          ));
         const isMissingCol = (e: { code?: string; message?: string } | null | undefined) =>
           Boolean(e && (e.code === "42703" || e.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(e.message || "")));
 
@@ -610,6 +636,10 @@ export async function POST(request: Request) {
             baseOrder.status = "awarded";
             inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
           }
+        }
+        if (inserted.error && isStatusEnumError(inserted.error) && baseOrder.status === "awaiting_payment") {
+          baseOrder.status = "awarded";
+          inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
         }
         if (inserted.error) throw inserted.error;
         orderIds.push(inserted.data.id);
@@ -909,6 +939,62 @@ export async function POST(request: Request) {
       const { data: vendor } = await admin.from("vendors").select("owner_id").eq("id", order.vendor_id).maybeSingle();
       if (vendor?.owner_id) await admin.from("notifications").insert({ recipient_id: vendor.owner_id, kind: "order", title: "Customer rescheduled order", body: `${order.order_number} moved to ${String(body.date || "")} · ${String(body.slot || "")}.`, entity_type: "order", entity_id: orderId });
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "pause_schedule") {
+      const scheduleId = String(body.scheduleId || "");
+      if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
+      const result = await pauseScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      });
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "paused", pausedAt: result.pausedAt, resumeBy: result.resumeBy, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "resume_schedule") {
+      const scheduleId = String(body.scheduleId || "");
+      if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
+      const adminReason = body.reason ? String(body.reason) : undefined;
+      const result = await resumeScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      }, adminReason);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "active", nextDeliveryDate: result.nextDeliveryDate, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "close_schedule") {
+      const scheduleId = String(body.scheduleId || "");
+      if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
+      const reason = String(body.reason || "Closed by user request");
+      const result = await closeScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      }, reason);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "closed", snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "reopen_schedule") {
+      if (!(["operations", "admin"] as Role[]).includes(profile.role)) {
+        return NextResponse.json({ error: "Only operations and admins can reopen a closed schedule." }, { status: 403 });
+      }
+      const scheduleId = String(body.scheduleId || "");
+      const reason = String(body.reason || "").trim();
+      if (!scheduleId || !reason) {
+        return NextResponse.json({ error: "Schedule ID and reason are required to reopen a closed schedule." }, { status: 400 });
+      }
+      const result = await resumeScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      }, reason);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "active", nextDeliveryDate: result.nextDeliveryDate, snapshot: await commerceSnapshot(ctx) });
     }
 
     if (action === "save_staff") {
