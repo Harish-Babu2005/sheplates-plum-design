@@ -813,26 +813,28 @@ export async function POST(request: Request) {
       // Cancellation is disabled for new order-status updates. Keep historical
       // cancellation records untouched, but reject cancellation statuses (and
       // any unrecognized status) at the API boundary.
-      const statusMap: Record<string, string> = {
-        Scheduled: "awarded",
-        Confirmed: "confirmed",
-        Preparing: "preparing",
-        Ready: "ready",
-        "Out for delivery": "out_for_delivery",
-        "Ready for pickup": "ready_for_pickup",
-        Completed: "completed",
-      };
+     const statusMap: Record<string, string> = {
+  Scheduled: "awarded",
+  Confirmed: "confirmed",
+  Preparing: "preparing",
+  Ready: "ready",
+  "Out for delivery": "out_for_delivery",
+  "Ready for pickup": "ready_for_pickup",
+  Completed: "completed",
+  Delivered: "delivered",
+};
       const requestedStatus = String(body.status || "").trim();
       const nextStatus = statusMap[requestedStatus] || requestedStatus.toLowerCase().replace(/[ -]+/g, "_");
-      const allowedStatuses = new Set([
-        "awarded",
-        "confirmed",
-        "preparing",
-        "ready",
-        "out_for_delivery",
-        "ready_for_pickup",
-        "completed",
-      ]);
+    const allowedStatuses = new Set([
+  "awarded",
+  "confirmed",
+  "preparing",
+  "ready",
+  "out_for_delivery",
+  "ready_for_pickup",
+  "completed",
+  "delivered",
+]);
       if (!allowedStatuses.has(nextStatus)) {
         return NextResponse.json({ error: "Cancellation and unsupported order statuses are disabled." }, { status: 400 });
       }
