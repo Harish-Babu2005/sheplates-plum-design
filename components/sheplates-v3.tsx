@@ -257,7 +257,7 @@ export type VendorDeliverySlot = {
 type Order = {
   id: string; scheduleId?: string; customerEmail: string; vendorId: string; productId?: string;
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
-mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded";
+mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled" | "Awaiting payment" | "Payment failed" | "Expired";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded" | "Failed" | "Expired";
   trackingLatitude?: number; trackingLongitude?: number; cancellationFee?: number;
   orderNumber?: string;
   paymentReference?: string;
@@ -786,8 +786,19 @@ function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
 
 function liveOrderStatus(value: unknown): Order["status"] {
   const map: Record<string, Order["status"]> = {
-    awarded: "Scheduled", confirmed: "Confirmed", preparing: "Preparing", ready: "Ready",
-out_for_delivery: "Out for delivery", ready_for_pickup: "Ready for pickup", completed: "Completed", delivered: "Delivered",    cancellation_requested: "Cancellation requested", cancelled: "Cancelled",
+    awaiting_payment: "Awaiting payment",
+    payment_failed: "Payment failed",
+    expired: "Expired",
+    awarded: "Scheduled",
+    confirmed: "Confirmed",
+    preparing: "Preparing",
+    ready: "Ready",
+    out_for_delivery: "Out for delivery",
+    ready_for_pickup: "Ready for pickup",
+    completed: "Completed",
+    delivered: "Delivered",
+    cancellation_requested: "Cancellation requested",
+    cancelled: "Cancelled",
   };
   return map[String(value || "")] || "Scheduled";
 }
@@ -797,7 +808,9 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => status === "refunded")) return "Refunded";
   if (statuses.some((status) => status.includes("reversal"))) return "Reversal pending";
   if (statuses.some((status) => ["paid", "captured", "success", "succeeded"].includes(status))) return "Paid";
-const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed", "delivered"].includes(String(orderStatus || "").toLowerCase());  return progressed ? "Paid" : "Pending";
+  if (statuses.some((status) => status === "failed")) return "Failed";
+  if (statuses.some((status) => status === "expired")) return "Expired";
+  return "Pending";
 }
 type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
@@ -855,12 +868,23 @@ type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; sche
   });
   const serverOrderIds = new Set(rawOrders.map((o) => o.id));
   const localFoodDropOrders = current.orders.filter((o) => o.foodDropId && !serverOrderIds.has(o.id));
-  const orders: Order[] = [...localFoodDropOrders, ...rawOrders].sort((a, b) => {
+  let orders: Order[] = [...localFoodDropOrders, ...rawOrders].sort((a, b) => {
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     if (aTime && bTime && aTime !== bTime) return bTime - aTime;
     return (b.id || "").localeCompare(a.id || "");
   });
+  if (session.role === "vendor") {
+    const today = todayISO();
+    orders = orders.filter((o) => {
+      const isPaid = o.payment === "Paid" && o.status !== "Awaiting payment";
+      const isFoodDrop = Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup";
+      if (!isPaid && !isFoodDrop) return false;
+      if (o.status === "Awaiting payment" || o.status === "Payment failed" || o.status === "Expired") return false;
+      if (o.date && o.date < today && !isPaid) return false;
+      return true;
+    });
+  }
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const schedules: Schedule[] = (snapshot.schedules || []).map((row) => ({
     id: String(row.id), customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), productId: String(row.menu_item_id), vendorId: String(row.vendor_id),
@@ -1650,7 +1674,7 @@ export function SheplatesV3() {
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
-    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId).length }
+    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId && ((o.payment === "Paid" && o.status !== "Awaiting payment") || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup")).length }
     : role === "operations"
       ? { "Vendor verification": state.vendors.filter((v) => v.vendorKind !== "p0_connect" && ["Submitted", "Under review"].includes(v.verification)).length, "Ticket centre": openTicketCount, Cancellations: state.cancellations.filter((x) => x.status === "Awaiting operations").length }
       : role === "admin" ? { "Ticket centre": openTicketCount } : {};
@@ -2563,7 +2587,7 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
         date: deliveryDates[0],
         slot: effectiveSlot,
         mode,
-        status: "Scheduled",
+        status: "Awaiting payment",
         payment: "Pending",
         items: [{
           name: scheduledProduct.name,
@@ -2661,7 +2685,7 @@ function Requirements({ session, state, setState }: { session: DemoSession; stat
   return <div className="space-y-6"><Heading eyebrow="MONTHLY REQUIREMENT" title="Request local quotations" body="Add your real household list. Eligible verified vendors on a quotation-enabled plan can submit their best price." action={<Button onClick={add} variant="outline" className="rounded-xl"><Plus />Add item</Button>} /><div className="surface-card rounded-[28px] p-5"><div className="grid gap-4 md:grid-cols-2"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Needed on"><input type="date" min={tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="mt-5 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#EEF2F2] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg", "litre", "piece", "pack", "dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} placeholder="Preferred brand" className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div><Button onClick={submit} className="mt-5 h-12 rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><Send />Send for local quotes</Button></div></div>;
 }
 
-function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created.`), ...s.notifications] })); toast.success("Quotation selected and order created"); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => { const reqQuotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown")); return <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{reqQuotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!reqQuotes.length && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>; }) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
+function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Awaiting payment", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created. Complete payment to confirm order.`), ...s.notifications] })); toast.success("Quotation selected. Complete payment to confirm order."); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => { const reqQuotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown")); return <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{reqQuotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!reqQuotes.length && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>; }) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
 
 function CustomerProfileView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const profile = state.customers.find((x) => x.email === session.email)!; const [dislikes, setDislikes] = useState(profile.dislikes); return <div className="space-y-6"><Heading eyebrow="PRIVATE PROFILE" title="Location, diet & preferences" body="She Agent uses this information only within your customer context to personalize suggestions." /><div className="grid gap-5 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Household</h3><div className="mt-5 space-y-3"><Review label="Address" value={profile.address} /><Review label="Household size" value={String(profile.householdSize)} /><Review label="Diet" value={profile.diet} /><Review label="Allergies" value={profile.allergies.join(", ") || "None selected"} /><Review label="Goals" value={profile.goals.join(", ") || "None selected"} /></div></div><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Instructions for She Agent</h3><Textarea value={dislikes} onChange={(e) => setDislikes(e.target.value)} className="mt-4 min-h-32 rounded-xl" /><Button onClick={() => { setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? { ...x, dislikes } : x) })); toast.success("Preferences updated"); }} className="mt-4 rounded-xl bg-[#155F65]">Save changes</Button></div></div></div>; }
 
@@ -2861,8 +2885,9 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       slot: (checkoutMode === "Self pickup" || containsFoodDrop) ? "Store pickup" : effectiveSelectedSlot,
       deliveryAddress: containsFoodDrop ? "Store Self-Pickup" : address,
       mode: containsFoodDrop ? "Self pickup" : checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode,
-      status: "Scheduled",
-      payment: "Pending",
+      status: containsFoodDrop ? "Confirmed" : "Awaiting payment",
+      payment: containsFoodDrop ? "Paid" : "Pending",
+      paymentProvider: containsFoodDrop ? "food_drop_pickup" : undefined,
       cancellationFee: 0,
       createdAt: new Date().toISOString(),
       items: items.map((item) => {
@@ -3231,7 +3256,7 @@ function RequirementsV4({ session, state, setState }: { session: DemoSession; st
 
 function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const requirements = state.requirements.filter((x) => x.customerEmail === session.email);
-  function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId); if (!req) return; const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending", cancellationFee: 0 }; const vendor = state.vendors.find((x) => x.id === quote.vendorId); setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [order, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(order.total)} order created for ${order.date}.`), ...(vendor ? [notice(vendor.ownerEmail, "vendor", "RFQ awarded", `${order.id} was awarded to your store.`)] : []), ...s.notifications] })); toast.success("Quotation selected. Review payment and delivery before fulfilment."); }
+  function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId); if (!req) return; const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Awaiting payment", payment: "Pending", cancellationFee: 0 }; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [order, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(order.total)} order created for ${order.date}. Complete payment to confirm order.`), ...s.notifications] })); toast.success("Quotation selected. Complete payment to confirm order."); }
   return <div className="space-y-5"><Heading eyebrow="RFP / RFQ TRACKING" title="My quotations" body="Compare the sealed offers from invited Crown vendors and award the winner yourself." />
     {requirements.length ? requirements.map((req) => {
       const invited = req.invitedVendorIds || []; const quotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown"));
@@ -4050,7 +4075,9 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   if (active === "Delivery team") return <DeliveryTeam vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Settlements") return <VendorSettlements vendor={vendor} state={state} />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} vendor={vendor} />;
-  const products = state.products.filter((x) => x.vendorId === vendor.id), orders = state.orders.filter((x) => x.vendorId === vendor.id);
+  const products = state.products.filter((x) => x.vendorId === vendor.id);
+  const isPaidOrFoodDrop = (o: Order) => (o.payment === "Paid" && o.status !== "Awaiting payment") || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup";
+  const orders = state.orders.filter((x) => x.vendorId === vendor.id && isPaidOrFoodDrop(x));
   const vendorReviews = state.reviews.filter((r) => products.some((p) => p.id === r.productId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const vendorRatingAvg = vendorReviews.length ? vendorReviews.reduce((sum, r) => sum + r.rating, 0) / vendorReviews.length : null;
   const todayStr = todayISO();
@@ -4062,7 +4089,19 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const byDay = days.map((d) => ({ ...d, total: orders.filter((x) => x.date === d.key && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0) }));
   const maxDay = Math.max(1, ...byDay.map((d) => d.total));
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
-  async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
+  async function accept(order: Order) {
+    if (!isPaidOrFoodDrop(order)) {
+      toast.error("Cannot accept an order before payment is confirmed.");
+      return;
+    }
+    try {
+      if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed");
+      setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) }));
+      toast.success(`${order.id} accepted`);
+    } catch (error) {
+      toast.error(errorMessage(error, "The order could not be accepted"));
+    }
+  }
   const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need Crave, Thrive or Crown.", Crave: "Food Drops are on (up to 2/day). Upgrade to Thrive for 5/day or Crown for quotation requests.", Thrive: "Food Drops are on (up to 5/day). Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops (up to 15/day) and customer quotation requests are both on." };
 
   return <div className="space-y-5">
@@ -5033,10 +5072,11 @@ function CustomerOrderCard({
 }
 
 function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) {
+  const isPaidOrFoodDrop = (x: Order) => (x.payment === "Paid" && x.status !== "Awaiting payment") || Boolean(x.foodDropId) || x.paymentProvider === "food_drop_pickup";
   const baseOrders = scope === "customer"
-    ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending")
+    ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending" && x.status !== "Awaiting payment")
     : scope === "vendor"
-      ? state.orders.filter((x) => x.vendorId === vendor?.id && x.payment === "Paid")
+      ? state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x))
       : state.orders;
   const [rescheduling, setRescheduling] = useState<Order | null>(null);
   const [paying, setPaying] = useState<Order | null>(null);
@@ -5515,10 +5555,12 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
       const transaction = recordTransaction(order, method, state.vendors.find((v) => v.id === order.vendorId));
       setState((s) => {
         const base = { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
+        const vendorOwner = state.vendors.find((v) => v.id === order.vendorId)?.ownerEmail;
+        const vendorNotices = vendorOwner ? [notice(vendorOwner, "vendor", "New paid order", `${order.description} is paid and confirmed for ${order.date}.`)] : [];
         return {
           ...base,
           transactions: [transaction, ...base.transactions],
-          notifications: [notice(order.customerEmail, "customer", "Payment successful", `${money(order.total)} collected. Your scheduled deliveries are now confirmed.`), ...base.notifications],
+          notifications: [notice(order.customerEmail, "customer", "Payment successful", `${money(order.total)} collected. Your scheduled deliveries are now confirmed.`), ...vendorNotices, ...base.notifications],
           audit: [audit({ email: order.customerEmail, name: order.customerEmail, role: "customer" }, "Customer paid for schedule", `${order.id} · ${money(order.total)} via ${method}`), ...base.audit],
         };
       });
@@ -6619,7 +6661,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
       setUpgradingTo(null);
     }
   }
-  const [termsTick, setTermsTick] = useState(false), [termsBusy, setTermsBusy] = useState(false);
+    const [termsTick, setTermsTick] = useState(false), [termsBusy, setTermsBusy] = useState(false);
   const [termsViewOpen, setTermsViewOpen] = useState(false), [signOpen, setSignOpen] = useState(false);
   async function acceptTerms() {
     if (!termsTick) return toast.error("Tick the box to accept the Vendor Terms and Conditions");
@@ -9095,11 +9137,12 @@ function scopedContext(session: DemoSession, state: V3State) {
   };
   if (session.role === "vendor") {
     const vendor = vendorFor(state, session);
+    const isPaidOrFoodDrop = (x: Order) => (x.payment === "Paid" && x.status !== "Awaiting payment") || Boolean(x.foodDropId) || x.paymentProvider === "food_drop_pickup";
     return {
       scope: "vendor_self",
       vendor,
       products: state.products.filter((x) => x.vendorId === vendor?.id),
-      orders: state.orders.filter((x) => x.vendorId === vendor?.id),
+      orders: state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x)),
       deliveryStaff: state.staff.filter((x) => x.vendorId === vendor?.id),
       tickets: state.tickets.filter((x) => x.vendorId === vendor?.id || x.creatorEmail === session.email),
       opportunities: vendor?.plan === "Crown" ? state.requirements.filter((x) => (x.status === "Quoting" || x.status === "Quotes received") && (!x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id))) : [],

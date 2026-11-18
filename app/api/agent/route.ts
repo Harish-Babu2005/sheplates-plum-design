@@ -649,7 +649,14 @@ export async function POST(request: Request) {
   // offline or in demo mode so She Agent never leaves the user with an error screen.
   if (commerce) {
     const runCommerce = async (onReply?: (replySoFar: string) => void) => {
-      const activeModel = process.env.AI_MODEL || process.env.URUV_MODEL || (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza")) ? "gemini-1.5-flash" : process.env.OPENAI_API_KEY ? "gpt-4o-mini" : "uruv-chat");
+      let activeModel = process.env.AI_MODEL || process.env.URUV_MODEL;
+      if (!activeModel || (activeModel.startsWith("uruv") && !process.env.URUV_API_KEY && !process.env.URV_API_KEY && (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY))) {
+        activeModel = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza")))
+          ? "gemini-1.5-flash"
+          : process.env.OPENAI_API_KEY
+          ? "gpt-4o-mini"
+          : "uruv-chat";
+      }
       const result = await runToolDrivenCommerceAgent({
         apiKey: apiKey!,
         model: activeModel,

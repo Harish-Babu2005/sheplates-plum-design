@@ -237,7 +237,22 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     deliverySlots = [];
   }
 
-  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
+  let returnedOrders = orders.data || [];
+  if (role === "vendor") {
+    const today = new Date().toISOString().slice(0, 10);
+    returnedOrders = returnedOrders.filter((order) => {
+      const pmts = Array.isArray(order.payments) ? order.payments : [];
+      const isPaid = pmts.some((p: { status?: string }) => ["paid", "captured", "success"].includes(String(p.status || "").toLowerCase()));
+      const isFoodDrop = pmts.some((p: { provider?: string }) => p.provider === "food_drop_pickup");
+      if (!isPaid && !isFoodDrop) return false;
+      const st = String(order.status || "").toLowerCase();
+      if (st === "awaiting_payment" || st === "payment_failed" || st === "expired") return false;
+      if (order.scheduled_date && order.scheduled_date < today && !isPaid) return false;
+      return true;
+    });
+  }
+
+  return { orders: returnedOrders, schedules: schedules.data || [], staff, assignments, cart, cartItems,
     thirdPartyDeliveries: deliveryRequests.data || [],
     thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
     deliverySlots,
@@ -570,7 +585,7 @@ export async function POST(request: Request) {
           fulfilment_mode: fulfilmentMode,
           scheduled_date: scheduledDate,
           scheduled_slot: scheduledSlot,
-          status: "awarded",
+          status: "awaiting_payment",
         };
         // The bill breakdown, commission and invoice type are stored when the database has those columns (V9_22). Without
         // them the order is still created with its totals, so checkout never breaks on a missing migration.
@@ -579,9 +594,22 @@ export async function POST(request: Request) {
           commission_percent: billing.commissionPercent, commission_amount: billing.commissionAmount, vendor_payout: billing.vendorPayout,
           invoice_type: billing.invoiceType, gst_mode: billing.gstMode, discount_amount: billing.discountAmount, total_amount: billing.totalAmount, currency: billing.currency,
         };
+        const isStatusEnumError = (e: { code?: string; message?: string } | null | undefined) =>
+          Boolean(e && (e.code === "22P02" || /invalid input value for enum order_status/i.test(e.message || "")));
+        const isMissingCol = (e: { code?: string; message?: string } | null | undefined) =>
+          Boolean(e && (e.code === "42703" || e.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(e.message || "")));
+
         let inserted = await admin.from("orders").insert({ ...baseOrder, ...breakdown }).select("id,order_number").single();
-        if (inserted.error && (inserted.error.code === "42703" || inserted.error.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(inserted.error.message || ""))) {
+        if (inserted.error && isStatusEnumError(inserted.error)) {
+          baseOrder.status = "awarded";
+          inserted = await admin.from("orders").insert({ ...baseOrder, ...breakdown }).select("id,order_number").single();
+        }
+        if (inserted.error && isMissingCol(inserted.error)) {
           inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
+          if (inserted.error && isStatusEnumError(inserted.error)) {
+            baseOrder.status = "awarded";
+            inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
+          }
         }
         if (inserted.error) throw inserted.error;
         orderIds.push(inserted.data.id);
@@ -631,7 +659,7 @@ export async function POST(request: Request) {
       if (!priced.deliveries.length) return NextResponse.json({ error: "This schedule has no delivery dates." }, { status: 400 });
       if (!priced.withinRadius && fulfilmentMode === "vendor_delivery") return NextResponse.json({ error: priced.warning || "Your delivery address is beyond this vendor's delivery radius." }, { status: 400 });
       const firstDelivery = priced.deliveries[0];
-      const scheduleInsert = await admin.from("product_schedules").insert({
+      let scheduleInsert = await admin.from("product_schedules").insert({
         customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
         start_date: startDate, end_date: endDate || null,
         recurrence: requestedRecurrence,
@@ -640,11 +668,22 @@ export async function POST(request: Request) {
         fulfilment_mode: fulfilmentMode, status: "awaiting_payment",
         whatsapp_reminder_enabled: fulfilmentMode === "third_party_delivery" ? false : body.whatsappReminder !== false,
       }).select("id").single();
+      if (scheduleInsert.error && (scheduleInsert.error.code === "23514" || /violates check constraint/i.test(scheduleInsert.error.message || ""))) {
+        scheduleInsert = await admin.from("product_schedules").insert({
+          customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
+          start_date: startDate, end_date: endDate || null,
+          recurrence: requestedRecurrence,
+          weekdays: weekdayNumbers,
+          scheduled_slot: String(body.slot || "Vendor to confirm"), quantity, unit: String(body.unit || product.unit),
+          fulfilment_mode: fulfilmentMode, status: "active",
+          whatsapp_reminder_enabled: fulfilmentMode === "third_party_delivery" ? false : body.whatsappReminder !== false,
+        }).select("id").single();
+      }
       if (scheduleInsert.error) throw scheduleInsert.error;
       const orderInsert = await insertOrderWithBilling(admin, {
         order_number: orderNumber(), schedule_id: scheduleInsert.data.id, customer_id: profile.id, vendor_id: product.vendor_id,
         fulfilment_mode: fulfilmentMode, scheduled_date: startDate,
-        scheduled_slot: String(body.slot || "Vendor to confirm"), status: "awarded",
+        scheduled_slot: String(body.slot || "Vendor to confirm"), status: "awaiting_payment",
       }, firstDelivery);
       if (orderInsert.error) throw orderInsert.error;
       if (fulfilmentMode === "third_party_delivery") {
@@ -836,9 +875,15 @@ export async function POST(request: Request) {
       if (!allowedStatuses.has(nextStatus)) {
         return NextResponse.json({ error: "Cancellation and unsupported order statuses are disabled." }, { status: 400 });
       }
-      const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number,fulfilment_mode,scheduled_date").eq("id", orderId).maybeSingle();
+      const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number,fulfilment_mode,scheduled_date,status,payments(id,status,provider)").eq("id", orderId).maybeSingle();
       if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
       if (profile.role === "vendor" && order.vendor_id !== profile.vendor_id) return NextResponse.json({ error: "This order belongs to another store." }, { status: 403 });
+      const pmts = Array.isArray(order.payments) ? order.payments : [];
+      const isPaid = pmts.some((p: { status?: string }) => ["paid", "captured", "success"].includes(String(p.status || "").toLowerCase()));
+      const isFoodDrop = pmts.some((p: { provider?: string }) => p.provider === "food_drop_pickup");
+      if (profile.role === "vendor" && !isPaid && !isFoodDrop) {
+        return NextResponse.json({ error: "Cannot accept an order before payment is confirmed." }, { status: 403 });
+      }
       if (order.fulfilment_mode === "third_party_delivery" && nextStatus === "completed") {
         return NextResponse.json({ error: "Third-party orders can only be marked delivered after the handover code is verified." }, { status: 409 });
       }
