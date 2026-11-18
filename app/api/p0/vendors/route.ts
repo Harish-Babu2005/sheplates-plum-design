@@ -257,6 +257,23 @@ export async function POST(request: Request) {
       if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 24) {
         return NextResponse.json({ error: "Operating duration must be between 1 and 24 hours." }, { status: 400 });
       }
+      // Server-side phone validation: exactly 10 digits, first digit 6–9
+      const contactPhoneRaw = String(body.contactPhone || "").trim();
+      if (!/^[6-9]\d{9}$/.test(contactPhoneRaw)) {
+        return NextResponse.json({ error: "Contact phone must be exactly 10 digits starting with 6, 7, 8 or 9." }, { status: 400 });
+      }
+      // Server-side WhatsApp validation: must be +91 followed by 10 digits (6–9 start)
+      const whatsappRaw = String(body.whatsappNumber || "").trim();
+      if (!/^\+91[6-9]\d{9}$/.test(whatsappRaw)) {
+        return NextResponse.json({ error: "WhatsApp number must be in format +91XXXXXXXXXX with a valid 10-digit Indian mobile number." }, { status: 400 });
+      }
+      // Server-side FSSAI validation (only when fssaiRequired=true)
+      if (body.fssaiRequired === true || body.fssaiRequired === "true") {
+        const fssaiRaw = String(body.fssaiNumber || "").trim();
+        if (fssaiRaw && !/^\d{14}$/.test(fssaiRaw)) {
+          return NextResponse.json({ error: "FSSAI number must be exactly 14 digits." }, { status: 400 });
+        }
+      }
       if (shopImage && !["image/png", "image/jpeg", "image/webp"].includes(shopImage.type)) {
         return NextResponse.json({ error: "Upload a PNG, JPG or WebP shop image." }, { status: 400 });
       }

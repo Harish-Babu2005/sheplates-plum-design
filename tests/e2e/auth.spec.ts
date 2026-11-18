@@ -13,7 +13,7 @@ test.describe("Authentication", () => {
     await page.locator("form").getByRole("button", { name: "Sign in" }).click();
     // Either the authenticated shell (marketplace search) or first-login
     // onboarding ("Where should we serve you?") is a valid signed-in state.
-    const marketplaceSearch = page.getByPlaceholder("Search food, vendor, category, dietary tag…");
+    const marketplaceSearch = page.getByPlaceholder(/Search milk, meals, bakes, kitchens|Search food/i);
     const onboarding = page.getByText("Where should we serve you?");
     await expect(marketplaceSearch.or(onboarding)).toBeVisible({ timeout: 15_000 });
   });

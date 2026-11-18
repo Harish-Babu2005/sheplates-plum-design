@@ -3,8 +3,11 @@
 // a top bar (logo, delivery area, search, She Agent, wishlist, alerts, cart, account), a menu row on
 // desktop/tablet, a floating bottom pill on phones, and a footer with the legal and support details.
 import { Wordmark } from "@/components/brand";
-import { Heart, Bell, ShoppingBag, MapPin, ChevronDown, Search, Sparkles, SlidersHorizontal, Home, Zap, Play, ReceiptText, UserRound, CalendarDays, ClipboardCheck, ListChecks, TicketCheck, HelpCircle, LogOut, Package, HeartPulse, MapPinned, Storefront } from "@/components/icons";
+import { Heart, Bell, ShoppingBag, MapPin, ChevronDown, Search, Sparkles, SlidersHorizontal, Home, Zap, Play, ReceiptText, UserRound, CalendarDays, ClipboardCheck, ListChecks, TicketCheck, HelpCircle, LogOut, Package, HeartPulse, MapPinned, Storefront, LocateFixed } from "@/components/icons";
 import type { ComponentType, ReactNode } from "react";
+import { CustomerSearchBar } from "./search-bar";
+import type { Product, Vendor } from "@/components/sheplates-v3";
+import type { CustomerLocationProfile } from "@/lib/marketplace-search";
 
 type Icon = ComponentType<{ className?: string }>;
 
@@ -46,17 +49,99 @@ const ACCOUNT_LINKS: [string, Icon][] = [
   ["Ticket centre", TicketCheck],
 ];
 
-export function CustomerHeader({ active, name, email, area, unread, cartCount, accountOpen, onToggleAccount, onNavigate, onAgent, onNotifications, onLocation, onReplayTour, onSignOut }: {
-  active: string; name: string; email: string; area: string; unread: number; cartCount: number; accountOpen: boolean;
-  onToggleAccount: () => void; onNavigate: (key: string) => void; onAgent: () => void; onNotifications: () => void; onLocation: () => void; onReplayTour: () => void; onSignOut: () => void;
+export function CustomerHeader({
+  active,
+  name,
+  email,
+  area,
+  unread,
+  cartCount,
+  accountOpen,
+  onToggleAccount,
+  onNavigate,
+  onAgent,
+  onNotifications,
+  onLocation,
+  onReplayTour,
+  onSignOut,
+  searchQuery = "",
+  onSearchQueryChange,
+  onNavigateToSearch,
+  onOpenProduct,
+  onOpenVendor,
+  onSelectCategory,
+  onToggleFilters,
+  activeFilterCount = 0,
+  products = [],
+  vendors = [],
+  profile = null,
+  locationConfirmed = true,
+  markups = {},
+}: {
+  active: string;
+  name: string;
+  email: string;
+  area: string;
+  unread: number;
+  cartCount: number;
+  accountOpen: boolean;
+  onToggleAccount: () => void;
+  onNavigate: (key: string) => void;
+  onAgent: () => void;
+  onNotifications: () => void;
+  onLocation: () => void;
+  onReplayTour: () => void;
+  onSignOut: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
+  onNavigateToSearch?: (q: string) => void;
+  onOpenProduct?: (product: Product) => void;
+  onOpenVendor?: (vendorId: string) => void;
+  onSelectCategory?: (category: string) => void;
+  onToggleFilters?: () => void;
+  activeFilterCount?: number;
+  products?: Product[];
+  vendors?: Vendor[];
+  profile?: CustomerLocationProfile | null;
+  locationConfirmed?: boolean;
+  markups?: Record<string, number>;
 }) {
   const current = tabOf(active);
   const initials = name.slice(0, 2).toUpperCase();
   return <header className="sh k-head">
     <div className="k-top">
       <button type="button" className="k-logo" onClick={() => onNavigate("Marketplace")} aria-label="Sheplates home"><Wordmark height={32} /></button>
-      <button type="button" data-tour="location-mobile" onClick={onLocation} className="k-loc" aria-label={`Delivery area: ${area}`}><MapPin className="size-5 shrink-0" /><span className="k-loc-t">{area}</span><ChevronDown className="size-4 shrink-0" /></button>
-      <button type="button" className="k-search" onClick={() => onNavigate("Search")} aria-label="Search the marketplace"><Search className="size-5 shrink-0" /><span className="grow">Search milk, meals, bakes, kitchens</span><SlidersHorizontal className="size-5 shrink-0" /></button>
+      <button
+        type="button"
+        data-tour="location"
+        onClick={onLocation}
+        className={`k-loc ${!locationConfirmed ? "bg-amber-50 text-amber-900 ring-1 ring-amber-300" : ""}`}
+        aria-label={`Delivery area: ${locationConfirmed ? area : "Confirm your delivery location"}`}
+      >
+        {locationConfirmed ? (
+          <MapPin className="size-5 shrink-0 text-[#155F65]" />
+        ) : (
+          <LocateFixed className="size-5 shrink-0 text-amber-700" />
+        )}
+        <span className="k-loc-t">{locationConfirmed ? area : "Confirm delivery location"}</span>
+        <ChevronDown className="size-4 shrink-0" />
+      </button>
+
+      <CustomerSearchBar
+        query={searchQuery}
+        onQueryChange={onSearchQueryChange ?? (() => undefined)}
+        onNavigateToSearch={onNavigateToSearch ?? (() => onNavigate("Search"))}
+        onOpenProduct={onOpenProduct ?? (() => undefined)}
+        onOpenVendor={onOpenVendor ?? (() => undefined)}
+        onSelectCategory={onSelectCategory ?? (() => undefined)}
+        onToggleFilters={onToggleFilters ?? (() => onNavigate("Search"))}
+        activeFilterCount={activeFilterCount}
+        products={products}
+        vendors={vendors}
+        profile={profile}
+        markups={markups}
+      />
+
       <div className="k-actions">
         <button type="button" data-tour="agent" onClick={onAgent} className="btn sm dark k-agent" aria-label="Open She Agent"><Sparkles className="size-5" /><span>She Agent</span></button>
         <button type="button" onClick={() => onNavigate("Wishlist")} className="ibtn w k-ring k-wish" aria-label="Wishlist"><Heart className="size-5" /></button>
