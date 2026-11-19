@@ -205,23 +205,62 @@ export async function liveSignUp(input: {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
 
-  // Temporary UAT flow: customer/vendor self-signup is created as confirmed by
-  // the server route so no verification email/OTP is required. Authentication
-  // is still enforced with email + password on every future sign-in.
-  const response = await fetch("/api/auth/direct-signup", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const result = await response.json() as { userId?: string; error?: string };
-  if (!response.ok || !result.userId) throw new Error(result.error || "Unable to create the account.");
-
-  const signedIn = await supabase.auth.signInWithPassword({
-    email: input.email.trim().toLowerCase(),
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const { data, error } = await supabase.auth.signUp({
+    email: normalizedEmail,
     password: input.password,
+    options: {
+      data: {
+        full_name: input.name.trim(),
+        role: input.role,
+      },
+      emailRedirectTo: `${getAppUrl().replace(/\/$/, "")}`,
+    },
   });
-  if (signedIn.error || !signedIn.data.user) throw signedIn.error || new Error("Account created, but sign-in failed.");
-  return signedIn.data;
+
+  if (error) {
+    if (/already registered|already exists|user already/i.test(error.message)) {
+      throw new Error("This email is already registered. Please sign in instead.");
+    }
+    throw error;
+  }
+
+  if (!data.user) throw new Error("Unable to create the account.");
+
+  // Supabase identity enumeration protection:
+  // If email confirmation is enabled and the user already exists, Supabase returns user with identities: []
+  if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new Error("This email is already registered. Please sign in instead.");
+  }
+
+  const needsEmailVerification = !data.session;
+
+  return {
+    user: data.user,
+    session: data.session,
+    needsEmailVerification,
+  };
+}
+
+export async function resendVerificationEmail(email: string) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: normalizedEmail,
+    options: {
+      emailRedirectTo: `${getAppUrl().replace(/\/$/, "")}`,
+    },
+  });
+
+  if (error) throw error;
+  return true;
 }
 
 export async function saveLiveCustomerPrivacy(privateAccount: boolean) {
