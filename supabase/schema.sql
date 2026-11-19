@@ -48,13 +48,16 @@ create table public.vendors (
   logo_url text,
   locality text not null,
   pincode text,
+  address text,
   whatsapp_number text,
   operating_hours jsonb,
   latitude numeric,
   longitude numeric,
   service_radius_km numeric(6,2) not null default 5,
+  radius_updated_at timestamptz not null default now(),
   delivery_enabled boolean not null default true,
   pickup_enabled boolean not null default true,
+  store_open_today boolean not null default false,
   verification_status public.verification_status not null default 'draft',
   operational_status public.operational_status not null default 'inactive',
   marketplace_visible boolean not null default false,
@@ -92,7 +95,17 @@ create table public.vendor_menu_items (
   category text not null,
   description text,
   unit text not null,
+  quantity_step numeric(12,3) not null default 1 check (quantity_step > 0),
+  stock_quantity numeric(12,3) not null default 0 check (stock_quantity >= 0),
   vendor_base_price numeric(12,2) not null check (vendor_base_price >= 0),
+  calories_per_unit numeric(12,2) not null default 0 check (calories_per_unit >= 0),
+  protein_g numeric(12,2) not null default 0 check (protein_g >= 0),
+  carbs_g numeric(12,2) not null default 0 check (carbs_g >= 0),
+  fat_g numeric(12,2) not null default 0 check (fat_g >= 0),
+  fibre_g numeric(12,2) not null default 0 check (fibre_g >= 0),
+  dietary_tags text[] not null default '{}',
+  pack_amount numeric(12,3),
+  pack_measure text,
   image_url text,
   active boolean not null default true,
   created_at timestamptz not null default now(),
@@ -795,11 +808,11 @@ create policy documents_vendor_insert on public.vendor_documents for insert with
 create policy documents_ops_update on public.vendor_documents for update
 using (exists(select 1 from public.vendors v where v.id=vendor_id and (
   (v.vendor_kind='subscription' and public.current_app_role() in ('operations','admin'))
-  or (v.vendor_kind='p0_connect' and (public.current_app_role()='admin' or (public.current_app_role()='operations' and public.p0_current_actor_can('review')))
+  or (v.vendor_kind='p0_connect' and (public.current_app_role()='admin' or (public.current_app_role()='operations' and public.p0_current_actor_can('review'))))
 )))
 with check (exists(select 1 from public.vendors v where v.id=vendor_id and (
   (v.vendor_kind='subscription' and public.current_app_role() in ('operations','admin'))
-  or (v.vendor_kind='p0_connect' and (public.current_app_role()='admin' or (public.current_app_role()='operations' and public.p0_current_actor_can('review')))
+  or (v.vendor_kind='p0_connect' and (public.current_app_role()='admin' or (public.current_app_role()='operations' and public.p0_current_actor_can('review'))))
 )));
 
 create policy menu_vendor_all on public.vendor_menu_items for all using (public.owns_vendor(vendor_id)) with check (public.owns_vendor(vendor_id));

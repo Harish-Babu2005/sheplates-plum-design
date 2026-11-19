@@ -85,6 +85,78 @@ export function getSupabaseBrowserClient() {
   return browserClient;
 }
 
+export async function liveSignInWithGoogle() {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error("Live account access is not available in this deployment.");
+  const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo,
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
+      },
+    },
+  });
+  if (error) throw new Error(error.message || "Failed to initialize Google authentication.");
+  return data;
+}
+
+export async function getLiveAuthSession(preferredRole?: "customer" | "vendor") {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.user) return null;
+
+  let { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, role, vendor_id, tours_completed")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  const userMeta = session.user.user_metadata || {};
+  const metaName = (userMeta.full_name || userMeta.name || session.user.email?.split("@")[0] || "User") as string;
+  const targetRole = preferredRole || (userMeta.role as Role) || "customer";
+
+  if (!profile) {
+    const { data: createdProfile } = await supabase
+      .from("profiles")
+      .upsert({ id: session.user.id, full_name: metaName, role: targetRole }, { onConflict: "id" })
+      .select("full_name, role, vendor_id, tours_completed")
+      .maybeSingle();
+    profile = createdProfile;
+  } else if (!profile.full_name && metaName) {
+    await supabase.from("profiles").update({ full_name: metaName }).eq("id", session.user.id);
+    profile.full_name = metaName;
+  }
+
+  let vendorId = profile?.vendor_id ?? null;
+  // If vendor account, resolve their owned store from public.vendors if not already linked
+  if (!vendorId && profile?.role === "vendor") {
+    const { data: ownedVendor } = await supabase
+      .from("vendors")
+      .select("id")
+      .eq("owner_id", session.user.id)
+      .maybeSingle();
+    if (ownedVendor?.id) {
+      vendorId = ownedVendor.id;
+      await supabase.from("profiles").update({ vendor_id: vendorId }).eq("id", session.user.id);
+    }
+  }
+
+  const role = (profile?.role || targetRole) as Role;
+  return {
+    user: session.user,
+    profile: {
+      full_name: profile?.full_name || metaName,
+      role,
+      vendor_id: vendorId,
+      tours_completed: profile?.tours_completed || [],
+    },
+  };
+}
+
 export async function liveSignIn(email: string, password: string) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");

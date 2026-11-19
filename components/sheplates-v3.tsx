@@ -1709,7 +1709,7 @@ export function SheplatesV3() {
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
-    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId && ((o.payment === "Paid" && o.status !== "Awaiting payment") || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup")).length }
+    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId && (o.payment === "Paid" || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup")).length }
     : role === "operations"
       ? { "Vendor verification": state.vendors.filter((v) => v.vendorKind !== "p0_connect" && ["Submitted", "Under review"].includes(v.verification)).length, "Ticket centre": openTicketCount, Cancellations: state.cancellations.filter((x) => x.status === "Awaiting operations").length }
       : role === "admin" ? { "Ticket centre": openTicketCount } : {};
