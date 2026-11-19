@@ -146,16 +146,55 @@ function VendorDropRow({ drop, onClaim }: { drop: FoodDrop; onClaim: (d: FoodDro
     <div className="text-right"><div className="font-black">{money(drop.dropPrice)}</div><button type="button" aria-label="Add to cart" disabled={busy || status !== "live" || drop.remainingQuantity <= 0} onClick={async () => { setBusy(true); try { await onClaim(drop, 1); } finally { setBusy(false); } }} className={`mt-1 rounded-full px-4 py-1.5 text-xs font-black text-white disabled:cursor-not-allowed ${status === "live" ? "bg-[#155F65]" : "bg-[#E1AE9B]"}`}>{busy ? "Adding…" : status === "live" ? "Add to orders" : "Available at 12 PM"}</button></div></div>;
 }
 
-export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, social, profile, onAdd, onPlan, onToggleWishlist, onClaimDrop, onFollowed, shorts = [], onOpenShorts, cartLines = [], onViewCart, tomorrow = "" }: {
+export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, social, profile, onAdd, onPlan, onToggleWishlist, onClaimDrop, onFollowed, shorts = [], onOpenShorts, cartLines = [], onViewCart, tomorrow = "", isGuest = false, onRequireAuth }: {
   tomorrow?: string;
   cartLines?: { id: string; name: string; quantity: number; total: number }[]; onViewCart?: () => void; shorts?: FoodShort[]; onOpenShorts?: (list: FoodShort[], index: number) => void;
   vendorId: string | null; onClose: () => void; state: V3State; customerEmail: string; social: SocialApi; profile: Coords;
   onAdd: (p: Product) => void; onPlan: (p: Product, preset?: PlanPreset) => void; onToggleWishlist: (p: Product) => void; onClaimDrop: (d: FoodDrop, q: number) => Promise<void>; onFollowed?: (vendor: V3State["vendors"][number]) => void;
+  isGuest?: boolean;
+  onRequireAuth?: (action: { type: string; product?: Product; preset?: PlanPreset; drop?: FoodDrop }) => void;
 }) {
   const [tab, setTab] = useState<VendorTabKey>("Menu");
   const [qrOpen, setQrOpen] = useState(false);
   const vendor = vendorId ? state.vendors.find((v) => v.id === vendorId) : undefined;
   if (!vendor) return null;
+
+  const handleAdd = (p: Product) => {
+    if (isGuest || !customerEmail) {
+      onRequireAuth?.({ type: "add_to_cart", product: p });
+      return;
+    }
+    onAdd(p);
+  };
+  const handlePlan = (p: Product, preset?: PlanPreset) => {
+    if (isGuest || !customerEmail) {
+      onRequireAuth?.({ type: "plan", product: p, preset });
+      return;
+    }
+    onPlan(p, preset);
+  };
+  const handleToggleWishlist = (p: Product) => {
+    if (isGuest || !customerEmail) {
+      onRequireAuth?.({ type: "wishlist", product: p });
+      return;
+    }
+    onToggleWishlist(p);
+  };
+  const handleClaimDrop = async (d: FoodDrop, q: number) => {
+    if (isGuest || !customerEmail) {
+      onRequireAuth?.({ type: "claim_drop", drop: d });
+      return;
+    }
+    await onClaimDrop(d, q);
+  };
+  const handleViewCart = () => {
+    if (isGuest || !customerEmail) {
+      onRequireAuth?.({ type: "checkout" });
+      return;
+    }
+    onViewCart?.();
+  };
+
   const products = state.products.filter((p) => p.vendorId === vendor.id && p.active);
   const drops = canCreateFoodDrop(vendor.plan).allowed
     ? state.foodDrops.filter((d) => d.vendorId === vendor.id && ["live", "scheduled"].includes(dropDisplayStatus(d)))
@@ -192,7 +231,7 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><DialogTitle asChild><h2 className="flex items-center gap-1.5 text-xl font-black leading-tight tracking-[-.02em]">{vendor.businessName}{vendor.verification === "Verified" && <BadgeCheck className="size-5 text-sky-500" aria-label="Verified" />}</h2></DialogTitle>
         <div className="mt-0.5 text-sm font-bold text-stone-500">{vendor.category} · {shortArea(vendor.address)}{distance !== null ? ` · ${distance.toFixed(1)} km` : ""}</div>
         <div className="mt-1 flex items-center gap-1.5 text-sm font-black">{rating ? <><Stars value={rating.average} /><span>{rating.average.toFixed(1)}</span><span className="font-bold text-stone-400">({rating.count} reviews)</span></> : <span className="text-stone-400">No reviews yet</span>}</div></div>
-        <button type="button" aria-pressed={following} onClick={() => void social.toggleFollow(vendor.id).then(() => { if (!following) onFollowed?.(vendor); toast.success(following ? `Unfollowed ${vendor.businessName}` : `Following ${vendor.businessName}`); }).catch((e) => toast.error(errorMessage(e, "Could not update follow")))} className={`h-11 rounded-full px-7 text-sm font-black transition ${following ? "border border-stone-300 bg-white text-stone-700" : "bg-[#155F65] text-white shadow-none"}`}>{following ? "Following" : "Follow"}</button></div>
+        <button type="button" aria-pressed={following} onClick={() => { if (isGuest || !customerEmail) { onRequireAuth?.({ type: "follow" }); return; } void social.toggleFollow(vendor.id).then(() => { if (!following) onFollowed?.(vendor); toast.success(following ? `Unfollowed ${vendor.businessName}` : `Following ${vendor.businessName}`); }).catch((e) => toast.error(errorMessage(e, "Could not update follow"))); }} className={`h-11 rounded-full px-7 text-sm font-black transition ${following ? "border border-stone-300 bg-white text-stone-700" : "bg-[#155F65] text-white shadow-none"}`}>{following ? "Following" : "Follow"}</button></div>
       <div className="mt-3 flex flex-wrap gap-2">{vendor.verification === "Verified" && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">FSSAI Verified</span>}{vendor.category === "Home food" && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">Home Food</span>}{vendor.delivery && <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-stone-600">Delivery</span>}{vendor.pickup && <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-stone-600">Pickup</span>}<span className={`rounded-full px-3 py-1 text-xs font-black ${vendor.openToday ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{vendor.openToday ? "Open now" : "Closed today"}</span></div>
       {vendor.bio && <p className="mt-2.5 text-sm leading-relaxed text-stone-600">{vendor.bio}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl bg-[#F4F9F8] px-4 py-2.5 text-xs text-stone-700">
@@ -204,11 +243,11 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
       <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]"><div className="min-w-0">
         <SegTabs tabs={VENDOR_TABS.filter((t) => (t !== "Shorts" || shorts.length > 0) && (t !== "Weekly menu" || plansOffered(state.weeklyMenus || [], vendor.id).length > 0)) as readonly VendorTabKey[]} value={tab} onChange={setTab} className="mt-4" />
         <div className="mt-4 space-y-2.5">
-          {tab === "Menu" && (products.length ? <><h3 className="text-sm font-black">Today&apos;s Menu ({products.length})</h3>{products.map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={onAdd} onPlan={onPlan} onToggleWishlist={onToggleWishlist} />)}</> : <EmptyState emoji="🍽️" title="Nothing on the menu today" body="This vendor hasn&apos;t published any items right now." />)}
-          {tab === "Weekly menu" && <WeeklyMenuTab vendor={vendor} state={state} tomorrow={tomorrow} onPlan={onPlan} />}
-          {tab === "New Products" && (products.length ? products.slice(0, 4).map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={onAdd} onPlan={onPlan} onToggleWishlist={onToggleWishlist} isNew />) : <EmptyState emoji="✨" title="No new products" body="Newly added items appear here first." />)}
-          {tab === "Subscriptions" && (products.length ? <><p className="text-xs font-bold text-stone-500">Pick any item and set how often you want it — daily, weekly or on custom days.</p>{products.map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={onAdd} onPlan={onPlan} onToggleWishlist={onToggleWishlist} planLabel="Subscribe" />)}</> : <EmptyState emoji="🔁" title="No subscription items" body="Items you can subscribe to appear here." />)}
-          {tab === "Food Drops" && (drops.length ? drops.map((d) => <VendorDropRow key={d.id} drop={d} onClaim={onClaimDrop} />) : <EmptyState emoji="⚡" title="No drops scheduled" body="Follow this vendor to hear first when they post surplus or a limited batch." />)}
+          {tab === "Menu" && (products.length ? <><h3 className="text-sm font-black">Today&apos;s Menu ({products.length})</h3>{products.map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={handleAdd} onPlan={handlePlan} onToggleWishlist={handleToggleWishlist} />)}</> : <EmptyState emoji="🍽️" title="Nothing on the menu today" body="This vendor hasn&apos;t published any items right now." />)}
+          {tab === "Weekly menu" && <WeeklyMenuTab vendor={vendor} state={state} tomorrow={tomorrow} onPlan={handlePlan} />}
+          {tab === "New Products" && (products.length ? products.slice(0, 4).map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={handleAdd} onPlan={handlePlan} onToggleWishlist={handleToggleWishlist} isNew />) : <EmptyState emoji="✨" title="No new products" body="Newly added items appear here first." />)}
+          {tab === "Subscriptions" && (products.length ? <><p className="text-xs font-bold text-stone-500">Pick any item and set how often you want it — daily, weekly or on custom days.</p>{products.map((p) => <ProductRow key={p.id} product={p} state={state} customerEmail={customerEmail} onAdd={handleAdd} onPlan={handlePlan} onToggleWishlist={handleToggleWishlist} planLabel="Subscribe" />)}</> : <EmptyState emoji="🔁" title="No subscription items" body="Items you can subscribe to appear here." />)}
+          {tab === "Food Drops" && (drops.length ? drops.map((d) => <VendorDropRow key={d.id} drop={d} onClaim={handleClaimDrop} />) : <EmptyState emoji="⚡" title="No drops scheduled" body="Follow this vendor to hear first when they post surplus or a limited batch." />)}
           {tab === "About" && (
             <div className="space-y-4 rounded-3xl border border-stone-200/70 bg-[#FBFDFD] p-5 sm:p-6 text-sm">
               <h3 className="text-base font-black text-[#202827]">About {vendor.businessName}</h3>
@@ -231,7 +270,7 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
         <aside className="h-fit rounded-3xl bg-[#EEF2F2] p-5 lg:sticky lg:top-4" aria-label="Your cart"><h3 className="text-lg font-semibold">Your cart</h3>
           {cartLines.length ? <div className="mt-3 space-y-2 text-sm">{cartLines.map((line) => <div key={line.id} className="flex justify-between gap-3"><span className="min-w-0 truncate">{line.quantity} × {line.name}</span><b className="tabular-nums">{money(line.total)}</b></div>)}</div> : <p className="mt-2 text-sm text-[#55656A]">Nothing yet. Add something from the menu.</p>}
           <div className="mt-3 flex items-start gap-2 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]"><span className="mt-0.5 shrink-0">ⓘ</span>One kitchen per order. Adding from another kitchen clears this cart.</div>
-          <button type="button" disabled={!cartLines.length} onClick={onViewCart} className="mt-3 h-12 w-full rounded-full bg-[#155F65] text-[15px] font-bold text-white disabled:opacity-50">View cart{cartLines.length ? ` · ${cartLines.reduce((sum, line) => sum + line.quantity, 0)} items · ${money(cartLines.reduce((sum, line) => sum + line.total, 0))}` : ""}</button></aside>
+          <button type="button" disabled={!cartLines.length} onClick={handleViewCart} className="mt-3 h-12 w-full rounded-full bg-[#155F65] text-[15px] font-bold text-white disabled:opacity-50">View cart{cartLines.length ? ` · ${cartLines.reduce((sum, line) => sum + line.quantity, 0)} items · ${money(cartLines.reduce((sum, line) => sum + line.total, 0))}` : ""}</button></aside>
       </div>
     </div>
     {qrOpen && (

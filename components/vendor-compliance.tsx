@@ -25,7 +25,7 @@ export function PdfPreviewDialog({ doc, onClose }: { doc: { title: string; fileN
   return <Dialog open={Boolean(doc)} onOpenChange={(open) => { if (!open) onClose(); }}>
     <DialogContent className="max-h-[94vh] w-[95vw] max-w-4xl overflow-hidden rounded-[28px] p-0 sm:max-w-4xl">
       <div className="flex h-[85vh] flex-col">
-        <div className="flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4 pr-14">
+<div className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4 pr-14">
           <div className="min-w-0"><DialogTitle className="truncate text-lg font-black text-[#202827]">{doc?.title || "Document preview"}</DialogTitle><DialogDescription className="truncate font-mono text-xs text-stone-500">{doc?.fileName || "document.pdf"}</DialogDescription></div>
           {doc?.url && <a href={doc.url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-3 py-1.5 text-xs font-bold text-[#202827] hover:bg-stone-50"><ExternalLink className="size-3.5 text-[#155F65]" />Open in new tab</a>}
         </div>
@@ -37,17 +37,50 @@ export function PdfPreviewDialog({ doc, onClose }: { doc: { title: string; fileN
 
 /** The Vendor Terms & Conditions PDF, readable before accepting. `onAccept` adds an "Accept & close" button. */
 export function TermsViewerDialog({ open, onClose, onAccept }: { open: boolean; onClose: () => void; onAccept?: () => void }) {
+    const [termsText, setTermsText] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+
+    let active = true;
+
+    fetch("/docs/sheplates-vendor-terms-v1.0.txt")
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to load terms");
+        return response.text();
+      })
+      .then((text) => {
+        if (active) setTermsText(text);
+      })
+      .catch(() => {
+        if (active) toast.error("Could not load Terms & Conditions");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open]);
   return <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
     <DialogContent data-testid="terms-viewer" className="max-h-[94vh] w-[95vw] max-w-4xl overflow-hidden rounded-[28px] p-0 sm:max-w-4xl">
       <div className="flex h-[85vh] flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4 pr-14">
           <div className="flex min-w-0 items-center gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><FileText className="size-5" /></div>
             <div className="min-w-0"><DialogTitle className="text-lg font-black text-[#202827]">Sheplates Vendor Terms & Conditions</DialogTitle><DialogDescription className="text-xs text-stone-500">Version {VENDOR_TERMS_VERSION} · Effective Date: {VENDOR_TERMS_EFFECTIVE}</DialogDescription></div></div>
-          <a href={VENDOR_TERMS_PDF} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-3 py-1.5 text-xs font-bold text-[#202827] hover:bg-stone-50"><ExternalLink className="size-3.5 text-[#155F65]" />Open in new tab</a>
         </div>
-        <div className="min-h-0 flex-1 bg-stone-100"><iframe src={`${VENDOR_TERMS_PDF}#toolbar=1&navpanes=0`} title="Sheplates Vendor Terms & Conditions" className="h-full w-full border-0" /></div>
+<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white px-5 py-5 sm:px-8">
+  <h2 className="mb-2 text-xl font-black text-[#155F65]">
+    Sheplates Vendor Terms & Conditions
+  </h2>
+
+  <p className="mb-5 text-xs text-stone-500">
+    Version 1.0 · Effective Date: 7 October 2026
+  </p>
+
+  <div className="whitespace-pre-wrap break-words text-sm leading-7 text-[#2F3C3F]">
+    {termsText || "Loading Terms & Conditions..."}
+  </div>
+</div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-200 bg-white px-5 py-3">
-          <span className="text-xs text-stone-500">Document: <span className="font-mono text-[11px]">sheplates-vendor-terms-v1.0.pdf</span></span>
           <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-xl font-bold">Close</Button>
             {onAccept && <Button type="button" size="sm" onClick={onAccept} className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#0F4A4F]"><Check className="size-4" />Accept &amp; close</Button>}</div>
         </div>

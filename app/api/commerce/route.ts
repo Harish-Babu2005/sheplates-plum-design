@@ -49,7 +49,7 @@ async function identity(request: Request) {
     const { data: ownedVendor } = await c.admin.from("vendors").select("id").eq("owner_id", authData.user.id).maybeSingle();
     if (ownedVendor?.id) vendorId = ownedVendor.id;
   }
-  return { ...c, user: authData.user, profile: { ...profile, vendor_id: vendorId } as { id: string; full_name: string; role: Role; vendor_id: string | null } };
+  return { ...c, user: authData.user, profile: { ...profile, email: authData.user.email || "", vendor_id: vendorId } as { id: string; full_name: string; role: Role; vendor_id: string | null; email: string } };
 }
 
 function orderNumber() {
@@ -163,7 +163,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (role === "vendor" && profile.vendor_id) schedulesQuery = schedulesQuery.eq("vendor_id", profile.vendor_id);
 
   let orders = (await orderQuery) as Awaited<typeof orderQuery>;
-  let schedules = await schedulesQuery;
+  let schedules: any = await schedulesQuery;
   if (schedules.error && (schedules.error.code === "42703" || /column .* does not exist/i.test(schedules.error.message || ""))) {
     let fallbackSchedulesQuery = admin.from("product_schedules").select(schedulesSelectBase).order("start_date", { ascending: true }).limit(500);
     if (role === "customer") fallbackSchedulesQuery = fallbackSchedulesQuery.eq("customer_id", profile.id);

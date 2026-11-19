@@ -1,0 +1,350 @@
+                                            SHEPLATES TERMS & CONDITIONS       
+                                            Effective Date: 7 October 2026
+
+1. Introduction and Acceptance
+These Terms & Conditions (“Terms”) govern your access to and use of Sheplates and your purchase of
+products and services made available through the Sheplates web platform and WhatsApp ordering channels.
+By accessing Sheplates, creating an account, placing an order, or otherwise using the platform, you agree to
+these Terms.
+
+If you do not agree with these Terms, please do not use Sheplates.
+
+
+2. About Sheplates
+Sheplates is a hyperlocal food marketplace that enables customers to discover local food and food-supply
+businesses and place pre-orders through the Sheplates web platform and WhatsApp. Sheplates currently
+operates in Chennai, Tamil Nadu, India.
+
+Businesses listed on Sheplates may include home chefs, home bakers and snack suppliers, meat/egg/fish
+shops, grocery stores and rice mandis, vegetable and fruit shops, dairies, caterers and other approved local
+businesses (“Vendors”).
+
+
+3. Marketplace Model and Vendor Relationship
+Sheplates provides the technology and marketplace through which customers can discover Vendors and
+place orders. Products and services are supplied or fulfilled by the applicable Vendor.
+
+Vendors are independent businesses and are responsible for their products, pricing, availability, preparation,
+quality, packaging, applicable licences, taxes and fulfilment obligations. Sheplates does not manufacture or
+prepare the products listed by Vendors unless expressly stated otherwise.
+
+Sheplates requires applicable Vendors to satisfy its onboarding and verification requirements, including
+FSSAI requirements where applicable.
+
+
+4. Eligibility and Customer Account
+You may browse Sheplates without creating an account. An account is required to place an order.
+
+You must provide accurate and current information when creating an account or placing an order. You are
+responsible for maintaining the confidentiality of your account and for activity carried out through it.
+
+Sheplates may restrict or suspend access where it reasonably believes that an account is being misused,
+fraudulent activity is involved, or these Terms are being violated.
+
+
+5. Products, Menus and Vendor Information
+Product names, descriptions, photographs, prices, availability, delivery/pickup options and other Vendor
+information are provided through the applicable Vendor listing and may change.
+
+The Vendor is responsible for ensuring that its product information, pricing, availability and applicable legal
+disclosures are accurate and current.
+
+Sheplates may display information supplied by Vendors and may organise, categorise or present that
+information to help customers discover Vendors.
+6. Ordering and Pre-Orders
+Sheplates primarily facilitates pre-orders for future delivery or pickup slots. Customers may select a Vendor,
+browse available products, select quantities and choose an available delivery or pickup option before placing
+an order.
+
+Orders may be placed on days and during ordering periods supported by the applicable Vendor. Ordering
+cut-off times, delivery slots and availability may vary by Vendor and category and will be shown through the
+applicable Vendor page or ordering flow.
+
+There is no blanket minimum order value across Sheplates. A Vendor may specify a minimum order value
+where applicable.
+
+At present, a customer can place an order with one Vendor at a time. Multi-Vendor checkout may be
+introduced in the future.
+
+
+7. Pricing, Taxes, Platform Fee and Delivery Charges
+The price payable for products is determined by the applicable Vendor. Applicable taxes and other mandatory
+charges will be presented in the ordering flow where applicable.
+
+Sheplates currently charges a platform fee of ₹5 per order. The applicable platform fee is displayed before
+payment.
+
+Delivery charges, if applicable, are determined by the Vendor and are displayed to the customer before
+payment.
+
+The total amount payable by the customer will be shown before the customer confirms payment.
+
+
+8. Payment
+Orders are paid online through the payment methods made available by Sheplates, which may include UPI,
+cards, net banking and wallets.
+
+Payment is collected at the time of placing the order. An order is treated as successfully placed only after
+payment is successfully processed and the order is submitted to the applicable Vendor, subject to Vendor
+acceptance.
+
+Sheplates does not store customers’ card numbers, UPI credentials, banking credentials, passwords or other
+payment-instrument credentials. Sheplates may retain transaction-related information such as payment
+status, transaction/reference ID, amount, date and order details for processing, reconciliation, customer
+support, accounting and legal purposes, as described in the Privacy Policy.
+
+
+9. Order Acceptance, Rejection and Status
+Placing an order does not by itself guarantee Vendor acceptance. The Vendor may accept or reject an order
+based on availability, operational capacity or other legitimate operational reasons.
+
+Where a Vendor rejects an order after payment has been made, Sheplates will notify the customer and initiate
+a refund to the original mode of payment in accordance with the applicable refund policy.
+
+After acceptance, the Vendor may update the order through the supported order-status process, including
+preparation and dispatch/ready-for-pickup stages. Customers may receive status updates through WhatsApp
+or other channels made available by Sheplates.
+10. Cancellation, Refunds and Rescheduling
+10.1 Customer Cancellation
+Customers cannot cancel an order once it has been accepted by the Vendor.
+
+Before Vendor acceptance, a customer may contact Sheplates Support to request cancellation or modification
+of an order. Such requests are subject to the order status and operational feasibility and are not guaranteed
+until confirmed by Sheplates.
+
+10.2 Vendor Rejection
+If a Vendor rejects an order, Sheplates will notify the customer and initiate a refund to the original mode of
+payment in accordance with the applicable refund policy.
+
+10.3 Vendor Cancellation After Acceptance
+If a Vendor cancels an already accepted order, Sheplates will notify the customer and initiate a refund to the
+original mode of payment in accordance with the applicable refund policy.
+
+10.4 Refund Method and Timing
+Where a refund is approved, Sheplates will initiate the refund through the original mode of payment. The time
+taken for the amount to appear in the customer’s account may depend on the payment method, payment
+service provider or banking system.
+
+10.5 Order Changes
+Requests to change an order before Vendor acceptance must be routed through Sheplates Support. Changes
+after Vendor acceptance are generally not permitted unless the Vendor and Sheplates confirm that the
+requested change is operationally feasible.
+
+
+11. Subscriptions — Pause, Restart and Rescheduling
+Where a Vendor offers a subscription, the subscription terms, frequency, products, delivery/pickup schedule
+and price will be displayed before purchase.
+
+Customers cannot cancel an active subscription through the normal cancellation process. Customers may
+request to pause, restart or reschedule a subscription by contacting Sheplates Support through the available
+support channels.
+
+A pause will apply to future subscription orders that have not yet been confirmed. Orders that have already
+been confirmed or delivered will not be affected by a subsequent pause.
+
+Any subscription change is subject to operational feasibility and confirmation by Sheplates and/or the
+applicable Vendor.
+
+
+12. Delivery and Pickup
+Delivery slots are determined by Vendors and may vary by Vendor and category. Home-cooked meals are
+generally offered around breakfast, lunch or dinner, while other categories may offer morning and/or evening
+slots.
+
+A Vendor may offer delivery only, pickup only, or both. The available option will be shown on the applicable
+Vendor page or ordering flow.
+
+Where delivery is offered, the Vendor is responsible for arranging delivery directly or through its delivery
+arrangements. Delivery charges, where applicable, are displayed before payment.
+
+For pickup orders, the customer is responsible for collecting the order at the Vendor’s stated pickup location
+and within the applicable pickup window.
+13. Food Quality, Packaging, Allergies and Product Responsibility
+Vendors are responsible for food preparation, product quality, hygiene, packaging, ingredients, applicable
+declarations and compliance with applicable laws and regulations.
+
+Customers should review product information provided by the Vendor and communicate any relevant
+requirements to Sheplates or the Vendor where the applicable communication channel permits.
+
+Sheplates does not provide medical, allergy, nutritional or food-safety advice. Customers with allergies,
+medical conditions or specific dietary requirements should make their own assessment and, where
+appropriate, seek advice from a qualified professional.
+
+
+14. Customer Responsibilities
+●​ Provide accurate name, mobile number, delivery address and other information required to fulfil the order.
+●​ Ensure that someone is available to receive or collect the order during the selected slot, where applicable.
+●​ Review the order details, price, delivery/pickup option and applicable charges before payment.
+●​ Use the platform and WhatsApp ordering channels lawfully and not for fraudulent, abusive or misleading
+   purposes.
+●​ Not misuse Vendor or customer information obtained through Sheplates.
+
+
+15. Promotions, Offers and Coupons
+Vendors and/or Sheplates may offer promotions, discounts, coupons or other offers from time to time. Each
+offer may have its own eligibility conditions, validity period, usage limits and exclusions.
+
+Unless expressly stated otherwise, promotions cannot be combined and have no cash value. Sheplates may
+withdraw or modify an offer where permitted by applicable law.
+
+
+16. Ratings, Reviews and Feedback
+Customers may be permitted to submit ratings, reviews and feedback about Vendors or orders. Feedback
+should be truthful, relevant and not unlawful, defamatory, abusive, misleading or infringing of another person’s
+rights.
+
+Sheplates may moderate, remove or decline to publish content that violates these Terms or applicable law.
+
+
+17. WhatsApp Ordering and Communications
+Customers may place orders and receive order-related communications through WhatsApp where the feature
+is available.
+
+Order updates may include acceptance, preparation, dispatch or other status information. Sheplates may also
+use WhatsApp, email, SMS or other available communication channels for transactional and support-related
+communications.
+
+Only Vendors for whom Sheplates has enabled or permitted direct customer contact may communicate
+directly with customers through WhatsApp. Otherwise, order-related communication will be coordinated
+through Sheplates Support/Operations.
+
+
+18. Agentic Commerce and Artificial Intelligence (AI)
+Sheplates may offer AI-powered assistants, automated systems and agentic commerce features through
+its web platform, WhatsApp services, mobile application or other digital channels. These features may
+help customers discover Vendors and products, search or compare options, receive recommendations,
+obtain support, manage carts or subscriptions, and perform other actions supported by the Platform.
+   ●​ AI assistance and authorisation: AI-generated suggestions or responses are provided to assist
+      customers. An AI feature may take an action only within the permissions and instructions
+      provided by the customer and the functionality made available by Sheplates. Where an action
+      requires customer review, confirmation or authorisation, it will not be treated as authorised merely
+      because the AI suggested it.
+   ●​ Order and payment confirmation: Before an order is submitted, customers should review the
+      Vendor, products, quantities, prices, delivery charges, platform fee, applicable taxes, delivery or
+      pickup details and total payable amount shown in the ordering flow. Orders and payments will be
+      submitted through the applicable ordering and payment process, with any confirmation or
+      authorisation required for that action. An AI conversation or recommendation alone does not
+      constitute a completed order or payment.
+   ●​ AI-generated information: AI-generated responses, recommendations, summaries, product
+      details and availability information may be incomplete, outdated or inaccurate. Customers should
+      verify material information in the Vendor listing and ordering flow before making a purchase. AI
+      features do not provide medical, allergy, nutritional or food-safety advice; customers should rely
+      on appropriate Vendor disclosures and qualified professionals where necessary.
+   ●​ Vendor responsibility: AI-generated content does not replace the Vendor’s responsibilities under
+      these Terms, including responsibility for product information, prices, availability, ingredients and
+      allergen disclosures where applicable, product quality, food safety, packaging and fulfilment.
+   ●​ Third-party services: Some AI or agentic commerce features may rely on third-party technology
+      or AI service providers. Use of those features may also be subject to applicable third-party terms
+      and privacy information. Sheplates will handle personal information in accordance with its Privacy
+      Policy and applicable law.
+   ●​ AI memory, preferences and history deletion: Where Sheplates provides AI memory or history
+      functionality, customers may view, modify or delete saved AI interaction history, choices and
+      preferences using the controls made available on the Platform. If a self-service option is
+      unavailable, customers may request deletion through Sheplates Support. Following deletion,
+      Sheplates will cease using the deleted information for personalisation, subject to information that
+      must or may be retained for legal, regulatory, accounting, security, dispute-resolution or other
+      lawful purposes. Deleting AI memory or interaction history does not automatically delete order
+      history, transaction records, account information or other records maintained separately where
+      retention is required or otherwise permitted by applicable law.
+   ●​ Acceptable use: Customers must not misuse AI features, attempt to bypass safeguards, interfere
+      with automated systems, seek unauthorised access, submit fraudulent instructions, or use
+      AI-enabled features to create fraudulent orders or transactions. Sheplates may restrict or
+      suspend access to an AI feature where reasonably necessary to protect customers, Vendors, the
+      Platform or comply with applicable law.
+
+The Sheplates name, branding, website, software, interface, content and other platform materials are
+owned by or licensed to Sheplates and may not be copied, modified, distributed, reverse engineered or
+commercially exploited without permission, except as permitted by law.
+
+Vendor names, logos, product photographs and other Vendor materials remain the responsibility of the
+respective Vendor, subject to the rights and permissions granted to Sheplates for operating the
+marketplace.
+
+
+19. Intellectual Property
+The Sheplates name, branding, website, software, interface, content and other platform materials are owned
+by or licensed to Sheplates and may not be copied, modified, distributed, reverse engineered or commercially
+exploited without permission, except as permitted by law.
+Vendor names, logos, product photographs and other Vendor materials remain the responsibility of the
+respective Vendor, subject to the rights and permissions granted to Sheplates for operating the marketplace.
+
+
+20. Platform Availability
+Sheplates aims to keep the platform available and operational but does not guarantee uninterrupted,
+error-free or continuous availability. The platform may be temporarily unavailable because of maintenance,
+technical issues, network failures, third-party service interruptions or circumstances beyond Sheplates’
+reasonable control.
+
+
+21. Limitation of Liability
+To the extent permitted by applicable law, Sheplates’ role is limited to providing and operating the marketplace
+and facilitating the ordering, payment and communication processes described in these Terms.
+
+Nothing in these Terms excludes or limits any liability that cannot lawfully be excluded or limited under
+applicable law, including rights available to consumers under applicable consumer-protection law.
+
+
+22. Indemnity
+To the extent permitted by applicable law, a customer agrees to indemnify and hold Sheplates harmless from
+claims, losses or liabilities arising from the customer’s unlawful use of the platform, fraud, misuse of the
+platform, or violation of these Terms or another person’s rights.
+
+
+23. Suspension and Termination
+Sheplates may suspend or terminate access to an account or platform feature where there is reasonable
+evidence of fraud, misuse, unlawful activity, repeated abuse of support or refund processes, or material
+violation of these Terms.
+
+Termination will not affect rights or obligations that accrued before termination.
+
+
+24. Changes to These Terms
+Sheplates may update these Terms from time to time to reflect changes to the platform, business practices,
+technology or applicable law. The updated version will be made available through Sheplates. Continued use
+of the platform after the effective date of updated Terms constitutes acceptance of the updated Terms to the
+extent permitted by applicable law.
+
+
+25. Governing Law and Dispute Resolution
+These Terms are governed by the laws of India. Subject to any rights available to consumers under applicable
+law, disputes relating to these Terms or use of Sheplates shall be subject to the jurisdiction of the competent
+courts in Chennai, Tamil Nadu.
+
+
+26. Grievance Redressal
+Customers may raise complaints or grievances with Sheplates through the support channels below.
+Sheplates will handle grievances in accordance with applicable law and its grievance-redressal process.
+
+Support Hours: Monday–Sunday, 9:30 AM–7:00 PM
+
+Email: support@sheplates.com
+
+Phone / WhatsApp: 9600037836
+When contacting Support regarding an order, customers should provide the order number and a brief
+description of the issue.
+
+Sheplates may update its support contact details from time to time. The current contact details will be made
+available through the Sheplates website, web application or other official Sheplates channels.
+
+
+27. Privacy
+Use of Sheplates is also governed by the Sheplates Privacy Policy, which explains how personal information
+and transaction-related information are collected, used, retained and disclosed. The Privacy Policy forms part
+of the overall terms governing use of Sheplates.
+
+
+28. Contact
+For questions regarding these Terms, customers may contact Sheplates using the support details provided in
+Section 25.
+
+
+Important Legal Note
+These Terms are intended as a customer-facing operational and contractual document and should be
+reviewed by Sheplates’ legal counsel before publication, particularly for marketplace liability, food-related
+claims, consumer remedies, subscription practices, taxation and grievance-redressal requirements.
+
+The document has been drafted with reference to the Consumer Protection (E-Commerce) Rules, 2020 and
+the Consumer Protection (E-Commerce) (Amendment) Rules, 2026. The 2026 amendments were notified in
+September 2026 and are stated by the Government to come into force on 1 January 2027. Sheplates should
+review and update this document before that effective date. citeturn0search0turn0search1
+
