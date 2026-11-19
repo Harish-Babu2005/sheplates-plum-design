@@ -85,10 +85,11 @@ export function getSupabaseBrowserClient() {
   return browserClient;
 }
 
-export async function liveSignInWithGoogle() {
+export async function liveSignInWithGoogle(role?: "customer" | "vendor") {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+  const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+  const redirectTo = origin ? (role ? `${origin}?auth_role=${role}` : origin) : undefined;
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -109,15 +110,49 @@ export async function getLiveAuthSession(preferredRole?: "customer" | "vendor") 
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error || !session?.user) return null;
 
+  const userMeta = session.user.user_metadata || {};
+  const metaName = (userMeta.full_name || userMeta.name || session.user.email?.split("@")[0] || "User") as string;
+  const effectivePreferred = preferredRole || (userMeta.role === "vendor" ? "vendor" : undefined);
+
+  // Authoritative server profile resolution & role sync
+  try {
+    const res = await fetch("/api/auth/profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ preferredRole: effectivePreferred }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.profile) {
+        return {
+          user: session.user,
+          profile: {
+            full_name: data.profile.full_name || metaName,
+            role: data.profile.role as Role,
+            vendor_id: data.profile.vendor_id ?? null,
+            tours_completed: data.profile.tours_completed || [],
+          },
+        };
+      }
+    }
+  } catch (caught) {
+    if (caught instanceof Error && caught.message.includes("already registered as")) {
+      throw caught;
+    }
+  }
+
+  // Fallback to direct client query
   let { data: profile } = await supabase
     .from("profiles")
     .select("full_name, role, vendor_id, tours_completed")
     .eq("id", session.user.id)
     .maybeSingle();
 
-  const userMeta = session.user.user_metadata || {};
-  const metaName = (userMeta.full_name || userMeta.name || session.user.email?.split("@")[0] || "User") as string;
-  const targetRole = preferredRole || (userMeta.role as Role) || "customer";
+  const targetRole = effectivePreferred || (userMeta.role as Role) || "customer";
 
   if (!profile) {
     const { data: createdProfile } = await supabase
@@ -133,7 +168,7 @@ export async function getLiveAuthSession(preferredRole?: "customer" | "vendor") 
 
   let vendorId = profile?.vendor_id ?? null;
   // If vendor account, resolve their owned store from public.vendors if not already linked
-  if (!vendorId && profile?.role === "vendor") {
+  if (!vendorId && (profile?.role === "vendor" || targetRole === "vendor")) {
     const { data: ownedVendor } = await supabase
       .from("vendors")
       .select("id")
@@ -145,7 +180,7 @@ export async function getLiveAuthSession(preferredRole?: "customer" | "vendor") 
     }
   }
 
-  const role = (profile?.role || targetRole) as Role;
+  const role = (effectivePreferred === "vendor" ? "vendor" : (profile?.role || targetRole)) as Role;
   return {
     user: session.user,
     profile: {
@@ -196,6 +231,22 @@ export async function liveSignIn(email: string, password: string) {
   };
 }
 
+export async function checkEmailRegistered(email: string): Promise<boolean> {
+  const normalizedEmail = email.trim().toLowerCase();
+  try {
+    const res = await fetch("/api/auth/check-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalizedEmail }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return Boolean(data.exists);
+    }
+  } catch {}
+  return false;
+}
+
 export async function liveSignUp(input: {
   name: string;
   email: string;
@@ -206,6 +257,13 @@ export async function liveSignUp(input: {
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
 
   const normalizedEmail = input.email.trim().toLowerCase();
+
+  // Fast pre-check against database to immediately reject duplicate registrations
+  const alreadyRegistered = await checkEmailRegistered(normalizedEmail);
+  if (alreadyRegistered) {
+    throw new Error("This email is already registered. Please sign in instead.");
+  }
+
   const { data, error } = await supabase.auth.signUp({
     email: normalizedEmail,
     password: input.password,
@@ -214,7 +272,7 @@ export async function liveSignUp(input: {
         full_name: input.name.trim(),
         role: input.role,
       },
-      emailRedirectTo: `${getAppUrl().replace(/\/$/, "")}`,
+      emailRedirectTo: `${getAppUrl().replace(/\/$/, "")}?auth_role=${input.role}`,
     },
   });
 
@@ -231,6 +289,28 @@ export async function liveSignUp(input: {
   // If email confirmation is enabled and the user already exists, Supabase returns user with identities: []
   if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     throw new Error("This email is already registered. Please sign in instead.");
+  }
+
+  // If user was created earlier and email confirmation is pending, it is an already registered account
+  if (data.user.created_at) {
+    const userAgeMs = Date.now() - new Date(data.user.created_at).getTime();
+    if (userAgeMs > 60 * 1000 && !data.session) {
+      throw new Error("This email is already registered. Please sign in instead.");
+    }
+  }
+
+  // If session is immediately returned (e.g. email confirmation disabled in Supabase), ensure role is synced
+  if (data.session) {
+    try {
+      await fetch("/api/auth/profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({ preferredRole: input.role, name: input.name.trim() }),
+      });
+    } catch {}
   }
 
   const needsEmailVerification = !data.session;
@@ -1806,6 +1886,9 @@ export async function uploadLiveCertificate(input: {
   documentNumber?: string;
   expiryDate?: string;
 }) {
+  if (input.file.size === 0) {
+    throw new Error(`"${input.file.name}" is empty (0 bytes). Please upload a valid certificate file.`);
+  }
   const token = await getAccessToken();
   const form = new FormData();
   form.append("file", input.file);

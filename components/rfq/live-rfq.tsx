@@ -44,6 +44,11 @@ export function LiveCustomerRfqs() {
   async function uploadDocuments(requirementId: string, files: FileList | null) {
     if (!files?.length) return;
     const selected = Array.from(files);
+    const emptyFile = selected.find((f) => f.size === 0);
+    if (emptyFile) {
+      toast.error(`"${emptyFile.name}" is empty (0 bytes). Please upload a valid document.`);
+      return;
+    }
     setUploading(requirementId);
     let uploaded = 0;
     try {

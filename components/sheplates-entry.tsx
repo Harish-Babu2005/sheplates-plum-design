@@ -221,19 +221,31 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
 
     async function checkAuthSession() {
       try {
-        let requestedAudience = "customer";
+        const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+        const authRoleParam = urlParams.get("auth_role");
+        let requestedAudience: Audience | null = null;
         try {
-          requestedAudience = sessionStorage.getItem("sheplates_oauth_audience") || "customer";
+          const stored = sessionStorage.getItem("sheplates_oauth_audience");
+          if (stored === "team" || stored === "customer") {
+            requestedAudience = stored;
+          }
           sessionStorage.removeItem("sheplates_oauth_audience");
         } catch {}
-        const preferredRole = requestedAudience === "team" ? "vendor" : "customer";
+
+        const preferredRole: "customer" | "vendor" | undefined =
+          authRoleParam === "vendor" ? "vendor" :
+          authRoleParam === "customer" ? "customer" :
+          requestedAudience === "team" ? "vendor" :
+          requestedAudience === "customer" ? "customer" :
+          undefined;
+
         const live = await getLiveAuthSession(preferredRole);
         if (cancelled || !live?.user) return;
         const isEmailVerification = typeof window !== "undefined" && (
           window.location.hash.includes("type=signup") ||
           window.location.hash.includes("type=email_verification")
         );
-        if (typeof window !== "undefined" && (window.location.hash || window.location.search.includes("code="))) {
+        if (typeof window !== "undefined" && (window.location.hash || window.location.search.includes("code=") || window.location.search.includes("auth_role="))) {
           const cleanUrl = window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
         }
@@ -248,7 +260,12 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
         });
         toast.success(isEmailVerification ? "Email verified successfully! Welcome to Sheplates." : `Welcome back, ${live.profile.full_name || "User"}!`);
       } catch (err) {
-        console.warn("Could not resolve auth session:", err);
+        if (!cancelled) {
+          const message = authErrorMessage(err);
+          if (message && message !== "null" && message !== "undefined") {
+            toast.error(message);
+          }
+        }
       }
     }
 
@@ -514,8 +531,12 @@ useEffect(() => {
           const normalizedEmail = email.trim().toLowerCase();
           if (registrationRole === "customer") {
             const accounts = readLocalCustomerAccounts();
-            if (accounts.some((account) => account.email.toLowerCase() === normalizedEmail) || demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)) {
-              throw new Error("An account with this email already exists.");
+            if (
+              accounts.some((account) => account.email.toLowerCase() === normalizedEmail) ||
+              readLocalVendorAccounts().some((account) => account.email.toLowerCase() === normalizedEmail) ||
+              demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)
+            ) {
+              throw new Error("This email is already registered. Please sign in instead.");
             }
             const passwordSalt = newLocalAccountSalt();
             accounts.push({
@@ -529,10 +550,12 @@ useEffect(() => {
             saveLocalCustomerAccounts(accounts);
           } else {
             const accounts = readLocalVendorAccounts();
-            if (accounts.some((account) => account.email.toLowerCase() === normalizedEmail) ||
+            if (
+              accounts.some((account) => account.email.toLowerCase() === normalizedEmail) ||
               readLocalCustomerAccounts().some((account) => account.email.toLowerCase() === normalizedEmail) ||
-              demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)) {
-              throw new Error("An account with this email already exists.");
+              demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)
+            ) {
+              throw new Error("This email is already registered. Please sign in instead.");
             }
             const passwordSalt = newLocalAccountSalt();
             const vendorId = `local-${crypto.randomUUID()}`;
@@ -552,6 +575,9 @@ useEffect(() => {
           onLogin({ email: normalizedEmail, name: name.trim(), role: registrationRole, privateAccount: registrationRole === "customer" ? privateAccount : undefined });
           toast.success("Customer account created.");
           return;
+        }
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("sheplates_oauth_audience", audience || "customer");
         }
         const result = await liveSignUp({ name: name.trim(), email, password, role: registrationRole });
         if (result.needsEmailVerification) {
@@ -624,25 +650,37 @@ useEffect(() => {
     try {
       setBusy(true);
       setError("");
+      const targetRole = audience === "team" ? "vendor" : "customer";
       if (typeof window !== "undefined") {
         sessionStorage.setItem("sheplates_oauth_audience", audience || "customer");
+        sessionStorage.setItem("sheplates_oauth_mode", mode);
       }
-      await liveSignInWithGoogle();
+      await liveSignInWithGoogle(targetRole);
     } catch (err) {
       setError(authErrorMessage(err));
       setBusy(false);
     }
   }
 
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{verificationSent ? "Verify your email" : audience === "customer" ? (mode === "forgot" ? "Reset password" : "Customer access") : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{verificationSent ? "Check your inbox to activate your account." : audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div><div className="k-auth-form p-6">
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{verificationSent ? "Verify your email" : audience === "customer" ? (mode === "forgot" ? "Reset password" : mode === "create" ? "Create customer account" : "Customer access") : mode === "create" ? "Register as a Vendor" : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{verificationSent ? "Check your inbox to activate your account." : audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : mode === "create" ? "Join Sheplates as a local food vendor or home chef." : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div><div className="k-auth-form p-6">
     {mode !== "forgot" && !verificationSent && (
       <>
-        {audience === "customer" && (
-          <div className="grid grid-cols-2 rounded-2xl bg-stone-100 p-1">
-            <button onClick={() => { setMode("login"); setError(""); setVerificationSent(false); }} className={`rounded-xl py-2.5 text-sm font-black ${mode === "login" ? "bg-white shadow-sm" : "text-stone-500"}`}>Sign in</button>
-            <button onClick={() => { setMode("create"); setError(""); setVerificationSent(false); }} className={`rounded-xl py-2.5 text-sm font-black ${mode === "create" ? "bg-white shadow-sm" : "text-stone-500"}`}>Create account</button>
-          </div>
-        )}
+        <div className="grid grid-cols-2 rounded-2xl bg-stone-100 p-1">
+          <button
+            type="button"
+            onClick={() => { setMode("login"); setError(""); setVerificationSent(false); }}
+            className={`rounded-xl py-2.5 text-sm font-black ${mode === "login" ? "bg-white shadow-sm" : "text-stone-500"}`}
+          >
+            {audience === "team" ? "Sign in" : "Sign in"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode("create"); setError(""); setVerificationSent(false); }}
+            className={`rounded-xl py-2.5 text-sm font-black ${mode === "create" ? "bg-white shadow-sm" : "text-stone-500"}`}
+          >
+            {audience === "team" ? "Register as vendor" : "Create account"}
+          </button>
+        </div>
 
         <div className="mt-4">
           <button
@@ -827,7 +865,7 @@ mode === "login" ? (
               )}
             </div>
           )}
-          <Button disabled={busy} className="h-12 w-full rounded-xl bg-[#155F65] text-base font-black hover:bg-black">{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}<ArrowRight /></Button>
+          <Button disabled={busy} className="h-12 w-full rounded-xl bg-[#155F65] text-base font-black hover:bg-black">{busy ? "Please wait…" : mode === "login" ? "Sign in" : audience === "team" ? "Register vendor account" : "Create account"}<ArrowRight /></Button>
         </form>
       </>
     )}

@@ -19,6 +19,7 @@ export async function POST(request: Request) {
   const documentNumber = String(form.get("documentNumber") || "").trim();
   const expiryDate = String(form.get("expiryDate") || "").trim();
   if (!(file instanceof File) || !vendorId) return NextResponse.json({ error: "Choose a certificate file." }, { status: 400 });
+  if (file.size === 0) return NextResponse.json({ error: "The uploaded file is empty (0 bytes). Please upload a valid certificate file." }, { status: 400 });
   if (profile.role === "vendor" && profile.vendor_id !== vendorId) return NextResponse.json({ error: "This certificate belongs to another store." }, { status: 403 });
   if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Certificate must be under 10 MB." }, { status: 413 });
   // Enforce PDF-only by real MIME type, not just file extension
