@@ -66,11 +66,32 @@ export function orderTotals(d: Delivery) {
   };
 }
 export const missingColumn = (e: { code?: string; message?: string } | null | undefined) => Boolean(e && (e.code === "42703" || e.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(e.message || "")));
+export const isStatusEnumError = (e: { code?: string; message?: string; details?: string } | null | undefined) =>
+  Boolean(e && (
+    e.code === "22P02" ||
+    /invalid input value for enum/i.test(e.message || "") ||
+    /invalid input syntax for type .*order_status/i.test(e.message || "") ||
+    /order_status/i.test(e.message || "") ||
+    /order_status/i.test(e.details || "")
+  ));
 
 export async function insertOrderWithBilling(admin: SupabaseClient, row: Record<string, unknown>, d: Delivery) {
   const t = orderTotals(d);
-  let result = await admin.from("orders").insert({ ...row, ...t.base, ...t.breakdown }).select("id,order_number").single();
-  if (result.error && missingColumn(result.error)) result = await admin.from("orders").insert({ ...row, ...t.base }).select("id,order_number").single();
+  let payload: Record<string, unknown> = { ...row, ...t.base, ...t.breakdown };
+  let result = await admin.from("orders").insert(payload).select("id,order_number").single();
+  if (result.error && isStatusEnumError(result.error) && payload.status === "awaiting_payment") {
+    payload = { ...payload, status: "awarded" };
+    result = await admin.from("orders").insert(payload).select("id,order_number").single();
+  }
+  if (result.error && missingColumn(result.error)) {
+    let basePayload: Record<string, unknown> = { ...row, ...t.base };
+    if (payload.status === "awarded") basePayload.status = "awarded";
+    result = await admin.from("orders").insert(basePayload).select("id,order_number").single();
+    if (result.error && isStatusEnumError(result.error) && basePayload.status === "awaiting_payment") {
+      basePayload = { ...basePayload, status: "awarded" };
+      result = await admin.from("orders").insert(basePayload).select("id,order_number").single();
+    }
+  }
   return result;
 }
 export async function updateOrderWithBilling(admin: SupabaseClient, orderId: string, d: Delivery) {

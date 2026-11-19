@@ -81,7 +81,7 @@ export function extractNotificationType(item: NotificationItem): string {
   if (text.includes("food drop") && (text.includes("available") || text.includes("live") || text.includes("special batches"))) {
     return "food_drop_posted";
   }
-  if (text.includes("schedule ready for payment") || text.includes("schedule created")) {
+  if (text.includes("schedule ready for payment") || text.includes("schedule created") || text.includes("schedule paused") || text.includes("resume your schedule") || text.includes("schedule closed") || text.includes("schedule resumed")) {
     return "schedule_payment_due";
   }
   if (text.includes("payout sent") || text.includes("marked paid")) {
@@ -333,7 +333,7 @@ export function resolveNotificationTarget(
   }
 
   // 4. SUBSCRIPTIONS / SCHEDULES
-  if (type === "schedule_payment_due") {
+  if (type === "schedule_payment_due" || item.entityType === "schedule") {
     const view = module === "customer" ? "My schedule" : "Orders";
     const queryParams: Record<string, string> = {};
     if (targetId) {

@@ -902,11 +902,59 @@ export async function updateLiveVendorControls(vendorId: string, patch: {
   if (result.error) throw result.error;
 }
 
-export async function saveLiveVendorPlan(vendorId: string, planCode: "taster" | "crave" | "thrive" | "crown") {
+export async function saveLiveVendorPlan(
+  vendorId: string,
+  planCode: "taster" | "crave" | "thrive" | "crown",
+  options?: { reason?: string; oldPlan?: string; vendorName?: string; session?: { name?: string; email?: string; role?: string } }
+) {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error("Live account access is not available in this deployment.");
-  const plan = await supabase.from("vendor_plans").select("id,code,name").eq("code", planCode).single();
+
+  // 1. Try dedicated server API route if token is available
+  try {
+    const token = await getAccessToken();
+    if (token) {
+      const res = await fetch("/api/admin/vendor-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ vendorId, planCode, reason: options?.reason }),
+      });
+      if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+        return json;
+      }
+    }
+  } catch (apiErr) {
+    console.warn("Server route /api/admin/vendor-plan skipped, falling back to direct DB update:", apiErr);
+  }
+
+  // 2. Fetch existing vendor & plan details to capture before_data
+  const { data: currentVendor } = await supabase
+    .from("vendors")
+    .select("id, name, business_name, plan_id, operational_status")
+    .eq("id", vendorId)
+    .maybeSingle();
+
+  const vendorName = currentVendor?.business_name || currentVendor?.name || options?.vendorName || "Vendor";
+
+  let oldPlanRecord: { id: string; code: string; name: string; monthly_price?: number } | null = null;
+  if (currentVendor?.plan_id) {
+    const { data: pData } = await supabase
+      .from("vendor_plans")
+      .select("id, code, name, monthly_price")
+      .eq("id", currentVendor.plan_id)
+      .maybeSingle();
+    oldPlanRecord = pData;
+  }
+
+  const plan = await supabase.from("vendor_plans").select("id, code, name, monthly_price").eq("code", planCode).single();
   if (plan.error) throw plan.error;
+
+  // Prevent duplicate if already same plan
+  if (oldPlanRecord && oldPlanRecord.id === plan.data.id) {
+    return { ok: true, updated: false, message: "Vendor is already on this plan" };
+  }
+
   const result = await supabase.from("vendors").update({ plan_id: plan.data.id, updated_at: new Date().toISOString() }).eq("id", vendorId);
   if (result.error) throw result.error;
 
@@ -956,15 +1004,46 @@ export async function saveLiveVendorPlan(vendorId: string, planCode: "taster" | 
   try {
     const userRes = await supabase.auth.getUser();
     const user = userRes?.data?.user;
-    if (user) {
-      await supabase.from("audit_logs").insert({
-        actor_id: user.id,
-        action: "Vendor plan changed",
-        entity_type: "vendor",
-        entity_id: vendorId,
-        after_data: { plan: planCode, limits, changed_at: new Date().toISOString() },
-      });
-    }
+    const actorName = options?.session?.name || user?.user_metadata?.full_name || "Staff Member";
+    const actorEmail = options?.session?.email || user?.email || "";
+    const actorRole = options?.session?.role === "admin" ? "Super Admin" : "Operations";
+
+    const oldPrice = oldPlanRecord?.monthly_price ?? 499;
+    const newPrice = plan.data.monthly_price ?? 999;
+    const oldName = oldPlanRecord?.name || options?.oldPlan || "Taster";
+    const newName = plan.data.name || "Crown";
+
+    await supabase.from("audit_logs").insert({
+      actor_id: user?.id || null,
+      actor_role: options?.session?.role || "admin",
+      action: "Vendor Plan Updated",
+      entity_type: "vendor",
+      entity_id: vendorId,
+      before_data: {
+        plan: oldPlanRecord?.code || "taster",
+        planName: oldName,
+        monthlyPrice: oldPrice,
+        formattedPrice: `₹${oldPrice}/month`,
+        status: currentVendor?.operational_status || "Active",
+        vendorName,
+        vendorId,
+      },
+      after_data: {
+        plan: planCode,
+        planName: newName,
+        monthlyPrice: newPrice,
+        formattedPrice: `₹${newPrice}/month`,
+        status: currentVendor?.operational_status || "Active",
+        vendorName,
+        vendorId,
+        actorName,
+        actorEmail,
+        actorRole,
+        changedAt: new Date().toISOString(),
+        reason: options?.reason || "Vendor plan updated by admin",
+        limits,
+      },
+    });
   } catch (err) {
     console.error("Audit log error in saveLiveVendorPlan:", err);
   }
@@ -1477,6 +1556,46 @@ export async function syncLiveCart(input: { items: Array<{ productId: string; qu
 
 export async function checkoutLiveCart(input?: { scheduledDate?: string; slot?: string; deliveryAddress?: string; mode?: string; deliveryInstructions?: string; customerLatitude?: number; customerLongitude?: number }) {
   return commerceRequest({ action: "checkout_cart", ...(input || {}) });
+}
+
+export async function pauseLiveSchedule(scheduleId: string) {
+  return commerceRequest({ action: "pause_schedule", scheduleId }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    pausedAt?: string;
+    resumeBy?: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
+export async function resumeLiveSchedule(scheduleId: string, reason?: string) {
+  return commerceRequest({ action: "resume_schedule", scheduleId, reason }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    nextDeliveryDate?: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
+export async function closeLiveSchedule(scheduleId: string, reason?: string) {
+  return commerceRequest({ action: "close_schedule", scheduleId, reason }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
+}
+
+export async function reopenLiveSchedule(scheduleId: string, reason: string) {
+  return commerceRequest({ action: "reopen_schedule", scheduleId, reason }) as Promise<{
+    ok: boolean;
+    scheduleId: string;
+    status: string;
+    nextDeliveryDate?: string;
+    snapshot?: LiveCommerceSnapshot;
+  }>;
 }
 
 export async function acceptLiveThirdPartyDelivery(orderId: string) {

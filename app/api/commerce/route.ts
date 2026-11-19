@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { insertOrderWithBilling, priceSchedule } from "@/lib/schedule-billing";
+import { pauseScheduleServer, resumeScheduleServer, closeScheduleServer, processScheduleDeadlines } from "@/lib/schedule-pause";
 import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
 import { calculateBillingSummary } from "@/lib/billing";
@@ -144,6 +145,7 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (!ctx) throw new Error("Unauthorised");
   const { admin, profile } = ctx;
   const role = profile.role;
+  await processScheduleDeadlines(admin).catch(() => {});
   const selectWithBilling = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,subtotal,gst_rate,gst_amount,discount_amount,total_amount,currency,delivery_distance,commission_percent,commission_amount,vendor_payout,invoice_type,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
   const selectBase = "id,order_number,schedule_id,customer_id,vendor_id,vendor_base_total,markup_total,tax_amount,delivery_fee,customer_total,delivery_address,fulfilment_mode,scheduled_date,scheduled_slot,status,tracking_latitude,tracking_longitude,cancellation_fee,created_at,order_items(id,product_name,quantity,unit,vendor_base_price,customer_price),payments(id,amount,status,provider,provider_reference,created_at)";
 
@@ -153,12 +155,21 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     if (!profile.vendor_id) return { orders: [], schedules: [], staff: [], assignments: [], deliverySlots: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: true };
     orderQuery = orderQuery.eq("vendor_id", profile.vendor_id);
   }
-  const schedulesQuery = admin.from("product_schedules").select("id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at").order("start_date", { ascending: true }).limit(500);
-  if (role === "customer") schedulesQuery.eq("customer_id", profile.id);
-  if (role === "vendor" && profile.vendor_id) schedulesQuery.eq("vendor_id", profile.vendor_id);
+  const schedulesSelectWithPause = "id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at,paused_at,resume_by,closed_at,closure_reason";
+  const schedulesSelectBase = "id,customer_id,vendor_id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status,next_delivery_at,whatsapp_reminder_enabled,created_at";
+
+  let schedulesQuery = admin.from("product_schedules").select(schedulesSelectWithPause).order("start_date", { ascending: true }).limit(500);
+  if (role === "customer") schedulesQuery = schedulesQuery.eq("customer_id", profile.id);
+  if (role === "vendor" && profile.vendor_id) schedulesQuery = schedulesQuery.eq("vendor_id", profile.vendor_id);
 
   let orders = (await orderQuery) as Awaited<typeof orderQuery>;
-  const schedules = await schedulesQuery;
+  let schedules = await schedulesQuery;
+  if (schedules.error && (schedules.error.code === "42703" || /column .* does not exist/i.test(schedules.error.message || ""))) {
+    let fallbackSchedulesQuery = admin.from("product_schedules").select(schedulesSelectBase).order("start_date", { ascending: true }).limit(500);
+    if (role === "customer") fallbackSchedulesQuery = fallbackSchedulesQuery.eq("customer_id", profile.id);
+    if (role === "vendor" && profile.vendor_id) fallbackSchedulesQuery = fallbackSchedulesQuery.eq("vendor_id", profile.vendor_id);
+    schedules = await fallbackSchedulesQuery;
+  }
   if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
     let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
     if (role === "customer") fallbackOrderQuery = fallbackOrderQuery.eq("customer_id", profile.id);
@@ -237,7 +248,31 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
     deliverySlots = [];
   }
 
-  return { orders: orders.data || [], schedules: schedules.data || [], staff, assignments, cart, cartItems,
+  let returnedOrders = orders.data || [];
+  if (role === "vendor") {
+    const today = new Date().toISOString().slice(0, 10);
+    const nonActiveScheduleIds = new Set(
+      (schedules.data || [])
+        .filter((s: { status?: string }) => s.status === "paused" || s.status === "closed")
+        .map((s: { id: unknown }) => String(s.id))
+    );
+    returnedOrders = returnedOrders.filter((order) => {
+      // Paused and closed schedules must not appear in vendor upcoming orders
+      if (order.schedule_id && nonActiveScheduleIds.has(String(order.schedule_id))) {
+        return false;
+      }
+      const pmts = Array.isArray(order.payments) ? order.payments : [];
+      const isPaid = pmts.some((p: { status?: string }) => ["paid", "captured", "success"].includes(String(p.status || "").toLowerCase()));
+      const isFoodDrop = pmts.some((p: { provider?: string }) => p.provider === "food_drop_pickup");
+      if (!isPaid && !isFoodDrop) return false;
+      const st = String(order.status || "").toLowerCase();
+      if (st === "awaiting_payment" || st === "payment_failed" || st === "expired") return false;
+      if (order.scheduled_date && order.scheduled_date < today && !isPaid) return false;
+      return true;
+    });
+  }
+
+  return { orders: returnedOrders, schedules: schedules.data || [], staff, assignments, cart, cartItems,
     thirdPartyDeliveries: deliveryRequests.data || [],
     thirdPartyDeliveryAvailable: !deliveryMigrationMissing,
     deliverySlots,
@@ -570,7 +605,7 @@ export async function POST(request: Request) {
           fulfilment_mode: fulfilmentMode,
           scheduled_date: scheduledDate,
           scheduled_slot: scheduledSlot,
-          status: "awarded",
+          status: "awaiting_payment",
         };
         // The bill breakdown, commission and invoice type are stored when the database has those columns (V9_22). Without
         // them the order is still created with its totals, so checkout never breaks on a missing migration.
@@ -579,8 +614,31 @@ export async function POST(request: Request) {
           commission_percent: billing.commissionPercent, commission_amount: billing.commissionAmount, vendor_payout: billing.vendorPayout,
           invoice_type: billing.invoiceType, gst_mode: billing.gstMode, discount_amount: billing.discountAmount, total_amount: billing.totalAmount, currency: billing.currency,
         };
+        const isStatusEnumError = (e: { code?: string; message?: string; details?: string } | null | undefined) =>
+          Boolean(e && (
+            e.code === "22P02" ||
+            /invalid input value for enum/i.test(e.message || "") ||
+            /invalid input syntax for type .*order_status/i.test(e.message || "") ||
+            /order_status/i.test(e.message || "") ||
+            /order_status/i.test(e.details || "")
+          ));
+        const isMissingCol = (e: { code?: string; message?: string } | null | undefined) =>
+          Boolean(e && (e.code === "42703" || e.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(e.message || "")));
+
         let inserted = await admin.from("orders").insert({ ...baseOrder, ...breakdown }).select("id,order_number").single();
-        if (inserted.error && (inserted.error.code === "42703" || inserted.error.code === "PGRST204" || /column .* (does not exist|of relation)|schema cache/i.test(inserted.error.message || ""))) {
+        if (inserted.error && isStatusEnumError(inserted.error)) {
+          baseOrder.status = "awarded";
+          inserted = await admin.from("orders").insert({ ...baseOrder, ...breakdown }).select("id,order_number").single();
+        }
+        if (inserted.error && isMissingCol(inserted.error)) {
+          inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
+          if (inserted.error && isStatusEnumError(inserted.error)) {
+            baseOrder.status = "awarded";
+            inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
+          }
+        }
+        if (inserted.error && isStatusEnumError(inserted.error) && baseOrder.status === "awaiting_payment") {
+          baseOrder.status = "awarded";
           inserted = await admin.from("orders").insert(baseOrder).select("id,order_number").single();
         }
         if (inserted.error) throw inserted.error;
@@ -631,7 +689,7 @@ export async function POST(request: Request) {
       if (!priced.deliveries.length) return NextResponse.json({ error: "This schedule has no delivery dates." }, { status: 400 });
       if (!priced.withinRadius && fulfilmentMode === "vendor_delivery") return NextResponse.json({ error: priced.warning || "Your delivery address is beyond this vendor's delivery radius." }, { status: 400 });
       const firstDelivery = priced.deliveries[0];
-      const scheduleInsert = await admin.from("product_schedules").insert({
+      let scheduleInsert = await admin.from("product_schedules").insert({
         customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
         start_date: startDate, end_date: endDate || null,
         recurrence: requestedRecurrence,
@@ -640,11 +698,22 @@ export async function POST(request: Request) {
         fulfilment_mode: fulfilmentMode, status: "awaiting_payment",
         whatsapp_reminder_enabled: fulfilmentMode === "third_party_delivery" ? false : body.whatsappReminder !== false,
       }).select("id").single();
+      if (scheduleInsert.error && (scheduleInsert.error.code === "23514" || /violates check constraint/i.test(scheduleInsert.error.message || ""))) {
+        scheduleInsert = await admin.from("product_schedules").insert({
+          customer_id: profile.id, vendor_id: product.vendor_id, menu_item_id: product.id,
+          start_date: startDate, end_date: endDate || null,
+          recurrence: requestedRecurrence,
+          weekdays: weekdayNumbers,
+          scheduled_slot: String(body.slot || "Vendor to confirm"), quantity, unit: String(body.unit || product.unit),
+          fulfilment_mode: fulfilmentMode, status: "active",
+          whatsapp_reminder_enabled: fulfilmentMode === "third_party_delivery" ? false : body.whatsappReminder !== false,
+        }).select("id").single();
+      }
       if (scheduleInsert.error) throw scheduleInsert.error;
       const orderInsert = await insertOrderWithBilling(admin, {
         order_number: orderNumber(), schedule_id: scheduleInsert.data.id, customer_id: profile.id, vendor_id: product.vendor_id,
         fulfilment_mode: fulfilmentMode, scheduled_date: startDate,
-        scheduled_slot: String(body.slot || "Vendor to confirm"), status: "awarded",
+        scheduled_slot: String(body.slot || "Vendor to confirm"), status: "awaiting_payment",
       }, firstDelivery);
       if (orderInsert.error) throw orderInsert.error;
       if (fulfilmentMode === "third_party_delivery") {
@@ -838,9 +907,15 @@ export async function POST(request: Request) {
       if (!allowedStatuses.has(nextStatus)) {
         return NextResponse.json({ error: "Cancellation and unsupported order statuses are disabled." }, { status: 400 });
       }
-      const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number,fulfilment_mode,scheduled_date").eq("id", orderId).maybeSingle();
+      const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number,fulfilment_mode,scheduled_date,status,payments(id,status,provider)").eq("id", orderId).maybeSingle();
       if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
       if (profile.role === "vendor" && order.vendor_id !== profile.vendor_id) return NextResponse.json({ error: "This order belongs to another store." }, { status: 403 });
+      const pmts = Array.isArray(order.payments) ? order.payments : [];
+      const isPaid = pmts.some((p: { status?: string }) => ["paid", "captured", "success"].includes(String(p.status || "").toLowerCase()));
+      const isFoodDrop = pmts.some((p: { provider?: string }) => p.provider === "food_drop_pickup");
+      if (profile.role === "vendor" && !isPaid && !isFoodDrop) {
+        return NextResponse.json({ error: "Cannot accept an order before payment is confirmed." }, { status: 403 });
+      }
       if (order.fulfilment_mode === "third_party_delivery" && nextStatus === "completed") {
         return NextResponse.json({ error: "Third-party orders can only be marked delivered after the handover code is verified." }, { status: 409 });
       }
@@ -866,6 +941,62 @@ export async function POST(request: Request) {
       const { data: vendor } = await admin.from("vendors").select("owner_id").eq("id", order.vendor_id).maybeSingle();
       if (vendor?.owner_id) await admin.from("notifications").insert({ recipient_id: vendor.owner_id, kind: "order", title: "Customer rescheduled order", body: `${order.order_number} moved to ${String(body.date || "")} · ${String(body.slot || "")}.`, entity_type: "order", entity_id: orderId });
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "pause_schedule") {
+      const scheduleId = String(body.scheduleId || "");
+      if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
+      const result = await pauseScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      });
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "paused", pausedAt: result.pausedAt, resumeBy: result.resumeBy, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "resume_schedule") {
+      const scheduleId = String(body.scheduleId || "");
+      if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
+      const adminReason = body.reason ? String(body.reason) : undefined;
+      const result = await resumeScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      }, adminReason);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "active", nextDeliveryDate: result.nextDeliveryDate, snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "close_schedule") {
+      const scheduleId = String(body.scheduleId || "");
+      if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
+      const reason = String(body.reason || "Closed by user request");
+      const result = await closeScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      }, reason);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "closed", snapshot: await commerceSnapshot(ctx) });
+    }
+
+    if (action === "reopen_schedule") {
+      if (!(["operations", "admin"] as Role[]).includes(profile.role)) {
+        return NextResponse.json({ error: "Only operations and admins can reopen a closed schedule." }, { status: 403 });
+      }
+      const scheduleId = String(body.scheduleId || "");
+      const reason = String(body.reason || "").trim();
+      if (!scheduleId || !reason) {
+        return NextResponse.json({ error: "Schedule ID and reason are required to reopen a closed schedule." }, { status: 400 });
+      }
+      const result = await resumeScheduleServer(admin, scheduleId, {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+      }, reason);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
+      return NextResponse.json({ ok: true, scheduleId, status: "active", nextDeliveryDate: result.nextDeliveryDate, snapshot: await commerceSnapshot(ctx) });
     }
 
     if (action === "save_staff") {

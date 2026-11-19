@@ -42,7 +42,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, alreadyPaid: result.alreadyPaid });
     }
     if (event.event === "payment.failed" && payment?.order_id) {
-      await admin.from("payments").update({ status: "failed", updated_at: new Date().toISOString() }).eq("provider_reference", payment.order_id).eq("status", "pending");
+      const pmt = await admin.from("payments").update({ status: "failed", updated_at: new Date().toISOString() }).eq("provider_reference", payment.order_id).eq("status", "pending").select("order_id, customer_id").maybeSingle();
+      if (pmt.data?.order_id) {
+        await admin.from("orders").update({ status: "payment_failed", updated_at: new Date().toISOString() }).eq("id", pmt.data.order_id).in("status", ["awaiting_payment", "awarded"]);
+        if (pmt.data.customer_id) {
+          await admin.from("notifications").insert({
+            recipient_id: pmt.data.customer_id,
+            kind: "payment",
+            title: "Payment failed",
+            body: "Your payment could not be processed. Please try again with another payment method.",
+            entity_type: "order",
+            entity_id: pmt.data.order_id,
+          });
+        }
+      }
       return NextResponse.json({ ok: true });
     }
     if (event.event === "refund.processed" && event.payload?.refund?.entity?.payment_id) {

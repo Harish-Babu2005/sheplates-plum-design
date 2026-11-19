@@ -26,6 +26,7 @@ import { createStaffUser } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProductImageBackfill } from "@/components/admin/product-image-backfill";
+import { AuditLog } from "@/components/admin/audit-log";
 import { FoodTypeMark } from "@/components/food-type-mark";
 import { FOOD_TYPES, normalizeFoodType, type FoodType } from "@/lib/food-type";
 import { fetchWithDeadline } from "@/lib/fetch-deadline";
@@ -73,6 +74,7 @@ import {
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct, updateLiveVendorProduct,
   saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, clearLiveVendorProducts, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, saveLiveItemMarkup, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  pauseLiveSchedule, resumeLiveSchedule, closeLiveSchedule, reopenLiveSchedule,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, updateLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
@@ -104,7 +106,11 @@ import { groupMatches } from "@/lib/market-groups";
 import { CustomerBottomNav, CustomerFooter, CustomerHeader, tabOf } from "@/components/customer-v2/shell";
 import { StaffShell } from "@/components/staff/shell";
 import { StoriesMonitor } from "@/components/staff/stories-monitor";
-import { inviteVendorByEmail, loadAuditTrail, logCustomerView, sendVendorNote, type TrailEvent } from "@/lib/audit-trail";
+import {
+  inviteVendorByEmail, loadAuditTrail, logCustomerView, sendVendorNote,
+  createVendorPlanAuditEvent, classifyAuditCategory, extractAuditChanges,
+  type TrailEvent, type AuditCategory, type AuditChangeField,
+} from "@/lib/audit-trail";
 import { CategoryGrid, FoodDropsTab, MapsTab, PromoBanner, SchedulesTab, VendorRow } from "@/components/customer-v2/discover";
 import { StoriesTab } from "@/components/customer-v2/stories";
 import { ShortsRail, ShortsViewer, useShortsViewer } from "@/components/customer-v2/shorts";
@@ -236,7 +242,8 @@ type Schedule = {
   id: string; customerEmail: string; productId: string; vendorId: string; startDate: string;
   endDate: string; recurrence: "Once" | "Daily" | "Weekly" | "Custom"; weekdays: string[];
   timeSlot: string; quantity: number; unit: string; mode: DeliveryMode; estimatedOccurrences: number;
-  status?: "Awaiting payment" | "Active" | "Paused" | "Cancelled" | "Completed"; nextDeliveryAt?: string; whatsappReminder?: boolean;
+  status?: "Awaiting payment" | "Active" | "Paused" | "Cancelled" | "Completed" | "Closed"; nextDeliveryAt?: string; whatsappReminder?: boolean;
+  pausedAt?: string; resumeBy?: string; closedAt?: string; closureReason?: string;
 };
 export type VendorDeliverySlot = {
   id: string;
@@ -252,7 +259,7 @@ export type VendorDeliverySlot = {
 type Order = {
   id: string; scheduleId?: string; customerEmail: string; vendorId: string; productId?: string;
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
-mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded";
+mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled" | "Awaiting payment" | "Payment failed" | "Expired";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded" | "Failed" | "Expired";
   trackingLatitude?: number; trackingLongitude?: number; cancellationFee?: number;
   orderNumber?: string;
   paymentReference?: string;
@@ -287,7 +294,7 @@ type Requirement = { id: string; customerEmail: string; title: string; deliveryD
 type Quote = { id: string; requirementId: string; vendorId: string; total: number; deliveryFee: number; note: string; status: "Submitted" | "Selected" | "Not selected" };
 type Notification = { id: string; recipient: string; recipientRole: Role; title: string; body: string; at: string; read: boolean; href?: string; entityType?: string | null; entityId?: string | null; type?: string };
 type Cancellation = { id: string; orderId: string; customerEmail: string; reason: string; aiDecision: string; confidence: number; status: "Awaiting operations" | "Approved" | "Rejected" | "Refunded"; kind?: "cancellation" | "quality_complaint"; recommendedRefundAmount?: number; attachmentName?: string };
-type Audit = { id: string; actor: string; action: string; detail: string; at: string };
+type Audit = TrailEvent;
 type CartItem = { id: string; customerEmail: string; productId: string; quantity: number; foodDropId?: string; unitPrice?: number };
 type Ticket = { id: string; creatorEmail: string; creatorRole: Role; vendorId?: string; subject: string; category: string; priority: "Low" | "Normal" | "High" | "Urgent"; status: "Open" | "In progress" | "Waiting on user" | "Resolved"; description: string; attachmentName?: string; createdVia: "Portal" | "She Agent"; at: string };
 type PayoutStatus = "Scheduled" | "Paid" | "Reversed";
@@ -781,8 +788,19 @@ function marketplaceProductFromLive(row: LiveMarketplaceRow): Product {
 
 function liveOrderStatus(value: unknown): Order["status"] {
   const map: Record<string, Order["status"]> = {
-    awarded: "Scheduled", confirmed: "Confirmed", preparing: "Preparing", ready: "Ready",
-out_for_delivery: "Out for delivery", ready_for_pickup: "Ready for pickup", completed: "Completed", delivered: "Delivered",    cancellation_requested: "Cancellation requested", cancelled: "Cancelled",
+    awaiting_payment: "Awaiting payment",
+    payment_failed: "Payment failed",
+    expired: "Expired",
+    awarded: "Scheduled",
+    confirmed: "Confirmed",
+    preparing: "Preparing",
+    ready: "Ready",
+    out_for_delivery: "Out for delivery",
+    ready_for_pickup: "Ready for pickup",
+    completed: "Completed",
+    delivered: "Delivered",
+    cancellation_requested: "Cancellation requested",
+    cancelled: "Cancelled",
   };
   return map[String(value || "")] || "Scheduled";
 }
@@ -792,7 +810,9 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => status === "refunded")) return "Refunded";
   if (statuses.some((status) => status.includes("reversal"))) return "Reversal pending";
   if (statuses.some((status) => ["paid", "captured", "success", "succeeded"].includes(status))) return "Paid";
-const progressed = ["confirmed", "preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed", "delivered"].includes(String(orderStatus || "").toLowerCase());  return progressed ? "Paid" : "Pending";
+  if (statuses.some((status) => status === "failed")) return "Failed";
+  if (statuses.some((status) => status === "expired")) return "Expired";
+  return "Pending";
 }
 type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
@@ -850,19 +870,35 @@ type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; sche
   });
   const serverOrderIds = new Set(rawOrders.map((o) => o.id));
   const localFoodDropOrders = current.orders.filter((o) => o.foodDropId && !serverOrderIds.has(o.id));
-  const orders: Order[] = [...localFoodDropOrders, ...rawOrders].sort((a, b) => {
+  let orders: Order[] = [...localFoodDropOrders, ...rawOrders].sort((a, b) => {
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     if (aTime && bTime && aTime !== bTime) return bTime - aTime;
     return (b.id || "").localeCompare(a.id || "");
   });
+  if (session.role === "vendor") {
+    const today = todayISO();
+    orders = orders.filter((o) => {
+      const isPaid = o.payment === "Paid" && o.status !== "Awaiting payment";
+      const isFoodDrop = Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup";
+      if (!isPaid && !isFoodDrop) return false;
+      if (o.status === "Awaiting payment" || o.status === "Payment failed" || o.status === "Expired") return false;
+      if (o.date && o.date < today && !isPaid) return false;
+      return true;
+    });
+  }
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const schedules: Schedule[] = (snapshot.schedules || []).map((row) => ({
     id: String(row.id), customerEmail: session.role === "customer" ? session.email : String(row.customer_id || "customer"), productId: String(row.menu_item_id), vendorId: String(row.vendor_id),
     startDate: String(row.start_date), endDate: row.end_date ? String(row.end_date) : "", recurrence: (String(row.recurrence || "once")[0].toUpperCase() + String(row.recurrence || "once").slice(1)) as Schedule["recurrence"],
     weekdays: Array.isArray(row.weekdays) ? (row.weekdays as number[]).map((day) => dayNames[Number(day)]).filter(Boolean) : [], timeSlot: String(row.scheduled_slot),
-quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: String(row.fulfilment_mode) === "third_party_delivery" ? "Third-party delivery" : String(row.fulfilment_mode) === "self_pickup" ? "Self pickup" : "Vendor delivery",    estimatedOccurrences: 1, status: String(row.status || "active") === "paused" ? "Paused" : String(row.status || "active") === "cancelled" ? "Cancelled" : String(row.status || "active") === "completed" ? "Completed" : String(row.status || "active") === "awaiting_payment" ? "Awaiting payment" : "Active",
+    quantity: Number(row.quantity || 1), unit: String(row.unit || "pack"), mode: String(row.fulfilment_mode) === "third_party_delivery" ? "Third-party delivery" : String(row.fulfilment_mode) === "self_pickup" ? "Self pickup" : "Vendor delivery", estimatedOccurrences: 1,
+    status: String(row.status || "active") === "paused" ? "Paused" : String(row.status || "active") === "closed" ? "Closed" : String(row.status || "active") === "cancelled" ? "Cancelled" : String(row.status || "active") === "completed" ? "Completed" : String(row.status || "active") === "awaiting_payment" ? "Awaiting payment" : "Active",
     nextDeliveryAt: row.next_delivery_at ? String(row.next_delivery_at) : undefined, whatsappReminder: row.whatsapp_reminder_enabled !== false,
+    pausedAt: row.paused_at ? String(row.paused_at) : undefined,
+    resumeBy: row.resume_by ? String(row.resume_by) : undefined,
+    closedAt: row.closed_at ? String(row.closed_at) : undefined,
+    closureReason: row.closure_reason ? String(row.closure_reason) : undefined,
   }));
   const orderScheduleIds = new Set(orders.map((order) => order.scheduleId).filter(Boolean) as string[]);
   const preservedSchedules = current.schedules.filter((schedule) => orderScheduleIds.has(schedule.id) && !schedules.some((live) => live.id === schedule.id));
@@ -1673,7 +1709,7 @@ export function SheplatesV3() {
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
-    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId).length }
+    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId && ((o.payment === "Paid" && o.status !== "Awaiting payment") || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup")).length }
     : role === "operations"
       ? { "Vendor verification": state.vendors.filter((v) => v.vendorKind !== "p0_connect" && ["Submitted", "Under review"].includes(v.verification)).length, "Ticket centre": openTicketCount, Cancellations: state.cancellations.filter((x) => x.status === "Awaiting operations").length }
       : role === "admin" ? { "Ticket centre": openTicketCount } : {};
@@ -1795,7 +1831,23 @@ export function SheplatesV3() {
   </div>;
 }
 
-function audit(session: DemoSession, action: string, detail: string): Audit { return { id: id("AUD"), actor: `${session.name} · ${roleName[session.role]}`, action, detail, at: now() }; }
+function audit(session: DemoSession, action: string, detail: string): Audit {
+  const actorRole = session.role === "admin"
+    ? (session.name.toLowerCase().includes("super") || session.email.toLowerCase().includes("super") ? "Super Admin" : "Admin")
+    : (session.role === "operations" ? "Operations" : "Admin");
+  return {
+    id: id("AUD"),
+    actor: `${session.name} · ${roleName[session.role]}`,
+    actorName: session.name,
+    actorEmail: session.email,
+    actorRole,
+    action,
+    category: classifyAuditCategory(action, "", detail),
+    detail,
+    at: now(),
+    timestamp: new Date().toISOString(),
+  };
+}
 function Logo({ compact = false }: { compact?: boolean }) { return <Wordmark height={compact ? 26 : 34} />; }
 function RolePill({ children }: { children: React.ReactNode }) { return <span className="soft-chip hidden sm:inline-flex">{children}</span>; }
 
@@ -2662,7 +2714,7 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
         date: deliveryDates[0],
         slot: effectiveSlot,
         mode,
-        status: "Scheduled",
+        status: "Awaiting payment",
         payment: "Pending",
         items: [{
           name: scheduledProduct.name,
@@ -2760,7 +2812,7 @@ function Requirements({ session, state, setState }: { session: DemoSession; stat
   return <div className="space-y-6"><Heading eyebrow="MONTHLY REQUIREMENT" title="Request local quotations" body="Add your real household list. Eligible verified vendors on a quotation-enabled plan can submit their best price." action={<Button onClick={add} variant="outline" className="rounded-xl"><Plus />Add item</Button>} /><div className="surface-card rounded-[28px] p-5"><div className="grid gap-4 md:grid-cols-2"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Needed on"><input type="date" min={tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="mt-5 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#EEF2F2] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg", "litre", "piece", "pack", "dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} placeholder="Preferred brand" className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div><Button onClick={submit} className="mt-5 h-12 rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><Send />Send for local quotes</Button></div></div>;
 }
 
-function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created.`), ...s.notifications] })); toast.success("Quotation selected and order created"); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => { const reqQuotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown")); return <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{reqQuotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!reqQuotes.length && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>; }) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
+function CustomerQuotes({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const requirements = state.requirements.filter((x) => x.customerEmail === session.email); function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId)!; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [{ id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Awaiting payment", payment: "Pending" }, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(quote.total + quote.deliveryFee)} order created. Complete payment to confirm order.`), ...s.notifications] })); toast.success("Quotation selected. Complete payment to confirm order."); } return <div className="space-y-6"><Heading eyebrow="SEALED QUOTATIONS" title="Compare vendor offers" body="Vendor offers remain independent. Choose based on price, fulfilment and trust." />{requirements.length ? requirements.map((req) => { const reqQuotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown")); return <div key={req.id} className="surface-card rounded-[28px] p-5"><div className="flex justify-between"><div><h3 className="font-black">{req.title}</h3><p className="text-xs text-stone-500">{req.id} · {req.items.length} items · {req.deliveryDate}</p></div><Status>{req.status}</Status></div><div className="mt-4 grid gap-3 lg:grid-cols-3">{reqQuotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); return <div key={quote.id} className="surface-card rounded-3xl p-4"><BadgeCheck className="text-[#155F65]" /><h4 className="mt-3 font-black">{vendor?.businessName}</h4><div className="mt-2 text-lg font-black">{money(quote.total + quote.deliveryFee)}</div><p className="mt-2 text-xs text-stone-500">{quote.note || "No vendor note"}</p><Button disabled={quote.status !== "Submitted"} onClick={() => selectQuote(quote)} className="mt-4 w-full rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Select quote</Button></div>; })}</div>{!reqQuotes.length && <div className="surface-card-muted mt-4 rounded-2xl p-4 text-sm text-stone-500">Waiting for eligible local vendors to quote.</div>}</div>; }) : <Empty icon={ClipboardCheck} title="No quotation requests" body="Create a monthly requirement first." />}</div>; }
 
 function CustomerProfileView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) { const profile = state.customers.find((x) => x.email === session.email)!; const [dislikes, setDislikes] = useState(profile.dislikes); return <div className="space-y-6"><Heading eyebrow="PRIVATE PROFILE" title="Location, diet & preferences" body="She Agent uses this information only within your customer context to personalize suggestions." /><div className="grid gap-5 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Household</h3><div className="mt-5 space-y-3"><Review label="Address" value={profile.address} /><Review label="Household size" value={String(profile.householdSize)} /><Review label="Diet" value={profile.diet} /><Review label="Allergies" value={profile.allergies.join(", ") || "None selected"} /><Review label="Goals" value={profile.goals.join(", ") || "None selected"} /></div></div><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Instructions for She Agent</h3><Textarea value={dislikes} onChange={(e) => setDislikes(e.target.value)} className="mt-4 min-h-32 rounded-xl" /><Button onClick={() => { setState((s) => ({ ...s, customers: s.customers.map((x) => x.email === session.email ? { ...x, dislikes } : x) })); toast.success("Preferences updated"); }} className="mt-4 rounded-xl bg-[#155F65]">Save changes</Button></div></div></div>; }
 
@@ -2960,8 +3012,9 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       slot: (checkoutMode === "Self pickup" || containsFoodDrop) ? "Store pickup" : effectiveSelectedSlot,
       deliveryAddress: containsFoodDrop ? "Store Self-Pickup" : address,
       mode: containsFoodDrop ? "Self pickup" : checkoutMode === "Vendor delivery" && !vendor?.delivery ? "Self pickup" : checkoutMode,
-      status: "Scheduled",
-      payment: "Pending",
+      status: containsFoodDrop ? "Confirmed" : "Awaiting payment",
+      payment: containsFoodDrop ? "Paid" : "Pending",
+      paymentProvider: containsFoodDrop ? "food_drop_pickup" : undefined,
       cancellationFee: 0,
       createdAt: new Date().toISOString(),
       items: items.map((item) => {
@@ -3226,7 +3279,7 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   const paidDeliveries = customerOrders.filter((order) => order.payment === "Paid").sort((a, b) => a.date.localeCompare(b.date));
   const pendingOrders = customerOrders.filter((order) => order.payment === "Pending");
   const paidScheduleIds = new Set(paidDeliveries.map((order) => order.scheduleId).filter(Boolean) as string[]);
-  const storedSchedules = state.schedules.filter((schedule) => schedule.customerEmail === session.email && paidScheduleIds.has(schedule.id));
+  const storedSchedules = state.schedules.filter((schedule) => schedule.customerEmail === session.email && (paidScheduleIds.has(schedule.id) || schedule.status === "Paused" || schedule.status === "Closed"));
   const groupedOrders = new Map<string, Order[]>();
   for (const order of paidDeliveries) {
     if (!order.scheduleId) continue;
@@ -3244,6 +3297,12 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   const firstUpcoming = paidDeliveries.find((order) => order.date >= todayISO())?.date || todayISO();
   const [selectedDate, setSelectedDate] = useState(firstUpcoming);
   const [rescheduling, setRescheduling] = useState<Schedule | null>(null);
+  const [pausingSchedule, setPausingSchedule] = useState<Schedule | null>(null);
+  const [pausingBusy, setPausingBusy] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState("");
+  const [adminReopeningSchedule, setAdminReopeningSchedule] = useState<Schedule | null>(null);
+  const [adminReason, setAdminReason] = useState("");
+
   const calendarAnchor = new Date(`${todayISO()}T12:00:00`);
   calendarAnchor.setDate(calendarAnchor.getDate() - calendarAnchor.getDay());
   const anchorISO = localDateISO(calendarAnchor);
@@ -3252,13 +3311,109 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   for (const date of calendar) ordersByDate.set(date, paidDeliveries.filter((order) => order.date === date));
   const selectedOrders = paidDeliveries.filter((order) => order.date === selectedDate);
 
-  function change(schedule: Schedule, action: "pause" | "resume" | "cancel") {
-    if (!state.schedules.some((item) => item.id === schedule.id)) return toast.info("Schedule details are syncing. You can manage the individual delivery from Orders in the meantime.");
-    let patch: Partial<Schedule> = {}; let message = "";
-    if (action === "pause") { patch = { status: "Paused" }; message = "Schedule paused"; }
-    if (action === "resume") { patch = { status: "Active" }; message = "Schedule resumed"; }
-    if (action === "cancel") { if (!confirm("Cancel this recurring schedule? Existing prepared orders may still have a cancellation charge.")) return; patch = { status: "Cancelled" }; message = "Schedule cancelled"; }
-    setState((s) => ({ ...s, schedules: s.schedules.map((x) => x.id === schedule.id ? { ...x, ...patch } : x), notifications: [notice(session.email, "customer", message, `${schedule.id} was updated.`), ...s.notifications] })); toast.success(message);
+  const previewResumeDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
+  })();
+
+  async function confirmPause() {
+    if (!pausingSchedule) return;
+    setPausingBusy(true);
+    try {
+      if (isLiveSupabaseMode()) {
+        const res = await pauseLiveSchedule(pausingSchedule.id);
+        if (res.snapshot) {
+          setState((s) => mergeLiveCommerce(s, res.snapshot!, session));
+        } else {
+          setState((s) => ({
+            ...s,
+            schedules: s.schedules.map((x) => x.id === pausingSchedule.id ? { ...x, status: "Paused", pausedAt: res.pausedAt, resumeBy: res.resumeBy } : x),
+          }));
+        }
+      } else {
+        const d = new Date();
+        const pausedAt = d.toISOString();
+        d.setDate(d.getDate() + 15);
+        const resumeBy = d.toISOString();
+        setState((s) => ({
+          ...s,
+          schedules: s.schedules.map((x) => x.id === pausingSchedule.id ? { ...x, status: "Paused", pausedAt, resumeBy } : x),
+          notifications: [notice(session.email, "customer", "Schedule paused", `${pausingSchedule.id} paused until ${d.toLocaleDateString("en-IN")}.`), ...s.notifications],
+        }));
+      }
+      toast.success("Schedule paused. You have 15 days to resume.");
+      setPausingSchedule(null);
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to pause schedule. Current status was not changed."));
+    } finally {
+      setPausingBusy(false);
+    }
+  }
+
+  async function executeResume(schedule: Schedule) {
+    if (schedule.status === "Closed") {
+      toast.error("Closed schedules cannot be resumed.");
+      return;
+    }
+    if (schedule.resumeBy && new Date() > new Date(schedule.resumeBy)) {
+      toast.error("The 15-day pause window has expired. This schedule is closed and cannot be resumed.");
+      return;
+    }
+    setActionBusyId(schedule.id);
+    try {
+      if (isLiveSupabaseMode()) {
+        const res = await resumeLiveSchedule(schedule.id);
+        if (res.snapshot) {
+          setState((s) => mergeLiveCommerce(s, res.snapshot!, session));
+        } else {
+          setState((s) => ({
+            ...s,
+            schedules: s.schedules.map((x) => x.id === schedule.id ? { ...x, status: "Active", pausedAt: undefined, resumeBy: undefined } : x),
+          }));
+        }
+        toast.success(res.nextDeliveryDate ? `Schedule resumed! Next delivery on ${res.nextDeliveryDate}.` : "Schedule resumed!");
+      } else {
+        setState((s) => ({
+          ...s,
+          schedules: s.schedules.map((x) => x.id === schedule.id ? { ...x, status: "Active", pausedAt: undefined, resumeBy: undefined } : x),
+          notifications: [notice(session.email, "customer", "Schedule resumed", `${schedule.id} is active again.`), ...s.notifications],
+        }));
+        toast.success("Schedule resumed!");
+      }
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to resume schedule."));
+    } finally {
+      setActionBusyId("");
+    }
+  }
+
+  async function executeAdminReopen() {
+    if (!adminReopeningSchedule || !adminReason.trim()) {
+      toast.error("Enter a reason for reopening this schedule.");
+      return;
+    }
+    setActionBusyId(adminReopeningSchedule.id);
+    try {
+      if (isLiveSupabaseMode()) {
+        const res = await reopenLiveSchedule(adminReopeningSchedule.id, adminReason.trim());
+        if (res.snapshot) setState((s) => mergeLiveCommerce(s, res.snapshot!, session));
+        toast.success("Schedule reopened by Admin.");
+      } else {
+        setState((s) => ({
+          ...s,
+          schedules: s.schedules.map((x) => x.id === adminReopeningSchedule.id ? { ...x, status: "Active", pausedAt: undefined, resumeBy: undefined, closedAt: undefined } : x),
+          audit: [audit(session, "Reopened closed schedule", `${adminReopeningSchedule.id} reopened: ${adminReason}`), ...s.audit],
+        }));
+        toast.success("Schedule reopened.");
+      }
+      setAdminReopeningSchedule(null);
+      setAdminReason("");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to reopen schedule."));
+    } finally {
+      setActionBusyId("");
+    }
   }
 
   return <div className="space-y-6"><Heading eyebrow="CALENDAR" title="My schedule" body="Only paid, active schedules appear here. Every confirmed delivery date is taken from your actual orders, so recurring deliveries remain visible after payment and across future days." />
@@ -3266,7 +3421,138 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
     <div className="surface-card rounded-[28px] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-[#155F65]">Next 7 days</div><div className="mt-1 text-sm text-stone-500">Tap a date to see confirmed paid deliveries.</div></div>{paidDeliveries.length > 0 && <Status>{paidDeliveries.filter((order) => order.date >= todayISO()).length} upcoming</Status>}</div><div className="grid grid-cols-7 gap-1.5 sm:gap-2">{Array.from({ length: 7 }, (_, index) => addDaysISO(todayISO(), index)).map((date) => { const dayOrders = ordersByDate.get(date) || []; const d = new Date(`${date}T12:00:00`); return <button key={date} type="button" onClick={() => setSelectedDate(date)} aria-pressed={selectedDate === date} className={`sp-calendar-day relative rounded-2xl px-1 py-3 text-center transition ${selectedDate === date ? "bg-[#155F65] text-white" : "bg-white hover:bg-[#EAF4F2]"}`}><span className="block text-xs font-medium">{d.toLocaleDateString("en-IN", { weekday: "short" })}</span><span className="block text-xl font-bold tabular-nums">{d.getDate()}</span>{dayOrders.length > 0 ? <span className={`mx-auto mt-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${selectedDate === date ? "bg-[#155F65] text-white" : "bg-[#155F65] text-white"}`}>{dayOrders.length}</span> : <span className="mt-1 block h-5" />}</button>; })}</div>
       {selectedOrders.length > 0 ? <div className="mt-4 rounded-[22px] bg-[#EEF2F2] p-4"><b>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><div className="mt-3 space-y-2">{selectedOrders.map((order) => <button key={order.id} onClick={() => navigate("Orders")} className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left"><div className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Package className="size-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-black">{order.description}</div><div className="text-xs text-stone-500">{order.slot} · {order.mode}</div></div><Status>{order.status}</Status></button>)}</div></div> : <div className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">No confirmed delivery on this date.</div>}
     </div>
-    {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((schedule) => { const product = schedule.productId ? state.products.find((x) => x.id === schedule.productId) : undefined; const scheduleOrders = groupedOrders.get(schedule.id) || []; const status = schedule.status || "Active"; const upcoming = scheduleOrders.filter((order) => order.date >= todayISO()).map((order) => order.date); const persisted = state.schedules.some((item) => item.id === schedule.id); const finished = status === "Cancelled" || status === "Completed" || (!upcoming.length && status !== "Paused"); const displayName = product?.name || scheduleOrders[0]?.description || "Scheduled product"; return <div key={schedule.id} className="surface-card rounded-[26px] p-5"><div className="flex items-start gap-3"><div className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ background: product ? categoryVisual(product.category).bg : "#eff6e6" }}>{product ? <ProductGlyph category={product.category} /> : <Package className="size-6 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="font-black">{displayName}</div><div className="mt-1 text-xs text-stone-500">{schedule.recurrence}{schedule.recurrence === "Custom" && schedule.weekdays.length ? ` · ${schedule.weekdays.join(", ")}` : ""} · {schedule.timeSlot}</div></div><Status>{status}</Status></div><div className="mt-4 grid grid-cols-2 gap-2 rounded-[20px] bg-[#EEF2F2] p-3 text-xs"><div><span className="text-stone-400">Paid deliveries</span><div className="mt-1 font-black">{scheduleOrders.length || schedule.estimatedOccurrences}</div></div><div><span className="text-stone-400">Next delivery</span><div className="mt-1 font-black">{upcoming[0] || schedule.nextDeliveryAt || "Completed"}</div></div></div><div className="mt-3 rounded-2xl bg-[#EAF4F2] p-3 text-xs text-[#202827]"><CalendarDays className="mr-2 inline size-4" />{upcoming.length ? `Upcoming: ${upcoming.slice(0, 5).join(", ")}${upcoming.length > 5 ? ` +${upcoming.length - 5} more` : ""}` : "No future paid deliveries remain."}</div><div className="mt-2 rounded-2xl bg-[#EEF2F2] p-3 text-xs text-stone-500"><MessageSquareText className="mr-2 inline size-4" />Reminder is prepared for one hour before each delivery.</div>{persisted && !finished ? <div className="mt-4 flex flex-wrap gap-2">{status === "Paused" ? <Button size="sm" onClick={() => change(schedule, "resume")} className="bg-[#155F65]"><Play />Resume</Button> : <Button size="sm" variant="outline" onClick={() => change(schedule, "pause")}><Pause />Pause</Button>}<Button size="sm" variant="outline" onClick={() => setRescheduling(schedule)}><CalendarDays />Reschedule</Button></div> : <div className="mt-4 text-xs font-bold text-stone-400">Schedule definition is syncing; the confirmed delivery dates above are already active.</div>}</div>; })}</div> : <Empty icon={CalendarDays} title="No active paid schedules" body={pendingOrders.length ? "You have a schedule waiting in Cart for payment." : "Schedule a product, complete payment, and every confirmed delivery date will appear here."} action={pendingOrders.length ? <Button onClick={() => navigate("Cart")} className="rounded-xl bg-[#155F65]"><CreditCard />Go to checkout</Button> : <Button onClick={() => navigate("Marketplace")} variant="outline" className="rounded-xl"><ShoppingBag />Explore marketplace</Button>} />}
+    {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((schedule) => {
+      const product = schedule.productId ? state.products.find((x) => x.id === schedule.productId) : undefined;
+      const scheduleOrders = groupedOrders.get(schedule.id) || [];
+      const status = schedule.status || "Active";
+      const upcoming = scheduleOrders.filter((order) => order.date >= todayISO()).map((order) => order.date);
+      const persisted = state.schedules.some((item) => item.id === schedule.id);
+      const isPaused = status === "Paused";
+      const isClosed = status === "Closed";
+      const finished = status === "Cancelled" || status === "Completed" || isClosed || (!upcoming.length && !isPaused);
+      const displayName = product?.name || scheduleOrders[0]?.description || "Scheduled product";
+      const daysLeft = schedule.resumeBy ? Math.max(0, Math.ceil((new Date(schedule.resumeBy).getTime() - Date.now()) / (24 * 60 * 60 * 1000))) : 15;
+      const resumeFormatted = schedule.resumeBy ? new Date(schedule.resumeBy).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }) : previewResumeDate;
+      const isStaff = session.role === "admin" || session.role === "operations";
+
+      return <div key={schedule.id} className="surface-card rounded-[26px] p-5">
+        <div className="flex items-start gap-3">
+          <div className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ background: product ? categoryVisual(product.category).bg : "#eff6e6" }}>
+            {product ? <ProductGlyph category={product.category} /> : <Package className="size-6 text-stone-400" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-black">{displayName}</div>
+            <div className="mt-1 text-xs text-stone-500">{schedule.recurrence}{schedule.recurrence === "Custom" && schedule.weekdays.length ? ` · ${schedule.weekdays.join(", ")}` : ""} · {schedule.timeSlot}</div>
+          </div>
+          <Status>{status}</Status>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 rounded-[20px] bg-[#EEF2F2] p-3 text-xs">
+          <div><span className="text-stone-400">Paid deliveries</span><div className="mt-1 font-black">{scheduleOrders.length || schedule.estimatedOccurrences}</div></div>
+          <div><span className="text-stone-400">Next delivery</span><div className="mt-1 font-black">{isPaused ? "Paused" : isClosed ? "Closed" : (upcoming[0] || schedule.nextDeliveryAt || "Completed")}</div></div>
+        </div>
+
+        {isPaused ? (
+          <div className="mt-3 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-950">
+            <div className="flex items-center justify-between gap-2 font-bold text-amber-900">
+              <span className="flex items-center gap-1.5"><Clock3 className="size-4 shrink-0 text-amber-700" />Paused. Resume by {resumeFormatted}</span>
+              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-black">{daysLeft} day{daysLeft === 1 ? "" : "s"} left</span>
+            </div>
+            <p className="mt-1 text-[11px] text-amber-800/80">Slots falling during pause are skipped. If not resumed by {resumeFormatted}, this schedule closes automatically without refund.</p>
+          </div>
+        ) : isClosed ? (
+          <div className="mt-3 rounded-2xl bg-stone-100 border border-stone-200 p-3.5 text-xs text-stone-700">
+            <div className="flex items-center gap-1.5 font-bold text-stone-800">
+              <AlertTriangle className="size-4 shrink-0 text-stone-500" />
+              Closed: not resumed within 15 days
+            </div>
+            <p className="mt-1 text-[11px] text-stone-500">This schedule closed automatically after the 15-day pause window elapsed. As per policy, unused deliveries are not refunded.</p>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-2xl bg-[#EAF4F2] p-3 text-xs text-[#202827]"><CalendarDays className="mr-2 inline size-4" />{upcoming.length ? `Upcoming: ${upcoming.slice(0, 5).join(", ")}${upcoming.length > 5 ? ` +${upcoming.length - 5} more` : ""}` : "No future paid deliveries remain."}</div>
+        )}
+
+        <div className="mt-2 rounded-2xl bg-[#EEF2F2] p-3 text-xs text-stone-500"><MessageSquareText className="mr-2 inline size-4" />Reminder is prepared for one hour before each delivery.</div>
+
+        {persisted && !finished ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {isPaused ? (
+              <Button size="sm" onClick={() => executeResume(schedule)} disabled={actionBusyId === schedule.id} className="bg-[#155F65] text-white">
+                <Play className="mr-1 size-3.5" />{actionBusyId === schedule.id ? "Resuming…" : "Resume"}
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => setPausingSchedule(schedule)} disabled={actionBusyId === schedule.id}>
+                <Pause className="mr-1 size-3.5" />Pause
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => setRescheduling(schedule)}><CalendarDays className="mr-1 size-3.5" />Reschedule</Button>
+          </div>
+        ) : isClosed && isStaff ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setAdminReopeningSchedule(schedule); setAdminReason(""); }} className="border-[#155F65] text-[#155F65]">
+              <Play className="mr-1 size-3.5" />Reopen (Admin)
+            </Button>
+          </div>
+        ) : !finished ? (
+          <div className="mt-4 text-xs font-bold text-stone-400">Schedule definition is syncing; the confirmed delivery dates above are already active.</div>
+        ) : null}
+      </div>;
+    })}</div> : <Empty icon={CalendarDays} title="No active paid schedules" body={pendingOrders.length ? "You have a schedule waiting in Cart for payment." : "Schedule a product, complete payment, and every confirmed delivery date will appear here."} action={pendingOrders.length ? <Button onClick={() => navigate("Cart")} className="rounded-xl bg-[#155F65]"><CreditCard />Go to checkout</Button> : <Button onClick={() => navigate("Marketplace")} variant="outline" className="rounded-xl"><ShoppingBag />Explore marketplace</Button>} />}
+
+    {/* Pause Confirmation Dialog with 15-day warning */}
+    <Dialog open={Boolean(pausingSchedule)} onOpenChange={(open) => !open && setPausingSchedule(null)}>
+      <DialogContent className="max-w-md rounded-[28px] p-6">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black text-[#202827]">Pause subscription schedule?</DialogTitle>
+          <DialogDescription className="text-sm text-stone-600 mt-2">
+            You can pause this schedule for up to 15 days. If you do not resume by <b>{previewResumeDate}</b>, the schedule will be closed and the amount paid will not be refunded.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-900 space-y-1.5">
+          <p className="font-semibold">• Deliveries that fall during the pause window are skipped, not made up.</p>
+          <p className="font-semibold">• You can resume anytime before {previewResumeDate} to continue remaining deliveries.</p>
+          <p className="font-semibold">• If not resumed within 15 days, this schedule closes permanently with no refund.</p>
+        </div>
+        <div className="mt-5 flex justify-end gap-3">
+          <Button variant="outline" onClick={() => setPausingSchedule(null)} disabled={pausingBusy} className="rounded-xl">
+            Cancel
+          </Button>
+          <Button onClick={confirmPause} disabled={pausingBusy} className="rounded-xl bg-[#155F65] text-white">
+            {pausingBusy ? "Pausing…" : "Pause schedule"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Admin Reopen Dialog */}
+    <Dialog open={Boolean(adminReopeningSchedule)} onOpenChange={(open) => !open && setAdminReopeningSchedule(null)}>
+      <DialogContent className="max-w-md rounded-[28px] p-6">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black text-[#202827]">Reopen closed schedule</DialogTitle>
+          <DialogDescription className="text-sm text-stone-600 mt-2">
+            As an Administrator / Operations user, you can reopen this closed schedule. A documented reason is required and will be logged in the audit trail.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 space-y-3">
+          <Field label="Reason for reopening">
+            <input
+              type="text"
+              placeholder="e.g. Customer requested extension due to emergency"
+              value={adminReason}
+              onChange={(e) => setAdminReason(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <div className="mt-5 flex justify-end gap-3">
+          <Button variant="outline" onClick={() => setAdminReopeningSchedule(null)} className="rounded-xl">Cancel</Button>
+          <Button onClick={executeAdminReopen} disabled={!adminReason.trim() || actionBusyId === adminReopeningSchedule?.id} className="rounded-xl bg-[#155F65] text-white">
+            {actionBusyId === adminReopeningSchedule?.id ? "Reopening…" : "Reopen schedule"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <RescheduleDialog schedule={rescheduling} close={() => setRescheduling(null)} session={session} setState={setState} />
   </div>;
 }
@@ -3330,7 +3616,7 @@ function RequirementsV4({ session, state, setState }: { session: DemoSession; st
 
 function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const requirements = state.requirements.filter((x) => x.customerEmail === session.email);
-  function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId); if (!req) return; const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Scheduled", payment: "Pending", cancellationFee: 0 }; const vendor = state.vendors.find((x) => x.id === quote.vendorId); setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [order, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(order.total)} order created for ${order.date}.`), ...(vendor ? [notice(vendor.ownerEmail, "vendor", "RFQ awarded", `${order.id} was awarded to your store.`)] : []), ...s.notifications] })); toast.success("Quotation selected. Review payment and delivery before fulfilment."); }
+  function selectQuote(quote: Quote) { const req = state.requirements.find((x) => x.id === quote.requirementId); if (!req) return; const order: Order = { id: id("ORD"), customerEmail: session.email, vendorId: quote.vendorId, description: req.title, quantity: req.items.length, unit: "items", total: quote.total + quote.deliveryFee, date: req.deliveryDate, slot: "Vendor to confirm", mode: "Vendor delivery", status: "Awaiting payment", payment: "Pending", cancellationFee: 0 }; setState((s) => ({ ...s, quotes: s.quotes.map((x) => x.requirementId === quote.requirementId ? { ...x, status: x.id === quote.id ? "Selected" : "Not selected" } : x), requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Awarded" } : x), orders: [order, ...s.orders], notifications: [notice(session.email, "customer", "Quotation selected", `${money(order.total)} order created for ${order.date}. Complete payment to confirm order.`), ...s.notifications] })); toast.success("Quotation selected. Complete payment to confirm order."); }
   return <div className="space-y-5"><Heading eyebrow="RFP / RFQ TRACKING" title="My quotations" body="Compare the sealed offers from invited Crown vendors and award the winner yourself." />
     {requirements.length ? requirements.map((req) => {
       const invited = req.invitedVendorIds || []; const quotes = state.quotes.filter((x) => x.requirementId === req.id && (state.vendors.find((v) => v.id === x.vendorId)?.plan === "Crown"));
@@ -4149,7 +4435,14 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   if (active === "Delivery team") return <DeliveryTeam vendor={vendor} state={state} setState={setState} session={session} />;
   if (active === "Settlements") return <VendorSettlements vendor={vendor} state={state} />;
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} vendor={vendor} />;
-  const products = state.products.filter((x) => x.vendorId === vendor.id), orders = state.orders.filter((x) => x.vendorId === vendor.id);
+  const products = state.products.filter((x) => x.vendorId === vendor.id);
+  const isPaidOrFoodDrop = (o: Order) => (o.payment === "Paid" && o.status !== "Awaiting payment") || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup";
+  const isScheduleActiveForVendor = (o: Order) => {
+    if (!o.scheduleId) return true;
+    const sched = state.schedules.find((s) => s.id === o.scheduleId);
+    return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
+  };
+  const orders = state.orders.filter((x) => x.vendorId === vendor.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x));
   const vendorReviews = state.reviews.filter((r) => products.some((p) => p.id === r.productId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const vendorRatingAvg = vendorReviews.length ? vendorReviews.reduce((sum, r) => sum + r.rating, 0) / vendorReviews.length : null;
   const todayStr = todayISO();
@@ -4161,7 +4454,19 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const byDay = days.map((d) => ({ ...d, total: orders.filter((x) => x.date === d.key && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0) }));
   const maxDay = Math.max(1, ...byDay.map((d) => d.total));
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
-  async function accept(order: Order) { try { if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed"); setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) })); toast.success(`${order.id} accepted`); } catch (error) { toast.error(errorMessage(error, "The order could not be accepted")); } }
+  async function accept(order: Order) {
+    if (!isPaidOrFoodDrop(order)) {
+      toast.error("Cannot accept an order before payment is confirmed.");
+      return;
+    }
+    try {
+      if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Confirmed");
+      setState((cur) => ({ ...cur, orders: cur.orders.map((x) => x.id === order.id ? { ...x, status: "Confirmed" } : x) }));
+      toast.success(`${order.id} accepted`);
+    } catch (error) {
+      toast.error(errorMessage(error, "The order could not be accepted"));
+    }
+  }
   const planNote: Record<string, string> = { Taster: "Food Drops and quotation requests need Crave, Thrive or Crown.", Crave: "Food Drops are on (up to 2/day). Upgrade to Thrive for 5/day or Crown for quotation requests.", Thrive: "Food Drops are on (up to 5/day). Upgrade to Crown to receive customer quotation requests.", Crown: "Food Drops (up to 15/day) and customer quotation requests are both on." };
 
   return <div className="space-y-5">
@@ -5132,10 +5437,16 @@ function CustomerOrderCard({
 }
 
 function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) {
+  const isPaidOrFoodDrop = (x: Order) => (x.payment === "Paid" && x.status !== "Awaiting payment") || Boolean(x.foodDropId) || x.paymentProvider === "food_drop_pickup";
+  const isScheduleActiveForVendor = (x: Order) => {
+    if (!x.scheduleId) return true;
+    const sched = state.schedules.find((s) => s.id === x.scheduleId);
+    return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
+  };
   const baseOrders = scope === "customer"
-    ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending")
+    ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending" && x.status !== "Awaiting payment")
     : scope === "vendor"
-      ? state.orders.filter((x) => x.vendorId === vendor?.id && x.payment === "Paid")
+      ? state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x))
       : state.orders;
   const [rescheduling, setRescheduling] = useState<Order | null>(null);
   const [paying, setPaying] = useState<Order | null>(null);
@@ -5614,10 +5925,12 @@ function PaymentDialog({ order, close, state, setState, onPaid }: { order: Order
       const transaction = recordTransaction(order, method, state.vendors.find((v) => v.id === order.vendorId));
       setState((s) => {
         const base = { ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, payment: "Paid" as const, status: "Confirmed" as const } : x) };
+        const vendorOwner = state.vendors.find((v) => v.id === order.vendorId)?.ownerEmail;
+        const vendorNotices = vendorOwner ? [notice(vendorOwner, "vendor", "New paid order", `${order.description} is paid and confirmed for ${order.date}.`)] : [];
         return {
           ...base,
           transactions: [transaction, ...base.transactions],
-          notifications: [notice(order.customerEmail, "customer", "Payment successful", `${money(order.total)} collected. Your scheduled deliveries are now confirmed.`), ...base.notifications],
+          notifications: [notice(order.customerEmail, "customer", "Payment successful", `${money(order.total)} collected. Your scheduled deliveries are now confirmed.`), ...vendorNotices, ...base.notifications],
           audit: [audit({ email: order.customerEmail, name: order.customerEmail, role: "customer" }, "Customer paid for schedule", `${order.id} · ${money(order.total)} via ${method}`), ...base.audit],
         };
       });
@@ -6635,89 +6948,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   const [fileName, setFileName] = useState(vendor.certificateName || "");
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
-  const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
-  const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
-  const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
-
-  const planRank: Record<Vendor["plan"], number> = {
-    Taster: 0,
-    Crave: 1,
-    Thrive: 2,
-    Crown: 3,
-  };
-
-  function handlePlanSelection(newPlan: Vendor["plan"]) {
-    if (vendor.plan === newPlan) return;
-    if (planRank[newPlan] < planRank[vendor.plan]) {
-      setDowngradeTarget(newPlan);
-      setDowngradeConfirmOpen(true);
-      return;
-    }
-    void upgradePlan(newPlan);
-  }
-
-  function confirmDowngrade() {
-    if (!downgradeTarget) return;
-    const target = downgradeTarget;
-    setDowngradeConfirmOpen(false);
-    setDowngradeTarget(null);
-    const effectiveDate = getNextMonthFirstIst();
-    setState((s) => ({
-      ...s,
-      vendors: s.vendors.map((x) => x.id === vendor.id ? {
-        ...x,
-        scheduledPlanChange: {
-          nextPlan: target,
-          effectiveDate,
-          requestedAt: new Date().toISOString(),
-        },
-      } : x),
-      audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
-    }));
-    toast.success(`You can enjoy all ${vendor.plan} features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
-  }
-
-  async function upgradePlan(newPlan: Vendor["plan"]) {
-    if (vendor.plan === newPlan) return;
-    setUpgradingTo(newPlan);
-    try {
-      if (isLiveSupabaseMode()) {
-        await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
-      }
-      const newLimits = getPlanLimits(newPlan);
-      setState((s) => {
-        const activeProds = s.products.filter((p) => p.vendorId === vendor.id && p.active);
-        const excessProds = activeProds.length > newLimits.maxProducts
-          ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
-          : new Set<string>();
-
-        const activeStaff = s.staff.filter((st) => st.vendorId === vendor.id && st.active);
-        const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
-          ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
-          : new Set<string>();
-
-        const activeSlots = (s.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
-        const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
-          ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
-          : new Set<string>();
-
-        return {
-          ...s,
-          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan, scheduledPlanChange: undefined } : x),
-          products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
-          staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
-          deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
-          audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${vendor.plan} to ${newPlan} by ${session.name} (${session.email})`), ...s.audit],
-        };
-      });
-      toast.success(`Plan upgraded to ${newPlan}!`);
-    } catch (error) {
-      toast.error(errorMessage(error, "Plan update could not be saved"));
-    } finally {
-      setUpgradingTo(null);
-    }
-  }
   const [termsTick, setTermsTick] = useState(false), [termsBusy, setTermsBusy] = useState(false);
   const [termsViewOpen, setTermsViewOpen] = useState(false), [signOpen, setSignOpen] = useState(false);
   async function acceptTerms() {
@@ -8410,7 +8641,7 @@ function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNa
   if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
   if (active === "Vendor payments") return <VendorPayments state={state} setState={setState} session={session} canManage={false} />;
   if (active === "Reports") return <ReportsCentre state={state} />;
-  if (active === "Audit log") return <AuditLog items={state.audit} />;
+  if (active === "Audit log") return <AuditLog items={state.audit} vendors={state.vendors} />;
   const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
   const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
   const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
@@ -8617,6 +8848,31 @@ function AdminVendors({ session, state, setState, onOpenVendorProfile }: { sessi
           <TableCell><Select value={vendor.plan} onValueChange={(value) => {
             const plan = value as Vendor["plan"];
             const oldPlan = vendor.plan;
+            if (plan === oldPlan) return;
+
+            const planPrices: Record<string, number> = { Taster: 499, Crave: 699, Thrive: 799, Crown: 999 };
+            const oldPrice = planPrices[oldPlan] ?? 0;
+            const newPrice = planPrices[plan] ?? 0;
+
+            const actorRole = session.role === "admin"
+              ? (session.name.toLowerCase().includes("super") || session.email.toLowerCase().includes("super") ? "Super Admin" : "Admin")
+              : (session.role === "operations" ? "Operations" : "Admin");
+
+            const auditEvent = createVendorPlanAuditEvent({
+              actorName: session.name,
+              actorEmail: session.email,
+              actorRole,
+              vendorId: vendor.id,
+              vendorName: vendor.businessName,
+              previousPlan: oldPlan,
+              newPlan: plan,
+              previousPrice: oldPrice,
+              newPrice: newPrice,
+              previousStatus: vendor.operational || "Active",
+              newStatus: vendor.operational || "Active",
+              reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
+            });
+
             const newLimits = getPlanLimits(plan);
             const activeProds = state.products.filter((p) => p.vendorId === vendor.id && p.active);
             const excessProds = activeProds.length > newLimits.maxProducts
@@ -8639,12 +8895,31 @@ function AdminVendors({ session, state, setState, onOpenVendorProfile }: { sessi
               products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
               staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
               deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
-              audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${oldPlan} to ${plan} by ${session.name} (${session.email})`), ...s.audit],
+              audit: [auditEvent, ...s.audit],
             }));
-            if (isLiveSupabaseMode()) void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown").then(() => toast.success(`${vendor.businessName} moved to ${plan}`)).catch((error: Error) => {
-              setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x) }));
-              toast.error(error.message || "Could not save the plan change");
-            });
+            if (isLiveSupabaseMode()) {
+              void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown", {
+                oldPlan,
+                vendorName: vendor.businessName,
+                session: {
+                  name: session.name,
+                  email: session.email,
+                  role: actorRole,
+                },
+                reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
+              }).then(() => {
+                toast.success(`${vendor.businessName} moved to ${plan}`);
+              }).catch((error: Error) => {
+                setState((s) => ({
+                  ...s,
+                  vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x),
+                  audit: s.audit.filter((a) => a.id !== auditEvent.id),
+                }));
+                toast.error(error.message || "Could not save the plan change");
+              });
+            } else {
+              toast.success(`${vendor.businessName} moved to ${plan}`);
+            }
           }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
         </TableRow>)}</TableBody>
       </Table>
@@ -8684,21 +8959,6 @@ function AdminPricing({ state }: { state: V3State }) {
     <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger aria-label="Vendor" className="w-full max-w-xs rounded-xl"><SelectValue placeholder="All vendors" /></SelectTrigger><SelectContent><SelectItem value="all">All vendors</SelectItem>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm outline-none" />{[["All", false], ["Custom %", true]].map(([label, value]) => <button key={String(label)} type="button" onClick={() => setOnlyCustom(Boolean(value))} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom === value ? "bg-[#155F65] text-white" : "bg-white"}`}>{String(label)}</button>)}</div>
     {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Vendor</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{rows.map((x) => <TableRow key={x.id}><TableCell><b>{x.name}</b><div className="text-xs text-[#55656A]">per {x.baseUnit}</div></TableCell><TableCell className="text-sm">{state.vendors.find((v) => v.id === x.vendorId)?.businessName || "Vendor"}</TableCell><TableCell>{money(x.vendorPrice)}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pct(x.id) > 0 ? "bg-[#EAF4F2] text-[#155F65]" : "bg-[#EEF2F2] text-[#55656A]"}`}>{pct(x.id)}%</span></TableCell><TableCell className="font-black">{money(finalPrice(x, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title={state.products.length ? "No items match" : "No product pricing"} body={state.products.length ? "Try another vendor or search." : "Pricing rows appear after vendors add products."} />}</div>;
 }
-function AuditLog({ items }: { items: Audit[] }) {
-  function download() { downloadWorkbook("sheplates-audit-log", [{ name: "Audit log", rows: items.map((item) => ({ ID: item.id, Actor: item.actor, Action: item.action, Detail: item.detail, "At": item.at })) }]); }
-  const [kind, setKind] = useState<"All" | "Permissions" | "Vendors" | "Plans and pricing">("All");
-  const [auditQuery, setAuditQuery] = useState("");
-  const [dbTrail, setDbTrail] = useState<TrailEvent[]>([]);
-  const [trailError, setTrailError] = useState("");
-  useEffect(() => { if (!isLiveSupabaseMode()) return; let alive = true; loadAuditTrail().then((rows) => { if (alive) setDbTrail(rows); }).catch((e) => { if (alive) setTrailError(errorMessage(e, "The audit trail could not be loaded")); }); return () => { alive = false; }; }, []);
-  const allItems = [...dbTrail, ...items];
-  const kindOf = (item: Audit) => /permission|access|user/i.test(item.action) ? "Permissions" : /plan|price|pricing|percentage|markup/i.test(item.action) ? "Plans and pricing" : /vendor|verif|certificate|store/i.test(item.action + item.detail) ? "Vendors" : "Other";
-  const shown = allItems.filter((item) => (kind === "All" || kindOf(item) === kind) && (!auditQuery.trim() || `${item.actor} ${item.action} ${item.detail}`.toLowerCase().includes(auditQuery.trim().toLowerCase())));
-  return <div className="space-y-5"><Heading eyebrow="AUDITABILITY" title="Platform activity trail" body="Who did what, and when. Verification, pricing, catalogue, schedule and order actions are recorded." action={<Button variant="outline" onClick={download} disabled={!allItems.length}><Download />Download Excel</Button>} />{trailError && <p role="alert" className="rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{trailError}</p>}
-    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Kind of action">{(["All", "Permissions", "Vendors", "Plans and pricing"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={kind === name} onClick={() => setKind(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${kind === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name}</button>)}<input value={auditQuery} onChange={(e) => setAuditQuery(e.target.value)} placeholder="Search actor or action" aria-label="Search actor or action" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>
-    {shown.length ? <div className="surface-card overflow-x-auto rounded-3xl p-3"><Table><TableHeader><TableRow><TableHead>When</TableHead><TableHead>Who</TableHead><TableHead>Action</TableHead><TableHead>Detail</TableHead></TableRow></TableHeader><TableBody>{shown.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-xs">{item.at}</TableCell><TableCell><span className="flex items-center gap-2 text-sm font-medium"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#C5E3E4] text-[11px] font-bold">{item.actor.slice(0, 1).toUpperCase()}</span>{item.actor}</span></TableCell><TableCell><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{item.action}</span></TableCell><TableCell className="text-sm text-[#2F3C3F]">{item.detail}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Activity} title="No audit events" body="Actions across the new data flow will appear here." />}</div>;
-}
-
 type ReportKey = "orders" | "zoho_orders" | "payments" | "tickets" | "vendors" | "cancellations" | "customers";
 const reportDefinitions: { key: ReportKey; label: string; dateField: string }[] = [
   { key: "orders", label: "Orders", dateField: "date" },
@@ -9165,11 +9425,17 @@ function scopedContext(session: DemoSession, state: V3State) {
   };
   if (session.role === "vendor") {
     const vendor = vendorFor(state, session);
+    const isPaidOrFoodDrop = (x: Order) => (x.payment === "Paid" && x.status !== "Awaiting payment") || Boolean(x.foodDropId) || x.paymentProvider === "food_drop_pickup";
+    const isScheduleActiveForVendor = (x: Order) => {
+      if (!x.scheduleId) return true;
+      const sched = state.schedules.find((s) => s.id === x.scheduleId);
+      return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
+    };
     return {
       scope: "vendor_self",
       vendor,
       products: state.products.filter((x) => x.vendorId === vendor?.id),
-      orders: state.orders.filter((x) => x.vendorId === vendor?.id),
+      orders: state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x)),
       deliveryStaff: state.staff.filter((x) => x.vendorId === vendor?.id),
       tickets: state.tickets.filter((x) => x.vendorId === vendor?.id || x.creatorEmail === session.email),
       opportunities: vendor?.plan === "Crown" ? state.requirements.filter((x) => (x.status === "Quoting" || x.status === "Quotes received") && (!x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id))) : [],
