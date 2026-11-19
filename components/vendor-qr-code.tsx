@@ -857,7 +857,7 @@ return (
     </h3>
 
     <p className="mt-3 max-w-xl text-sm leading-7 text-[#55656A]">
-      You're just one step away from making your store accessible
+      You&apos;re just one step away from making your store accessible
       to customers! Please accept both the Vendor Partnership
       Agreement and Sheplates Terms & Conditions to unlock your
       exclusive store QR code.

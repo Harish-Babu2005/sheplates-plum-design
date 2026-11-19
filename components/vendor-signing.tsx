@@ -178,6 +178,7 @@ function ManualUpload({ vendorId, live, onChanged }: { vendorId: string; live: b
   async function upload(id: string) {
     const file = files[id];
     if (!file) return void toast.error("Choose the signed file first.");
+    if (file.size === 0) return void toast.error(`"${file.name}" is empty (0 bytes). Please upload a valid signed copy.`);
     if (file.size > UPLOAD_MAX_BYTES) return void toast.error("The file must be under 10 MB.");
     setBusy(id);
     try {
@@ -197,7 +198,7 @@ function ManualUpload({ vendorId, live, onChanged }: { vendorId: string; live: b
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <a href={d.url} download className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#EEF2F2] px-3 text-xs font-bold text-[#155F65]"><Download className="size-4" />Download to sign</a>
         {!done && <>
-          <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-dashed border-[#155F65] bg-white px-3 text-xs font-bold text-[#155F65]"><Upload className="size-4" />{files[d.id] ? "Change file" : "Choose signed file"}<input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" aria-label={`Signed ${d.title}`} className="hidden" onChange={(e) => { const f = e.target.files?.[0] || null; setFiles((cur) => ({ ...cur, [d.id]: f })); e.target.value = ""; }} /></label>
+          <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-dashed border-[#155F65] bg-white px-3 text-xs font-bold text-[#155F65]"><Upload className="size-4" />{files[d.id] ? "Change file" : "Choose signed file"}<input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" aria-label={`Signed ${d.title}`} className="hidden" onChange={(e) => { const f = e.target.files?.[0] || null; if (f && f.size === 0) { toast.error(`"${f.name}" is empty (0 bytes). Please upload a valid signed copy.`); e.target.value = ""; return; } setFiles((cur) => ({ ...cur, [d.id]: f })); e.target.value = ""; }} /></label>
           {files[d.id] && <span className="max-w-[12rem] truncate text-xs text-[#55656A]">{files[d.id]!.name}</span>}
           <Button type="button" size="sm" disabled={!files[d.id] || busy === d.id} onClick={() => void upload(d.id)} className="h-9 rounded-xl bg-[#155F65]">{busy === d.id ? "Uploading…" : "Upload signed copy"}</Button></>}
         {d.upload?.url && <a href={d.upload.url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#155F65] underline">View my upload</a>}</div>

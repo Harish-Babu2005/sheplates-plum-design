@@ -14,7 +14,48 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Toaster } from "@/components/ui/sonner";
 import { categories, categoryVisual, plans, vendors } from "@/lib/sheplates-data";
 import { demoAccounts, type DemoSession } from "@/lib/sheplates-v2-data";
-import { isSupabaseConfigured, liveSignIn, liveSignUp, saveLiveCustomerPrivacy, sendPasswordResetEmail } from "@/lib/supabase";
+import {
+  getLiveAuthSession,
+  getSupabaseBrowserClient,
+  isSupabaseConfigured,
+  liveSignIn,
+  liveSignInWithGoogle,
+  liveSignUp,
+  resendVerificationEmail,
+  saveLiveCustomerPrivacy,
+  sendPasswordResetEmail,
+} from "@/lib/supabase";
+
+function MailIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function GoogleIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24">
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+      />
+    </svg>
+  );
+}
 
 type Audience = "customer" | "team";
 type AuthMode = "login" | "create" | "forgot";
@@ -192,6 +233,78 @@ export function SheplatesEntry({
     }
   }, []);
 
+  // Listen for auth redirects (e.g. Google OAuth, Email verification) and automatically log the customer in
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+
+    async function checkAuthSession() {
+      try {
+        const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+        const authRoleParam = urlParams.get("auth_role");
+        let requestedAudience: Audience | null = null;
+        try {
+          const stored = sessionStorage.getItem("sheplates_oauth_audience");
+          if (stored === "team" || stored === "customer") {
+            requestedAudience = stored;
+          }
+          sessionStorage.removeItem("sheplates_oauth_audience");
+        } catch {}
+
+        const preferredRole: "customer" | "vendor" | undefined =
+          authRoleParam === "vendor" ? "vendor" :
+          authRoleParam === "customer" ? "customer" :
+          requestedAudience === "team" ? "vendor" :
+          requestedAudience === "customer" ? "customer" :
+          undefined;
+
+        const live = await getLiveAuthSession(preferredRole);
+        if (cancelled || !live?.user) return;
+        const isEmailVerification = typeof window !== "undefined" && (
+          window.location.hash.includes("type=signup") ||
+          window.location.hash.includes("type=email_verification")
+        );
+        if (typeof window !== "undefined" && (window.location.hash || window.location.search.includes("code=") || window.location.search.includes("auth_role="))) {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+        onLogin({
+          email: live.user.email || "",
+          name: live.profile.full_name,
+          role: live.profile.role,
+          userId: live.user.id,
+          vendorId: live.profile.vendor_id ?? undefined,
+          isNewVendor: live.profile.role === "vendor" && !live.profile.vendor_id,
+          toursCompleted: live.profile.tours_completed || [],
+        });
+        toast.success(isEmailVerification ? "Email verified successfully! Welcome to Sheplates." : `Welcome back, ${live.profile.full_name || "User"}!`);
+      } catch (err) {
+        if (!cancelled) {
+          const message = authErrorMessage(err);
+          if (message && message !== "null" && message !== "undefined") {
+            toast.error(message);
+          }
+        }
+      }
+    }
+
+    void checkAuthSession();
+
+    const client = getSupabaseBrowserClient();
+    if (client) {
+      const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
+        if (event === "SIGNED_IN" && session?.user && !cancelled) {
+          void checkAuthSession();
+        }
+      });
+      return () => {
+        cancelled = true;
+        subscription.unsubscribe();
+      };
+    }
+    return () => { cancelled = true; };
+  }, [onLogin]);
+
   const filteredPlans = useMemo(() => {
     const query = search.trim().toLowerCase();
     return plans.filter((plan) =>
@@ -284,6 +397,8 @@ function AuthDialog({ audience, close, onLogin, setAudience, pendingVendorName }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
   const liveMode = process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured();
 
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -306,8 +421,26 @@ function AuthDialog({ audience, close, onLogin, setAudience, pendingVendorName }
       setName("");
       setPrivateAccount(false);
       setResetSent(false);
+      setVerificationSent(false);
     });
   }, [audience]);
+
+  async function handleResendVerification() {
+    const targetEmail = email.trim().toLowerCase();
+    if (!targetEmail) {
+      toast.error("Please enter your email address to resend verification.");
+      return;
+    }
+    try {
+      setResendingVerification(true);
+      await resendVerificationEmail(targetEmail);
+      toast.success(`Verification email resent to ${targetEmail}!`);
+    } catch (caught) {
+      toast.error(authErrorMessage(caught));
+    } finally {
+      setResendingVerification(false);
+    }
+  }
 
 // Listen for password reset completion from another browser tab
 useEffect(() => {
@@ -417,8 +550,12 @@ useEffect(() => {
           const normalizedEmail = email.trim().toLowerCase();
           if (registrationRole === "customer") {
             const accounts = readLocalCustomerAccounts();
-            if (accounts.some((account) => account.email.toLowerCase() === normalizedEmail) || demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)) {
-              throw new Error("An account with this email already exists.");
+            if (
+              accounts.some((account) => account.email.toLowerCase() === normalizedEmail) ||
+              readLocalVendorAccounts().some((account) => account.email.toLowerCase() === normalizedEmail) ||
+              demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)
+            ) {
+              throw new Error("This email is already registered. Please sign in instead.");
             }
             const passwordSalt = newLocalAccountSalt();
             accounts.push({
@@ -432,10 +569,12 @@ useEffect(() => {
             saveLocalCustomerAccounts(accounts);
           } else {
             const accounts = readLocalVendorAccounts();
-            if (accounts.some((account) => account.email.toLowerCase() === normalizedEmail) ||
+            if (
+              accounts.some((account) => account.email.toLowerCase() === normalizedEmail) ||
               readLocalCustomerAccounts().some((account) => account.email.toLowerCase() === normalizedEmail) ||
-              demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)) {
-              throw new Error("An account with this email already exists.");
+              demoAccounts.some((account) => account.email.toLowerCase() === normalizedEmail)
+            ) {
+              throw new Error("This email is already registered. Please sign in instead.");
             }
             const passwordSalt = newLocalAccountSalt();
             const vendorId = `local-${crypto.randomUUID()}`;
@@ -456,7 +595,15 @@ useEffect(() => {
           toast.success("Customer account created.");
           return;
         }
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("sheplates_oauth_audience", audience || "customer");
+        }
         const result = await liveSignUp({ name: name.trim(), email, password, role: registrationRole });
+        if (result.needsEmailVerification) {
+          setVerificationSent(true);
+          toast.success("Verification email sent! Please check your inbox.");
+          return;
+        }
         if (registrationRole === "customer") {
           try { await saveLiveCustomerPrivacy(privateAccount); }
           catch (error) { toast.error(`Account created, but privacy could not be saved yet: ${authErrorMessage(error)}`); }
@@ -518,10 +665,112 @@ useEffect(() => {
     } finally { setBusy(false); }
   }
 
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{audience === "customer" ? (mode === "forgot" ? "Reset password" : "Customer access") : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div>{pendingVendorName && <div className="mx-6 mt-3 rounded-2xl bg-[#EAF4F2] border border-[#C5E3E4] p-3 text-xs text-[#155F65]"><b>Ordering from {pendingVendorName}</b><p className="mt-0.5 text-stone-600">Sign in to add items to your cart and complete your order.</p></div>}<div className="k-auth-form p-6">
-    {audience === "customer" && mode !== "forgot" && <div className="grid grid-cols-2 rounded-2xl bg-stone-100 p-1"><button onClick={() => { setMode("login"); setError(""); }} className={`rounded-xl py-2.5 text-sm font-black ${mode === "login" ? "bg-white shadow-sm" : "text-stone-500"}`}>Sign in</button><button onClick={() => { setMode("create"); setError(""); }} className={`rounded-xl py-2.5 text-sm font-black ${mode === "create" ? "bg-white shadow-sm" : "text-stone-500"}`}>Create account</button></div>}
+  async function handleGoogleSignIn() {
+    try {
+      setBusy(true);
+      setError("");
+      const targetRole = audience === "team" ? "vendor" : "customer";
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("sheplates_oauth_audience", audience || "customer");
+        sessionStorage.setItem("sheplates_oauth_mode", mode);
+      }
+      await liveSignInWithGoogle(targetRole);
+    } catch (err) {
+      setError(authErrorMessage(err));
+      setBusy(false);
+    }
+  }
+
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{verificationSent ? "Verify your email" : audience === "customer" ? (mode === "forgot" ? "Reset password" : mode === "create" ? "Create customer account" : "Customer access") : mode === "create" ? "Register as a Vendor" : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{verificationSent ? "Check your inbox to activate your account." : audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : mode === "create" ? "Join Sheplates as a local food vendor or home chef." : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div>{pendingVendorName && <div className="mx-6 mt-3 rounded-2xl bg-[#EAF4F2] border border-[#C5E3E4] p-3 text-xs text-[#155F65]"><b>Ordering from {pendingVendorName}</b><p className="mt-0.5 text-stone-600">Sign in to add items to your cart and complete your order.</p></div>}<div className="k-auth-form p-6">
+    {mode !== "forgot" && !verificationSent && (
+      <>
+        <div className="grid grid-cols-2 rounded-2xl bg-stone-100 p-1">
+          <button
+            type="button"
+            onClick={() => { setMode("login"); setError(""); setVerificationSent(false); }}
+            className={`rounded-xl py-2.5 text-sm font-black ${mode === "login" ? "bg-white shadow-sm" : "text-stone-500"}`}
+          >
+            {audience === "team" ? "Sign in" : "Sign in"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode("create"); setError(""); setVerificationSent(false); }}
+            className={`rounded-xl py-2.5 text-sm font-black ${mode === "create" ? "bg-white shadow-sm" : "text-stone-500"}`}
+          >
+            {audience === "team" ? "Register as vendor" : "Create account"}
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={busy}
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-stone-200 bg-white px-4 text-sm font-black text-stone-700 shadow-xs transition hover:bg-stone-50 active:scale-[0.99] disabled:opacity-50"
+          >
+            <GoogleIcon className="size-5 shrink-0" />
+            <span>
+              {audience === "team"
+                ? mode === "create"
+                  ? "Register as Vendor with Google"
+                  : "Continue as Vendor with Google"
+                : "Continue with Google"}
+            </span>
+          </button>
+          <div className="relative my-4 text-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-stone-200" />
+            </div>
+            <span className="relative bg-white px-2 text-[11px] font-black uppercase tracking-wider text-stone-400">
+              or continue with email
+            </span>
+          </div>
+        </div>
+      </>
+    )}
     
-    {mode === "forgot" ? (
+    {verificationSent ? (
+      <div className="space-y-4 py-2">
+        <div className="rounded-2xl border border-teal-200 bg-teal-50 p-5 text-teal-900">
+          <div className="flex items-start gap-3">
+            <MailIcon className="mt-0.5 size-5 shrink-0 text-teal-600" />
+            <div>
+              <h3 className="text-sm font-black text-teal-950">Verify your email address</h3>
+              <p className="mt-1 text-xs leading-5 text-teal-800">
+                We have sent a confirmation link to <b>{email}</b>. Please check your inbox and click the link to confirm your account.
+              </p>
+              <p className="mt-2 text-[11px] text-teal-700">
+                Didn&apos;t see it? Check your spam folder or click below to resend.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 pt-2">
+          <Button
+            type="button"
+            disabled={resendingVerification}
+            onClick={handleResendVerification}
+            className="h-12 w-full rounded-xl bg-[#155F65] text-sm font-black text-white hover:bg-black disabled:opacity-50"
+          >
+            {resendingVerification ? "Resending email…" : "Resend verification email"}
+          </Button>
+          <button
+            type="button"
+            onClick={() => { setVerificationSent(false); setMode("login"); setError(""); }}
+            className="py-2 text-center text-xs font-bold text-stone-500 hover:text-stone-900"
+          >
+            Already verified? Back to sign in
+          </button>
+          <button
+            type="button"
+            onClick={() => { setVerificationSent(false); setError(""); }}
+            className="text-center text-xs text-stone-400 hover:text-stone-600"
+          >
+            Use a different email
+          </button>
+        </div>
+      </div>
+    ) : mode === "forgot" ? (
       resetSent ? (
         <div className="space-y-4 py-2">
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900">
@@ -620,12 +869,26 @@ mode === "login" ? (
           {/* Supported verification flow: autoComplete="one-time-code" */}
           {mode === "create" && audience === "customer" && <fieldset className="rounded-2xl border border-stone-200 p-4"><legend className="px-1 text-xs font-black uppercase tracking-wider text-stone-500">Account privacy</legend><p className="mb-3 text-xs leading-5 text-stone-500">Choose who can follow you. You can change this later in your profile.</p><div className="grid grid-cols-2 gap-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left transition ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><span className="block text-sm font-black">Public</span><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left transition ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><span className="block text-sm font-black">Private</span><span className="mt-1 block text-xs text-stone-500">Approve customer follow requests.</span></button></div></fieldset>}
           {mode === "create" && audience === "team" && <div className="rounded-xl bg-amber-50 p-3 text-sm leading-6 text-amber-900"><b>Vendor registration only.</b> Operations and super-admin access is created by an existing super admin.</div>}
-          {error && <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
-          <Button disabled={busy} className="h-12 w-full rounded-xl bg-[#155F65] text-base font-black hover:bg-black">{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}<ArrowRight /></Button>
+          {error && (
+            <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">
+              <p>{error}</p>
+              {/email not confirmed/i.test(error) && (
+                <button
+                  type="button"
+                  disabled={resendingVerification}
+                  onClick={handleResendVerification}
+                  className="mt-2 block text-xs font-black text-[#155F65] underline hover:text-black disabled:opacity-50"
+                >
+                  {resendingVerification ? "Resending email…" : "Click here to resend the verification email"}
+                </button>
+              )}
+            </div>
+          )}
+          <Button disabled={busy} className="h-12 w-full rounded-xl bg-[#155F65] text-base font-black hover:bg-black">{busy ? "Please wait…" : mode === "login" ? "Sign in" : audience === "team" ? "Register vendor account" : "Create account"}<ArrowRight /></Button>
         </form>
       </>
     )}
-    {audience === "team" && <button onClick={() => { setMode(mode === "login" ? "create" : "login"); setError(""); }} className="mt-4 w-full text-center text-sm text-stone-500">{mode === "login" ? <>Not a vendor? <span className="font-black text-[#155F65]">Be part of our vendor team</span></> : <>Already registered? <span className="font-black text-[#155F65]">Sign in</span></>}</button>}
+    {audience === "team" && !verificationSent && <button onClick={() => { setMode(mode === "login" ? "create" : "login"); setError(""); setVerificationSent(false); }} className="mt-4 w-full text-center text-sm text-stone-500">{mode === "login" ? <>Not a vendor? <span className="font-black text-[#155F65]">Be part of our vendor team</span></> : <>Already registered? <span className="font-black text-[#155F65]">Sign in</span></>}</button>}
   </div></DialogContent></Dialog>;
 }
 

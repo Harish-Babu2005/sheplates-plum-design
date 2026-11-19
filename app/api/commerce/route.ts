@@ -163,12 +163,12 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (role === "vendor" && profile.vendor_id) schedulesQuery = schedulesQuery.eq("vendor_id", profile.vendor_id);
 
   let orders = (await orderQuery) as Awaited<typeof orderQuery>;
-  let schedules: any = await schedulesQuery;
+  let schedules = (await schedulesQuery) as Awaited<typeof schedulesQuery>;
   if (schedules.error && (schedules.error.code === "42703" || /column .* does not exist/i.test(schedules.error.message || ""))) {
     let fallbackSchedulesQuery = admin.from("product_schedules").select(schedulesSelectBase).order("start_date", { ascending: true }).limit(500);
     if (role === "customer") fallbackSchedulesQuery = fallbackSchedulesQuery.eq("customer_id", profile.id);
     if (role === "vendor" && profile.vendor_id) fallbackSchedulesQuery = fallbackSchedulesQuery.eq("vendor_id", profile.vendor_id);
-    schedules = await fallbackSchedulesQuery;
+    schedules = (await fallbackSchedulesQuery) as unknown as Awaited<typeof schedulesQuery>;
   }
   if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
     let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
@@ -948,7 +948,7 @@ export async function POST(request: Request) {
       if (!scheduleId) return NextResponse.json({ error: "Schedule ID required." }, { status: 400 });
       const result = await pauseScheduleServer(admin, scheduleId, {
         id: profile.id,
-        email: profile.email,
+        email: profile.email || "user@sheplates.internal",
         role: profile.role,
       });
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
@@ -961,7 +961,7 @@ export async function POST(request: Request) {
       const adminReason = body.reason ? String(body.reason) : undefined;
       const result = await resumeScheduleServer(admin, scheduleId, {
         id: profile.id,
-        email: profile.email,
+        email: profile.email || "user@sheplates.internal",
         role: profile.role,
       }, adminReason);
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
@@ -974,7 +974,7 @@ export async function POST(request: Request) {
       const reason = String(body.reason || "Closed by user request");
       const result = await closeScheduleServer(admin, scheduleId, {
         id: profile.id,
-        email: profile.email,
+        email: profile.email || "user@sheplates.internal",
         role: profile.role,
       }, reason);
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });
@@ -992,7 +992,7 @@ export async function POST(request: Request) {
       }
       const result = await resumeScheduleServer(admin, scheduleId, {
         id: profile.id,
-        email: profile.email,
+        email: profile.email || "user@sheplates.internal",
         role: profile.role,
       }, reason);
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 400 });

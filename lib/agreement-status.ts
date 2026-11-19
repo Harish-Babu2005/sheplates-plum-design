@@ -40,7 +40,7 @@ export function sniffType(bytes: Uint8Array): string | null {
   return null;
 }
 export function validateUpload(file: { size: number; type: string }, bytes: Uint8Array): string | null {
-  if (!file.size) return "The file is empty.";
+  if (!file.size) return "The uploaded file is empty (0 bytes). Please upload a valid signed copy.";
   if (file.size > UPLOAD_MAX_BYTES) return "The file must be under 10 MB.";
   const real = sniffType(bytes);
   if (!real || !UPLOAD_TYPES[real]) return "Upload a PDF, PNG, JPG or WebP file.";

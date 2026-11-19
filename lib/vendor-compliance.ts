@@ -61,8 +61,8 @@ export function isPdfFile(file: Pick<File, "name" | "type">): boolean {
 
 /** The message to show when a file cannot be used, or null when it is fine. */
 export function pdfProblem(file: Pick<File, "name" | "type" | "size">, label: string): string | null {
+  if (file.size <= 0) return `"${file.name}" is empty (0 bytes). Please upload a valid ${label} in PDF format.`;
   if (!isPdfFile(file)) return `"${file.name}" is not a PDF. ${label} must be in PDF format (.pdf) only.`;
-  if (file.size <= 0) return `"${file.name}" is empty.`;
   if (file.size > MAX_COMPLIANCE_PDF_BYTES) return `"${file.name}" is larger than 15 MB.`;
   return null;
 }
