@@ -56,6 +56,10 @@ export type LiveVendorRow = {
   logo_url?: string | null;
   banner_url?: string | null;
   description?: string | null;
+  owner_name?: string | null;
+  owner_role?: string | null;
+  fssai_number?: string | null;
+  expiry_date?: string | null;
   // Embedded via the vendors.plan_id -> vendor_plans foreign key. This client
   // has no generated Database types, so supabase-js can't confirm the FK is
   // many-to-one — it types (and may return) this as an array either way.
@@ -574,6 +578,143 @@ export async function loadLiveMarketplace(latitude: number, longitude: number) {
     merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 },
     merchandisingError: homeConfig.error ? homeConfig.error.message : null,
   };
+}
+
+/**
+ * Loads public vendor and product information for guest visitors accessing a store via QR code.
+ * Safe for anonymous visitors: checks verification and active status, and never exposes private credentials.
+ */
+export async function loadLiveGuestVendorStore(vendorId: string): Promise<{
+  vendor: LiveVendorRow | null;
+  products: LiveMenuItemRow[];
+  markups: Record<string, number>;
+  branding?: LiveVendorBranding | null;
+} | null> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+
+  try {
+    // 1. Try secure RPC first
+    const rpcRes = await supabase.rpc("get_guest_vendor_store", { p_vendor_id: vendorId });
+    if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === "object") {
+      const data = rpcRes.data as Record<string, unknown>;
+      const v = data.vendor as Record<string, unknown>;
+      if (v && v.id) {
+        const liveVendor: LiveVendorRow = {
+          id: String(v.id),
+          owner_id: null,
+          name: String(v.name || ""),
+          category: String(v.category || "Home food"),
+          locality: String(v.locality || ""),
+          address: (v.address as string) || (v.locality as string) || "",
+          latitude: v.latitude != null ? Number(v.latitude) : null,
+          longitude: v.longitude != null ? Number(v.longitude) : null,
+          service_radius_km: Number(v.service_radius_km || 5),
+          delivery_enabled: Boolean(v.delivery_enabled ?? true),
+          pickup_enabled: Boolean(v.pickup_enabled ?? true),
+          store_open_today: Boolean(v.store_open_today ?? true),
+          verification_status: String(v.verification_status || "verified"),
+          operational_status: String(v.operational_status || "active"),
+          marketplace_visible: true,
+          plan_id: (v.plan_id as string) || null,
+          vendor_kind: "subscription",
+          vendor_plans: { code: String(v.plan_code || "crave"), name: String(v.plan_name || "Crave") },
+          owner_name: (v.owner_name as string) || "Vendor",
+          owner_role: (v.owner_role as string) || "Proprietor",
+          fssai_number: (v.fssai_number as string) || "Verified",
+          expiry_date: (v.expiry_date as string) || "—",
+          logo_url: (v.logo_url as string) || null,
+          banner_url: (v.banner_url as string) || null,
+          description: (v.description as string) || null,
+        };
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const liveProducts: LiveMenuItemRow[] = rawItems.map((item: Record<string, unknown>) => ({
+          id: String(item.id),
+          vendor_id: String(item.vendor_id || v.id),
+          name: String(item.name || "Item"),
+          category: String(item.category || v.category || "Home food"),
+          description: (item.description as string) || "",
+          unit: String(item.unit || "pack"),
+          vendor_base_price: Number(item.customer_price ?? item.vendor_base_price ?? 0),
+          quantity_step: Number(item.quantity_step || 1),
+          stock_quantity: Number(item.stock_quantity || 20),
+          image_url: (item.image_url as string) || null,
+          calories_per_unit: item.calories_per_unit != null ? Number(item.calories_per_unit) : 0,
+          protein_g: item.protein_g != null ? Number(item.protein_g) : 0,
+          carbs_g: item.carbs_g != null ? Number(item.carbs_g) : 0,
+          fat_g: item.fat_g != null ? Number(item.fat_g) : 0,
+          fibre_g: item.fibre_g != null ? Number(item.fibre_g) : 0,
+          dietary_tags: Array.isArray(item.dietary_tags) ? item.dietary_tags : [],
+          pack_amount: item.pack_amount != null ? Number(item.pack_amount) : null,
+          pack_measure: (item.pack_measure as string) || null,
+          active: Boolean(item.active ?? true),
+        }));
+        await attachFoodTypes(supabase, liveProducts, (p) => p.id);
+        const liveBranding: LiveVendorBranding = {
+          id: String(v.id),
+          logo_url: (v.logo_url as string) || null,
+          banner_url: (v.banner_url as string) || null,
+          description: (v.description as string) || null,
+        };
+        return {
+          vendor: liveVendor,
+          products: liveProducts,
+          markups: {},
+          branding: liveBranding,
+        };
+      }
+    }
+  } catch { /* fallback to direct table queries */ }
+
+  try {
+    const { data: v, error: vErr } = await supabase
+      .from("vendors")
+      .select("id,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,vendor_kind,logo_url,banner_url,description,owner_name,owner_role,fssai_number,expiry_date,plan_id,vendor_plans(code,name)")
+      .eq("id", vendorId)
+      .eq("verification_status", "verified")
+      .eq("operational_status", "active")
+      .eq("marketplace_visible", true)
+      .maybeSingle();
+
+    if (vErr || !v) return null;
+
+    const { data: items } = await supabase
+      .from("vendor_menu_items")
+      .select("id,vendor_id,name,category,description,unit,vendor_base_price,quantity_step,stock_quantity,image_url,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,active")
+      .eq("vendor_id", vendorId)
+      .eq("active", true);
+
+    const productRows = (items || []) as LiveMenuItemRow[];
+    await attachFoodTypes(supabase, productRows, (p) => p.id);
+
+    let markups: Record<string, number> = {};
+    if (productRows.length > 0) {
+      const { data: markupRows } = await supabase
+        .from("vendor_item_markups")
+        .select("menu_item_id,markup_percent")
+        .in("menu_item_id", productRows.map((p) => p.id));
+      if (markupRows) {
+        markups = Object.fromEntries(markupRows.map((m: Record<string, unknown>) => [String(m.menu_item_id), Number(m.markup_percent || 0)]));
+      }
+    }
+
+    const branding: LiveVendorBranding = {
+      id: v.id,
+      logo_url: (v.logo_url as string) || null,
+      banner_url: (v.banner_url as string) || null,
+      description: (v.description as string) || null,
+    };
+
+    return {
+      vendor: v as unknown as LiveVendorRow,
+      products: productRows,
+      markups,
+      branding,
+    };
+  } catch (err) {
+    console.error("loadLiveGuestVendorStore error:", err);
+    return null;
+  }
 }
 
 export interface ConnectVendor {

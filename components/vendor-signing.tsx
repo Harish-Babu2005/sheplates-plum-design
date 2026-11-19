@@ -54,7 +54,43 @@ export function AgreementSigningDialog(props: Props) { return props.open ? <Sign
 
 function SigningForm({ onClose, initialTab = "online", onChanged, vendorId, vendorName, defaultName = "", defaultRole = "Proprietor", live, onSigned }: Props) {
   const [tab, setTab] = useState<SigningTab>(initialTab);
-  const [opened, setOpened] = useState<string[]>([]), [preview, setPreview] = useState<string | null>(null);
+const [opened, setOpened] = useState<string[]>([]);
+const [preview, setPreview] = useState<string | null>(null);
+const [documentText, setDocumentText] = useState<Record<string, string>>({});
+useEffect(() => {
+  let active = true;
+
+  Promise.all(
+    AGREEMENT_DOCUMENTS.map(async (d) => {
+      const file =
+        d.id === "partnership_agreement"
+          ? "/docs/sheplates-vendor-partnership-agreement-v1.0.txt"
+          : "/docs/sheplates-vendor-terms-v1.0.txt";
+
+      const response = await fetch(file);
+
+      if (!response.ok) {
+        throw new Error(`Could not load ${d.title}`);
+      }
+
+      return [d.id, await response.text()] as const;
+    })
+  )
+    .then((entries) => {
+      if (active) {
+        setDocumentText(Object.fromEntries(entries));
+      }
+    })
+    .catch(() => {
+      if (active) {
+        toast.error("Could not load agreement documents.");
+      }
+    });
+
+  return () => {
+    active = false;
+  };
+}, []);
   const [name, setName] = useState(defaultName), [role, setRole] = useState(defaultRole), [png, setPng] = useState<string | null>(null);
   const [consent, setConsent] = useState(false), [sentTo, setSentTo] = useState(""), [code, setCode] = useState(""), [busy, setBusy] = useState(false);
   const allRead = AGREEMENT_DOCUMENTS.every((d) => opened.includes(d.id));
@@ -88,9 +124,25 @@ function SigningForm({ onClose, initialTab = "online", onChanged, vendorId, vend
       <h3 className="mt-5 text-sm font-black uppercase tracking-wide text-[#155F65]">1. Read both documents</h3>
       <ul className="mt-2 space-y-2">{AGREEMENT_DOCUMENTS.map((d) => <li key={d.id} className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 text-sm"><FileText className="size-4 text-[#155F65]" /><b className="flex-1">{d.title} <span className="font-normal text-[#55656A]">v{d.version}</span></b>
         <Button type="button" size="sm" variant="outline" className="rounded-xl" onClick={() => { setPreview(preview === d.id ? null : d.id); setOpened((o) => o.includes(d.id) ? o : [...o, d.id]); }}>{preview === d.id ? "Hide" : "Read here"}</Button>
-        <a href={d.url} target="_blank" rel="noreferrer" onClick={() => setOpened((o) => o.includes(d.id) ? o : [...o, d.id])} className="text-xs font-bold text-[#155F65] underline">Open in new tab</a>
         <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${opened.includes(d.id) ? "bg-[#D9F5E7] text-[#21683b]" : "bg-[#FFF4CF] text-[#795900]"}`}>{opened.includes(d.id) ? "Opened" : "Not opened yet"}</span>
-        {preview === d.id && <iframe title={d.title} src={`${d.url}#view=FitH`} className="mt-2 h-[55vh] w-full rounded-xl border" />}</li>)}</ul>
+        {preview === d.id && (
+  <div className="mt-3 max-h-[55vh] w-full overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white p-4 text-sm leading-7 text-[#2F3C3F] sm:p-6">
+    <h3 className="sticky top-0 bg-white pb-3 text-lg font-black text-[#155F65]">
+      {d.title}
+    </h3>
+
+    <p className="mb-4 text-xs text-stone-500">
+      Version {d.version}
+      {d.id === "terms_conditions"
+        ? " · Effective Date: 7 October 2026"
+        : ""}
+    </p>
+
+    <div className="whitespace-pre-wrap break-words">
+      {documentText[d.id] || "Loading document..."}
+    </div>
+  </div>
+)}</li>)}</ul>
 
       <h3 className="mt-6 text-sm font-black uppercase tracking-wide text-[#155F65]">2. Your details and signature</h3>
       <div className="mt-2 grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold">Full name<input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="name" className={`${input} mt-1`} /></label><label className="text-sm font-semibold">Your role<input value={role} onChange={(e) => setRole(e.target.value)} maxLength={60} className={`${input} mt-1`} /></label></div>

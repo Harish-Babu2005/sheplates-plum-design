@@ -176,19 +176,38 @@ function authErrorMessage(caught: unknown) {
   return "Unable to continue. Please contact your administrator if you need team access.";
 }
 
-export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) => void }) {
-  const [authAudience, setAuthAudience] = useState<Audience | null>(null);
+export function SheplatesEntry({
+  onLogin,
+  initialAudience = null,
+  onAudienceChange,
+  pendingVendorName,
+}: {
+  onLogin: (session: DemoSession) => void;
+  initialAudience?: Audience | null;
+  onAudienceChange?: (audience: Audience | null) => void;
+  pendingVendorName?: string;
+}) {
+  const [authAudience, setAuthAudience] = useState<Audience | null>(initialAudience);
   const [location, setLocation] = useState("Ganapathy, Coimbatore");
   const [locating, setLocating] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [agentOpen, setAgentOpen] = useState(false);
 
-  // A vendor's QR code links to "<origin>/?vendor=<id>". There's no path
-  // router in this app, so signed-out visitors land here first; prompt
-  // sign-in immediately instead of leaving them on the generic landing page.
-  // SheplatesV3 re-reads the same param after login to jump into that
-  // vendor's shop, so it's intentionally left in the URL here.
+  useEffect(() => {
+    if (initialAudience !== undefined) {
+      setAuthAudience(initialAudience);
+    }
+  }, [initialAudience]);
+
+  const updateAudience = (aud: Audience | null) => {
+    setAuthAudience(aud);
+    onAudienceChange?.(aud);
+  };
+
+  // A vendor's QR code links to "<origin>/?vendor=<id>".
+  // Signed-out visitors can browse the store directly as a guest.
+  // We record the pending vendor in sessionStorage for subsequent sign-in/order completion.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const hash = window.location.hash || "";
@@ -203,14 +222,14 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
       try {
         sessionStorage.setItem("sheplates_pending_vendor", vendorParam);
       } catch {}
-      queueMicrotask(() => setAuthAudience("customer"));
-      toast.info("Sign in to view and order from this vendor's shop.");
+      // Guest mode enabled: do not automatically pop up login modal on QR scan;
+      // visitor browses the store first, and sign-in is required on purchase.
     } else if (params.get("forgot") === "true") {
-      queueMicrotask(() => setAuthAudience("customer"));
+      queueMicrotask(() => updateAudience("customer"));
     } else if (params.get("login") === "team") {
-      queueMicrotask(() => setAuthAudience("team"));
+      queueMicrotask(() => updateAudience("team"));
     } else if (params.get("login") === "customer") {
-      queueMicrotask(() => setAuthAudience("customer"));
+      queueMicrotask(() => updateAudience("customer"));
     }
   }, []);
 
@@ -314,7 +333,7 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
     );
   }
 
-  const openCustomer = () => setAuthAudience("customer");
+  const openCustomer = () => updateAudience("customer");
   const steps: [string, string][] = [
     ["Discover businesses near you", "Explore verified local food businesses and shops in your neighbourhood."],
     ["Explore products and order", "Browse catalogues, discover offerings and place orders with local vendors."],
@@ -329,9 +348,9 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
         <nav className="e-nav" aria-label="Site">
           <button type="button" onClick={openCustomer}>Explore Marketplace</button>
           <button type="button" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}>How It Works</button>
-          <button type="button" onClick={() => setAuthAudience("team")}>Vendors &amp; Team</button>
+          <button type="button" onClick={() => updateAudience("team")}>Vendors &amp; Team</button>
         </nav>
-        <button type="button" className="btn sm sec e-vendor" onClick={() => setAuthAudience("team")}>Vendor</button>
+        <button type="button" className="btn sm sec e-vendor" onClick={() => updateAudience("team")}>Vendor</button>
         <button type="button" className="btn sm sec" onClick={openCustomer}>Sign In</button>
         <button type="button" className="btn sm e-start" onClick={openCustomer}>Get Started</button>
       </header>
@@ -362,14 +381,14 @@ export function SheplatesEntry({ onLogin }: { onLogin: (session: DemoSession) =>
         <div className="fl"><span>Terms and Conditions</span><span>Privacy Policy</span><a href="tel:+919600037836">Support: 9600037836</a><a href="mailto:support@sheplates.com">support@sheplates.com</a><span>Every day, 9:30 AM to 7 PM</span></div>
       </footer>
 
-      <AuthDialog audience={authAudience} close={() => setAuthAudience(null)} onLogin={onLogin} setAudience={setAuthAudience} />
-      <AgentPreview open={agentOpen} close={() => setAgentOpen(false)} login={() => { setAgentOpen(false); setAuthAudience("customer"); }} />
+      <AuthDialog audience={authAudience} close={() => updateAudience(null)} onLogin={onLogin} setAudience={updateAudience} pendingVendorName={pendingVendorName} />
+      <AgentPreview open={agentOpen} close={() => setAgentOpen(false)} login={() => { setAgentOpen(false); updateAudience("customer"); }} />
     </div>
   );
 
 }
 
-function AuthDialog({ audience, close, onLogin, setAudience }: { audience: Audience | null; close: () => void; onLogin: (session: DemoSession) => void; setAudience?: (audience: Audience | null) => void }) {
+function AuthDialog({ audience, close, onLogin, setAudience, pendingVendorName }: { audience: Audience | null; close: () => void; onLogin: (session: DemoSession) => void; setAudience?: (audience: Audience | null) => void; pendingVendorName?: string }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -662,7 +681,7 @@ useEffect(() => {
     }
   }
 
-  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{verificationSent ? "Verify your email" : audience === "customer" ? (mode === "forgot" ? "Reset password" : mode === "create" ? "Create customer account" : "Customer access") : mode === "create" ? "Register as a Vendor" : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{verificationSent ? "Check your inbox to activate your account." : audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : mode === "create" ? "Join Sheplates as a local food vendor or home chef." : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div><div className="k-auth-form p-6">
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="sp-auth-dialog max-h-[92vh] overflow-y-auto rounded-4xl p-0 sm:max-w-lg"><div className="sp-auth-hero p-6"><div className="k-auth-brand"><Wordmark height={32} /></div><DialogHeader><DialogTitle className="text-lg font-black">{verificationSent ? "Verify your email" : audience === "customer" ? (mode === "forgot" ? "Reset password" : mode === "create" ? "Create customer account" : "Customer access") : mode === "create" ? "Register as a Vendor" : "Vendor / Team access"}</DialogTitle><DialogDescription className="text-white/75">{verificationSent ? "Check your inbox to activate your account." : audience === "customer" ? (mode === "forgot" ? "Enter your registered email address to receive password reset instructions." : "Discover, request quotes and track scheduled orders.") : mode === "create" ? "Join Sheplates as a local food vendor or home chef." : "Vendors, operations and super admins use this secure entry."}</DialogDescription></DialogHeader><ul className="k-auth-feats"><li><BadgeCheck className="size-6" />Verified home chefs and shops</li><li><CalendarDays className="size-6" />Plan ahead, daily or weekly</li><li><Truck className="size-6" />Track every order to your door</li></ul></div>{pendingVendorName && <div className="mx-6 mt-3 rounded-2xl bg-[#EAF4F2] border border-[#C5E3E4] p-3 text-xs text-[#155F65]"><b>Ordering from {pendingVendorName}</b><p className="mt-0.5 text-stone-600">Sign in to add items to your cart and complete your order.</p></div>}<div className="k-auth-form p-6">
     {mode !== "forgot" && !verificationSent && (
       <>
         <div className="grid grid-cols-2 rounded-2xl bg-stone-100 p-1">
