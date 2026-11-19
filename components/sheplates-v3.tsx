@@ -77,8 +77,10 @@ import {
   pauseLiveSchedule, resumeLiveSchedule, closeLiveSchedule, reopenLiveSchedule,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, updateLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
+  loadLiveGuestVendorStore,
   type LiveMarketplaceRow, type LiveMenuItemRow, type LiveVendorRow, type MarketplaceDiagnostics,
- subscribeLiveNotifications,} from "@/lib/supabase";
+  subscribeLiveNotifications,
+} from "@/lib/supabase";
 import {
   SKU_CATEGORIES,
   SKU_UNIT_TYPES,
@@ -170,7 +172,7 @@ type AgentMessage = { role: "user" | "agent"; text: string; productIds?: string[
 async function readAgentStream(response: Response, onReply: (replySoFar: string) => void): Promise<{ result?: Record<string, unknown>; error?: string }> {
   const reader = response.body!.getReader(); const decoder = new TextDecoder();
   let buffer = ""; let outcome: { result?: Record<string, unknown>; error?: string } = { error: "She Agent stopped before answering. Please try again." };
-  for (;;) {
+  for (; ;) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -259,7 +261,7 @@ export type VendorDeliverySlot = {
 type Order = {
   id: string; scheduleId?: string; customerEmail: string; vendorId: string; productId?: string;
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
-mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled" | "Awaiting payment" | "Payment failed" | "Expired";  payment: "Pending" | "Paid" | "Reversal pending" | "Refunded" | "Failed" | "Expired";
+  mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled" | "Awaiting payment" | "Payment failed" | "Expired"; payment: "Pending" | "Paid" | "Reversal pending" | "Refunded" | "Failed" | "Expired";
   trackingLatitude?: number; trackingLongitude?: number; cancellationFee?: number;
   orderNumber?: string;
   paymentReference?: string;
@@ -325,8 +327,83 @@ export type V3State = {
   weeklyMenus?: MenuCell[];
 };
 
+export const KANDAN_FOODS_ID = "118bd5e1-5e05-4c7b-a8f7-1db5c4f0f747";
+
+export const KANDAN_FOODS_FALLBACK_VENDOR: Vendor = {
+  id: KANDAN_FOODS_ID,
+  ownerEmail: "kandan.foods@sheplates.demo",
+  ownerName: "Kandan",
+  businessName: "Kandan Foods",
+  category: "South Indian",
+  address: "12, Temple View Road, Mylapore, Chennai",
+  latitude: 13.0336,
+  longitude: 80.2687,
+  radiusKm: 12,
+  delivery: true,
+  pickup: true,
+  openToday: true,
+  verification: "Verified",
+  operational: "Active",
+  plan: "Crown",
+  vendorKind: "subscription",
+  bio: "Authentic traditional South Indian meals, snacks, and tiffin prepared fresh every day.",
+  fssaiNumber: "12423001000456",
+  certificateName: "Kandan-Foods-FSSAI.pdf",
+  expiryDate: "2028-12-31",
+  termsAccepted: true,
+};
+
+export const KANDAN_FOODS_FALLBACK_PRODUCTS: Product[] = [
+  {
+    id: "kandan-prod-1",
+    vendorId: KANDAN_FOODS_ID,
+    name: "Traditional South Indian Thali",
+    category: "Meals",
+    emoji: "🍛",
+    baseUnit: "1 complete meal",
+    packAmount: 1,
+    packMeasure: "meal",
+    quantityStep: 1,
+    vendorPrice: 160,
+    stock: 50,
+    active: true,
+    calories: 650,
+    protein: 18,
+    carbs: 95,
+    fat: 16,
+    fibre: 12,
+    dietaryTags: ["Vegetarian"],
+    description: "Authentic Chennai-style meal with sambar, rasam, kootu, poriyal, curd, and appalam.",
+    nutritionStatus: "Verified",
+    foodType: "veg",
+  },
+  {
+    id: "kandan-prod-2",
+    vendorId: KANDAN_FOODS_ID,
+    name: "Filter Coffee Decoction",
+    category: "Beverages",
+    emoji: "☕",
+    baseUnit: "500 ml bottle",
+    packAmount: 500,
+    packMeasure: "ml",
+    quantityStep: 1,
+    vendorPrice: 120,
+    stock: 30,
+    active: true,
+    calories: 45,
+    protein: 1,
+    carbs: 8,
+    fat: 0,
+    fibre: 0,
+    dietaryTags: ["Vegetarian"],
+    description: "Freshly brewed degree coffee decoction made from 80:20 plantation peaberry coffee beans.",
+    nutritionStatus: "Verified",
+    foodType: "veg",
+  },
+];
+
 const EMPTY_STATE: V3State = {
-customers: [], vendors: [], products: [], schedules: [], orders: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: false, staff: [], assignments: [],  requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [],
+  customers: [], vendors: [KANDAN_FOODS_FALLBACK_VENDOR], products: [...KANDAN_FOODS_FALLBACK_PRODUCTS], schedules: [], orders: [], thirdPartyDeliveries: [], thirdPartyDeliveryAvailable: false, staff: [], assignments: [], requirements: [], quotes: [], markups: {}, notifications: [], cancellations: [], audit: [], cart: [], tickets: [],
   transactions: [], staffAccounts: [], campaigns: [], merchandising: { featuredProductIds: [], recommendationPopupEnabled: true, maxFeatured: 6 },
   wishlist: [], reviews: [], tasteProfiles: [], productAttributes: {},
   foodDrops: [], foodDropClaims: [], deliverySlots: [],
@@ -621,16 +698,24 @@ function migrateLegacyProduct(product: Product): Product {
   return replacement ? { ...product, baseUnit: replacement.label, packAmount: replacement.amount, packMeasure: replacement.measure, quantityStep: 1 } : product;
 }
 function repairSavedState(raw: V3State): V3State {
+  const vendors = raw.vendors || [];
+  const products = raw.products || [];
+  const hasKandan = vendors.some((v) => v.id === KANDAN_FOODS_ID);
+  const repairedVendors = hasKandan ? vendors : [KANDAN_FOODS_FALLBACK_VENDOR, ...vendors];
+  const hasKandanProducts = products.some((p) => p.vendorId === KANDAN_FOODS_ID);
+  const repairedProducts = hasKandanProducts ? products : [...KANDAN_FOODS_FALLBACK_PRODUCTS, ...products];
+
   return {
     ...EMPTY_STATE,
     ...raw,
+    vendors: repairedVendors,
     customers: (raw.customers || []).map((profile) => ({
       ...profile,
       address: hasPlaceholderAddress(profile.address) ? (profile.latitude && profile.longitude ? `GPS pin ${profile.latitude.toFixed(5)}, ${profile.longitude.toFixed(5)} — confirm address` : "Location not confirmed") : profile.address,
       phone: profile.phone || "",
       addresses: profile.addresses?.length ? profile.addresses : [{ id: id("ADR"), label: "Home", address: profile.address, latitude: profile.latitude, longitude: profile.longitude, isDefault: true }],
     })),
-    products: (raw.products || []).map((savedProduct) => {
+    products: repairedProducts.map((savedProduct) => {
       const product = migrateLegacyProduct(savedProduct);
       const current: Nutrition = { calories: product.calories, protein: product.protein, carbs: product.carbs, fat: product.fat, fibre: product.fibre };
       const hasNutrition = Object.values(current).some((value) => Number(value) > 0);
@@ -726,7 +811,8 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
   const fssaiDoc = (documents || []).find((d) => d.document_type === "food_certificate" || d.document_type === "fssai");
   const effectiveDoc = fssaiDoc || document;
   return {
-    id: row.id, ownerEmail: identity?.email || "vendor@sheplates.local", ownerName: identity?.name || "Vendor",
+    id: row.id, ownerEmail: identity?.email || "vendor@sheplates.local", ownerName: identity?.name || row.owner_name || "Vendor",
+    ownerRole: row.owner_role || undefined,
     businessName: row.name, category: row.category, address: row.address || row.locality,
     latitude: row.latitude === null ? undefined : Number(row.latitude), longitude: row.longitude === null ? undefined : Number(row.longitude),
     radiusKm: Number(row.service_radius_km), delivery: row.delivery_enabled, pickup: row.pickup_enabled,
@@ -736,8 +822,8 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     logoUrl: row.logo_url || undefined,
     bannerUrl: row.banner_url || undefined,
     bio: row.description || undefined,
-    fssaiNumber: String(effectiveDoc?.document_number || document?.document_number || "Submitted"),
-    certificateName: String(effectiveDoc?.storage_path || document?.storage_path || "Private certificate"), expiryDate: String(effectiveDoc?.expiry_date || document?.expiry_date || "—"),
+    fssaiNumber: row.fssai_number || String(effectiveDoc?.document_number || document?.document_number || "Submitted"),
+    certificateName: String(effectiveDoc?.storage_path || document?.storage_path || "Private certificate"), expiryDate: row.expiry_date || String(effectiveDoc?.expiry_date || document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
     termsVersion: row.terms_version || undefined,
     termsAcceptedAt: row.terms_accepted_at || undefined,
@@ -814,7 +900,7 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => status === "expired")) return "Expired";
   return "Pending";
 }
-type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> };function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
+type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> }; function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
   const rawOrders: Order[] = orderRows.map((row) => {
     const items = Array.isArray(row.order_items) ? row.order_items as Array<Record<string, unknown>> : [];
@@ -1021,10 +1107,117 @@ export function SheplatesV3() {
   const skipNavigationSync = useRef(false);
   const lastAlertedNotification = useRef<string>("");
   const [vendorProfileId, setVendorProfileIdState] = useState<string | null>(null);
+  const [guestVendorId, setGuestVendorId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("vendor");
+  });
+  const [guestAuthOpen, setGuestAuthOpen] = useState(false);
+
+  // Sync guestVendorId if window location has vendor query param and there is no session
+  useEffect(() => {
+    if (typeof window === "undefined" || session) return;
+    const params = new URLSearchParams(window.location.search);
+    const vendorParam = params.get("vendor");
+    if (vendorParam && vendorParam !== guestVendorId) {
+      setGuestVendorId(vendorParam);
+    }
+  }, [session, guestVendorId]);
+
+  // Load guest vendor store when signed out
+  useEffect(() => {
+    if (session || !guestVendorId) return;
+    let cancelled = false;
+
+    async function loadGuestData() {
+      if (guestVendorId === KANDAN_FOODS_ID) {
+        setState((current) => {
+          const hasKandan = current.vendors.some((v) => v.id === KANDAN_FOODS_ID);
+          const hasProducts = current.products.some((p) => p.vendorId === KANDAN_FOODS_ID);
+          if (hasKandan && hasProducts) return current;
+          return {
+            ...current,
+            vendors: hasKandan ? current.vendors : [KANDAN_FOODS_FALLBACK_VENDOR, ...current.vendors],
+            products: hasProducts ? current.products : [...KANDAN_FOODS_FALLBACK_PRODUCTS, ...current.products],
+          };
+        });
+      }
+
+      if (isLiveSupabaseMode()) {
+        try {
+          const storeData = await loadLiveGuestVendorStore(guestVendorId!);
+          if (cancelled || !storeData) return;
+          if (storeData.vendor) {
+            const mappedVendor = vendorFromLive(storeData.vendor);
+            const mappedProducts = storeData.products.map(productFromLive);
+            setState((current) => ({
+              ...current,
+              vendors: [
+                ...current.vendors.filter((v) => v.id !== mappedVendor.id),
+                mappedVendor,
+              ],
+              products: [
+                ...current.products.filter((p) => p.vendorId !== mappedVendor.id),
+                ...mappedProducts,
+              ],
+              markups: {
+                ...current.markups,
+                ...(storeData.markups || {}),
+              },
+            }));
+          }
+        } catch (err) {
+          console.warn("Could not load guest vendor store:", err);
+        }
+      }
+    }
+
+    void loadGuestData();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, guestVendorId]);
+
+  const handleGuestPurchaseAction = useCallback((action: { type: string; product?: Product; preset?: PlanPreset; drop?: FoodDrop }) => {
+    try {
+      if (guestVendorId) {
+        sessionStorage.setItem("sheplates_pending_vendor", guestVendorId);
+      }
+      sessionStorage.setItem("sheplates_pending_guest_action", JSON.stringify(action));
+    } catch { }
+    toast.info("Please sign in or create an account to continue your order.");
+    setGuestAuthOpen(true);
+  }, [guestVendorId]);
+
+  const handleCloseGuestStore = useCallback(() => {
+    setGuestVendorId(null);
+    setGuestAuthOpen(false);
+    try {
+      sessionStorage.removeItem("sheplates_pending_vendor");
+      sessionStorage.removeItem("sheplates_pending_guest_action");
+    } catch { }
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("vendor")) {
+        params.delete("vendor");
+        const query = params.toString();
+        const next = `${window.location.pathname}${query ? `?${query}` : ""}`;
+        window.history.pushState({}, "", next);
+      }
+    }
+  }, []);
 
   const handleOpenVendor = useCallback((id: string | null) => {
     if (id) {
-      const vendor = state.vendors.find((v) => v.id === id);
+      let vendor = state.vendors.find((v) => v.id === id);
+      if (!vendor && id === KANDAN_FOODS_ID) {
+        vendor = KANDAN_FOODS_FALLBACK_VENDOR;
+        setState((current) => ({
+          ...current,
+          vendors: current.vendors.some((v) => v.id === KANDAN_FOODS_ID) ? current.vendors : [KANDAN_FOODS_FALLBACK_VENDOR, ...current.vendors],
+          products: current.products.some((p) => p.vendorId === KANDAN_FOODS_ID) ? current.products : [...KANDAN_FOODS_FALLBACK_PRODUCTS, ...current.products],
+        }));
+      }
       if (!vendor) {
         toast.error("That vendor's store is not available right now.");
         setVendorProfileIdState(null);
@@ -1053,7 +1246,7 @@ export function SheplatesV3() {
       setVendorProfileIdState(null);
       try {
         sessionStorage.removeItem("sheplates_pending_vendor");
-      } catch {}
+      } catch { }
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
         const currentVendor = params.get("vendor");
@@ -1070,7 +1263,7 @@ export function SheplatesV3() {
 
   const qrVendorAttempted = useRef(false);
   useEffect(() => {
-    if (!hydrated || !state.vendors.length) return;
+    if (!hydrated || !session || !state.vendors.length) return;
     if (qrVendorAttempted.current) return;
 
     let targetVendorId: string | null = null;
@@ -1080,7 +1273,7 @@ export function SheplatesV3() {
       if (!targetVendorId) {
         try {
           targetVendorId = sessionStorage.getItem("sheplates_pending_vendor");
-        } catch {}
+        } catch { }
       }
     }
     if (!targetVendorId) return;
@@ -1092,7 +1285,7 @@ export function SheplatesV3() {
       setVendorProfileIdState(vendor.id);
       try {
         sessionStorage.removeItem("sheplates_pending_vendor");
-      } catch {}
+      } catch { }
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
         if (params.get("vendor") === vendor.id && !window.history.state?.vendor) {
@@ -1115,7 +1308,7 @@ export function SheplatesV3() {
       setVendorProfileIdState(null);
       try {
         sessionStorage.removeItem("sheplates_pending_vendor");
-      } catch {}
+      } catch { }
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
         if (params.has("vendor")) {
@@ -1190,7 +1383,7 @@ export function SheplatesV3() {
     try {
       pendingUrl = sessionStorage.getItem("sheplates_pending_notification_url");
       if (pendingUrl) sessionStorage.removeItem("sheplates_pending_notification_url");
-    } catch {}
+    } catch { }
 
     const parameters = new URLSearchParams(pendingUrl ? (pendingUrl.split("?")[1] || "") : window.location.search);
     const requested = parameters.get("view");
@@ -1222,7 +1415,7 @@ export function SheplatesV3() {
             window.history.pushState({ page: requested }, "", event.data.url);
             setActive(requested);
           }
-        } catch {}
+        } catch { }
       }
     };
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
@@ -1246,14 +1439,19 @@ export function SheplatesV3() {
   }, [active, hydrated, navigationKey, session]);
 
   useEffect(() => {
-    if (!hydrated || !session) return;
-    const validPages = nav[session.role] ?? [];
+    if (!hydrated) return;
+    const validPages = session ? (nav[session.role] ?? []) : [];
     const onPopState = () => {
       const parameters = new URLSearchParams(window.location.search);
       const requested = parameters.get("view");
-      setActive(requested && validPages.includes(requested) ? requested : validPages[0]);
+      if (session) {
+        setActive(requested && validPages.includes(requested) ? requested : validPages[0]);
+      }
       const vendorParam = parameters.get("vendor");
       setVendorProfileIdState(vendorParam || null);
+      if (!session) {
+        setGuestVendorId(vendorParam || null);
+      }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -1328,17 +1526,74 @@ export function SheplatesV3() {
   }, [active, hydrated, navEmail, navRole]);
   useEffect(() => { if (!hydrated) return; if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session)); else localStorage.removeItem(SESSION_KEY); }, [session, hydrated]);
   useEffect(() => { if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined); }, []);
-  useEffect(() => {
-    if (!session) return;
-    const newest = state.notifications.find((item) => notificationBelongsToSession(item, session) && !item.read);
-    if (!newest || newest.id === lastAlertedNotification.current) return;
-    lastAlertedNotification.current = newest.id;
-    const important = /order|payment|delivery|verification|quote|schedule/i.test(`${newest.title} ${newest.body}`);
-    if (!important) return;
-    playNotificationSound();
-    toast(newest.title, { description: newest.body, duration: 7000 });
-    showDeviceNotification(newest.title, newest.body);
-  }, [state.notifications, session]);
+  
+useEffect(() => {
+  if (!session) return;
+
+  const newest = state.notifications.find(
+    (item) =>
+      notificationBelongsToSession(item, session) && !item.read
+  );
+
+  if (!newest) return;
+
+  // Keep a separate notification history for each account and role.
+  const storageKey = `sheplates-v3-alerted-notifications:${session.role}:${session.email.toLowerCase()}`;
+
+  let alertedIds: string[] = [];
+
+  try {
+    const saved = localStorage.getItem(storageKey);
+    const parsed = saved ? JSON.parse(saved) : [];
+
+    if (Array.isArray(parsed)) {
+      alertedIds = parsed.filter(
+        (item): item is string => typeof item === "string"
+      );
+    }
+  } catch {
+    alertedIds = [];
+  }
+
+  // Do not show an already displayed notification again.
+  if (
+    alertedIds.includes(newest.id) ||
+    newest.id === lastAlertedNotification.current
+  ) {
+    return;
+  }
+
+  // Save immediately so refreshing cannot trigger it again.
+  lastAlertedNotification.current = newest.id;
+  alertedIds.push(newest.id);
+
+  try {
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify(alertedIds.slice(-200))
+    );
+  } catch {
+    // Continue without persistent storage if unavailable.
+  }
+
+  const important =
+    /order|payment|delivery|verification|quote|schedule/i.test(
+      `${newest.title} ${newest.body}`
+    );
+
+  if (!important) return;
+
+  playNotificationSound();
+
+  toast(newest.title, {
+    description: newest.body,
+    duration: 7000,
+  });
+
+  showDeviceNotification(newest.title, newest.body);
+
+}, [state.notifications, session]);
+
   useEffect(() => {
     if (!session || !isLiveSupabaseMode()) return;
     let stopped = false;
@@ -1347,10 +1602,12 @@ export function SheplatesV3() {
         const [rows, commerce] = await Promise.all([loadLiveNotifications(), loadLiveCommerceSnapshot()]);
         if (!stopped) setState((current) => {
           const synced = mergeLiveCommerce(current, commerce, session);
-          return { ...synced, notifications: [
-            ...rows.map((row) => ({ id: row.id, recipient: session.email, recipientRole: session.role, title: row.title, body: row.body, at: new Date(row.created_at).toLocaleString("en-IN"), read: Boolean(row.read_at), entityType: row.entity_type, entityId: row.entity_id })),
-            ...synced.notifications.filter((item) => !notificationBelongsToSession(item, session) || item.id.startsWith("NOT-")),
-          ].filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index) };
+          return {
+            ...synced, notifications: [
+              ...rows.map((row) => ({ id: row.id, recipient: session.email, recipientRole: session.role, title: row.title, body: row.body, at: new Date(row.created_at).toLocaleString("en-IN"), read: Boolean(row.read_at), entityType: row.entity_type, entityId: row.entity_id })),
+              ...synced.notifications.filter((item) => !notificationBelongsToSession(item, session) || item.id.startsWith("NOT-")),
+            ].filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index)
+          };
         });
       } catch { /* keep the last safe snapshot while offline */ }
     };
@@ -1510,7 +1767,8 @@ export function SheplatesV3() {
         });
       } else {
         const workspace = await loadLiveOperationsWorkspace();
-        if (!cancelled) setState((current) => ({ ...current,
+        if (!cancelled) setState((current) => ({
+          ...current,
           vendors: workspace.vendors.map((row) => {
             const profile = workspace.profiles.find((item) => item.vendor_id === row.id || item.id === row.owner_id);
             const own = workspace.documents.filter((item) => item.vendor_id === row.id);
@@ -1565,27 +1823,84 @@ export function SheplatesV3() {
     setTourOpen(session.role);
   }
   if (!session) {
+    const guestVendor = guestVendorId ? state.vendors.find((v) => v.id === guestVendorId) : undefined;
     return (
-      <SheplatesEntry
-        onLogin={(next) => {
-          setSession(next);
-          let targetView = nav[next.role][0];
-          try {
-            const pending = sessionStorage.getItem("sheplates_pending_notification_url");
-            if (pending) {
-              sessionStorage.removeItem("sheplates_pending_notification_url");
-              const u = new URL(pending, window.location.origin);
-              const requested = u.searchParams.get("view");
-              const valid = nav[next.role] ?? [];
-              if (requested && valid.includes(requested)) {
-                window.history.pushState({ page: requested }, "", pending);
-                targetView = requested;
+      <>
+        <SheplatesEntry
+          initialAudience={guestAuthOpen ? "customer" : null}
+          onAudienceChange={(aud) => {
+            if (!aud) setGuestAuthOpen(false);
+          }}
+          pendingVendorName={guestVendor?.businessName}
+          onLogin={(next) => {
+            setSession(next);
+            setGuestAuthOpen(false);
+
+            let pendingAction: { type: string; product?: Product; preset?: PlanPreset; drop?: FoodDrop } | null = null;
+            let pendingVendor: string | null = null;
+            try {
+              const actionStr = sessionStorage.getItem("sheplates_pending_guest_action");
+              if (actionStr) {
+                pendingAction = JSON.parse(actionStr);
+                sessionStorage.removeItem("sheplates_pending_guest_action");
+              }
+              pendingVendor = sessionStorage.getItem("sheplates_pending_vendor") || guestVendorId;
+            } catch { }
+
+            if (pendingVendor) {
+              setVendorProfileIdState(pendingVendor);
+              setGuestVendorId(null);
+            }
+
+            if (pendingAction && next.role === "customer") {
+              if (pendingAction.type === "add_to_cart" && pendingAction.product) {
+                const prod = pendingAction.product;
+                void addProductToCart(state, setState, next, prod);
+              } else if (pendingAction.type === "plan" && pendingAction.product) {
+                setPlanPreset(pendingAction.preset);
+                setPlanProduct(pendingAction.product);
               }
             }
-          } catch {}
-          setActive(targetView);
-        }}
-      />
+
+            let targetView = nav[next.role][0];
+            try {
+              const pending = sessionStorage.getItem("sheplates_pending_notification_url");
+              if (pending) {
+                sessionStorage.removeItem("sheplates_pending_notification_url");
+                const u = new URL(pending, window.location.origin);
+                const requested = u.searchParams.get("view");
+                const valid = nav[next.role] ?? [];
+                if (requested && valid.includes(requested)) {
+                  window.history.pushState({ page: requested }, "", pending);
+                  targetView = requested;
+                }
+              }
+            } catch { }
+            setActive(targetView);
+          }}
+        />
+        {guestVendor && (
+          <VendorProfileDialog
+            vendorId={guestVendor.id}
+            isGuest={true}
+            onClose={handleCloseGuestStore}
+            onRequireAuth={handleGuestPurchaseAction}
+            state={state}
+            customerEmail=""
+            social={social}
+            profile={{ latitude: undefined, longitude: undefined, address: undefined }}
+            onAdd={(product) => handleGuestPurchaseAction({ type: "add_to_cart", product })}
+            onPlan={(product, preset) => handleGuestPurchaseAction({ type: "plan", product, preset })}
+            onToggleWishlist={(product) => handleGuestPurchaseAction({ type: "wishlist", product })}
+            onClaimDrop={async (drop) => { handleGuestPurchaseAction({ type: "claim_drop", drop }); }}
+            onViewCart={() => handleGuestPurchaseAction({ type: "checkout" })}
+            cartLines={[]}
+            tomorrow={tomorrow()}
+            shorts={shorts.forVendor(guestVendor.id, 30)}
+            onOpenShorts={openShorts}
+          />
+        )}
+      </>
     );
   }
   const role = session.role;
@@ -1709,7 +2024,7 @@ export function SheplatesV3() {
   }
   const openTicketCount = state.tickets.filter((t) => t.status !== "Resolved").length;
   const staffCounts: Record<string, number> = role === "vendor"
-    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId && ((o.payment === "Paid" && o.status !== "Awaiting payment") || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup")).length }
+    ? { Orders: state.orders.filter((o) => o.status === "Scheduled" && vendorFor(state, session)?.id === o.vendorId && (o.payment === "Paid" || Boolean(o.foodDropId) || o.paymentProvider === "food_drop_pickup")).length }
     : role === "operations"
       ? { "Vendor verification": state.vendors.filter((v) => v.vendorKind !== "p0_connect" && ["Submitted", "Under review"].includes(v.verification)).length, "Ticket centre": openTicketCount, Cancellations: state.cancellations.filter((x) => x.status === "Awaiting operations").length }
       : role === "admin" ? { "Ticket centre": openTicketCount } : {};
@@ -2076,9 +2391,9 @@ function CustomerOnboarding({ session, onSave, onLogout }: { session: DemoSessio
     } catch (error) { toast.error(errorMessage(error, "Profile could not be saved")); }
   }
   return <div className="app-shell-bg sp-v7 min-h-screen p-4 sm:p-8"><div className="mx-auto flex max-w-5xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#155F65]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input ref={householdRef} id="customer-household-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field></div>}
-  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Household size"><input ref={householdStep2Ref} id="customer-household-step2-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
-  {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#EEF2F2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Check />Save profile</Button>}</div></div></div></div>;
+    {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Household size"><input ref={householdStep2Ref} id="customer-household-step2-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
+    {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#EEF2F2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
+    <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Check />Save profile</Button>}</div></div></div></div>;
 }
 
 function ChoiceGroup({ label, options, value, setValue }: { label: string; options: string[]; value: string[]; setValue: (next: string[]) => void }) { return <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">{label}</div><div className="flex flex-wrap gap-2">{options.map((option) => <button type="button" key={option} onClick={() => setValue(value.includes(option) ? value.filter((x) => x !== option) : [...value, option])} className={`rounded-full border px-3 py-2 text-sm font-bold ${value.includes(option) ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : "bg-white text-stone-500"}`}>{option}</button>)}</div></div>; }
@@ -2152,23 +2467,23 @@ function VendorOnboarding({ session, setState, onLogout, operationsCreated = fal
   function detect() { if (!navigator.geolocation) return toast.error("Location is unavailable"); setLocating(true); navigator.geolocation.getCurrentPosition(async (position) => { const point = { lat: position.coords.latitude, lng: position.coords.longitude }; set("lat", point.lat); set("lng", point.lng); set("address", `GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`); try { const place = await findLocation(point); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`); } catch (error) { toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still saved.` : "The exact GPS pin is saved; add the store details."); } finally { setLocating(false); } }, () => { setLocating(false); toast.info("Allow precise location in Chrome, or search the complete store address"); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
   async function locateAddress() { if (!form.address.trim()) return toast.error("Enter the store address first"); setMapBusy(true); try { const place = await findLocation({ address: form.address }); set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); toast.success("Store address pinned on the map"); } catch (error) { toast.error(errorMessage(error, "Address was not found")); } finally { setMapBusy(false); } }
   return <div className={operationsCreated ? "sp-v7" : "sp-v7 k-onb min-h-screen bg-[#EEF2F2] p-4 sm:p-8"}>{!operationsCreated && <div className="mx-auto flex max-w-6xl items-center justify-between"><Logo /><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div>}<div className={operationsCreated ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "mx-auto mt-8 max-w-6xl"}><div className="surface-card rounded-[34px] p-6 shadow-xl sm:p-8"><div className="k-stepper-wrap"><p className="sr-only">Vendor onboarding · {step}/4</p><ol className="k-stepper" aria-label="Onboarding steps">{["Business", "Location", "Fulfilment", "Certificate"].map((label, index) => { const n = index + 1; const done = n < step; return <li key={label} className={`${done ? "done" : n === step ? "now" : ""}`} aria-current={n === step ? "step" : undefined}><span className="k-step-dot">{done ? <Check className="size-4" /> : n}</span><span className="k-step-label">{label}</span></li>; })}</ol><h1 className="mt-5 text-2xl font-bold">{["Business profile", "Location & service radius", "Fulfilment controls", "Food certification"][step - 1]}</h1></div>
-  {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2">
-    <Field label="Business name">
-      <input ref={businessNameRef} id="vendor-business-name-input" value={form.businessName} onChange={(e) => { set("businessName", e.target.value); if (businessNameError) setBusinessNameError(""); }} className={inputClass} />
-      {businessNameError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{businessNameError}</p>}
-    </Field>
-    <Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>
-    {form.category === "Other" && <Field label="Your category"><input ref={otherCategoryRef} id="vendor-other-category-input" value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}
-    <Field label="Designation" hint="Proprietor, Director, Partner, etc."><Select value={form.ownerRole || "Proprietor"} onValueChange={(val) => set("ownerRole", val)}><SelectTrigger className="h-11 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{VENDOR_DESIGNATION_OPTIONS.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></Field><Field label="Representative / Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} placeholder="Full legal name" /></Field><Field label="Contact Phone / WhatsApp"><input value={form.phone} onChange={(e) => set("phone", e.target.value)} className={inputClass} placeholder="+91 98765 43210" /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#EEF2F2] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#55656A]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
-  {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4">
-    <Field label="Full store address">
-      <Textarea ref={addressRef} id="vendor-store-address-input" value={form.address} onChange={(e) => { set("address", e.target.value); if (addressError) setAddressError(""); }} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" />
-      {addressError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{addressError}</p>}
-    </Field>
-    <LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
-  {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#155F65]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
-  {step === 4 && <ComplianceStep fssai={form.fssai} setFssai={(value) => { set("fssai", value); if (fssaiError) setFssaiError(""); }} expiry={form.expiry} setExpiry={(value) => { set("expiry", value); if (expiryError) setExpiryError(""); }} minExpiry={tomorrow()} certificate={file} setCertificate={(next) => { setFile(next); if (certificateError) setCertificateError(""); }} fields={docFields} setField={(key, value) => setDocFields((current) => ({ ...current, [key]: value }))} files={docFiles} setFile={(key, next) => setDocFiles((current) => ({ ...current, [key]: next }))} termsAccepted={termsAccepted} setTermsAccepted={setTermsAccepted} fssaiError={fssaiError} expiryError={expiryError} certificateError={certificateError} fssaiInputRef={fssaiRef} expiryInputRef={expiryRef} />}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div>{operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#155F65]" : "bg-[#DDE3E4]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}</div></div>;
+    {step === 1 && <div className="mt-7 grid gap-5 md:grid-cols-2">
+      <Field label="Business name">
+        <input ref={businessNameRef} id="vendor-business-name-input" value={form.businessName} onChange={(e) => { set("businessName", e.target.value); if (businessNameError) setBusinessNameError(""); }} className={inputClass} />
+        {businessNameError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{businessNameError}</p>}
+      </Field>
+      <Field label="Category"><Select value={form.category} onValueChange={(value) => set("category", value)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field>
+      {form.category === "Other" && <Field label="Your category"><input ref={otherCategoryRef} id="vendor-other-category-input" value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)} className={inputClass} placeholder="Enter your business category" /></Field>}
+      <Field label="Designation" hint="Proprietor, Director, Partner, etc."><Select value={form.ownerRole || "Proprietor"} onValueChange={(val) => set("ownerRole", val)}><SelectTrigger className="h-11 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{VENDOR_DESIGNATION_OPTIONS.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></Field><Field label="Representative / Owner name"><input value={form.ownerName} disabled={operationsCreated} onChange={(e) => set("ownerName", e.target.value)} className={inputClass} placeholder="Full legal name" /></Field><Field label="Contact Phone / WhatsApp"><input value={form.phone} onChange={(e) => set("phone", e.target.value)} className={inputClass} placeholder="+91 98765 43210" /></Field>{operationsCreated ? <Field label="Assign to vendor login" hint="The vendor will appear when this exact account signs in."><Select value={form.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; set("ownerEmail", email); set("ownerName", account.name); }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.name} · {account.email}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Owner email"><input type="email" value={form.ownerEmail} disabled className={inputClass} /></Field>}{operationsCreated && <div className="rounded-3xl bg-[#EEF2F2] p-4 md:col-span-2"><div className="flex items-center justify-between gap-4"><div><p className="font-semibold">Send the vendor an invitation email</p><p className="text-sm text-[#55656A]">They get a link to set a password and finish onboarding themselves.</p></div><Switch checked={invite} onCheckedChange={setInvite} aria-label="Send the vendor an invitation email" /></div>{invite && <Field label="Send the invitation to"><input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="owner@theirbusiness.com" className={inputClass} /></Field>}</div>}</div>}
+    {step === 2 && <div className="mt-7 grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><div className="space-y-4">
+      <Field label="Full store address">
+        <Textarea ref={addressRef} id="vendor-store-address-input" value={form.address} onChange={(e) => { set("address", e.target.value); if (addressError) setAddressError(""); }} className="min-h-28 rounded-xl" placeholder="Street, landmark, area, city and PIN" />
+        {addressError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{addressError}</p>}
+      </Field>
+      <LocationSuggestions query={form.address} onSelect={(place) => { set("address", place.address); set("lat", place.latitude); set("lng", place.longitude); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><Field label={`Supply radius · ${form.radius} km`} hint="You can adjust this daily after onboarding"><Slider value={[form.radius]} min={1} max={30} step={1} onValueChange={(value) => set("radius", value[0])} /></Field></div><MapPreview lat={form.lat} lng={form.lng} radius={form.radius} label="Store service location" /></div>}
+    {step === 3 && <div className="mt-7 grid gap-4 md:grid-cols-3"><ToggleCard icon={Truck} title="Vendor delivery" body="Your own staff delivers orders" checked={form.delivery} setChecked={(v) => set("delivery", v)} /><ToggleCard icon={ShoppingBag} title="Self pickup" body="Customer collects from your store" checked={form.pickup} setChecked={(v) => set("pickup", v)} /><div className="surface-card-muted rounded-3xl p-5"><Store className="text-[#155F65]" /><h3 className="mt-4 font-black">Operating duration: 7 hours</h3><p className="mt-2 text-sm leading-6 text-stone-500">No fixed opening or closing time was provided. You can set a schedule later.</p><p className="mt-3 text-xs font-bold text-stone-500">Closed until verified. After approval, you can open or close for the day without changing your profile.</p></div></div>}
+    {step === 4 && <ComplianceStep fssai={form.fssai} setFssai={(value) => { set("fssai", value); if (fssaiError) setFssaiError(""); }} expiry={form.expiry} setExpiry={(value) => { set("expiry", value); if (expiryError) setExpiryError(""); }} minExpiry={tomorrow()} certificate={file} setCertificate={(next) => { setFile(next); if (certificateError) setCertificateError(""); }} fields={docFields} setField={(key, value) => setDocFields((current) => ({ ...current, [key]: value }))} files={docFiles} setFile={(key, next) => setDocFiles((current) => ({ ...current, [key]: next }))} termsAccepted={termsAccepted} setTermsAccepted={setTermsAccepted} fssaiError={fssaiError} expiryError={expiryError} certificateError={certificateError} fssaiInputRef={fssaiRef} expiryInputRef={expiryRef} />}
+    <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 4 ? <Button onClick={continueOnboarding} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={submit} disabled={busy || !termsAccepted} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><FileCheck2 />{busy ? "Submitting…" : "Submit for verification"}</Button>}</div></div>{operationsCreated && <aside className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Documents to collect</h3><ul className="mt-3 space-y-2 text-sm">{[["PAN", true], ["Identity proof", true], ["Address proof", true], ["FSSAI licence", true], ["Bank proof", true], ["GST (if applicable)", false]].map(([label, required]) => <li key={String(label)} className="flex items-center gap-2"><span className={`grid size-5 place-items-center rounded-full ${required ? "bg-[#155F65]" : "bg-[#DDE3E4]"}`}>{required ? <Check className="size-3.5" /> : null}</span>{String(label)}</li>)}</ul><p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-4 shrink-0" />The vendor cannot go live until the FSSAI licence is valid and Operations has verified every required document.</p></aside>}</div></div>;
 }
 
 /** The map libraries need the browser, so the small location map is loaded only there. */
@@ -2198,7 +2513,7 @@ function CustomerArea({
   vendorFilter?: string; setVendorFilter?: (v: string) => void;
   onFilterCountChange?: (count: number) => void;
 }) {
-  if (active === "Cart") return <CartView session={session} state={state} setState={setState} navigate={navigate}  />;
+  if (active === "Cart") return <CartView session={session} state={state} setState={setState} navigate={navigate} />;
   if (active === "My schedule") return <SchedulesV4 session={session} state={state} setState={setState} navigate={navigate} />;
   if (active === "Monthly requirement") return <RequirementsV4 session={session} state={state} setState={setState} />;
   if (active === "My quotations") return isLiveSupabaseMode() ? <LiveCustomerRfqs /> : <CustomerQuotesV4 session={session} state={state} setState={setState} />;
@@ -2246,7 +2561,7 @@ async function addProductToCart(state: V3State, setState: React.Dispatch<React.S
     toast.success(`${product.name} added to cart`);
   } catch (error) {
     toast.error(errorMessage(error, "Cart could not be saved"));
-    if (isLiveSupabaseMode()) { try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch {} }
+    if (isLiveSupabaseMode()) { try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch { } }
   }
 }
 
@@ -2471,7 +2786,7 @@ function Marketplace({
       finally { if (!cancelled) setAiPicksLoading(false); }
     }, 350);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  // Serviceability, stock and price are the grounding boundary for this recommendation call.
+    // Serviceability, stock and price are the grounding boundary for this recommendation call.
   }, [serviceable.length, serviceableSignature, showAiPicks, recommendationsEnabled]);
 
   // The Vegetarian / Non-vegetarian / Contains egg choices come from the mark each vendor set on the product (never guessed), so a product with
@@ -2579,44 +2894,44 @@ function Marketplace({
 
     {view === "search" ? <div className="k-search-layout">
       <aside className={`k-filters sh${filtersOpen ? " open" : ""}`} aria-label="Filters"><div className="k-filters-head"><h2>Filters</h2><button type="button" className="k-filters-x" onClick={() => setFiltersOpen(false)} aria-label="Close filters"><X className="size-5" /></button></div>
-      <div className="grid gap-3">
-        <Field label="Planning from"><input type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field>
-        <Field label="Planning period"><Select value={String(periodDays)} onValueChange={(value) => setPeriodDays(Number(value))}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">This date</SelectItem><SelectItem value="7">Next 7 days</SelectItem><SelectItem value="14">Next 14 days</SelectItem><SelectItem value="30">Next 30 days</SelectItem></SelectContent></Select></Field>
-        <Field label="Max budget"><input type="number" min="0" value={maxPrice || ""} onChange={(e) => setMaxPrice(Number(e.target.value))} placeholder="Any ₹" className={inputClass} /></Field>
-        <Field label="Max calories / pack"><input type="number" min="0" value={maxCalories || ""} onChange={(e) => setMaxCalories(Number(e.target.value))} placeholder="Any kcal" className={inputClass} /></Field>
-        <Field label="Min protein"><input type="number" min="0" value={minProtein || ""} onChange={(e) => setMinProtein(Number(e.target.value))} placeholder="Any grams" className={inputClass} /></Field>
-        <Field label="Dietary tag"><Select value={dietary} onValueChange={setDietary}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="All">All dietary options</SelectItem>{dietaryOptions.map((tag) => <SelectItem key={tag} value={tag}>{tag}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Sort"><Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{["Recommended", "Price low", "Protein high", "Calories low", "Nearest"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
-        <div className=" flex flex-wrap items-center gap-2"><span className="text-xs font-black text-stone-500">Quick:</span>{[150, 300, 500, 1000].map((budget) => <button key={budget} onClick={() => setMaxPrice(budget)} className="rounded-full border bg-white px-3 py-1.5 text-xs font-black">Under ₹{budget}</button>)}<button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setDeliveryDate(tomorrow()); setPeriodDays(1); setSortBy("Recommended"); }} className="ml-auto rounded-full px-3 py-1.5 text-xs font-black text-red-600">Clear filters</button></div>
-      </div>
+        <div className="grid gap-3">
+          <Field label="Planning from"><input type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field>
+          <Field label="Planning period"><Select value={String(periodDays)} onValueChange={(value) => setPeriodDays(Number(value))}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">This date</SelectItem><SelectItem value="7">Next 7 days</SelectItem><SelectItem value="14">Next 14 days</SelectItem><SelectItem value="30">Next 30 days</SelectItem></SelectContent></Select></Field>
+          <Field label="Max budget"><input type="number" min="0" value={maxPrice || ""} onChange={(e) => setMaxPrice(Number(e.target.value))} placeholder="Any ₹" className={inputClass} /></Field>
+          <Field label="Max calories / pack"><input type="number" min="0" value={maxCalories || ""} onChange={(e) => setMaxCalories(Number(e.target.value))} placeholder="Any kcal" className={inputClass} /></Field>
+          <Field label="Min protein"><input type="number" min="0" value={minProtein || ""} onChange={(e) => setMinProtein(Number(e.target.value))} placeholder="Any grams" className={inputClass} /></Field>
+          <Field label="Dietary tag"><Select value={dietary} onValueChange={setDietary}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="All">All dietary options</SelectItem>{dietaryOptions.map((tag) => <SelectItem key={tag} value={tag}>{tag}</SelectItem>)}</SelectContent></Select></Field>
+          <Field label="Sort"><Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{["Recommended", "Price low", "Protein high", "Calories low", "Nearest"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+          <div className=" flex flex-wrap items-center gap-2"><span className="text-xs font-black text-stone-500">Quick:</span>{[150, 300, 500, 1000].map((budget) => <button key={budget} onClick={() => setMaxPrice(budget)} className="rounded-full border bg-white px-3 py-1.5 text-xs font-black">Under ₹{budget}</button>)}<button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setDeliveryDate(tomorrow()); setPeriodDays(1); setSortBy("Recommended"); }} className="ml-auto rounded-full px-3 py-1.5 text-xs font-black text-red-600">Clear filters</button></div>
+        </div>
       </aside>
-    <div className="k-results"><div className="flex flex-wrap items-end justify-between gap-3"><Heading eyebrow="MARKETPLACE" title={query ? "Search results" : category !== "All" ? category : "Food near you"} body={`${visible.length} result${visible.length === 1 ? "" : "s"} near ${shortArea(profile.address)} · ${deliveryDate}${periodDays > 1 ? ` to ${periodEndDate}` : ""} · verified, open and serviceable vendors only`} /><Button variant="outline" onClick={() => void refreshMarketplace(true)} disabled={refreshing || !isLiveSupabaseMode()} className="rounded-xl"><RefreshCcw className={refreshing ? "animate-spin" : ""} />Refresh</Button></div>{catalogueError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{catalogueError}</div>}
-      <div data-tour="products" className="k-plist">{visible.map(renderRow)}</div>
-      {!visible.length && (locationConfirmed ? <div className="mt-5 space-y-4"><Empty icon={Store} title="No matching products" body={serviceable.length ? "Your filters are narrowing the currently serviceable marketplace. Clear one or more filters, or ask She Agent for alternatives." : emptyReason} action={serviceable.length ? <Button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setQuery(""); }} variant="outline" className="rounded-xl">Clear marketplace filters</Button> : undefined} /><div className="grid gap-3 sm:grid-cols-5">{diagnostics && [["Verified", diagnostics.verified_vendors], ["Open", diagnostics.open_vendors], ["With stock", diagnostics.vendors_with_products], ["In radius", diagnostics.vendors_in_radius], ["Products", diagnostics.serviceable_products]].map(([label, value]) => <div key={String(label)} className="surface-card rounded-2xl p-3 text-center"><div className="text-xl font-black">{value}</div><div className="text-xs text-stone-500">{label}</div></div>)}</div></div> : <Empty icon={LocateFixed} title="Confirm your actual location first" body="Products are hidden until GPS or a searched address creates a real service pin." action={<Button onClick={() => setLocationOpen(true)} className="rounded-xl bg-[#155F65]"><LocateFixed />Detect my location</Button>} />)}
-    </div></div> : <>
-    <CategoryGrid selected={category} onSelect={(key) => { setCategory(key); if (key !== "All") navigate("Search"); }} />
-    <CampaignBanner campaigns={campaigns} onView={countCampaignView} onCta={runCampaign} fallback={<PromoBanner onShop={() => navigate("Food Drops")} />} />
-    <VendorRow title="Nearby kitchens" vendors={popularVendors} state={state} profile={profile} onOpen={openVendor} />
-    <VendorRow title="Home Foods" vendors={popularVendors.filter((v) => v.category === "Home food")} state={state} profile={profile} onOpen={openVendor} />
+      <div className="k-results"><div className="flex flex-wrap items-end justify-between gap-3"><Heading eyebrow="MARKETPLACE" title={query ? "Search results" : category !== "All" ? category : "Food near you"} body={`${visible.length} result${visible.length === 1 ? "" : "s"} near ${shortArea(profile.address)} · ${deliveryDate}${periodDays > 1 ? ` to ${periodEndDate}` : ""} · verified, open and serviceable vendors only`} /><Button variant="outline" onClick={() => void refreshMarketplace(true)} disabled={refreshing || !isLiveSupabaseMode()} className="rounded-xl"><RefreshCcw className={refreshing ? "animate-spin" : ""} />Refresh</Button></div>{catalogueError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{catalogueError}</div>}
+        <div data-tour="products" className="k-plist">{visible.map(renderRow)}</div>
+        {!visible.length && (locationConfirmed ? <div className="mt-5 space-y-4"><Empty icon={Store} title="No matching products" body={serviceable.length ? "Your filters are narrowing the currently serviceable marketplace. Clear one or more filters, or ask She Agent for alternatives." : emptyReason} action={serviceable.length ? <Button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setQuery(""); }} variant="outline" className="rounded-xl">Clear marketplace filters</Button> : undefined} /><div className="grid gap-3 sm:grid-cols-5">{diagnostics && [["Verified", diagnostics.verified_vendors], ["Open", diagnostics.open_vendors], ["With stock", diagnostics.vendors_with_products], ["In radius", diagnostics.vendors_in_radius], ["Products", diagnostics.serviceable_products]].map(([label, value]) => <div key={String(label)} className="surface-card rounded-2xl p-3 text-center"><div className="text-xl font-black">{value}</div><div className="text-xs text-stone-500">{label}</div></div>)}</div></div> : <Empty icon={LocateFixed} title="Confirm your actual location first" body="Products are hidden until GPS or a searched address creates a real service pin." action={<Button onClick={() => setLocationOpen(true)} className="rounded-xl bg-[#155F65]"><LocateFixed />Detect my location</Button>} />)}
+      </div></div> : <>
+      <CategoryGrid selected={category} onSelect={(key) => { setCategory(key); if (key !== "All") navigate("Search"); }} />
+      <CampaignBanner campaigns={campaigns} onView={countCampaignView} onCta={runCampaign} fallback={<PromoBanner onShop={() => navigate("Food Drops")} />} />
+      <VendorRow title="Nearby kitchens" vendors={popularVendors} state={state} profile={profile} onOpen={openVendor} />
+      <VendorRow title="Home Foods" vendors={popularVendors.filter((v) => v.category === "Home food")} state={state} profile={profile} onOpen={openVendor} />
 
-    <TasteOnboardingBanner state={state} setState={setState} session={session} />
+      <TasteOnboardingBanner state={state} setState={setState} session={session} />
 
-    {showAiPicks && state.merchandising.recommendationPopupEnabled && aiPicks.length > 0 && <section className="sp-ai-card relative overflow-hidden rounded-[30px] p-5 sm:p-6">
-      <button onClick={() => setShowAiPicks(false)} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-stone-100" aria-label="Close recommendations"><X className="size-4" /></button>
-      <div className="pr-12"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-[.16em] text-[#155F65]"><Sparkles className="size-4" />She Agent · for you {aiPicksLoading && <RefreshCcw className="size-3 animate-spin" />}</div><h2 className="mt-2 text-lg font-black tracking-[-.02em]">A few useful picks, based on your marketplace and preferences.</h2><p className="mt-1 max-w-3xl text-sm text-stone-500">{aiPickMessage || "These are grounded in currently serviceable products. She Agent can refine by budget, calories, protein, diet, schedule or anything you ask naturally."}</p></div>
-      <div className="mt-5 flex snap-x gap-3 overflow-x-auto pb-2 hide-scrollbar md:grid md:grid-cols-3">{aiPicks.map((product) => <button key={product.id} onClick={() => openProduct(product)} className="surface-card-muted min-w-[82%] snap-start flex items-center gap-3 rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md md:min-w-0"><div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate font-black"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</div><div className="mt-1 text-xs text-stone-500">{money(finalPrice(product, state))} · {product.nutritionStatus === "Pending review" || product.calories <= 0 ? "nutrition pending" : `${product.calories} kcal · ${product.protein}g protein`}</div></div><ArrowRight className="size-4 text-stone-400" /></button>)}</div>
-      <div className="mt-4 flex flex-wrap gap-2"><Button onClick={openAgent} className="rounded-xl bg-[#155F65]"><Sparkles />Ask She Agent to refine</Button><Button onClick={() => { setMaxPrice(profile.agentMemory?.lastBudget || 300); setFiltersOpen(true); }} variant="outline" className="rounded-xl">Use my usual budget</Button></div>
-    </section>}
-    {!showAiPicks && <div className="flex justify-end"><button onClick={() => setShowAiPicks(true)} className="soft-chip"><Sparkles className="size-3.5" />Show AI picks</button></div>}
+      {showAiPicks && state.merchandising.recommendationPopupEnabled && aiPicks.length > 0 && <section className="sp-ai-card relative overflow-hidden rounded-[30px] p-5 sm:p-6">
+        <button onClick={() => setShowAiPicks(false)} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-stone-100" aria-label="Close recommendations"><X className="size-4" /></button>
+        <div className="pr-12"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-[.16em] text-[#155F65]"><Sparkles className="size-4" />She Agent · for you {aiPicksLoading && <RefreshCcw className="size-3 animate-spin" />}</div><h2 className="mt-2 text-lg font-black tracking-[-.02em]">A few useful picks, based on your marketplace and preferences.</h2><p className="mt-1 max-w-3xl text-sm text-stone-500">{aiPickMessage || "These are grounded in currently serviceable products. She Agent can refine by budget, calories, protein, diet, schedule or anything you ask naturally."}</p></div>
+        <div className="mt-5 flex snap-x gap-3 overflow-x-auto pb-2 hide-scrollbar md:grid md:grid-cols-3">{aiPicks.map((product) => <button key={product.id} onClick={() => openProduct(product)} className="surface-card-muted min-w-[82%] snap-start flex items-center gap-3 rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md md:min-w-0"><div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate font-black"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</div><div className="mt-1 text-xs text-stone-500">{money(finalPrice(product, state))} · {product.nutritionStatus === "Pending review" || product.calories <= 0 ? "nutrition pending" : `${product.calories} kcal · ${product.protein}g protein`}</div></div><ArrowRight className="size-4 text-stone-400" /></button>)}</div>
+        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={openAgent} className="rounded-xl bg-[#155F65]"><Sparkles />Ask She Agent to refine</Button><Button onClick={() => { setMaxPrice(profile.agentMemory?.lastBudget || 300); setFiltersOpen(true); }} variant="outline" className="rounded-xl">Use my usual budget</Button></div>
+      </section>}
+      {!showAiPicks && <div className="flex justify-end"><button onClick={() => setShowAiPicks(true)} className="soft-chip"><Sparkles className="size-3.5" />Show AI picks</button></div>}
 
-    {featured.length > 0 && <section><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-[.16em] text-[#155F65]">Featured today</p><h2 className="mt-1 text-lg font-black">Picked by Sheplates</h2></div><span className="text-xs text-stone-400">Curated by Super Admin</span></div><div className="mt-4 flex gap-3 overflow-x-auto pb-2 hide-scrollbar">{featured.map((product) => <button key={product.id} onClick={() => openProduct(product)} className="surface-card min-w-60 rounded-3xl p-3 text-left"><div className="flex items-center gap-3"><div className="grid size-14 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div><div className="font-black">{product.name}</div><div className="text-xs text-stone-500">{money(finalPrice(product, state))}</div></div></div></button>)}</div></section>}
+      {featured.length > 0 && <section><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-[.16em] text-[#155F65]">Featured today</p><h2 className="mt-1 text-lg font-black">Picked by Sheplates</h2></div><span className="text-xs text-stone-400">Curated by Super Admin</span></div><div className="mt-4 flex gap-3 overflow-x-auto pb-2 hide-scrollbar">{featured.map((product) => <button key={product.id} onClick={() => openProduct(product)} className="surface-card min-w-60 rounded-3xl p-3 text-left"><div className="flex items-center gap-3"><div className="grid size-14 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div><div className="font-black">{product.name}</div><div className="text-xs text-stone-500">{money(finalPrice(product, state))}</div></div></div></button>)}</div></section>}
 
 
-    {visible.length > 0 && <section><div className="flex items-end justify-between"><h2 className="text-lg font-semibold">Popular today</h2><button type="button" onClick={() => navigate("Search")} className="text-sm font-semibold text-[#155F65]">See all</button></div><div className="k-plist mt-3">{visible.slice(0, 6).map(renderRow)}</div></section>}
+      {visible.length > 0 && <section><div className="flex items-end justify-between"><h2 className="text-lg font-semibold">Popular today</h2><button type="button" onClick={() => navigate("Search")} className="text-sm font-semibold text-[#155F65]">See all</button></div><div className="k-plist mt-3">{visible.slice(0, 6).map(renderRow)}</div></section>}
     </>}
 
     <ScheduleDialog product={selected} close={() => setSelected(null)} session={session} state={state} setState={setState} initialStartDate={deliveryDate} onCreated={() => navigate("Cart")} />
-<Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" onPinChange={async (point) => { const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) }; setDraftCoords(next); try { const place = await findLocation(next); if (place?.address) setDraftAddress(place.address); } catch { setDraftAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`); } }} /></div></div></DialogContent></Dialog>  </div>;
+    <Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-[28px] sm:max-w-5xl *:min-w-0"><DialogHeader><DialogTitle className="text-2xl font-bold">Confirm your delivery location</DialogTitle><DialogDescription>Use fresh GPS for your actual position, or search a complete address. Products are matched using the saved coordinates—not the address text.</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]"><div className="space-y-3"><Field label="Full delivery address"><Textarea value={draftAddress} onChange={(event) => setDraftAddress(event.target.value)} placeholder="Flat, street, landmark, area, city and PIN" className="min-h-24 rounded-xl" /></Field><LocationSuggestions query={draftAddress} onSelect={(place) => { setDraftAddress(place.address); setDraftCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detectLocation} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use my actual GPS location"}</Button><Button onClick={findTypedLocation} disabled={mapBusy} variant="outline" className="rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Searching…" : "Find typed address"}</Button></div><Button onClick={saveLocation} className="h-12 w-full"><Check />Save this delivery pin</Button></div><div className="min-w-0"><MapPreview lat={draftCoords.lat} lng={draftCoords.lng} radius={2} label="Customer delivery pin" onPinChange={async (point) => { const next = { lat: Number(point.lat.toFixed(6)), lng: Number(point.lng.toFixed(6)) }; setDraftCoords(next); try { const place = await findLocation(next); if (place?.address) setDraftAddress(place.address); } catch { setDraftAddress(`Selected map location ${next.lat.toFixed(6)}, ${next.lng.toFixed(6)}`); } }} /></div></div></DialogContent></Dialog>  </div>;
 }
 
 function ScheduleDialog({ product, preset, close, session, state, setState, initialStartDate, onCreated }: { product: Product | null; preset?: PlanPreset; close: () => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; initialStartDate?: string; onCreated?: () => void }) {
@@ -2632,7 +2947,7 @@ function ScheduleDialog({ product, preset, close, session, state, setState, init
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const supportsVendorDelivery = product ? state.vendors.find((item) => item.id === product.vendorId)?.delivery === true : false;
   const supportsPickup = product ? state.vendors.find((item) => item.id === product.vendorId)?.pickup === true : false;
-  useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence(preset?.recurrence ?? "Once"); setDays(preset ? [...preset.weekdays] : []); setStartDate(preset?.startDate && preset.startDate >= tomorrow() ? preset.startDate : initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, preset, initialStartDate, supportsVendorDelivery, supportsPickup]);  if (!product) return null;
+  useEffect(() => { if (product) queueMicrotask(() => { setQuantity(product.quantityStep); setRecurrence(preset?.recurrence ?? "Once"); setDays(preset ? [...preset.weekdays] : []); setStartDate(preset?.startDate && preset.startDate >= tomorrow() ? preset.startDate : initialStartDate && initialStartDate >= tomorrow() ? initialStartDate : tomorrow()); setEndDate(""); setDeliveryInstructions(""); setMode(supportsVendorDelivery ? "Vendor delivery" : supportsPickup ? "Self pickup" : "Third-party delivery"); }); }, [product, preset, initialStartDate, supportsVendorDelivery, supportsPickup]); if (!product) return null;
   const scheduledProduct = product;
   const vendor = state.vendors.find((v) => v.id === scheduledProduct.vendorId)!;
   const activeProductVendorSlots = (state.deliverySlots || []).filter((s) => String(s.vendorId).toLowerCase() === String(scheduledProduct.vendorId).toLowerCase() && s.isActive);
@@ -2640,7 +2955,7 @@ function ScheduleDialog({ product, preset, close, session, state, setState, init
     ? activeProductVendorSlots.map((s) => formatSlotLabel(s))
     : ["06:00–07:00 AM", "07:00–08:00 AM", "08:00–09:00 AM", "12:00–01:00 PM", "05:00–06:00 PM", "07:00–08:00 PM"];
   const effectiveSlot = (slot && scheduleSlotOptions.includes(slot)) ? slot : (scheduleSlotOptions[0] || "");
-const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party delivery"];  const effectiveEnd = endDate || (recurrence === "Once" ? startDate : addDaysISO(startDate || tomorrow(), 29));
+  const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party delivery"]; const effectiveEnd = endDate || (recurrence === "Once" ? startDate : addDaysISO(startDate || tomorrow(), 29));
   const startMs = new Date(`${startDate || tomorrow()}T12:00:00`).getTime();
   const endMs = new Date(`${effectiveEnd}T12:00:00`).getTime();
   const rangeLength = Math.max(1, Math.min(366, Math.floor((endMs - startMs) / 86400000) + 1));
@@ -2688,14 +3003,14 @@ const modes: DeliveryMode[] = ["Vendor delivery", "Self pickup", "Third-party de
     }
     const finalInstructions = mode === "Third-party delivery"
       ? (deliveryInstructions.trim()
-          ? `[Partner: ${effectivePartner}] ${deliveryInstructions.trim()}`
-          : `[Partner: ${effectivePartner}] Customer will arrange pickup via ${effectivePartner}. Handover upon verification code.`)
+        ? `[Partner: ${effectivePartner}] ${deliveryInstructions.trim()}`
+        : `[Partner: ${effectivePartner}] Customer will arrange pickup via ${effectivePartner}. Handover upon verification code.`)
       : deliveryInstructions.trim();
     if (finalInstructions.length > 1000) return toast.error("Delivery instructions must be 1,000 characters or fewer.");
     try {
       let scheduleId = id("SCH"); let orderId = id("ORD");
       if (isLiveSupabaseMode()) {
-const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true });        scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
+        const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id, startDate, endDate: endDate || undefined, recurrence, weekdays: days, slot: effectiveSlot, quantity, unit: scheduledProduct.baseUnit, mode, deliveryInstructions: finalInstructions, customerPrice: deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state), perDeliveryTotal: perDelivery, total: price, whatsappReminder: true }); scheduleId = String(saved.scheduleId); orderId = String(saved.orderId);
       }
       const frozenUnitPrice = deliveryDates[0] ? unitOn(deliveryDates[0]) : finalPrice(scheduledProduct, state);
       const schedule: Schedule = { id: scheduleId, customerEmail: session.email, productId: scheduledProduct.id, vendorId: scheduledProduct.vendorId, startDate, endDate, recurrence, weekdays: days, timeSlot: slot, quantity, unit: scheduledProduct.baseUnit, mode, estimatedOccurrences: occurrences, status: "Active", nextDeliveryAt: deliveryDates[0], whatsappReminder: true };
@@ -2729,46 +3044,47 @@ const saved = await createLiveScheduledCheckout({ productId: scheduledProduct.id
     } catch (error) { toast.error(errorMessage(error, "Schedule could not be saved")); }
   }
 
-return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="bg-[#EAF4F2] p-6 text-[#202827]"><DialogHeader><DialogTitle className="flex items-center gap-3 text-2xl font-bold"><span className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-[#2F3C3F]">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[.8fr_1.2fr]">    <div className="space-y-6 p-6 lg:order-2"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#155F65] bg-[#155F65] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && (
-  <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs text-amber-950 shadow-sm space-y-1.5">
-    <div className="flex items-center gap-2 font-black text-amber-900">
-      <AlertTriangle className="size-4 shrink-0 text-amber-600" />
-      <span>Third-Party Delivery Disclaimer</span>
+  return <Dialog open onOpenChange={(open) => !open && close()}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] p-0 sm:max-w-5xl"><div className="bg-[#EAF4F2] p-6 text-[#202827]"><DialogHeader><DialogTitle className="flex items-center gap-3 text-2xl font-bold"><span className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><CalendarDays /></span>Schedule {product.name}</DialogTitle><DialogDescription className="text-[#2F3C3F]">Choose the exact first delivery date, delivery period, repeat pattern, time and pack quantity.</DialogDescription></DialogHeader></div><div className="grid gap-0 lg:grid-cols-[.8fr_1.2fr]">    <div className="space-y-6 p-6 lg:order-2"><div className="grid gap-4 sm:grid-cols-2"><Field label={recurrence === "Once" ? "Delivery date" : "First delivery date"}><input aria-label={recurrence === "Once" ? "Delivery date" : "First delivery date"} type="date" min={tomorrow()} max={latestOrderDate()} value={startDate} onChange={(e) => { const nextDate = e.target.value; setStartDate(nextDate); if (endDate && endDate < nextDate) setEndDate(nextDate); }} className={inputClass} /></Field><Field label="Ends (optional)"><input type="date" min={startDate || tomorrow()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} /></Field></div><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Repeat</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["Once", "Daily", "Weekly", "Custom"] as const).map((item) => <button key={item} type="button" onClick={() => setRecurrence(item)} className={`rounded-xl border p-3 text-sm font-black ${recurrence === item ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : ""}`}>{item}</button>)}</div></div>{recurrence === "Custom" && <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Delivery days</div><div className="flex flex-wrap gap-2">{weekdays.map((day) => <button type="button" key={day} onClick={() => setDays(days.includes(day) ? days.filter((x) => x !== day) : [...days, day])} className={`grid size-11 place-items-center rounded-full border text-xs font-black ${days.includes(day) ? "border-[#155F65] bg-[#155F65] text-white" : ""}`}>{day}</button>)}</div></div>}<Field label="Preferred time"><Select value={effectiveSlot} onValueChange={setSlot}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{scheduleSlotOptions.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">Number of packs per delivery</div><div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="size-11 rounded-xl">−</Button><div className="min-w-40 rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 text-center text-base font-black shadow-sm">{quantity} × {product.baseUnit}</div><Button variant="outline" onClick={() => setQuantity(quantity + 1)} className="size-11 rounded-xl">+</Button></div></div><Field label="Fulfilment"><Select value={modes.includes(mode) ? mode : modes[0]} onValueChange={(v) => { const nextMode = v as DeliveryMode; setMode(nextMode); if (nextMode === "Third-party delivery" && recurrence !== "Once") { setRecurrence("Once"); setEndDate(""); setDays([]); } }}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{modes.map((x) => <SelectItem key={x} value={x} disabled={x === "Third-party delivery" ? !isLiveSupabaseMode() || !state.thirdPartyDeliveryAvailable : x === "Vendor delivery" ? !supportsVendorDelivery : !supportsPickup}>{x}</SelectItem>)}</SelectContent></Select></Field>{mode === "Third-party delivery" && (
+    <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs text-amber-950 shadow-sm space-y-1.5">
+      <div className="flex items-center gap-2 font-black text-amber-900">
+        <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+        <span>Third-Party Delivery Disclaimer</span>
+      </div>
+      <p className="leading-relaxed text-amber-900">
+        <b>Customer Responsibility:</b> Arranging, booking, coordinating, and tracking the third-party delivery partner (such as Dunzo, Porter, Swiggy Genie, or your chosen courier) is solely your responsibility.
+      </p>
+      <p className="leading-relaxed text-amber-800">
+        Sheplates and the kitchen are responsible only for preparing and safely packaging the food. Once the vendor accepts your order, request an in-app handover code from Orders and share it with your delivery agent.
+      </p>
     </div>
-    <p className="leading-relaxed text-amber-900">
-      <b>Customer Responsibility:</b> Arranging, booking, coordinating, and tracking the third-party delivery partner (such as Dunzo, Porter, Swiggy Genie, or your chosen courier) is solely your responsibility.
-    </p>
-    <p className="leading-relaxed text-amber-800">
-      Sheplates and the kitchen are responsible only for preparing and safely packaging the food. Once the vendor accepts your order, request an in-app handover code from Orders and share it with your delivery agent.
-    </p>
-  </div>
-)}{mode === "Third-party delivery" && (
-  <div className="space-y-3">
-    <Field label="Third-party delivery partner">
-      <Select value={deliveryPartner} onValueChange={setDeliveryPartner}>
-        <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select delivery partner" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="Swiggy Genie">Swiggy Genie</SelectItem>
-          <SelectItem value="Dunzo">Dunzo</SelectItem>
-          <SelectItem value="Porter">Porter</SelectItem>
-          <SelectItem value="Other">Other (Specify partner)</SelectItem>
-        </SelectContent>
-      </Select>
-    </Field>
-    {deliveryPartner === "Other" && (
-      <Field label="Specify delivery partner name">
-        <input
-          type="text"
-          value={customPartnerName}
-          onChange={(e) => setCustomPartnerName(e.target.value)}
-          placeholder="e.g. Borzo, Shadowfax, Personal courier, etc."
-          className={inputClass}
-          maxLength={100}
-        />
+  )}{mode === "Third-party delivery" && (
+    <div className="space-y-3">
+      <Field label="Third-party delivery partner">
+        <Select value={deliveryPartner} onValueChange={setDeliveryPartner}>
+          <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select delivery partner" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Swiggy Genie">Swiggy Genie</SelectItem>
+            <SelectItem value="Dunzo">Dunzo</SelectItem>
+            <SelectItem value="Porter">Porter</SelectItem>
+            <SelectItem value="Other">Other (Specify partner)</SelectItem>
+          </SelectContent>
+        </Select>
       </Field>
-    )}
-  </div>
-)}{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#EEF2F2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#EEF2F2] p-6 lg:order-1"><div className="rounded-3xl bg-white p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label={pricesVary ? "Product price, first delivery" : "Product price per delivery"} value={money(firstBill.subtotal)} />{firstBill.gstAmount > 0 && <Review label={`GST${firstBill.gstRate ? ` (${firstBill.gstRate}%)` : ""} per delivery`} value={money(firstBill.gstAmount)} />}{mode === "Vendor delivery" && <Review label={`Delivery fee per delivery${firstBill.deliveryDistanceKm != null ? ` (${firstBill.deliveryDistanceKm.toFixed(1)} km)` : ""}`} value={money(firstBill.deliveryFee)} />}<Review label={pricesVary ? "First delivery, all included" : "Per delivery, all included"} value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;}
+      {deliveryPartner === "Other" && (
+        <Field label="Specify delivery partner name">
+          <input
+            type="text"
+            value={customPartnerName}
+            onChange={(e) => setCustomPartnerName(e.target.value)}
+            placeholder="e.g. Borzo, Shadowfax, Personal courier, etc."
+            className={inputClass}
+            maxLength={100}
+          />
+        </Field>
+      )}
+    </div>
+  )}{mode === "Third-party delivery" && <Field label="Instructions for the delivery handler"><Textarea maxLength={1000} value={deliveryInstructions} onChange={(event) => setDeliveryInstructions(event.target.value)} placeholder="Gate code, drop-off preference, or other handover details" className="min-h-24 rounded-xl" /><span className="text-right text-xs text-stone-500">{deliveryInstructions.length}/1,000</span><p className="text-xs text-stone-500">Third-party delivery is for one-time plans. After the vendor accepts, request a secure in-app handover code from Orders.</p></Field>}{isLiveSupabaseMode() && !state.thirdPartyDeliveryAvailable && <p className="text-xs text-amber-800">Third-party delivery is unavailable until its Supabase migrations are applied.</p>}<div className="rounded-2xl bg-[#EEF2F2] p-4"><div className="text-xs font-black uppercase tracking-widest text-stone-500">Delivery dates</div><div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">{deliveryDates.slice(0, 60).map((date) => <span key={date} className="rounded-full border bg-white px-2.5 py-1 text-xs font-bold">{new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>)}{deliveryDates.length > 60 && <span className="px-2 py-1 text-xs text-stone-500">+{deliveryDates.length - 60} more</span>}</div></div></div><div className="bg-[#EEF2F2] p-6 lg:order-1"><div className="rounded-3xl bg-white p-5"><div className="grid size-16 place-items-center rounded-2xl" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} iconClassName="size-8" /></div><h3 className="mt-4 text-xl font-black">{product.name}</h3><p className="text-sm text-stone-500">{vendor.businessName} · {product.baseUnit}</p><div className="mt-5 space-y-3 text-sm"><Review label="Frequency" value={recurrence} /><Review label="Confirmed delivery dates" value={String(occurrences)} />{hasNutrition ? <Review label="Calories (all planned packs)" value={`${calories.toLocaleString("en-IN")} kcal`} /> : <Review label="Nutrition" value="Pending review" />}<Review label={pricesVary ? "Product price, first delivery" : "Product price per delivery"} value={money(firstBill.subtotal)} />{firstBill.gstAmount > 0 && <Review label={`GST${firstBill.gstRate ? ` (${firstBill.gstRate}%)` : ""} per delivery`} value={money(firstBill.gstAmount)} />}{mode === "Vendor delivery" && <Review label={`Delivery fee per delivery${firstBill.deliveryDistanceKm != null ? ` (${firstBill.deliveryDistanceKm.toFixed(1)} km)` : ""}`} value={money(firstBill.deliveryFee)} />}<Review label={pricesVary ? "First delivery, all included" : "Per delivery, all included"} value={money(perDelivery)} /><Review label="Total to activate schedule" value={money(price)} /></div><div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The schedule remains in checkout until payment. After payment, all confirmed delivery dates appear in My Schedule and Orders, and the vendor receives the order.</div><Button onClick={save} className="mt-5 h-12 w-full rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><CreditCard />Continue to payment</Button></div></div></div></DialogContent></Dialog>;
+}
 function WishlistView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const items = state.wishlist.filter((w) => w.customerEmail === session.email);
   function remove(productId: string) {
@@ -2887,7 +3203,7 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
       if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
     } catch (error) {
       toast.error(errorMessage(error, "Cart could not be saved"));
-      try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch {}
+      try { const snapshot = await loadLiveCommerceSnapshot(); setState((current) => mergeLiveCommerce(current, snapshot, session)); } catch { }
       throw error;
     } finally { setSavingCart(false); }
   }
@@ -2941,8 +3257,8 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
     }
     const finalInstructions = checkoutMode === "Third-party delivery"
       ? (deliveryInstructions.trim()
-          ? `[Partner: ${effectivePartner}] ${deliveryInstructions.trim()}`
-          : `[Partner: ${effectivePartner}] Customer will arrange pickup via ${effectivePartner}. Handover upon verification code.`)
+        ? `[Partner: ${effectivePartner}] ${deliveryInstructions.trim()}`
+        : `[Partner: ${effectivePartner}] Customer will arrange pickup via ${effectivePartner}. Handover upon verification code.`)
       : deliveryInstructions.trim();
     if (finalInstructions.length > 1000) {
       toast.error("Delivery instructions must be 1,000 characters or fewer.");
@@ -3600,7 +3916,8 @@ function parseRequirementText(text: string) {
 function RequirementsV4({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const [title, setTitle] = useState("Monthly household groceries"), [deliveryDate, setDeliveryDate] = useState(tomorrow()), [closingDate, setClosingDate] = useState(tomorrow()), [sourceFileName, setSourceFileName] = useState(""), [items, setItems] = useState<RequirementItem[]>([{ id: id("ITM"), name: "", quantity: 1, unit: "kg", brand: "Any" }]);
   async function upload(file?: File) { if (!file) return; setSourceFileName(file.name); const text = await file.text(); const parsed = parseRequirementText(text); if (!parsed.length) return toast.error("No list rows were found. Use CSV/TXT with one product per line."); setItems(parsed); toast.success(`${parsed.length} item(s) extracted. Review before sending.`); }
-  async function submit() { const valid = items.filter((x) => x.name.trim()); if (!valid.length) return toast.error("Add at least one item"); if (closingDate > deliveryDate) return toast.error("RFQ closing date must be on or before the required date"); const profile = state.customers.find((x) => x.email === session.email);
+  async function submit() {
+    const valid = items.filter((x) => x.name.trim()); if (!valid.length) return toast.error("Add at least one item"); if (closingDate > deliveryDate) return toast.error("RFQ closing date must be on or before the required date"); const profile = state.customers.find((x) => x.email === session.email);
     if (isLiveSupabaseMode()) {
       // Live mode: the database saves the RFQ and invites every Crown vendor whose own service radius covers this pin.
       if (!profile || !Number.isFinite(profile.latitude) || !Number.isFinite(profile.longitude)) return toast.error("Set your delivery location first so vendors near you can be found");
@@ -3610,8 +3927,9 @@ function RequirementsV4({ session, state, setState }: { session: DemoSession; st
         setItems([{ id: id("ITM"), name: "", quantity: 1, unit: "kg", brand: "Any" }]); setSourceFileName("");
       } catch (error) { toast.error(errorMessage(error, "The RFQ could not be published")); }
       return;
-    } const eligible = state.vendors.filter((v) => v.verification === "Verified" && v.operational === "Active" && v.plan === "Crown" && (!profile || distanceKm(profile.latitude, profile.longitude, v.latitude, v.longitude) === null || distanceKm(profile.latitude, profile.longitude, v.latitude, v.longitude)! <= v.radiusKm)); const requirement: Requirement = { id: id("RFQ"), customerEmail: session.email, title, deliveryDate, closingDate, sourceFileName, items: valid, status: "Quoting", invitedVendorIds: eligible.map((x) => x.id) }; setState((s) => ({ ...s, requirements: [requirement, ...s.requirements], notifications: [notice(session.email, "customer", "RFQ published", `${eligible.length} serviceable Crown vendor(s) were invited. Quotes close ${closingDate}.`), ...eligible.map((v) => notice(v.ownerEmail, "vendor", "New local RFQ", `${title} closes ${closingDate}.`)), ...s.notifications] })); toast.success("RFQ sent to eligible local vendors"); }
-  return <div className="space-y-6"><Heading eyebrow="MONTHLY RFQ" title="Upload or build your monthly list" body="She Agent structures CSV/TXT lists, you review them, set the quote closing date, then eligible local Crown vendors are invited." /><label className="grid min-h-28 cursor-pointer place-items-center rounded-[28px] border-2 border-dashed border-[#C5E3E4] bg-[#F2F8F8] p-5 text-center"><input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /><Upload className="size-8 text-[#155F65]" /><b>{sourceFileName || "Upload monthly list (CSV, TXT or TSV)"}</b><span className="text-xs text-stone-500">Example: Rice, 5 kg, preferred brand</span></label><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]"><div className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between gap-3"><h3 className="text-lg font-semibold">Your list · {items.length} item{items.length === 1 ? "" : "s"}</h3><Button variant="outline" onClick={() => setItems((x) => [...x, { id: id("ITM"), name: "", quantity: 1, unit: "pack", brand: "Any" }])}><Plus />Add row</Button></div><div className="mt-4 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#EEF2F2] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg","g","litre","ml","piece","pack","dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div></div><aside className="surface-card h-fit space-y-3 rounded-3xl p-5"><h3 className="text-lg font-semibold">Send for quotes</h3><div className="grid gap-3"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Quotes close on"><input type="date" min={tomorrow()} value={closingDate} onChange={(e) => setClosingDate(e.target.value)} className={inputClass} /></Field><Field label="Delivery needed on"><input type="date" min={closingDate || tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]">Only vendors on the Crown plan whose service radius covers your address are invited.</div><Button onClick={submit} className="h-12 w-full"><Send />Publish RFQ</Button></aside></div></div>;
+    } const eligible = state.vendors.filter((v) => v.verification === "Verified" && v.operational === "Active" && v.plan === "Crown" && (!profile || distanceKm(profile.latitude, profile.longitude, v.latitude, v.longitude) === null || distanceKm(profile.latitude, profile.longitude, v.latitude, v.longitude)! <= v.radiusKm)); const requirement: Requirement = { id: id("RFQ"), customerEmail: session.email, title, deliveryDate, closingDate, sourceFileName, items: valid, status: "Quoting", invitedVendorIds: eligible.map((x) => x.id) }; setState((s) => ({ ...s, requirements: [requirement, ...s.requirements], notifications: [notice(session.email, "customer", "RFQ published", `${eligible.length} serviceable Crown vendor(s) were invited. Quotes close ${closingDate}.`), ...eligible.map((v) => notice(v.ownerEmail, "vendor", "New local RFQ", `${title} closes ${closingDate}.`)), ...s.notifications] })); toast.success("RFQ sent to eligible local vendors");
+  }
+  return <div className="space-y-6"><Heading eyebrow="MONTHLY RFQ" title="Upload or build your monthly list" body="She Agent structures CSV/TXT lists, you review them, set the quote closing date, then eligible local Crown vendors are invited." /><label className="grid min-h-28 cursor-pointer place-items-center rounded-[28px] border-2 border-dashed border-[#C5E3E4] bg-[#F2F8F8] p-5 text-center"><input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} /><Upload className="size-8 text-[#155F65]" /><b>{sourceFileName || "Upload monthly list (CSV, TXT or TSV)"}</b><span className="text-xs text-stone-500">Example: Rice, 5 kg, preferred brand</span></label><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]"><div className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between gap-3"><h3 className="text-lg font-semibold">Your list · {items.length} item{items.length === 1 ? "" : "s"}</h3><Button variant="outline" onClick={() => setItems((x) => [...x, { id: id("ITM"), name: "", quantity: 1, unit: "pack", brand: "Any" }])}><Plus />Add row</Button></div><div className="mt-4 space-y-3">{items.map((item, index) => <div key={item.id} className="grid gap-2 rounded-3xl bg-[#EEF2F2] p-3.5 md:grid-cols-[1.5fr_.5fr_.55fr_1fr_auto]"><input aria-label={`Item ${index + 1}`} value={item.name} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Product name" className={inputClass} /><input type="number" min=".1" step=".1" value={item.quantity} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, quantity: Number(e.target.value) } : x))} className={inputClass} /><Select value={item.unit} onValueChange={(value) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, unit: value } : x))}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["kg", "g", "litre", "ml", "piece", "pack", "dozen"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select><input value={item.brand} onChange={(e) => setItems((list) => list.map((x) => x.id === item.id ? { ...x, brand: e.target.value } : x))} className={inputClass} /><Button variant="ghost" onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}><X /></Button></div>)}</div></div><aside className="surface-card h-fit space-y-3 rounded-3xl p-5"><h3 className="text-lg font-semibold">Send for quotes</h3><div className="grid gap-3"><Field label="Request title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field><Field label="Quotes close on"><input type="date" min={tomorrow()} value={closingDate} onChange={(e) => setClosingDate(e.target.value)} className={inputClass} /></Field><Field label="Delivery needed on"><input type="date" min={closingDate || tomorrow()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field></div><div className="rounded-2xl bg-[#FFF4CF] p-3 text-xs font-medium text-[#795900]">Only vendors on the Crown plan whose service radius covers your address are invited.</div><Button onClick={submit} className="h-12 w-full"><Send />Publish RFQ</Button></aside></div></div>;
 }
 
 function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
@@ -3625,11 +3943,13 @@ function CustomerQuotesV4({ session, state, setState }: { session: DemoSession; 
         <div className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-lg font-semibold">{req.title}</h3><p className="mt-0.5 text-xs text-[#55656A]">{req.id} · delivery {req.deliveryDate} · quotes close {req.closingDate || "not set"} · {req.sourceFileName || "manually entered"}</p></div>
           <div className="flex flex-wrap items-center gap-1.5">{req.items.slice(0, 6).map((item) => <span key={item.id} className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{item.name} {item.quantity}{item.unit}</span>)}<span className="rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]">{quotes.length} quote{quotes.length === 1 ? "" : "s"}</span><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{req.status}</span></div></div>
           <div className="mt-3 text-xs text-[#55656A]">{invited.length} invited · {quotes.length} responded · {Math.max(0, invited.length - quotes.length)} awaiting response</div></div>
-        {quotes.length ? <><h3 className="text-lg font-semibold">Compare offers</h3><div className="grid gap-3 lg:grid-cols-3">{quotes.map((quote) => { const vendor = state.vendors.find((x) => x.id === quote.vendorId); const total = quote.total + quote.deliveryFee; const isBest = total === best && quotes.length > 1; return <div key={quote.id} className={`rounded-3xl bg-white p-5 ${isBest ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}>
-          <div className="flex items-start justify-between gap-2"><div><h4 className="text-[16px] font-semibold">{vendor?.businessName || "Verified vendor"}</h4><p className="text-xs text-[#55656A]">{vendor?.plan ? `${vendor.plan} plan` : "Verified vendor"}</p></div>{isBest && <span className="rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]">Best price</span>}</div>
-          {quote.note && <p className="mt-2 text-xs text-[#2F3C3F]">{quote.note}</p>}
-          <div className="mt-3 flex items-end justify-between"><span className="text-sm text-[#55656A]">Delivery {quote.deliveryFee ? money(quote.deliveryFee) : "free"}</span><b className="text-2xl tabular-nums">{money(total)}</b></div>
-          <Button disabled={quote.status !== "Submitted"} variant={isBest ? "default" : "secondary"} onClick={() => selectQuote(quote)} className="mt-4 w-full">{quote.status === "Selected" ? "Awarded" : "Choose this quote"}</Button></div>; })}</div></>
+        {quotes.length ? <><h3 className="text-lg font-semibold">Compare offers</h3><div className="grid gap-3 lg:grid-cols-3">{quotes.map((quote) => {
+          const vendor = state.vendors.find((x) => x.id === quote.vendorId); const total = quote.total + quote.deliveryFee; const isBest = total === best && quotes.length > 1; return <div key={quote.id} className={`rounded-3xl bg-white p-5 ${isBest ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}>
+            <div className="flex items-start justify-between gap-2"><div><h4 className="text-[16px] font-semibold">{vendor?.businessName || "Verified vendor"}</h4><p className="text-xs text-[#55656A]">{vendor?.plan ? `${vendor.plan} plan` : "Verified vendor"}</p></div>{isBest && <span className="rounded-full bg-[#eaf5ec] px-3 py-1 text-xs font-semibold text-[#21683b]">Best price</span>}</div>
+            {quote.note && <p className="mt-2 text-xs text-[#2F3C3F]">{quote.note}</p>}
+            <div className="mt-3 flex items-end justify-between"><span className="text-sm text-[#55656A]">Delivery {quote.deliveryFee ? money(quote.deliveryFee) : "free"}</span><b className="text-2xl tabular-nums">{money(total)}</b></div>
+            <Button disabled={quote.status !== "Submitted"} variant={isBest ? "default" : "secondary"} onClick={() => selectQuote(quote)} className="mt-4 w-full">{quote.status === "Selected" ? "Awarded" : "Choose this quote"}</Button></div>;
+        })}</div></>
           : <div className="rounded-3xl bg-[#FFF4CF] p-4 text-sm text-[#795900]">No vendor has accepted yet. Responses remain open until {req.closingDate || "the closing date"}.</div>}
       </section>;
     }) : <Empty icon={ClipboardCheck} title="No RFQs yet" body="Upload a monthly list and publish it to serviceable local vendors." />}</div>;
@@ -3933,11 +4253,10 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                     type="button"
                     key={option}
                     onClick={() => toggleAllergy(option)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
-                      selected
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selected
                         ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]"
                         : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
-                    }`}
+                      }`}
                   >
                     {selected ? "✓ " : "+ "}{option}
                   </button>
@@ -3963,11 +4282,10 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                     type="button"
                     key={option}
                     onClick={() => toggleGoal(option)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
-                      selected
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selected
                         ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]"
                         : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
-                    }`}
+                      }`}
                   >
                     {selected ? "✓ " : "+ "}{option}
                   </button>
@@ -4066,9 +4384,8 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
               type="button"
               key={dimension}
               onClick={() => toggleTaste(dimension)}
-              className={`rounded-full border px-3 py-2 text-sm font-bold ${
-                tasteSelected.includes(dimension) ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : "bg-white text-stone-500"
-              }`}
+              className={`rounded-full border px-3 py-2 text-sm font-bold ${tasteSelected.includes(dimension) ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : "bg-white text-stone-500"
+                }`}
             >
               {TASTE_DIMENSION_LABELS[dimension]}
             </button>
@@ -4344,8 +4661,8 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
       </div>
     )}
     <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium leading-relaxed text-[#285fba]">
-  How it works: Food Drops run 12:00 PM – 6:00 PM IST. Each drop is available only on the day it is created, and unclaimed units do not carry over.
-</p>
+      How it works: Food Drops run 12:00 PM – 6:00 PM IST. Each drop is available only on the day it is created, and unclaimed units do not carry over.
+    </p>
     {!products.length && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Add an active product in your Catalog first — a drop always discounts an existing product.</div>}
     {drops.length ? <div className="grid gap-4 lg:grid-cols-2">{drops.map((drop) => {
       const product = state.products.find((p) => p.id === drop.productId);
@@ -4414,7 +4731,7 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
     }
   }, [vendor?.id, vendor?.scheduledPlanChange?.effectiveDate]);
 
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={onNavigate} />;
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={onNavigate} />;
   if (active === "People followers") return <VendorPeopleFollowers vendor={vendor} />;
   if (active === "AI insights") return <VendorAIInsights vendor={vendor} state={state} session={session} />;
   if (active === "Buy credits") return <BuyCreditsScreen vendor={vendor} state={state} setState={setState} session={session} onBack={() => onNavigate?.("Dashboard")} onNavigate={onNavigate} />;
@@ -4745,15 +5062,14 @@ function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
             <Fragment key={step.key}>
               <div className="relative z-10 flex flex-col items-center text-center">
                 <div
-                  className={`grid size-7 sm:size-8 place-items-center rounded-full text-xs font-bold transition-all ${
-                    isCancelled
+                  className={`grid size-7 sm:size-8 place-items-center rounded-full text-xs font-bold transition-all ${isCancelled
                       ? "bg-rose-500 text-white ring-4 ring-rose-100"
                       : isCompleted
-                      ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
-                      : isCurrent
-                      ? "bg-[#155F65] text-white ring-4 ring-stone-200 animate-pulse"
-                      : "bg-stone-200 text-stone-500"
-                  }`}
+                        ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
+                        : isCurrent
+                          ? "bg-[#155F65] text-white ring-4 ring-stone-200 animate-pulse"
+                          : "bg-stone-200 text-stone-500"
+                    }`}
                 >
                   {isCancelled ? (
                     <X className="size-3.5" />
@@ -4767,15 +5083,14 @@ function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
                 </div>
                 <div className="mt-1.5 max-w-[70px] sm:max-w-[100px]">
                   <p
-                    className={`text-[11px] sm:text-xs font-bold leading-tight ${
-                      isCancelled
+                    className={`text-[11px] sm:text-xs font-bold leading-tight ${isCancelled
                         ? "text-rose-600"
                         : isCurrent
-                        ? "text-stone-900"
-                        : isCompleted
-                        ? "text-emerald-800"
-                        : "text-stone-400"
-                    }`}
+                          ? "text-stone-900"
+                          : isCompleted
+                            ? "text-emerald-800"
+                            : "text-stone-400"
+                      }`}
                   >
                     {step.label}
                   </p>
@@ -4789,9 +5104,8 @@ function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
               {!isLast && (
                 <div className="relative mb-5 flex-1 mx-1.5 sm:mx-3 h-0.5 sm:h-1 bg-stone-200 rounded-full overflow-hidden">
                   <div
-                    className={`h-full transition-all duration-300 ${
-                      isLineActive ? "bg-emerald-500" : isCancelled ? "bg-rose-300" : "bg-transparent"
-                    }`}
+                    className={`h-full transition-all duration-300 ${isLineActive ? "bg-emerald-500" : isCancelled ? "bg-rose-300" : "bg-transparent"
+                      }`}
                   />
                 </div>
               )}
@@ -5571,7 +5885,8 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
       toast.error(errorMessage(error, "A handover code could not be issued"));
     } finally { setDeliveryActionId(null); }
   }
-  async function verifyThirdPartyCode(order: Order) { if (order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Handover verification is only allowed on or after the delivery date.`); return; }
+  async function verifyThirdPartyCode(order: Order) {
+    if (order.date > todayISO()) { toast.error(`This order is scheduled for ${order.date}. Handover verification is only allowed on or after the delivery date.`); return; }
     const code = verificationInputs[order.id] || "";
     setDeliveryActionId(order.id);
     try {
@@ -5605,7 +5920,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const customerSchedules = scope === "customer" ? state.schedules.filter((item) => item.customerEmail === session.email && (item.status || "Active") === "Active").length : 0;
   const customerOpenRequirements = scope === "customer" ? state.requirements.filter((item) => item.customerEmail === session.email && item.status !== "Awarded").length : 0;
 
-return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope === "customer" ? "Orders & live tracking" : scope === "vendor" ? "Fulfilment & tracking" : "Platform order control"} body={scope === "vendor" ? "Paid orders remain visible for every future delivery date. Use Today, Tomorrow or a date filter to plan fulfilment and assign an active delivery person." : "Track paid orders, fulfilment status and delivery progress."} action={isLiveSupabaseMode() && scope !== "operations" ? <Button onClick={() => void refreshCommerce()} variant="outline" className="rounded-xl"><RefreshCcw />Refresh orders</Button> : undefined} />    {scope === "customer" ? <div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Paid orders" value={String(baseOrders.length)} icon={Package} tone="green" /><Metric label="Active schedules" value={String(customerSchedules)} icon={CalendarDays} tone="blue" /><Metric label="Open requirements" value={String(customerOpenRequirements)} icon={ListChecks} tone="violet" /><Metric label="Order value" value={money(totalValue)} icon={CreditCard} tone="amber" /></div> : <><div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-3"><Metric label="Orders in view" value={String(orders.length)} icon={Package} tone="green" /><Metric label="Value in view" value={money(dayValue)} icon={IndianRupee} tone="amber" /><Metric label="All future order value" value={money(totalValue)} icon={CalendarDays} tone="blue" /></div><div className="surface-card flex flex-wrap items-center gap-2 rounded-3xl p-3">{([['today','Today'],['tomorrow','Tomorrow'],['all','All dates'],['custom','Choose date']] as const).map(([value,label]) => <button key={value} onClick={() => setDateMode(value)} className={`rounded-xl px-4 py-2 text-sm font-black ${dateMode === value ? "bg-[#155F65] text-white" : "bg-stone-50 text-stone-600"}`}>{label}</button>)}{dateMode === "custom" && <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className={`${inputClass} max-w-48`} />}</div></>}
+  return <div className="space-y-6"><Heading eyebrow="ORDER JOURNEY" title={scope === "customer" ? "Orders & live tracking" : scope === "vendor" ? "Fulfilment & tracking" : "Platform order control"} body={scope === "vendor" ? "Paid orders remain visible for every future delivery date. Use Today, Tomorrow or a date filter to plan fulfilment and assign an active delivery person." : "Track paid orders, fulfilment status and delivery progress."} action={isLiveSupabaseMode() && scope !== "operations" ? <Button onClick={() => void refreshCommerce()} variant="outline" className="rounded-xl"><RefreshCcw />Refresh orders</Button> : undefined} />    {scope === "customer" ? <div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Paid orders" value={String(baseOrders.length)} icon={Package} tone="green" /><Metric label="Active schedules" value={String(customerSchedules)} icon={CalendarDays} tone="blue" /><Metric label="Open requirements" value={String(customerOpenRequirements)} icon={ListChecks} tone="violet" /><Metric label="Order value" value={money(totalValue)} icon={CreditCard} tone="amber" /></div> : <><div className="sp-mobile-metric-grid grid gap-3 sm:grid-cols-3"><Metric label="Orders in view" value={String(orders.length)} icon={Package} tone="green" /><Metric label="Value in view" value={money(dayValue)} icon={IndianRupee} tone="amber" /><Metric label="All future order value" value={money(totalValue)} icon={CalendarDays} tone="blue" /></div><div className="surface-card flex flex-wrap items-center gap-2 rounded-3xl p-3">{([['today', 'Today'], ['tomorrow', 'Tomorrow'], ['all', 'All dates'], ['custom', 'Choose date']] as const).map(([value, label]) => <button key={value} onClick={() => setDateMode(value)} className={`rounded-xl px-4 py-2 text-sm font-black ${dateMode === value ? "bg-[#155F65] text-white" : "bg-stone-50 text-stone-600"}`}>{label}</button>)}{dateMode === "custom" && <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className={`${inputClass} max-w-48`} />}</div></>}
     {(scope === "vendor" || scope === "operations") && <div className="flex flex-wrap gap-2" role="tablist" aria-label="Order stage">{((scope === "vendor" ? ["All", "To accept", "Preparing", "Ready", "Out for delivery", "Completed"] : ["All", "Preparing", "Out for delivery", "Unassigned", "Completed"]) as ("All" | "To accept" | "Preparing" | "Ready" | "Out for delivery" | "Unassigned" | "Completed")[]).map((name) => { const count = name === "All" ? dated.length : name === "Unassigned" ? dated.filter(unassigned).length : dated.filter((item) => stageOf(item) === name).length; return <button key={name} type="button" role="tab" aria-selected={stage === name} onClick={() => setStage(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${stage === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name}{name !== "All" || count ? ` · ${count}` : ""}</button>; })}</div>}
     {scope === "customer" && (() => {
       const live = orders.find((o) => o.status === "Out for delivery");
@@ -5992,7 +6307,7 @@ function TicketCentre({ session, state, setState, vendor, mode = "manage" }: { s
   const canResolve = session.role === "operations";
   const open = visible.filter((x) => x.status !== "Resolved").length;
   function create() { if (!subject.trim() || !description.trim()) return toast.error("Add a subject and details"); const ticket: Ticket = { id: id("TKT"), creatorEmail: session.email, creatorRole: session.role, vendorId: vendor?.id, subject, description, category, priority: "Normal", status: "Open", attachmentName: file?.name, createdVia: "Portal", at: now() }; setState((s) => ({ ...s, tickets: [ticket, ...s.tickets], notifications: [notice(session.email, session.role, "Ticket created", `${ticket.id} is open.`), notice("operations@sheplates.demo", "operations", "New support ticket", `${ticket.id}: ${subject}`), ...s.notifications] })); setSubject(""); setDescription(""); setFile(null); toast.success(`${ticket.id} created`); }
-  return <div className="space-y-6"><Heading eyebrow="SUPPORT" title="Ticket centre" body={mode === "oversight" ? "Operations owns day-to-day ticket triage and resolution for customers and vendors. This is a platform-wide oversight view — escalate or intervene only when needed." : "Raise and track account, order, catalogue, payment or delivery issues raised by customers and vendors. She Agent can create a ticket in the same role scope."} />{mode === "oversight" && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900"><b>{open}</b> ticket(s) currently open across the platform. Operations is the owning team for resolution; Super Admin has full read access for governance and can step in on escalations.</div>}<div className={mode === "oversight" ? "" : "grid gap-5 xl:grid-cols-[1fr_380px]"}>{mode !== "oversight" && <aside className="space-y-4 xl:order-2"><div className="rounded-3xl bg-[#155F65] p-5 text-white"><h3 className="text-xl font-bold">We are here every day</h3><p className="mt-1 text-xs font-medium">Monday to Sunday, 9:30 AM to 7:00 PM</p><div className="mt-3 space-y-2 text-sm font-semibold"><div className="flex items-center gap-2"><PhoneCall className="size-5" />9600037836</div><div className="flex items-center gap-2"><MessageCircle className="size-5" />WhatsApp 9600037836</div><div className="flex items-center gap-2"><Send className="size-5" />support@sheplates.com</div></div></div><div className="surface-card space-y-3 rounded-[28px] p-5"><Field label="Category"><Select value={category} onValueChange={setCategory}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Order","Delivery","Payment","Account","Catalogue","Verification","Other"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Field label="Subject"><input value={subject} onChange={(e) => setSubject(e.target.value)} className={inputClass} /></Field><Field label="Details"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-28 rounded-xl" /></Field><label className="block rounded-xl border border-dashed p-3 text-sm"><input type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /><Upload className="mr-2 inline size-4" />{file?.name || "Attach document"}</label><Button onClick={create} className="w-full"><TicketCheck />Create ticket</Button></div></aside>}<div className="space-y-3">{visible.length ? visible.map((ticket) => <div key={ticket.id} className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-center gap-2"><b>{ticket.subject}</b><Status>{ticket.status}</Status><Status>{ticket.creatorRole}</Status><span className="ml-auto font-mono text-xs">{ticket.id}</span></div><p className="mt-2 text-sm text-stone-500">{ticket.description}</p><div className="mt-3 text-xs text-stone-400">{ticket.category} · {ticket.createdVia} · {ticket.attachmentName || "No attachment"} · {ticket.at}</div>{canResolve && ticket.status !== "Resolved" && <Button size="sm" variant="outline" className="mt-3" onClick={() => setState((s) => ({ ...s, tickets: s.tickets.map((x) => x.id === ticket.id ? { ...x, status: "Resolved" } : x) }))}>Resolve</Button>}</div>) : <Empty icon={TicketCheck} title="No tickets in your scope" body="New support requests will appear here." />}</div></div></div>;
+  return <div className="space-y-6"><Heading eyebrow="SUPPORT" title="Ticket centre" body={mode === "oversight" ? "Operations owns day-to-day ticket triage and resolution for customers and vendors. This is a platform-wide oversight view — escalate or intervene only when needed." : "Raise and track account, order, catalogue, payment or delivery issues raised by customers and vendors. She Agent can create a ticket in the same role scope."} />{mode === "oversight" && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900"><b>{open}</b> ticket(s) currently open across the platform. Operations is the owning team for resolution; Super Admin has full read access for governance and can step in on escalations.</div>}<div className={mode === "oversight" ? "" : "grid gap-5 xl:grid-cols-[1fr_380px]"}>{mode !== "oversight" && <aside className="space-y-4 xl:order-2"><div className="rounded-3xl bg-[#155F65] p-5 text-white"><h3 className="text-xl font-bold">We are here every day</h3><p className="mt-1 text-xs font-medium">Monday to Sunday, 9:30 AM to 7:00 PM</p><div className="mt-3 space-y-2 text-sm font-semibold"><div className="flex items-center gap-2"><PhoneCall className="size-5" />9600037836</div><div className="flex items-center gap-2"><MessageCircle className="size-5" />WhatsApp 9600037836</div><div className="flex items-center gap-2"><Send className="size-5" />support@sheplates.com</div></div></div><div className="surface-card space-y-3 rounded-[28px] p-5"><Field label="Category"><Select value={category} onValueChange={setCategory}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Order", "Delivery", "Payment", "Account", "Catalogue", "Verification", "Other"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><Field label="Subject"><input value={subject} onChange={(e) => setSubject(e.target.value)} className={inputClass} /></Field><Field label="Details"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-28 rounded-xl" /></Field><label className="block rounded-xl border border-dashed p-3 text-sm"><input type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /><Upload className="mr-2 inline size-4" />{file?.name || "Attach document"}</label><Button onClick={create} className="w-full"><TicketCheck />Create ticket</Button></div></aside>}<div className="space-y-3">{visible.length ? visible.map((ticket) => <div key={ticket.id} className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-center gap-2"><b>{ticket.subject}</b><Status>{ticket.status}</Status><Status>{ticket.creatorRole}</Status><span className="ml-auto font-mono text-xs">{ticket.id}</span></div><p className="mt-2 text-sm text-stone-500">{ticket.description}</p><div className="mt-3 text-xs text-stone-400">{ticket.category} · {ticket.createdVia} · {ticket.attachmentName || "No attachment"} · {ticket.at}</div>{canResolve && ticket.status !== "Resolved" && <Button size="sm" variant="outline" className="mt-3" onClick={() => setState((s) => ({ ...s, tickets: s.tickets.map((x) => x.id === ticket.id ? { ...x, status: "Resolved" } : x) }))}>Resolve</Button>}</div>) : <Empty icon={TicketCheck} title="No tickets in your scope" body="New support requests will appear here." />}</div></div></div>;
 }
 
 function computeBusinessHealth(state: V3State) {
@@ -6034,9 +6349,9 @@ function computeBusinessHealth(state: V3State) {
 }
 
 function AIInsights({ role, state }: { role: "operations" | "admin"; state: V3State }) {
-  const fulfilmentRisk = state.orders.filter((x) => ["Scheduled","Confirmed"].includes(x.status) && x.date <= tomorrow()).length;
+  const fulfilmentRisk = state.orders.filter((x) => ["Scheduled", "Confirmed"].includes(x.status) && x.date <= tomorrow()).length;
   const lowStock = state.products.filter((x) => x.stock <= 5).length;
-  const unassigned = state.orders.filter((x) => x.mode === "Vendor delivery" && !state.assignments.some((a) => a.orderId === x.id) && !["Completed","Cancelled"].includes(x.status)).length;
+  const unassigned = state.orders.filter((x) => x.mode === "Vendor delivery" && !state.assignments.some((a) => a.orderId === x.id) && !["Completed", "Cancelled"].includes(x.status)).length;
   const overdueTickets = state.tickets.filter((x) => !["Resolved"].includes(x.status)).length;
   const health = useMemo(() => computeBusinessHealth(state), [state]);
   const [narrative, setNarrative] = useState<{ summary: string; recommendedAction: string } | null>(null);
@@ -6045,19 +6360,19 @@ function AIInsights({ role, state }: { role: "operations" | "admin"; state: V3St
     setLoadingNarrative(true);
     try {
       const token = await getAccessToken();
-      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "business_insights", role, message: "Summarise current business health", context: health.snapshot })  }, 60000);
+      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "business_insights", role, message: "Summarise current business health", context: health.snapshot }) }, 60000);
       const json = await response.json();
       if (json?.result) setNarrative({ summary: json.result.summary, recommendedAction: json.result.recommendedAction });
       else toast.error("She Agent could not generate a narrative right now");
     } catch (error) { toast.error(errorMessage(error, "She Agent is unavailable right now")); }
     finally { setLoadingNarrative(false); }
   }
-  return <div className="space-y-6"><Heading eyebrow="AI-ASSISTED ANALYTICS" title={role === "admin" ? "Executive intelligence" : "Operational intelligence"} body="Explainable risk signals from authorised platform data. She Agent recommends; humans approve verification, price, refunds and access changes." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Fulfilments at risk" value={String(fulfilmentRisk)} icon={AlertTriangle} note="Due tomorrow without preparation" /><Metric label="Low-stock products" value={String(lowStock)} icon={Package} /><Metric label="Unassigned deliveries" value={String(unassigned)} icon={Truck} /><Metric label="Open support tickets" value={String(overdueTickets)} icon={TicketCheck} /></div><div className="grid gap-4 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Recommended attention</h3><div className="mt-4 space-y-3"><Review label="Vendor verification backlog" value={String(state.vendors.filter((x) => ["Submitted","Under review"].includes(x.verification)).length)} /><Review label="RFQs without quotes" value={String(state.requirements.filter((x) => !state.quotes.some((q) => q.requirementId === x.id)).length)} /><Review label="Cancellation reviews" value={String(state.cancellations.filter((x) => x.status === "Awaiting operations").length)} /><Review label="Closed stores" value={String(state.vendors.filter((x) => x.verification === "Verified" && !x.openToday).length)} /></div></div><div className="surface-dark rounded-[28px] p-6 text-white"><Sparkles className="text-[#D9F5E7]" /><h3 className="mt-3 text-xl font-black">{role === "admin" ? "Ask She Agent for a deeper narrative" : "Ask She Agent to explain a signal"}</h3><p className="mt-2 text-sm leading-6 text-white/60">{role === "admin" ? "Analyse vendor concentration, plan adoption, GMV, audit anomalies, role access and policy impact across the platform." : "Prioritise delayed fulfilments, certificate expiry, delivery coverage, RFQ response and support queues."}</p>{role === "admin" && <Button onClick={() => void askSheAgent()} disabled={loadingNarrative} className="mt-4 rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Activity />{loadingNarrative ? "Thinking…" : "Generate narrative"}</Button>}{narrative && <div className="mt-4 rounded-xl bg-white/10 p-4 text-sm leading-6"><p>{narrative.summary}</p><p className="mt-2 font-black text-[#D9F5E7]">{narrative.recommendedAction}</p></div>}</div></div>
-  {role === "admin" && <div className="grid gap-4 lg:grid-cols-3">
-    <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-6"><div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="size-5" /><h3 className="font-black">What&apos;s going well</h3></div><ul className="mt-4 space-y-2 text-sm leading-6 text-emerald-900">{health.wentWell.map((line, index) => <li key={index} className="flex gap-2"><span>•</span><span>{line}</span></li>)}</ul></div>
-    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6"><div className="flex items-center gap-2 text-amber-800"><AlertTriangle className="size-5" /><h3 className="font-black">Needs attention</h3></div><ul className="mt-4 space-y-2 text-sm leading-6 text-amber-900">{health.needsAttention.map((line, index) => <li key={index} className="flex gap-2"><span>•</span><span>{line}</span></li>)}</ul></div>
-    <div className="rounded-3xl border border-sky-200 bg-sky-50/60 p-6"><div className="flex items-center gap-2 text-sky-800"><Lightbulb className="size-5" /><h3 className="font-black">Recovery & best practices</h3></div><ul className="mt-4 space-y-2 text-sm leading-6 text-sky-900">{health.recovery.map((line, index) => <li key={index} className="flex gap-2"><span>•</span><span>{line}</span></li>)}</ul></div>
-  </div>}
+  return <div className="space-y-6"><Heading eyebrow="AI-ASSISTED ANALYTICS" title={role === "admin" ? "Executive intelligence" : "Operational intelligence"} body="Explainable risk signals from authorised platform data. She Agent recommends; humans approve verification, price, refunds and access changes." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Fulfilments at risk" value={String(fulfilmentRisk)} icon={AlertTriangle} note="Due tomorrow without preparation" /><Metric label="Low-stock products" value={String(lowStock)} icon={Package} /><Metric label="Unassigned deliveries" value={String(unassigned)} icon={Truck} /><Metric label="Open support tickets" value={String(overdueTickets)} icon={TicketCheck} /></div><div className="grid gap-4 lg:grid-cols-2"><div className="surface-card rounded-[28px] p-6"><h3 className="font-black">Recommended attention</h3><div className="mt-4 space-y-3"><Review label="Vendor verification backlog" value={String(state.vendors.filter((x) => ["Submitted", "Under review"].includes(x.verification)).length)} /><Review label="RFQs without quotes" value={String(state.requirements.filter((x) => !state.quotes.some((q) => q.requirementId === x.id)).length)} /><Review label="Cancellation reviews" value={String(state.cancellations.filter((x) => x.status === "Awaiting operations").length)} /><Review label="Closed stores" value={String(state.vendors.filter((x) => x.verification === "Verified" && !x.openToday).length)} /></div></div><div className="surface-dark rounded-[28px] p-6 text-white"><Sparkles className="text-[#D9F5E7]" /><h3 className="mt-3 text-xl font-black">{role === "admin" ? "Ask She Agent for a deeper narrative" : "Ask She Agent to explain a signal"}</h3><p className="mt-2 text-sm leading-6 text-white/60">{role === "admin" ? "Analyse vendor concentration, plan adoption, GMV, audit anomalies, role access and policy impact across the platform." : "Prioritise delayed fulfilments, certificate expiry, delivery coverage, RFQ response and support queues."}</p>{role === "admin" && <Button onClick={() => void askSheAgent()} disabled={loadingNarrative} className="mt-4 rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Activity />{loadingNarrative ? "Thinking…" : "Generate narrative"}</Button>}{narrative && <div className="mt-4 rounded-xl bg-white/10 p-4 text-sm leading-6"><p>{narrative.summary}</p><p className="mt-2 font-black text-[#D9F5E7]">{narrative.recommendedAction}</p></div>}</div></div>
+    {role === "admin" && <div className="grid gap-4 lg:grid-cols-3">
+      <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-6"><div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="size-5" /><h3 className="font-black">What&apos;s going well</h3></div><ul className="mt-4 space-y-2 text-sm leading-6 text-emerald-900">{health.wentWell.map((line, index) => <li key={index} className="flex gap-2"><span>•</span><span>{line}</span></li>)}</ul></div>
+      <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6"><div className="flex items-center gap-2 text-amber-800"><AlertTriangle className="size-5" /><h3 className="font-black">Needs attention</h3></div><ul className="mt-4 space-y-2 text-sm leading-6 text-amber-900">{health.needsAttention.map((line, index) => <li key={index} className="flex gap-2"><span>•</span><span>{line}</span></li>)}</ul></div>
+      <div className="rounded-3xl border border-sky-200 bg-sky-50/60 p-6"><div className="flex items-center gap-2 text-sky-800"><Lightbulb className="size-5" /><h3 className="font-black">Recovery & best practices</h3></div><ul className="mt-4 space-y-2 text-sm leading-6 text-sky-900">{health.recovery.map((line, index) => <li key={index} className="flex gap-2"><span>•</span><span>{line}</span></li>)}</ul></div>
+    </div>}
   </div>;
 }
 
@@ -6152,7 +6467,7 @@ function DeliverySlotsSection({
           setState((curr) => mergeLiveCommerce(curr, snapshot, session));
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       cancelled = true;
     };
@@ -6373,15 +6688,13 @@ function DeliverySlotsSection({
           {slots.map((slot) => (
             <div
               key={slot.id}
-              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${
-                slot.isActive ? "border-stone-200/90 bg-white shadow-xs" : "border-stone-200/60 bg-stone-50/70 opacity-75"
-              }`}
+              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${slot.isActive ? "border-stone-200/90 bg-white shadow-xs" : "border-stone-200/60 bg-stone-50/70 opacity-75"
+                }`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div
-                  className={`grid size-9 shrink-0 place-items-center rounded-xl ${
-                    slot.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"
-                  }`}
+                  className={`grid size-9 shrink-0 place-items-center rounded-xl ${slot.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"
+                    }`}
                 >
                   <Clock3 className="size-4" />
                 </div>
@@ -6389,11 +6702,10 @@ function DeliverySlotsSection({
                   <div className="flex items-center gap-2">
                     <span className="font-black text-stone-900 text-sm truncate">{slot.slotName}</span>
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        slot.isActive
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${slot.isActive
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : "bg-stone-100 text-stone-500 border border-stone-200"
-                      }`}
+                        }`}
                     >
                       {slot.isActive ? "Active" : "Inactive"}
                     </span>
@@ -6409,11 +6721,10 @@ function DeliverySlotsSection({
                   type="button"
                   onClick={() => void handleToggle(slot)}
                   disabled={actionId === slot.id}
-                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition ${
-                    slot.isActive
+                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition ${slot.isActive
                       ? "bg-emerald-100/70 text-emerald-800 hover:bg-emerald-200"
                       : "bg-stone-200 text-stone-700 hover:bg-stone-300"
-                  }`}
+                    }`}
                 >
                   {slot.isActive ? "Active" : "Disabled"}
                 </button>
@@ -6722,18 +7033,18 @@ export function EditVendorProfileDialog({
         vendors: s.vendors.map((v) =>
           v.id === vendor.id
             ? {
-                ...v,
-                businessName: businessName.trim(),
-                category: effectiveCategory,
-                ownerName: ownerName.trim(),
-                ownerRole,
-                phone: phone.trim(),
-                bio: bio.trim(),
-                address: address.trim(),
-                radiusKm,
-                logoUrl: finalLogo || undefined,
-                bannerUrl: finalBanner || undefined,
-              }
+              ...v,
+              businessName: businessName.trim(),
+              category: effectiveCategory,
+              ownerName: ownerName.trim(),
+              ownerRole,
+              phone: phone.trim(),
+              bio: bio.trim(),
+              address: address.trim(),
+              radiusKm,
+              logoUrl: finalLogo || undefined,
+              bannerUrl: finalBanner || undefined,
+            }
             : v
         ),
         audit: [
@@ -7065,10 +7376,10 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
           documents: x.documents ? (
             x.documents.some((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai")
               ? x.documents.map((d) =>
-                  d.documentType === "food_certificate" || (d.documentType as string) === "fssai"
-                    ? { ...d, documentNumber: updatedCertificate, expiryDate: expiry || d.expiryDate, verificationStatus: "submitted", fileName: fileName || d.fileName }
-                    : d
-                  )
+                d.documentType === "food_certificate" || (d.documentType as string) === "fssai"
+                  ? { ...d, documentNumber: updatedCertificate, expiryDate: expiry || d.expiryDate, verificationStatus: "submitted", fileName: fileName || d.fileName }
+                  : d
+              )
               : [...x.documents, { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }]
           ) : [
             { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }
@@ -7105,11 +7416,10 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
             <div
               key={plan.name}
               data-plan-card={plan.name}
-              className={`flex flex-col justify-between rounded-3xl border p-5 transition ${
-                isCurrent
+              className={`flex flex-col justify-between rounded-3xl border p-5 transition ${isCurrent
                   ? "border-[#155F65] bg-[#EEF2F2] shadow-sm ring-2 ring-[#155F65]/20"
                   : "border-stone-200/80 bg-white hover:border-stone-300"
-              }`}
+                }`}
             >
               <div>
                 <div className="flex items-center justify-between">
@@ -7144,11 +7454,10 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
                     type="button"
                     onClick={() => handlePlanSelection(plan.name)}
                     disabled={upgradingTo === plan.name}
-                    className={`w-full rounded-xl font-black ${
-                      isHigher
+                    className={`w-full rounded-xl font-black ${isHigher
                         ? "bg-[#155F65] hover:bg-[#4d8b00] text-white shadow-sm"
                         : "bg-stone-900 hover:bg-stone-800 text-white"
-                    }`}
+                      }`}
                   >
                     {upgradingTo === plan.name ? (
                       "Updating…"
@@ -7426,11 +7735,13 @@ function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { 
       <div className={`hidden gap-3 px-4 text-xs font-black tracking-wide text-stone-500 lg:grid ${bulkCatalogGridClass}`}>
         <div className="min-w-0">Product name</div><div className="min-w-0">Category</div><div className="min-w-0">Pack size</div><div className="min-w-0">Price (₹)</div><div className="min-w-0">Stock (packs)</div><div className="min-w-0">Food type</div><div className="w-24" aria-hidden="true" />
       </div>
-      {rows.map((row, index) => { const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} maxLength={60} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value.slice(0, 60) })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
-        <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
-        <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
-        {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
-      </div>; })}
+      {rows.map((row, index) => {
+        const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} maxLength={60} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value.slice(0, 60) })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
+          <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
+          <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
+          {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
+        </div>;
+      })}
     </div>}
     {existingProducts.length > 0 && rows.length > 0 && (
       <label className="flex items-center gap-2 rounded-2xl bg-amber-50 p-3.5 text-xs font-bold text-amber-900 border border-amber-200 cursor-pointer">
@@ -7623,7 +7934,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   const nutritionStatus: Product["nutritionStatus"] = confirmed && nutritionConsistent ? "Verified" : nutritionConsistent ? "Estimated" : "Pending review";
   const baseReady = Boolean(name.trim()) && name.trim().length <= 60 && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
   const foodTypeReady = Boolean(foodType);
-  const measurable = nutritionPresent && ["g","kg","ml","L"].includes(packSpec.measure);
+  const measurable = nutritionPresent && ["g", "kg", "ml", "L"].includes(packSpec.measure);
   const packBase = packSpec.measure === "kg" || packSpec.measure === "L" ? packSpec.amount * 1000 : packSpec.amount;
   const per100 = measurable && packBase > 0 ? Object.fromEntries(Object.entries(nutrition).map(([key, value]) => [key, Math.round(Number(value) * 100 / packBase * 10) / 10])) as Nutrition : null;
 
@@ -7809,11 +8120,11 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
     finally { setBusy(false); }
   }
 
-  const metrics: Array<[keyof Nutrition, string]> = [["calories","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fibre","Fibre g"]];
+  const metrics: Array<[keyof Nutrition, string]> = [["calories", "Calories"], ["protein", "Protein g"], ["carbs", "Carbs g"], ["fat", "Fat g"], ["fibre", "Fibre g"]];
   return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
       <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
-        
+
         {/* SKU Master Cascading Selection */}
         <div className="grid gap-4 sm:grid-cols-2 rounded-2xl bg-[#F7FAFA] border border-stone-200/80 p-4">
           <Field label="Category">
@@ -7932,7 +8243,7 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
           </div>
         </div>
         <div className="rounded-[22px] border border-stone-200/80 bg-[#EEF2F2] p-4"><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-stone-500">Nutrition source · optional</div><p className="mt-1 text-xs leading-5 text-stone-500">For a better estimate, paste package-label values or recipe/ingredient details, or upload a nutrition-label photo. You can also publish without nutrition.</p></div><Sparkles className="size-5 shrink-0 text-[#155F65]" /></div><Textarea value={nutritionSource} onChange={(e) => setNutritionSource(e.target.value)} className="mt-3 min-h-20 rounded-xl bg-white" placeholder="Example: 250 g cooked rice, 120 g chicken, 15 g oil... or paste label text" /><label className="mt-3 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white px-3 text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) readImage(file, setNutritionLabelImage); }} /><ImageUp className="size-4" />{nutritionLabelImage ? "Nutrition label attached" : "Upload nutrition-label photo"}</label></div>
-        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {packSize}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key,label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml","litre","L"].includes(packSpec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
+        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {packSize}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key, label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml", "litre", "L"].includes(packSpec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
       </div>
       <div className="surface-card-muted rounded-[28px] p-4"><div className="flex items-center justify-between"><div><div className="text-xs font-black uppercase tracking-[.14em] text-[#155F65]">Product media</div><h3 className="mt-1 font-black">Marketplace image</h3></div><ImageUp className="text-[#155F65]" /></div><div className="mt-4 grid aspect-square place-items-center overflow-hidden rounded-3xl shadow-inner" style={{ background: imageUrl ? undefined : categoryVisual(category).bg }}>{imageUrl ? <img src={imageUrl} alt="Product preview" className="h-full w-full object-cover" /> : <ProductGlyph category={category} iconClassName="size-12" />}</div><label className="mt-4 flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => chooseImage(e.target.files?.[0])} /><ImageUp className="size-4" />Upload real product photo</label><Button onClick={enhanceImage} disabled={!imageUrl || imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "AI enhance for marketplace"}</Button><Button onClick={() => void draftImage()} disabled={imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "Create a sample image with AI"}</Button>{originalImageUrl && imageUrl !== originalImageUrl && <button onClick={() => setImageUrl(originalImageUrl)} className="mt-2 w-full text-center text-xs font-black text-stone-500">Restore original image</button>}<p className="mt-3 text-[11px] leading-5 text-stone-500">Image enhancement preserves the real product and pack while improving presentation. Review the result before publishing. If you skip the photo, a sample image is drawn for you automatically; replace it any time with a real photo.</p></div>
     </div>
@@ -8065,7 +8376,7 @@ function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; st
 function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
 function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={navigate} />;
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={navigate} />;
   if (active === "AI insights") return <AIInsights role="operations" state={state} />;
   if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
@@ -8289,33 +8600,34 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
         {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-        {picked && (() => {
-          const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
-          const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
-          const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
-          return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+      {picked && (() => {
+        const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
+        const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
+        const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
+        return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
           <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
           <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
-            {picked.verification !== "Verified" && pickedDocs.length > 0 && (
-              <button
-                type="button"
-                onClick={verifyAllDocs}
-                className="text-xs font-bold text-[#155F65] hover:underline cursor-pointer"
-              >
-                Tick all ({pickedDocs.length}) documents
-              </button>
-            )}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
+              {picked.verification !== "Verified" && pickedDocs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={verifyAllDocs}
+                  className="text-xs font-bold text-[#155F65] hover:underline cursor-pointer"
+                >
+                  Tick all ({pickedDocs.length}) documents
+                </button>
+              )}
+            </div>
+            <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
+            <OpsAgreementPanel key={picked.id} vendorId={picked.id} live={isLiveSupabaseMode()} onComplete={reportAgreement} />
+            <CommercialTermsPanel vendor={picked} live={isLiveSupabaseMode()} onSaved={(terms) => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === picked.id ? { ...x, ...terms } : x), audit: [audit(session, "Set commercial terms", picked.businessName), ...s.audit] }))} />
           </div>
-          <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
-          <OpsAgreementPanel key={picked.id} vendorId={picked.id} live={isLiveSupabaseMode()} onComplete={reportAgreement} />
-          <CommercialTermsPanel vendor={picked} live={isLiveSupabaseMode()} onSaved={(terms) => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === picked.id ? { ...x, ...terms } : x), audit: [audit(session, "Set commercial terms", picked.businessName), ...s.audit] }))} />
-        </div>
-        <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
-        {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
-      </section>; })()}
+          <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
+          {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
+        </section>;
+      })()}
     </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
 
     <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
@@ -8382,11 +8694,10 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
           </Button>
           <Button
             onClick={confirmRejection}
-            className={`rounded-xl font-bold ${
-              pendingDecision === "Rejected"
+            className={`rounded-xl font-bold ${pendingDecision === "Rejected"
                 ? "bg-[#b42332] text-white hover:bg-rose-700"
                 : "bg-[#155F65] text-white hover:bg-[#0F4A4F]"
-            }`}
+              }`}
           >
             Confirm {pendingDecision === "Rejected" ? "Rejection" : "Changes Required"}
           </Button>
@@ -8625,7 +8936,8 @@ function RFQDesk({ state }: { state: V3State }) {
   return <div className="space-y-5"><Heading eyebrow="RFQ CONTROL" title="Monthly requirement desk" body="Every customer requirement, who was invited and who quoted." />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Open RFQs" value={String(open.length)} icon={ClipboardCheck} /><Metric label="Quotes received" value={String(state.quotes.length)} icon={ReceiptText} /><Metric label="Awarded" value={String(awarded.length)} icon={BadgeCheck} /><Metric label="Need attention" value={String(needsAttention.length)} icon={AlertTriangle} note={needsAttention.length ? "No vendor was invited" : undefined} /></div>
     {state.requirements.length ? <div className="surface-card overflow-x-auto rounded-3xl"><Table><TableHeader><TableRow><TableHead>Requirement</TableHead><TableHead>Customer</TableHead><TableHead>Invited</TableHead><TableHead>Quoted</TableHead><TableHead>Closes</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{state.requirements.map((req) => <TableRow key={req.id}><TableCell><b>{req.title}</b><div className="text-xs text-[#55656A]">{req.id} · {req.items.length} items</div></TableCell><TableCell className="text-sm">{req.customerEmail}</TableCell><TableCell>{(req.invitedVendorIds || []).length ? `${(req.invitedVendorIds || []).length} Crown vendors` : <span className="rounded-full bg-[#fdecef] px-3 py-1 text-xs font-semibold text-[#b42332]">0 vendors</span>}</TableCell><TableCell>{state.quotes.filter((x) => x.requirementId === req.id).length}</TableCell><TableCell>{req.closingDate || "Not set"}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pill(req.status)}`}>{req.status}</span></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ClipboardCheck} title="No RFQs yet" body="Customer monthly requirements will appear here." />}
-    <p className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-5 shrink-0" />Only vendors on the Crown plan whose own radius covers the customer are invited. If none are invited, ask a nearby vendor to upgrade or contact the customer.</p></div>; }
+    <p className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-5 shrink-0" />Only vendors on the Crown plan whose own radius covers the customer are invited. If none are invited, ask a nearby vendor to upgrade or contact the customer.</p></div>;
+}
 function Cancellations({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const [amounts, setAmounts] = useState<Record<string, number>>({});
   const [view, setView] = useState<"open" | "decided">("open");
@@ -8704,12 +9016,12 @@ function VendorPayments({ state, setState, session, canManage }: { state: V3Stat
   return <div className="space-y-6"><Heading eyebrow="VENDOR SETTLEMENTS" title="Vendor-wise income & payouts" body={canManage ? "See exactly what each vendor earned, the platform's commission profit, and release payouts once they reach their scheduled date." : "Read-only oversight of vendor income, platform profit and payout status across the marketplace."} action={<Button variant="outline" onClick={downloadLedger} className="rounded-xl"><Download />Download Excel</Button>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total collected (GMV)" value={money(totals.gross)} icon={IndianRupee} /><Metric label="Platform profit (commission)" value={money(totals.commission)} icon={Percent} /><Metric label="Pending vendor payouts" value={money(totals.pending)} icon={WalletCards} /><Metric label="Already paid to vendors" value={money(totals.paidOut)} icon={CheckCircle2} /></div>
     {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Income (gross)</TableHead><TableHead>Platform profit</TableHead><TableHead>Paid to vendor</TableHead><TableHead>Pending payout</TableHead><TableHead>Next payout</TableHead><TableHead>Status</TableHead>{canManage && <TableHead>Action</TableHead>}</TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.vendor.id}><TableCell><b>{row.vendor.businessName}</b><div className="text-xs text-stone-500">{row.vendor.ownerEmail}</div></TableCell><TableCell className="font-black">{money(row.gross)}</TableCell><TableCell className="text-[#155F65] font-black">{money(row.commission)}</TableCell><TableCell>{money(row.paidOut)}</TableCell><TableCell>{money(row.pending)}</TableCell><TableCell>{row.nextPayoutDate || "—"}</TableCell><TableCell>{row.overdueCount > 0 ? <Status className="border-amber-200 bg-amber-50 text-amber-800">Payout due</Status> : row.pending > 0 ? <Status className="border-sky-200 bg-sky-50 text-sky-700">Scheduled</Status> : <Status className="border-emerald-200 bg-emerald-50 text-emerald-700">Paid up</Status>}</TableCell>{canManage && <TableCell><Button size="sm" disabled={row.overdueCount === 0} onClick={() => markPaid(row.vendor.id)} className="rounded-xl bg-[#155F65] disabled:opacity-40"><WalletCards />Mark payout paid</Button></TableCell>}</TableRow>)}</TableBody></Table></div> : <Empty icon={WalletCards} title="No vendor payments yet" body="Vendor income and payouts will appear here once customers start paying for orders." />}
-  <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
+    <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
 }
 
 function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void; onNavigate?: (view: string) => void }) {
   const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => {} } as unknown as PeopleApi} onNavigate={onNavigate} />;
+  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={onNavigate} />;
   if (active === "AI insights") return <AIInsights role="admin" state={state} />;
   if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
   if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
@@ -8786,13 +9098,13 @@ function HomepageCampaigns({ session, state, setState }: { session: DemoSession;
     setBusy(true);
     try {
       const token = await getAccessToken();
-      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "campaign_strategy", message: "Analyse current marketplace and purchase behaviour and suggest responsible campaigns for useful customer segments.", role: "admin" })  }, 60000);
+      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "campaign_strategy", message: "Analyse current marketplace and purchase behaviour and suggest responsible campaigns for useful customer segments.", role: "admin" }) }, 60000);
       const json = await response.json() as { result?: { campaigns?: Array<{ name: string; audience: string; offer: string; rationale: string; channel: string }> }; error?: string };
       if (!response.ok) throw new Error(json.error || "AI campaign analysis failed");
       const result = json.result?.campaigns || [];
       if (result.length) setSuggestions(result);
       else {
-        const topCategory = [...state.products].sort((a,b) => b.stock - a.stock)[0]?.category || "Groceries";
+        const topCategory = [...state.products].sort((a, b) => b.stock - a.stock)[0]?.category || "Groceries";
         setSuggestions([{ name: `${topCategory} discovery`, audience: `Customers who have not purchased ${topCategory} recently`, offer: "Personalised discovery bundle or limited introductory offer", rationale: "Uses non-sensitive commerce behaviour only and gives customers a relevant reason to explore an available category.", channel: "In-app + WhatsApp opt-in" }]);
       }
     } catch (error) { toast.error(errorMessage(error, "Campaign suggestions could not be generated")); }
@@ -9100,7 +9412,7 @@ function NotificationDrawer({ open, setOpen, session, state, setState, onNavigat
 
   async function handleNotificationClick(item: Notification) {
     if (!item.read) {
-      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => {});
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => { });
       setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
     }
     setOpen(false);
@@ -9168,7 +9480,7 @@ function NotificationDrawerV4({ page = false, open, setOpen, session, state, set
 
   async function handleNotificationClick(item: Notification) {
     if (!item.read) {
-      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => {});
+      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => { });
       setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
     }
     setOpen(false);

@@ -4,6 +4,8 @@ import QRCode from "qrcode";
 import Image from "next/image";
 import { QrCode, Download, Copy, Check, Sparkles, BadgeCheck, Store, MapPin } from "@/components/icons";
 import { toast } from "sonner";
+import { loadAgreementStatus } from "@/components/vendor-signing";
+import { isLiveSupabaseMode } from "@/lib/supabase";
 import type { Vendor } from "@/components/sheplates-v3";
 
 /** Official approved tagline for ShePlates promotional materials */
@@ -573,12 +575,57 @@ export function VendorQrCode({
   const [shopUrl, setShopUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(true);
+  const [agreementStatus, setAgreementStatus] = useState<
+  "loading" | "accepted" | "pending" | "error"
+>("loading");
 
   const resolvedLogo = vendor?.logoUrl || vendorLogo || "";
   const resolvedCategory = vendor?.category || vendorCategory || "Bakery";
   const resolvedAddress = vendor?.address || vendorAddress || "";
+  // QR access is enabled only after both agreements are accepted.
+useEffect(() => {
+  let active = true;
 
-  useEffect(() => {
+  async function checkAgreements() {
+    setAgreementStatus("loading");
+
+    try {
+      if (isLiveSupabaseMode()) {
+        const result = await loadAgreementStatus(vendorId);
+
+        if (active) {
+          setAgreementStatus(result.allDone ? "accepted" : "pending");
+        }
+    } else if (active) {
+  setAgreementStatus(
+    vendor?.termsAccepted === true ? "accepted" : "pending"
+  );
+}
+    } catch (error) {
+      console.error("Agreement verification failed:", error);
+
+      if (active) {
+        setAgreementStatus("error");
+      }
+    }
+  }
+
+  void checkAgreements();
+
+  return () => {
+    active = false;
+  };
+}, [vendorId, vendor?.termsAccepted]);
+
+ useEffect(() => {
+    if (agreementStatus !== "accepted") {
+      setDataUrl("");
+      setBrochureUrl("");
+      setShopUrl("");
+      setGenerating(false);
+      return;
+    }
+
     if (typeof window === "undefined") return;
     const url = `${window.location.origin}${window.location.pathname}?vendor=${vendorId}`;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the link needs window.location, which only exists in the browser
@@ -628,8 +675,14 @@ export function VendorQrCode({
     return () => {
       isMounted = false;
     };
-  }, [vendorId, vendorName, resolvedLogo, resolvedCategory, resolvedAddress]);
-
+}, [
+  agreementStatus,
+  vendorId,
+  vendorName,
+  resolvedLogo,
+  resolvedCategory,
+  resolvedAddress,
+]);
   const copyLink = useCallback(() => {
     if (!shopUrl) return;
     if (navigator.clipboard) {
@@ -654,113 +707,175 @@ export function VendorQrCode({
   }, [onOpenStore, vendorId, shopUrl]);
 
   const fileSlug = vendorName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-
-  return (
-    <div className="surface-card rounded-[26px] p-4 sm:p-6" data-testid="vendor-qr-brochure-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/70 pb-4">
-        <div>
-          <div className="flex items-center gap-2 text-[#202827]">
-            <QrCode className="size-5 text-[#155F65]" />
-            <h3 className="text-lg font-black tracking-[-.02em]">Store QR code</h3>
-          </div>
-          <p className="mt-1 text-xs text-stone-500 sm:text-sm">
-            Point your phone camera to open this store directly. Customers can scan this QR code or use the direct link.
-          </p>
+return (
+  <div
+    className="surface-card rounded-[26px] p-4 sm:p-6"
+    data-testid="vendor-qr-brochure-card"
+  >
+  
+{agreementStatus === "accepted" ? (
+  <>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/70 pb-4">
+      <div>
+        <div className="flex items-center gap-2 text-[#202827]">
+          <QrCode className="size-5 text-[#155F65]" />
+          <h3 className="text-lg font-black tracking-[-.02em]">
+            Store QR Code
+          </h3>
         </div>
-        <div className="flex items-center gap-1.5 rounded-full bg-[#EAF4F2] px-3 py-1 text-xs font-bold text-[#155F65]">
-          <Sparkles className="size-3.5" /> Direct Store Access
-        </div>
+        <p className="mt-1 text-xs text-stone-500 sm:text-sm">
+          Share your unique store QR code with customers for instant access
+          to your store, products and shopping experience.
+        </p>
       </div>
 
-      <div className="mt-6 flex flex-col md:flex-row items-center md:items-start gap-6">
-        {/* Simple QR Code Display */}
-        <div className="flex flex-col items-center shrink-0">
-          <div className="relative flex size-48 items-center justify-center rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
-            {/* Simple corner accents */}
-            <div className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 rounded-tl border-l-2 border-t-2 border-[#155F65]" />
-            <div className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 rounded-tr border-r-2 border-t-2 border-[#155F65]" />
-            <div className="pointer-events-none absolute bottom-2 left-2 h-3.5 w-3.5 rounded-bl border-b-2 border-l-2 border-[#155F65]" />
-            <div className="pointer-events-none absolute bottom-2 right-2 h-3.5 w-3.5 rounded-br border-b-2 border-r-2 border-[#155F65]" />
+      <div className="flex items-center gap-1.5 rounded-full bg-[#EAF4F2] px-3 py-1 text-xs font-bold text-[#155F65]">
+        <Sparkles className="size-3.5" />
+        Direct Store Access
+      </div>
+    </div>
 
-            {dataUrl ? (
-              <Image
-                src={dataUrl}
-                alt={`QR code for ${vendorName}`}
-                width={160}
-                height={160}
-                unoptimized
-                className="size-full object-contain"
-              />
-            ) : (
-              <span className="text-xs text-stone-400">Generating QR…</span>
-            )}
-          </div>
-          <p className="mt-2 text-xs font-semibold text-stone-500">Scan to visit store</p>
+    <div className="mt-6 flex flex-col items-center gap-6 md:flex-row md:items-start">
+
+      {/* QR Code */}
+      <div className="flex shrink-0 flex-col items-center">
+        <div className="relative flex size-48 items-center justify-center rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+
+          <div className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 rounded-tl border-l-2 border-t-2 border-[#155F65]" />
+          <div className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 rounded-tr border-r-2 border-t-2 border-[#155F65]" />
+          <div className="pointer-events-none absolute bottom-2 left-2 h-3.5 w-3.5 rounded-bl border-b-2 border-l-2 border-[#155F65]" />
+          <div className="pointer-events-none absolute bottom-2 right-2 h-3.5 w-3.5 rounded-br border-b-2 border-r-2 border-[#155F65]" />
+
+          {dataUrl && !generating ? (
+            <Image
+              src={dataUrl}
+              alt={`QR code for ${vendorName}`}
+              width={160}
+              height={160}
+              unoptimized
+              className="size-full object-contain"
+            />
+          ) : (
+          <span className="text-xs text-stone-400">
+  {generating ? "Generating QR..." : "QR code unavailable"}
+</span>
+          )}
         </div>
 
-        {/* Link, Guidance & Download Buttons */}
-        <div className="flex-1 w-full space-y-4">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-stone-600">Direct Store Link</label>
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1 overflow-hidden truncate rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-700">
-                {shopUrl || "Generating store link…"}
-              </div>
-              <button
-                type="button"
-                onClick={copyLink}
-                aria-label="Copy store link"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
-              >
-                {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
-                {copied ? "Copied" : "Copy"}
-              </button>
+        <p className="mt-2 text-xs font-semibold text-stone-500">
+          Scan to visit store
+        </p>
+      </div>
+
+      {/* Store Link and Actions */}
+      <div className="w-full flex-1 space-y-4">
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-stone-600">
+            Direct Store Link
+          </label>
+
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1 truncate rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-700">
+              {shopUrl || "Generating store link..."}
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-stone-200/70 bg-stone-50/70 p-3.5 text-xs text-stone-600 space-y-1">
-            <p className="font-bold text-stone-700">How customers use your QR code:</p>
-            <p>Scanning this QR code with a phone camera automatically opens your live store profile with all products, tabs, and cart.</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 pt-1">
-            {/* Primary Action: Download QR Code Only */}
-            {dataUrl && (
-              <a
-                href={dataUrl}
-                download={`${fileSlug}-qr.png`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#155F65] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#0F4A4F]"
-              >
-                <Download className="size-3.5" />
-                Download QR Code Only
-              </a>
-            )}
-
-            {/* Optional Promotional Brochure PNG Download */}
-            {brochureUrl && (
-              <a
-                href={brochureUrl}
-                download={`${fileSlug}-store-brochure.png`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
-              >
-                <Download className="size-3.5" />
-                Download QR Brochure (PNG)
-              </a>
-            )}
-
-            {/* Visit Store Button */}
             <button
               type="button"
-              onClick={handleVisitStore}
-              data-testid="brochure-visit-store-btn"
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#155F65]/30 bg-[#EAF4F2] px-4 py-2.5 text-xs font-black text-[#155F65] transition hover:bg-[#d6ece8]"
+              onClick={copyLink}
+              aria-label="Copy store link"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
             >
-              <Store className="size-3.5" />
-              <span>Visit Store Now →</span>
+              {copied ? (
+                <Check className="size-3.5 text-emerald-600" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+              {copied ? "Copied" : "Copy"}
             </button>
           </div>
         </div>
+
+        <div className="space-y-1 rounded-2xl border border-stone-200/70 bg-stone-50/70 p-3.5 text-xs text-stone-600">
+          <p className="font-bold text-stone-700">
+            How customers use your QR code:
+          </p>
+          <p>
+            Customers can scan this QR code using their phone camera
+            to instantly access your live store, browse products
+            and place orders.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
+
+          {dataUrl && (
+            <a
+              href={dataUrl}
+              download={`${fileSlug}-qr.png`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#155F65] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#0F4A4F]"
+            >
+              <Download className="size-3.5" />
+              Download QR Code
+            </a>
+          )}
+
+          {brochureUrl && (
+            <a
+              href={brochureUrl}
+              download={`${fileSlug}-store-brochure.png`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-xs font-black text-stone-700 transition hover:border-[#155F65] hover:text-[#155F65]"
+            >
+              <Download className="size-3.5" />
+              Download QR Brochure
+            </a>
+          )}
+
+          <button
+            type="button"
+            onClick={handleVisitStore}
+            data-testid="brochure-visit-store-btn"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#155F65]/30 bg-[#EAF4F2] px-4 py-2.5 text-xs font-black text-[#155F65] transition hover:bg-[#d6ece8]"
+          >
+            <Store className="size-3.5" />
+            <span>Visit Store Now →</span>
+          </button>
+
+        </div>
       </div>
     </div>
-  );
+  </>
+) : (
+  <div className="flex flex-col items-center justify-center py-12 text-center">
+
+    <div className="mb-5 grid size-16 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]">
+      <QrCode className="size-8" />
+    </div>
+
+    <h3 className="text-xl font-black text-[#202827]">
+      Your Store QR Code Is Almost Ready!
+    </h3>
+
+    <p className="mt-3 max-w-xl text-sm leading-7 text-[#55656A]">
+      You're just one step away from making your store accessible
+      to customers! Please accept both the Vendor Partnership
+      Agreement and Sheplates Terms & Conditions to unlock your
+      exclusive store QR code.
+    </p>
+
+    <div className="mt-5 rounded-2xl border border-[#E5D9AD] bg-[#FFF8E5] px-5 py-3 text-sm font-semibold text-[#795900]">
+      <span className="flex items-center gap-2">
+        <BadgeCheck className="size-4" />
+        Agreement Acceptance Required
+      </span>
+    </div>
+
+    <p className="mt-3 text-xs text-stone-400">
+      Your unique store QR code will be generated automatically
+      once both agreements are successfully accepted.
+    </p>
+  </div>
+)}
+</div>
+);
 }

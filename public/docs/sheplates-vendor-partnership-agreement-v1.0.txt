@@ -1,0 +1,422 @@
+  SHEPLATES VENDOR PARTNERSHIP AGREEMENT
+
+This Vendor Partnership Agreement ("Agreement") is entered into on __________ ("Effective Date") between
+Sheplates Private Limited, a company having its registered office at No.1/4, Vijayalakshmi Nagar, 7th Street,
+Kattuppakkam, Chennai, Tamil Nadu – 600056, India, operating under the brand name "Sheplates" ("Platform"),
+and the Vendor identified below.
+
+Vendor Name: __________________________
+Business Name: ________________________
+Vendor Category: ______________________
+Business Address: _____________________
+Phone: ________________________________
+Email: ________________________________
+
+
+1.Definitions
+For the purposes of this Agreement: “Platform” means the Sheplates digital platform and related services operated by
+Sheplates Private Limited. An affiliate may participate in providing services only where appropriately authorised.;
+"Vendor” means any individual, sole proprietorship, partnership, limited liability partnership, company, or other
+legally recognised person or entity that registers with Sheplates to list, market, offer, sell, or fulfil products or services
+through the Platform, subject to applicable eligibility requirements and laws; "Listing Module" means the business
+listing model; "Ordering Module" means the order-enabled marketplace model; and "Operations Team" means the
+Sheplates team responsible for onboarding, operational support, and escalations.
+
+2.Purpose
+This Agreement governs the Vendor's participation on the Sheplates platform, including listing, ordering,
+commercial terms, operational responsibilities, and the rights and obligations of both Parties.
+
+3. Eligible Vendor Categories
+Home Chefs, Home Bakers, Grocery Stores, Vegetable Shops, Fruit Shops, Meat & Chicken Shops, Rice Mandis,
+Dairies, and other categories approved by Sheplates at its sole discretion.
+
+4. Platform Modules
+Sheplates offers the following modules. The Vendor shall select either the Listing Module or the Ordering
+Module, as applicable, and the corresponding commercial terms shall apply.
+
+4.1 Listing Module — Taster Plan
+
+    ●​ Vendors list their business, products and catalogue on Sheplates and connect directly with customers
+       through WhatsApp.
+    ●​ No platform commission applies.
+    ●​ Selected Subscription plan: _______________
+    ●​ Subscription fee: ₹________ per ________.
+
+4.2 Ordering Module — Crave, Thrive or Crown Plan
+
+    ●​ Vendors receive and fulfill customer orders placed through Sheplates.
+   ●​   Order-related customer communication shall be coordinated through the Sheplates Operations Team.
+   ●​   Selected subscription plan: ____________________
+   ●​   Platform commission: ________%.
+   ●​   Subscription fee: ₹________ per ________.
+
+The selected module, subscription plan, applicable fees and commission shall be confirmed at onboarding or
+subscription selection. Subscription features and rates are set out in Annexure A, and the applicable commercial
+terms shall be completed before this Agreement is signed.
+
+5. Vendor Eligibility - FSSAI Requirement
+During onboarding, the Vendor shall provide a valid FSSAI registration or licence, as applicable to the Vendor's
+food business, or an FSSAI application reference for preliminary verification.
+Before activation for food sales on Sheplates, the Vendor must provide a valid FSSAI registration or licence
+applicable to its business, unless otherwise permitted by applicable law. An application reference alone shall not
+be treated as proof of an approved registration or licence.
+The Vendor shall maintain a valid FSSAI registration or licence and ensure timely renewal, where applicable. If
+an application is rejected, a registration or licence expires, or the Vendor otherwise fails to meet applicable food
+safety requirements, Sheplates may immediately suspend or remove the Vendor's food listings or ordering
+facilities without prior notice where reasonably necessary to protect customers or comply with applicable law.
+Any withholding of Vendor payouts shall be governed by Clause 11 and Clause 28.5, as applicable.
+
+5.1 Vendor Documentation and Verification
+5.1.1. Mandatory Documents
+Before activation on Sheplates, the Vendor shall submit:
+
+a. PAN: PAN of the proprietor or business entity, as applicable.
+b. Identity Proof: Government-issued identity proof of the proprietor or authorised representative, as applicable.
+c. Address Proof: Proof of the proprietor's or business entity's address and the business/pickup premises, as
+applicable.
+d. FSSAI: Valid FSSAI registration or licence applicable to the Vendor's food business.
+e. Bank Details: Bank account number, IFSC, account holder name, and supporting bank proof.
+f. Business Details: Business name, address, pickup location, and contact details.
+g. Product Information: Menu or product catalogue, prices, and other information required for listing.
+h. Vendor Agreement: Acceptance or execution of this Agreement and applicable platform policies.
+
+5.1.2. Conditional Documents
+The Vendor shall provide the following documents wherever applicable under law or reasonably required for
+verification:
+
+a. GST registration certificate and GSTIN.
+b. Business constitution documents, such as a partnership deed or certificate of incorporation.
+c. Trade licence, municipal permissions, or other statutory registrations.
+d. Additional address proof, authorised signatory proof, product labels, or other compliance documents.
+
+5.2. Verification and Compliance
+The Vendor shall ensure that all submitted information is accurate and valid and promptly notify Sheplates of
+any changes. Sheplates may verify documents, request additional information where reasonably necessary, and
+withhold activation or suspend the Vendor for missing, invalid, or non-compliant documentation. The Vendor
+shall maintain all registrations, licences, and statutory compliances applicable to its business.
+5.3. Data Security, Retention and Deletion
+Sheplates shall implement reasonable technical and organisational safeguards to protect vendor documents and
+personal information against unauthorised access, disclosure, alteration, loss, or misuse. Access shall be
+restricted to authorised personnel on a need-to-know basis.
+Sheplates shall retain documents and personal information only for as long as necessary for onboarding,
+verification, business operations, dispute resolution, and compliance with applicable laws. Upon termination of
+the Vendor's association, Sheplates shall securely delete or anonymise such information within a reasonable
+period, except where retention is required by law or necessary for legal claims. Any retained information shall be
+securely deleted when the applicable retention requirement or purpose ends.
+Sheplates shall handle all submitted documents and personal information in accordance with applicable law and
+its Privacy Policy.
+
+6. Vendor Responsibilities
+   ●​   Complete onboarding before selling.
+   ●​   Maintain catalogue, inventory, pricing and product availability in real-time
+   ●​   Upload high-quality product photographs.
+   ●​   Maintain strict food quality, hygiene and packaging standards as mandated by law and Sheplates.
+   ●​   Offer products on pre-order, subscription, or both.
+   ●​   Choose Delivery and/or Pick Up.
+   ●​   Maintain delivery fleet or outsource delivery.
+   ●​   Comply with all operational policies and guidelines issued by Sheplates.
+   ●​   Permit Sheplates to conduct periodic audits of the Vendor's premises to ensure compliance with quality
+        and hygiene standards.
+
+7. Order Status Management
+Vendor shall update each order through the following stages within the timelines stipulated by Sheplates:​
+• Order Accepted​
+• Order Packed​
+• Ready for Pickup or Delivery​
+• Delivery Partner Picked Up​
+• Customer Collected the Order (Click & Collect)​
+• Delivery Completed
+
+8. Customer Communication
+Ordering Module vendors shall not communicate directly with customers under any circumstances. All
+order-related communication shall be coordinated exclusively through the Sheplates Operations Team. Listing
+Module vendors communicate directly through WhatsApp. Any attempt by Ordering Module vendors to bypass
+the Platform and solicit customers directly shall constitute a material breach of this Agreement.
+
+9. Order Cancellations, Refunds and Payouts
+Customer cancellation or modification requests shall be handled in accordance with Sheplates' applicable
+cancellation and refund policy. Before Vendor acceptance, such requests must be routed through the Sheplates
+Operations Team. Vendor cancellations after acceptance must also be routed through the Sheplates Operations
+Team.
+
+If a Vendor cancels an accepted order, Sheplates shall notify the customer and initiate a refund of the amount
+paid for the cancelled order to the customer's original mode of payment, in accordance with the applicable
+refund policy. The cancelled order shall be excluded from the Vendor's payout, and no settlement shall be made
+to the Vendor for that order. If the amount has already been included in a payout calculation or settled, Sheplates
+may adjust or recover the corresponding amount from subsequent payouts, subject to applicable law and this
+Agreement.
+10. Operational Performance and Remedies
+The Vendor shall maintain accurate inventory, update order statuses promptly, prepare orders within committed
+timelines, fulfil accepted orders within the selected delivery or collection slot, and comply with service
+standards communicated by Sheplates.
+
+10.1 Stock-Related Cancellations: If a Vendor cancels more than three (3) orders in a calendar week of Monday
+to Sunday due to stock unavailability, the Vendor's account shall be automatically deactivated. The count shall
+apply separately to each Vendor account. The Vendor must contact the Sheplates Operations Team to request
+reactivation, which shall be subject to verification and approval by Sheplates.
+
+10.2 Service Failures and Financial Penalties: Failure to meet applicable service-level agreements (SLAs) or
+operational standards may result in corrective action, financial penalties or suspension, in accordance with the
+applicable policies communicated by Sheplates. Any financial penalty shall be imposed only where the triggering
+event, penalty amount or calculation method, and applicable conditions have been communicated to the Vendor
+in advance. The Vendor shall be notified of the penalty and may raise a dispute through the Sheplates Operations
+Team.
+
+10.3 Poor-Quality Orders: For verified orders involving poor product quality, Sheplates may require the Vendor
+to reimburse the value of the affected products, subject to verification, notification to the Vendor and applicable
+law. The Vendor may dispute the decision through the Sheplates Operations Team.
+
+10.4 Repeated Operational Failures: Repeated failures to comply with operational standards may result in
+proportionate corrective action, suspension or deactivation in accordance with this Agreement and applicable
+policies.
+
+11. Payments & Settlements
+Customer payments are collected online. Vendor settlements are processed every Wednesday for successfully
+completed orders from the previous Monday to Sunday.
+
+Vendor settlements shall be subject to deductions for agreed commissions, applicable subscription fees,
+customer refunds, and other amounts due under this Agreement that are reasonably documented.
+
+Sheplates may temporarily withhold the amounts reasonably necessary to address pending customer disputes,
+chargebacks, suspected fraud, regulatory requirements, food-safety or compliance concerns under Clause 5, or
+other legitimate risks, subject to applicable law. Any undisputed balance shall be settled in accordance with the
+applicable settlement schedule, subject to applicable law.
+
+12. Subscription Fees
+Subscription plans may be billed monthly, quarterly, half-yearly or yearly, as offered by Sheplates. The applicable
+subscription plan, billing period, subscription fee and taxes shall be communicated to the Vendor when the
+Vendor selects or renews a subscription. Monthly subscription rates and included features are set out in
+Annexure A.
+
+Where subscription fees are agreed to be deducted from Vendor payouts, any shortfall must be paid by the
+Vendor within 24 hours of notification. If the outstanding amount remains unpaid, Sheplates may suspend the
+relevant subscription features or the Vendor's access as permitted under this Agreement.
+
+13. Promotions & Offers
+Promotion requests shall be routed through the Sheplates Operations Team.​
+Email: partnersupport@sheplates.com
+14. Payment & Reconciliation Support
+For reconciliation and payment queries contact:​
+Email: partnersupport@sheplates.com
+
+15. Pricing & Taxation
+The Vendor is responsible for setting product prices and complying with applicable tax laws, including maintaining
+required registrations and issuing tax invoices where legally required. Sheplates shall be responsible for its own
+statutory tax and invoicing obligations. The Parties shall comply with their respective obligations under applicable law.
+
+16. Data Privacy
+The Vendor shall use customer information solely for fulfilling orders placed through the Platform and shall
+protect all customer data and Sheplates business data in accordance with applicable Indian laws. Customer
+information shall not be copied, shared, sold, or used for any unauthorised purpose during or after the term of
+this Agreement.
+
+17. Artificial Intelligence (AI) and Agentic Commerce
+Sheplates may use Artificial Intelligence (AI), automated systems and Agentic Commerce technologies to
+facilitate product discovery, customer recommendations, marketplace operations and the generation of business
+insights for Vendors.
+
+When made available by Sheplates for certain plans, Vendors may access insights relating to their listings,
+products, customer preferences, demand patterns, sales performance and other relevant business information.
+
+Such insights are provided solely to help Vendors understand and improve their business performance. Vendors
+shall not attempt to access the underlying AI systems, customer data, confidential platform information or
+insights relating to other Vendors unless expressly authorised by Sheplates.
+
+Vendors shall use the insights only for legitimate business purposes connected with their participation on
+Sheplates and shall not copy, disclose, sell or misuse any personal information or confidential information
+contained in them. Vendors must comply with this Agreement, Sheplates' applicable policies and applicable data
+protection and privacy laws.
+
+Sheplates may modify, restrict or discontinue AI-powered insights or related features from time to time. Insights
+are provided for informational purposes and may not always be complete or accurate. Vendors remain
+responsible for their own business decisions and for complying with their obligations under this Agreement.
+
+18. Confidentiality & Intellectual Property
+All software, workflows, business processes, documentation, branding, concepts and intellectual property
+relating to Sheplates remain the exclusive property of Sheplates.
+
+19. Indemnity
+The Vendor shall defend, indemnify and hold harmless Sheplates, its affiliates, directors, officers and employees
+against claims, liabilities, damages and expenses (including reasonable legal fees), to the extent arising from the
+Vendor’s acts, omissions, negligence, legal non-compliance or breach of this Agreement, including matters
+relating to product quality, food safety, hygiene, pricing, inventory, delivery, packaging or intellectual property.
+
+20. Force Majeure
+Neither Party shall be liable for delays caused by events beyond reasonable control including natural disasters,
+pandemics, war, civil unrest, government action or major infrastructure failures. However, Force Majeure shall
+not excuse the Vendor's obligation to remit any payments owed to Sheplates.
+21. Amendment of Terms
+Sheplates may amend this Agreement, operational policies, subscription plans, package names, included
+features, usage limits, billing options and subscription rates from time to time at its sole discretion. Sheplates
+will communicate material changes through the Vendor Dashboard, email, WhatsApp, SMS or another official
+communication channel, stating the effective date where applicable.
+
+Unless required by law or otherwise expressly agreed, a change in subscription rates will apply prospectively
+from the next renewal or other stated effective date and will not retroactively change a subscription period
+already paid for. The Vendor may review the revised terms and, before the change takes effect for the Vendor,
+choose an available alternative plan or discontinue renewal in accordance with this Agreement. Continued use of
+the affected subscription features or renewal after the effective date constitutes acceptance of the changes,
+subject to applicable law.
+
+22. Suspension & Termination
+Sheplates may suspend the Vendor's listings, ordering facilities or account, or terminate this Agreement, in
+accordance with Clause 28 and the other applicable provisions of this Agreement. Any suspension or
+termination shall be subject to applicable law.
+
+23. Operational Policies & Training
+The Vendor acknowledges that Sheplates may issue operational manuals, SOPs, category-specific business rules,
+onboarding guidelines, and training materials from time to time. The Vendor agrees to complete the required
+onboarding and training and comply with all operational policies communicated by Sheplates. Such policies may
+be updated in accordance with the Amendment of Terms clause and form an integral part of this Agreement.
+
+24. Limitation of Liability
+Sheplates operates as a technology marketplace. Sheplates shall not be liable for any direct, indirect, incidental,
+special or consequential losses arising from the Vendor's products, services, delivery operations or statutory
+compliance, subject to applicable law. To the maximum extent permitted by applicable law, Sheplates' aggregate
+liability under this Agreement shall not exceed the total commission and subscription fees earned by Sheplates from
+the Vendor during the one (1) month preceding the event giving rise to the claim.
+
+25. Dispute Resolution & Governing Law
+The Parties shall first attempt to resolve disputes through good-faith discussions. If unresolved, they may
+mutually agree to mediation before initiating legal proceedings. This Agreement shall be governed by the laws of
+India and subject to the exclusive jurisdiction of the High Court of Madras and courts subordinate thereto.
+
+26. Survival
+Clauses relating to Confidentiality, Intellectual Property, Data Privacy, Indemnity, Payments, Data Security,
+Retention, Deletion, and Dispute Resolution shall survive termination of this Agreement.
+
+27. Entire Agreement
+This Agreement constitutes the entire understanding between the Parties regarding the Vendor's participation
+on the Sheplates platform.
+
+28. Agreement Term and Termination
+
+28.1 Term: This Agreement shall remain in force for a minimum period of three (3) months from the Effective
+Date, unless terminated earlier in accordance with this Clause.
+
+28.2 Termination by the Vendor: After the minimum term, the Vendor may terminate this Agreement by
+providing at least one (1) month's prior written notice to Sheplates.
+28.3 Termination by Sheplates for Convenience: Sheplates may terminate this Agreement for convenience at
+any time, including during the minimum term specified in Clause 28.1, by providing at least fifteen (15) days’
+prior written notice to the Vendor.
+
+28.4 Immediate Suspension or Termination: Sheplates may suspend the Vendor's listings, ordering facilities
+or account, or terminate this Agreement immediately, where reasonably necessary due to food safety or
+regulatory non-compliance, fraud, material breach of this Agreement, repeated operational failures,
+non-payment of amounts due, or other circumstances presenting a material risk to customers, Sheplates or the
+Platform. Where appropriate, Sheplates may notify the Vendor and provide a reasonable opportunity to remedy
+the breach before termination.
+
+28.5 Outstanding Payments and Final Settlement: Upon termination, all outstanding amounts payable by the
+Vendor shall remain due. Sheplates may temporarily withhold only the amounts reasonably necessary to address
+pending customer refunds, chargebacks, payment disputes or other documented liabilities, subject to applicable
+law. Any undisputed balance shall be settled within forty-five (45) days of termination, or earlier where required
+by law.
+
+28.6 Continuing Obligations: Termination shall not affect rights, obligations or liabilities accrued before the
+termination date. Provisions that are expressly stated to survive termination, or which by their nature require
+continued effect, shall remain in force.
+
+Vendor Declaration
+I confirm that I have read, understood and I agree to comply with this Agreement and all operational policies
+issued by Sheplates from time to time.​
+​
+Vendor Name: ______________________                   ​
+Business Name: ____________________​
+Signature: ________________________​
+Date: _____________________________
+
+For Sheplates Private Limited
+Authorised Signatory: ____________________​
+Signature: _______________________________​
+Date: ____________________________________
+                                              ANNEXURE A
+Vendor Subscription Plans and Features
+This Annexure forms part of the Sheplates Vendor Partnership Agreement. The monthly subscription rates
+below are exclusive of GST and any other applicable statutory taxes or levies. Applicable taxes will be charged in
+addition at the rates required by law.
+
+1. Taster - Entry Plan
+           Plan Detail                                       Taster
+           Monthly subscription rate                         ₹499 + applicable GST
+           Business information                              Included
+           Business description                              Included
+           Items and catalogue                               Included
+           Leads through WhatsApp                            Included
+
+2. Crave, Thrive and Crown Plans
+           Feature                      Crave — ₹699/month   Thrive — ₹799/month     Crown — ₹999/month
+           Business information         Yes                  Yes                     Yes
+           Business description         Yes                  Yes                     Yes
+           Items and catalogue          Yes                  Yes                     Yes
+           Pre-orders                   Yes                  Yes                     Yes
+           Subscriptions                Yes                  Yes                     Yes
+           Delivery             fleet
+                                        Yes                  Yes                     Yes
+           management
+           Food Stories                 Yes                  Yes                     Yes
+           Food Drops                   —                    Yes                     Yes
+           Request for Quote (RFQ)
+                                        —                    —                       Yes
+           with AI assistance
+
+3. Subscription and Feature Conditions
+
+   1.​ Leads through WhatsApp are included exclusively in the Taster plan and are not included in Crave, Thrive
+       or Crown.
+   2.​ Where quarterly, half-yearly or yearly billing is offered, the applicable subscription amount and billing
+       terms will be displayed when the Vendor selects the billing option.
+   3.​ Subscription plan changes, feature modifications and revised subscription rates shall be governed by
+       Clause 21 of this Agreement.
+   4.​ Features are subject to technical availability, applicable usage limits, platform policies and this
+       Agreement. Sheplates may modify, replace, restrict or discontinue features in accordance with this
+       Agreement and applicable law.
+                                         ANNEXURE B
+ACCEPTABLE VERIFICATION DOCUMENTS
+
+The following documents may be submitted, as applicable. Sheplates may accept equivalent documents or
+request additional evidence where reasonably necessary.
+
+ Proof Category                          Acceptable Documents (Illustrative)
+
+
+ PAN                                     Proprietor's PAN card or entity PAN.
+
+
+ Identity Proof                          Passport, Driving Licence, Voter ID, Aadhaar (subject to applicable
+                                         law), or another accepted government-issued photo ID.
+
+
+ Personal Address Proof                  Utility bill, bank statement/passbook, rent agreement, property tax
+                                         receipt, or government-issued address record.
+
+
+ Business/Pickup Address Proof           Utility bill, rent/lease agreement, property tax receipt, GST certificate,
+                                         FSSAI licence, trade licence, or other official record showing the
+                                         address.
+
+
+ Bank Proof                              Cancelled cheque, bank statement, passbook, or bank-issued account
+                                         confirmation showing account holder name, account number and IFSC.
+
+
+ Food Safety                             Valid FSSAI registration or licence applicable to the Vendor.
+
+
+ GST                                     GST registration certificate/GSTIN, where applicable.
+
+
+ Business                                Certificate of incorporation, partnership deed, LLP documents, or
+ Constitution/Authorisation              authorisation letter/board or partner resolution, as applicable.
+
+
+ Other Compliance                        Trade licence, municipal permission, product labels, or other
+                                         applicable statutory documents.
+
+
+Document Requirements: Documents must be legible and valid where applicable. Vendors should provide only
+information reasonably required for verification. Unnecessary personal information may be masked where
+legally permissible. Aadhaar shall not be the sole mandatory identity document where an appropriate
+alternative is available. All documents will be handled in accordance with applicable law and Sheplates' Privacy
+Policy.
+
