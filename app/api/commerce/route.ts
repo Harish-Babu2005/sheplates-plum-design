@@ -163,12 +163,12 @@ async function commerceSnapshot(ctx: Awaited<ReturnType<typeof identity>>) {
   if (role === "vendor" && profile.vendor_id) schedulesQuery = schedulesQuery.eq("vendor_id", profile.vendor_id);
 
   let orders = (await orderQuery) as Awaited<typeof orderQuery>;
-  let schedules: any = await schedulesQuery;
+  let schedules = (await schedulesQuery) as Awaited<typeof schedulesQuery>;
   if (schedules.error && (schedules.error.code === "42703" || /column .* does not exist/i.test(schedules.error.message || ""))) {
     let fallbackSchedulesQuery = admin.from("product_schedules").select(schedulesSelectBase).order("start_date", { ascending: true }).limit(500);
     if (role === "customer") fallbackSchedulesQuery = fallbackSchedulesQuery.eq("customer_id", profile.id);
     if (role === "vendor" && profile.vendor_id) fallbackSchedulesQuery = fallbackSchedulesQuery.eq("vendor_id", profile.vendor_id);
-    schedules = (await fallbackSchedulesQuery) as any;
+    schedules = (await fallbackSchedulesQuery) as unknown as Awaited<typeof schedulesQuery>;
   }
   if (orders.error && (orders.error.code === "42703" || /column .* does not exist/i.test(orders.error.message || ""))) {
     let fallbackOrderQuery = admin.from("orders").select(selectBase).order("created_at", { ascending: false }).limit(500);
