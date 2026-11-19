@@ -6948,7 +6948,90 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
   const [fileName, setFileName] = useState(vendor.certificateName || "");
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [expiry, setExpiry] = useState(vendor.expiryDate || "");
+  const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
+  const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
+
+  const planRank: Record<Vendor["plan"], number> = {
+    Taster: 0,
+    Crave: 1,
+    Thrive: 2,
+    Crown: 3,
+  };
+
+  function handlePlanSelection(newPlan: Vendor["plan"]) {
+    if (vendor.plan === newPlan) return;
+    if (planRank[newPlan] < planRank[vendor.plan]) {
+      setDowngradeTarget(newPlan);
+      setDowngradeConfirmOpen(true);
+      return;
+    }
+    void upgradePlan(newPlan);
+  }
+
+  function confirmDowngrade() {
+    if (!downgradeTarget) return;
+    const target = downgradeTarget;
+    setDowngradeConfirmOpen(false);
+    setDowngradeTarget(null);
+    const effectiveDate = getNextMonthFirstIst();
+    setState((s) => ({
+      ...s,
+      vendors: s.vendors.map((x) => x.id === vendor.id ? {
+        ...x,
+        scheduledPlanChange: {
+          nextPlan: target,
+          effectiveDate,
+          requestedAt: new Date().toISOString(),
+        },
+      } : x),
+      audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
+    }));
+    toast.success(`You can enjoy all ${vendor.plan} features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
+  }
+
+  async function upgradePlan(newPlan: Vendor["plan"]) {
+    if (vendor.plan === newPlan) return;
+    setUpgradingTo(newPlan);
+    try {
+      if (isLiveSupabaseMode()) {
+        await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+      }
+      const newLimits = getPlanLimits(newPlan);
+      setState((s) => {
+        const activeProds = s.products.filter((p) => p.vendorId === vendor.id && p.active);
+        const excessProds = activeProds.length > newLimits.maxProducts
+          ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+          : new Set<string>();
+
+        const activeStaff = s.staff.filter((st) => st.vendorId === vendor.id && st.active);
+        const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+          ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+          : new Set<string>();
+
+        const activeSlots = (s.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+        const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+          ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+          : new Set<string>();
+
+        return {
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan, scheduledPlanChange: undefined } : x),
+          products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+          staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+          deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+          audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${vendor.plan} to ${newPlan} by ${session.name} (${session.email})`), ...s.audit],
+        };
+      });
+      toast.success(`Plan upgraded to ${newPlan}!`);
+    } catch (error) {
+      toast.error(errorMessage(error, "Plan update could not be saved"));
+    } finally {
+      setUpgradingTo(null);
+    }
+  }
+
   const [termsTick, setTermsTick] = useState(false), [termsBusy, setTermsBusy] = useState(false);
   const [termsViewOpen, setTermsViewOpen] = useState(false), [signOpen, setSignOpen] = useState(false);
   async function acceptTerms() {
