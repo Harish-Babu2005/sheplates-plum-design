@@ -348,6 +348,8 @@ export function ComplianceDocumentList({ vendor, checkedKeys, onToggleDoc, selec
     ? [{ documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: vendor.fssaiNumber && !/^(verified|submitted)$/i.test(vendor.fssaiNumber) ? vendor.fssaiNumber : undefined, fileName: vendor.certificateName && !/^private/i.test(vendor.certificateName) ? vendor.certificateName : "fssai-certificate.pdf", expiryDate: vendor.expiryDate && vendor.expiryDate !== "—" ? vendor.expiryDate : undefined }]
     : [];
   const docs = vendor.documents?.length ? vendor.documents : certificateOnly;
+  const activeDocs = docs.filter((d) => !d.isHistory);
+  const historyDocs = docs.filter((d) => d.isHistory);
   async function inspect(doc: VendorComplianceDocument, key: string) {
     if (!doc.storagePath) return void setOpen({ title: doc.title, fileName: doc.fileName || "document.pdf", url: "" });
     setBusyId(key);
@@ -357,14 +359,14 @@ export function ComplianceDocumentList({ vendor, checkedKeys, onToggleDoc, selec
   }
   return <section aria-label="Submitted compliance documents" data-testid="compliance-documents" className="rounded-2xl bg-white p-4">
     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-      <div className="flex items-center gap-2"><FileText className="size-4 text-[#155F65]" /><span className="text-xs font-black uppercase tracking-wider text-[#202827]">Submitted Compliance Documents (PDF) · {docs.length}</span></div>
-      {selectable && docs.length > 0 && (
+      <div className="flex items-center gap-2"><FileText className="size-4 text-[#155F65]" /><span className="text-xs font-black uppercase tracking-wider text-[#202827]">Submitted Compliance Documents (PDF) · {activeDocs.length}</span></div>
+      {selectable && activeDocs.length > 0 && (
         <span className="text-xs font-bold text-[#155F65]">
-          {docs.filter((_, idx) => checkedKeys?.has(docs[idx].id || `${docs[idx].documentType}-${idx}`)).length} of {docs.length} verified
+          {activeDocs.filter((_, idx) => checkedKeys?.has(activeDocs[idx].id || `${activeDocs[idx].documentType}-${idx}`)).length} of {activeDocs.length} verified
         </span>
       )}
     </div>
-    {docs.length ? <div className="grid gap-2 sm:grid-cols-2">{docs.map((doc, index) => {
+    {activeDocs.length ? <div className="grid gap-2 sm:grid-cols-2">{activeDocs.map((doc, index) => {
       const key = doc.id || `${doc.documentType}-${index}`;
       const isChecked = checkedKeys?.has(key) ?? false;
       return <div key={key} className={`flex items-center justify-between gap-2 rounded-xl border p-2.5 text-xs transition ${isChecked ? "border-[#155F65] bg-[#EAF4F2]/50" : "border-stone-200 bg-[#F7FAFA]"}`}>
@@ -384,6 +386,35 @@ export function ComplianceDocumentList({ vendor, checkedKeys, onToggleDoc, selec
         <Button type="button" variant="ghost" size="sm" disabled={busyId === key} onClick={() => void inspect(doc, key)} aria-label={`Inspect ${doc.title}`} className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold"><Eye className="size-3.5 text-[#155F65]" />{busyId === key ? "Opening…" : "Inspect"}</Button>
       </div>;
     })}</div> : <p className="text-xs text-stone-500">No documents on record for this vendor{vendor.certificateName ? ` besides the certificate file (${vendor.certificateName})` : ""}.</p>}
+
+    {historyDocs.length > 0 && (
+      <div className="mt-3 border-t border-stone-100 pt-3">
+        <details className="group">
+          <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-stone-500 hover:text-stone-800">
+            <span>Previous Document Versions ({historyDocs.length})</span>
+            <span className="text-[10px] text-stone-400 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div className="mt-2 space-y-1.5">
+            {historyDocs.map((doc, index) => (
+              <div key={doc.id || `hist-${index}`} className="flex items-center justify-between gap-2 rounded-xl border border-dashed border-stone-200 bg-stone-50/60 p-2 text-xs">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="rounded bg-stone-200 px-1 font-mono text-[9px] font-bold text-stone-600">PREVIOUS</span>
+                    <span className="truncate font-semibold text-stone-700">{doc.title}</span>
+                  </div>
+                  {doc.documentNumber && <div className="mt-0.5 truncate font-mono text-[11px] text-stone-500">No. {doc.documentNumber}</div>}
+                  {doc.expiryDate && <div className="text-[10px] text-stone-400">Expires {doc.expiryDate}</div>}
+                  {doc.fileName && <div className="truncate text-[10px] text-stone-400">{doc.fileName}</div>}
+                </div>
+                <Button type="button" variant="ghost" size="sm" disabled={busyId === (doc.id || `hist-${index}`)} onClick={() => void inspect(doc, doc.id || `hist-${index}`)} className="h-7 shrink-0 rounded-lg px-2 text-[11px]">
+                  <Eye className="size-3 text-stone-500 mr-1" />Inspect
+                </Button>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    )}
     <PdfPreviewDialog doc={open} onClose={() => setOpen(null)} />
   </section>;
 }

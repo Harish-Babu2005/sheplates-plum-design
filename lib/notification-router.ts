@@ -48,9 +48,14 @@ export interface NavigationSession {
  */
 export function extractNotificationType(item: NotificationItem): string {
   if (item.type) return item.type.toLowerCase();
-  if (item.kind && item.kind !== "general") return item.kind.toLowerCase();
+  if (item.kind && item.kind !== "general") {
+    const k = item.kind.toLowerCase();
+    if (k === "verification" || k === "vendor_verification" || k === "vendor_verification_update") return "vendor_verification_update";
+    return k;
+  }
   if (item.entityType) {
     const et = item.entityType.toLowerCase();
+    if (et === "vendor") return "vendor_verification_update";
     if (et === "customer_follow_request") return "customer_follow_request";
     if (et === "order") return "order_status_changed";
     if (et === "rfq" || et === "quotation" || et === "requirement") return "rfq_quote_submitted";
@@ -90,7 +95,7 @@ export function extractNotificationType(item: NotificationItem): string {
   if (text.includes("support request") || text.includes("support ticket") || text.includes("ticket created")) {
     return "ticket_updated";
   }
-  if (text.includes("vendor verified") || text.includes("vendor rejected") || text.includes("vendor application") || text.includes("plan changed")) {
+  if (text.includes("vendor verified") || text.includes("vendor rejected") || text.includes("vendor application") || text.includes("plan changed") || text.includes("resubmitted verification") || text.includes("certification details")) {
     return "vendor_verification_update";
   }
   if (text.includes("order confirmed") || text.includes("order preparing") || text.includes("order ready") || text.includes("order on the way") || text.includes("order delivered")) {
@@ -431,8 +436,8 @@ export function resolveNotificationTarget(
   }
 
   // 8. VENDOR VERIFICATION & ONBOARDING
-  if (type === "vendor_verification_update") {
-    const view = module === "operations" ? "Vendor verification" : "Verification";
+  if (type === "vendor_verification_update" || type === "verification") {
+    const view = module === "operations" || module === "admin" ? "Vendor verification" : "Verification";
     const queryParams: Record<string, string> = {};
     if (targetId) queryParams.vendorId = targetId;
     return {
@@ -495,6 +500,7 @@ export function executeNotificationNavigation(
 
   if (typeof window !== "undefined") {
     window.history.pushState({ page: route.view }, "", route.url);
+    window.dispatchEvent(new CustomEvent("sheplates:navigation", { detail: route }));
   }
 
   navigate(route.view);

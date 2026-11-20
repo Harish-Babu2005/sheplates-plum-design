@@ -815,21 +815,38 @@ function planCodeFromEmbed(embed: LiveVendorRow["vendor_plans"]): string | undef
 function operationalFromLive(value: string): Vendor["operational"] {
   return value === "active" ? "Active" : value === "paused" ? "Paused" : "Inactive";
 }
-/** The documents a vendor submitted, from the vendor_documents rows. The file name is read from the storage path (it is "<uuid>-<name>.pdf"). */
+/** The documents a vendor submitted, from the vendor_documents rows. The latest document per type is active; previous ones are kept as history. */
 function complianceDocumentsFromLive(rows: Array<Record<string, unknown>> | undefined): VendorComplianceDocument[] {
-  return (rows || []).map((row) => {
+  const sorted = [...(rows || [])].sort((a, b) => {
+    const tA = new Date(String(a.updated_at || a.created_at || 0)).getTime();
+    const tB = new Date(String(b.updated_at || b.created_at || 0)).getTime();
+    return tB - tA;
+  });
+  const seenTypes = new Set<string>();
+  return sorted.map((row) => {
     const path = String(row.storage_path || "");
     const metadata = (row.metadata && typeof row.metadata === "object" ? row.metadata : undefined) as Record<string, unknown> | undefined;
+    const docType = String(row.document_type || "document") as VendorComplianceDocType;
+    const isHistory = seenTypes.has(docType);
+    seenTypes.add(docType);
     return {
-      id: row.id ? String(row.id) : undefined, documentType: String(row.document_type || "document") as VendorComplianceDocType,
-      title: documentTitle(String(row.document_type || ""), metadata), documentNumber: row.document_number ? String(row.document_number) : undefined,
+      id: row.id ? String(row.id) : undefined, documentType: docType,
+      title: documentTitle(docType, metadata), documentNumber: row.document_number ? String(row.document_number) : undefined,
       fileName: String(row.file_name || path.split("/").pop()?.replace(/^[0-9a-f-]{36}-/, "") || "") || undefined, storagePath: path || undefined,
       expiryDate: row.expiry_date ? String(row.expiry_date) : undefined, verificationStatus: row.verification_status ? String(row.verification_status) : undefined, metadata,
+      isHistory,
+      createdAt: row.created_at ? String(row.created_at) : undefined,
+      updatedAt: row.updated_at ? String(row.updated_at) : undefined,
     };
   });
 }
 function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: string }, document?: Record<string, unknown>, documents?: Array<Record<string, unknown>>): Vendor {
-  const fssaiDoc = (documents || []).find((d) => d.document_type === "food_certificate" || d.document_type === "fssai");
+  const sortedDocs = [...(documents || [])].sort((a, b) => {
+    const tA = new Date(String(a.updated_at || a.created_at || 0)).getTime();
+    const tB = new Date(String(b.updated_at || b.created_at || 0)).getTime();
+    return tB - tA;
+  });
+  const fssaiDoc = sortedDocs.find((d) => d.document_type === "food_certificate" || d.document_type === "fssai");
   const effectiveDoc = fssaiDoc || document;
   return {
     id: row.id, ownerEmail: identity?.email || "vendor@sheplates.local", ownerName: identity?.name || row.owner_name || "Vendor",
@@ -843,13 +860,14 @@ function vendorFromLive(row: LiveVendorRow, identity?: { email?: string; name?: 
     logoUrl: row.logo_url || undefined,
     bannerUrl: row.banner_url || undefined,
     bio: row.description || undefined,
-    fssaiNumber: row.fssai_number || String(effectiveDoc?.document_number || document?.document_number || "Submitted"),
-    certificateName: String(effectiveDoc?.storage_path || document?.storage_path || "Private certificate"), expiryDate: row.expiry_date || String(effectiveDoc?.expiry_date || document?.expiry_date || "—"),
+    fssaiNumber: String(effectiveDoc?.document_number || row.fssai_number || document?.document_number || "Submitted"),
+    certificateName: String(effectiveDoc?.file_name || (effectiveDoc?.storage_path ? String(effectiveDoc.storage_path).split("/").pop() : undefined) || (row as unknown as Record<string, unknown>).certificate_name || document?.file_name || document?.storage_path || "Private certificate"),
+    expiryDate: String(effectiveDoc?.expiry_date || row.expiry_date || document?.expiry_date || "—"),
     termsAccepted: row.terms_accepted === true,
     termsVersion: row.terms_version || undefined,
     termsAcceptedAt: row.terms_accepted_at || undefined,
     termsDocumentReference: row.terms_document_reference || undefined,
-    documents: documents ? complianceDocumentsFromLive(documents) : undefined,
+    documents: documents ? complianceDocumentsFromLive(sortedDocs) : undefined,
   };
 }
 function productFromLive(row: LiveMenuItemRow): Product {
@@ -1685,6 +1703,7 @@ useEffect(() => {
                   ) === index,
               ),
             }));
+            setSyncVersion((version) => version + 1);
           })
           .catch((error) => {
             console.error("Real-time notification refresh failed:", error);
@@ -3190,6 +3209,8 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
     .filter((item) => item.customerEmail === session.email && item.payment === "Pending" && item.status !== "Cancelled")
     .sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a) || (b.id || "").localeCompare(a.id || ""));
   const [paying, setPaying] = useState<Order | null>(null);
+
+
   const [savingCart, setSavingCart] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState(tomorrow());
@@ -7594,10 +7615,34 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
     if (resubmit && vendor.termsAccepted === false) return toast.error("Accept the Vendor Terms and Conditions first, then resubmit");
     if (!certificate.trim()) return toast.error("Enter the certification / licence number");
     if (certificateFile && certificateFile.size === 0) return toast.error(`"${certificateFile.name}" is empty (0 bytes). Please upload a valid certificate file.`);
+    if (expiry) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (expiry < today) {
+        return toast.error("Expiry date cannot be in the past");
+      }
+    }
     try {
+      let uploadedPath: string | undefined = undefined;
+      let effectiveFileName = fileName;
       if (isLiveSupabaseMode()) {
-        if (certificateFile) { const uploaded = await uploadLiveCertificate({ vendorId: vendor.id, file: certificateFile }); setFileName(uploaded.fileName || certificateFile.name); }
-        if (resubmit) await resubmitLiveVendorVerification({ documentNumber: certificate.trim(), expiryDate: expiry || undefined });
+        if (certificateFile) {
+          const uploaded = await uploadLiveCertificate({
+            vendorId: vendor.id,
+            file: certificateFile,
+            documentNumber: certificate.trim(),
+            expiryDate: expiry || undefined,
+          });
+          uploadedPath = uploaded.path;
+          effectiveFileName = uploaded.fileName || certificateFile.name;
+          setFileName(effectiveFileName);
+        }
+        await resubmitLiveVendorVerification({
+          documentNumber: certificate.trim(),
+          expiryDate: expiry || undefined,
+          fileName: effectiveFileName,
+          storagePath: uploadedPath,
+          resubmit,
+        });
       }
       const nextStatus: Verification = resubmit ? "Submitted" : vendor.verification;
       const updatedCertificate = certificate.trim();
@@ -7606,20 +7651,27 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
         vendors: s.vendors.map((x) => x.id === vendor.id ? {
           ...x,
           fssaiNumber: updatedCertificate,
-          certificateName: fileName || x.certificateName,
+          certificateName: effectiveFileName || x.certificateName,
           expiryDate: expiry,
           verification: nextStatus,
           operational: resubmit ? "Inactive" : x.operational,
-          documents: x.documents ? (
-            x.documents.some((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai")
-              ? x.documents.map((d) =>
-                d.documentType === "food_certificate" || (d.documentType as string) === "fssai"
-                  ? { ...d, documentNumber: updatedCertificate, expiryDate: expiry || d.expiryDate, verificationStatus: "submitted", fileName: fileName || d.fileName }
-                  : d
-              )
-              : [...x.documents, { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }]
-          ) : [
-            { id: "cert-fssai", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)", documentNumber: updatedCertificate, expiryDate: expiry, fileName: fileName || "fssai-certificate.pdf", verificationStatus: "submitted" }
+          documents: [
+            {
+              id: id("cert"),
+              documentType: "food_certificate",
+              title: "Food Safety Certificate (FSSAI)",
+              documentNumber: updatedCertificate,
+              expiryDate: expiry,
+              fileName: effectiveFileName || "fssai-certificate.pdf",
+              storagePath: uploadedPath || x.documents?.[0]?.storagePath,
+              verificationStatus: resubmit ? "submitted" : (x.documents?.[0]?.verificationStatus || "submitted"),
+              isHistory: false,
+            },
+            ...(x.documents || []).filter((d) => d.documentType !== "food_certificate" && (d.documentType as string) !== "fssai"),
+            ...(x.documents || []).filter((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai").map((d) => ({
+              ...d,
+              isHistory: true,
+            })),
           ],
         } : x),
         audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit]
@@ -7631,7 +7683,7 @@ function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { 
     <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
     <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
     <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; if (next && next.size === 0) { toast.error(`"${next.name}" is empty (0 bytes). Please upload a valid certificate file.`); e.target.value = ""; return; } setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
+      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; if (next && next.size === 0) { toast.error(`"${next.name}" is empty (0 bytes). Please upload a valid certificate file.`); e.target.value = ""; return; } setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
     </div>
     <div className="surface-card rounded-[28px] p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -8020,6 +8072,11 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   const [imageUrl, setImageUrl] = useState("");
   const [originalImageUrl, setOriginalImageUrl] = useState("");
 
+  const [foodNameError, setFoodNameError] = useState(false);
+  const [foodNameValid, setFoodNameValid] = useState<boolean | null>(null);
+  const [foodNameValidating, setFoodNameValidating] = useState(false);
+  const foodValidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [customGroup, setCustomGroup] = useState("");
   const [customPackSize, setCustomPackSize] = useState("");
   const [customUnit, setCustomUnit] = useState<SkuUnitType>("pack/set/loaf");
@@ -8089,6 +8146,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
       setNutritionConfidence(editingProduct.nutritionConfidence);
       setNutritionNote(editingProduct.nutritionNote || "");
       setConfirmed(editingProduct.nutritionStatus === "Verified");
+      setFoodNameValid(null);
+      setFoodNameError(false);
     } else if (open) {
       const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
       setCategory(initialCat);
@@ -8112,6 +8171,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
       setNutritionConfidence(undefined);
       setNutritionNote("");
       setConfirmed(false);
+      setFoodNameValid(null);
+      setFoodNameError(false);
     }
   }, [editingProduct, open, vendor.category]);
 
@@ -8156,9 +8217,49 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
     setConfirmed(false);
   }
 
+  async function runFoodValidation(nameToCheck: string): Promise<boolean> {
+    const trimmed = nameToCheck.trim();
+    if (trimmed.length < 2) {
+      setFoodNameValid(false);
+      return false;
+    }
+    setFoodNameValidating(true);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch("/api/validate-food-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ name: trimmed, category }),
+      });
+      const json = await res.json() as { isFood?: boolean };
+      const valid = !!json.isFood;
+      setFoodNameValid(valid);
+      if (!valid) setImageUrl("");
+      return valid;
+    } catch {
+      setFoodNameValid(null);
+      return true;
+    } finally {
+      setFoodNameValidating(false);
+    }
+  }
+
+  function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value.slice(0, 60);
+    setName(val);
+    setConfirmed(false);
+    setFoodNameValid(null);
+    if (foodValidateTimerRef.current) clearTimeout(foodValidateTimerRef.current);
+    if (val.trim().length >= 2 && isLiveSupabaseMode()) {
+      foodValidateTimerRef.current = setTimeout(() => { void runFoodValidation(val); }, 500);
+    }
+  }
+
   async function draftImage() {
     if (!name.trim()) return toast.error("Enter the product name first");
     if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
+    const isFood = await runFoodValidation(name.trim());
+    if (!isFood) { setFoodNameError(true); return; }
     setImageBusy(true);
     try {
       setImageUrl(await generateLiveProductImage({ name: name.trim().slice(0, 60), category }));
@@ -8217,6 +8318,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   async function enhanceImage() {
     if (!imageUrl) return toast.error("Upload a product image first");
     if (!name.trim()) return toast.error("Enter the product name before image enhancement");
+    const isFood = await runFoodValidation(name.trim());
+    if (!isFood) { setFoodNameError(true); return; }
     setImageBusy(true);
     try {
       const token = await getAccessToken();
@@ -8232,6 +8335,10 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   async function save() {
     if (!name.trim()) return toast.error("Enter the product display name");
     if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
+    if (isLiveSupabaseMode()) {
+      const isFood = await runFoodValidation(name.trim());
+      if (!isFood) { setFoodNameError(true); return; }
+    }
     const cleanDesc = sanitizeProductDescription(description);
     if (cleanDesc.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
       return toast.error(`Description must be within ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`);
@@ -8361,7 +8468,9 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   }
 
   const metrics: Array<[keyof Nutrition, string]> = [["calories", "Calories"], ["protein", "Protein g"], ["carbs", "Carbs g"], ["fat", "Fat g"], ["fibre", "Fibre g"]];
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
+  return (
+    <>
+      <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
       <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
 
@@ -8453,8 +8562,20 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
 
         <div className="space-y-4">
           <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
-            <input maxLength={60} value={name} onChange={(e) => { setName(e.target.value.slice(0, 60)); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
-            <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>
+            <input
+              maxLength={60}
+              value={name}
+              onChange={handleNameChange}
+              className={`${inputClass}${foodNameValid === false ? " ring-2 ring-red-400" : ""}`}
+              placeholder="Example: Fresh Cow Milk (500 ml)"
+            />
+            {foodNameValid === false && (
+              <p className="mt-1 text-xs font-semibold text-red-500">Please enter a valid food or beverage product name.</p>
+            )}
+            {foodNameValidating && (
+              <p className="mt-1 text-xs text-stone-400">Validating product name…</p>
+            )}
+            {foodNameValid !== false && <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>}
           </Field>
           <Field
             label="Description (optional)"
@@ -8490,7 +8611,21 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
     {nutritionPresent && !nutritionConsistent && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">The entered calories and macros do not align. This does not block publishing; the product will be marked “Nutrition pending” and Operations will be notified.</div>}
     {!nutritionPresent && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Nutrition is optional.</b> Publish now if you do not have it. Operations will receive a review notification and the marketplace will show nutrition as pending.</div>}
     <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? (editingProduct ? "Updating…" : "Publishing…") : (editingProduct ? "Update product pack" : "Publish product pack")}</Button>
-  </DialogContent></Dialog>;
+  </DialogContent></Dialog>
+  <Dialog open={foodNameError} onOpenChange={(v) => { if (!v) setFoodNameError(false); }}>
+    <DialogContent className="rounded-[28px] sm:max-w-sm">
+      <DialogHeader>
+        <DialogTitle className="text-lg font-black">Invalid product name</DialogTitle>
+        <DialogDescription className="pt-2 text-sm leading-relaxed text-stone-600">
+          Please enter a valid food item name. Sheplates only supports food and beverage products.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="mt-4 flex justify-end">
+        <Button onClick={() => setFoodNameError(false)} className="rounded-full bg-[#155F65] px-8">OK</Button>
+      </div>
+    </DialogContent>
+  </Dialog>
+  </>);
 }
 
 function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
@@ -8761,12 +8896,71 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
   }
   const [tab, setTab] = useState<"Submitted" | "Under review" | "Changes required" | "All">("All");
   const [pickedId, setPickedId] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const [vendorNote, setVendorNote] = useState("");
   const [checkedDocs, setCheckedDocs] = useState<Record<string, Set<string>>>({});
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
   const [rejectionReason, setRejectionReason] = useState("");
   const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
+
+  const reloadData = useCallback(async () => {
+    if (!isLiveSupabaseMode()) return;
+    setRefreshing(true);
+    try {
+      const workspace = await loadLiveOperationsWorkspace();
+      setState((current) => ({
+        ...current,
+        vendors: workspace.vendors.map((row) => {
+          const profile = workspace.profiles.find((item) => item.vendor_id === row.id || item.id === row.owner_id);
+          const own = workspace.documents.filter((item) => item.vendor_id === row.id);
+          return vendorFromLive(
+            row,
+            { name: profile?.full_name },
+            own.find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || own[0],
+            own as Array<Record<string, unknown>>
+          );
+        }),
+      }));
+    } catch (err) {
+      console.error("Failed to reload operations data:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [setState]);
+
+  useEffect(() => {
+    void reloadData();
+  }, [reloadData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const checkDeepLink = (vendorId?: string | null) => {
+      const idToFind = vendorId || new URLSearchParams(window.location.search).get("vendorId");
+      if (idToFind) {
+        setPickedId(idToFind);
+        const match = vendors.find((v) => v.id === idToFind);
+        if (match && tab !== "All" && match.verification !== tab) {
+          setTab("All");
+        }
+      }
+    };
+    checkDeepLink();
+
+    const handleCustomNav = (e: Event) => {
+      const customEvent = e as CustomEvent<{ queryParams?: { vendorId?: string } }>;
+      const vId = customEvent.detail?.queryParams?.vendorId;
+      if (vId) checkDeepLink(vId);
+    };
+
+    window.addEventListener("popstate", () => checkDeepLink());
+    window.addEventListener("sheplates:navigation", handleCustomNav);
+    return () => {
+      window.removeEventListener("popstate", () => checkDeepLink());
+      window.removeEventListener("sheplates:navigation", handleCustomNav);
+    };
+  }, [vendors, tab]);
+
   const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
   const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
   const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
@@ -8836,7 +9030,25 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
     setVendorNote("");
   }
 
-  return <div className="space-y-5"><Heading eyebrow="VENDOR TRUST" title="Verification queue" body="Check each vendor's documents, location and radius before they can sell." />
+  return <div className="space-y-5">
+    <Heading
+      eyebrow="VENDOR TRUST"
+      title="Verification queue"
+      body="Check each vendor's documents, location and radius before they can sell."
+      action={
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={refreshing}
+          onClick={() => void reloadData()}
+          className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white shadow-sm"
+        >
+          <RefreshCcw className={`size-3.5 mr-1.5 text-[#155F65] ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Refreshing…" : "Refresh queue"}
+        </Button>
+      }
+    />
     {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
         {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
@@ -8844,9 +9056,10 @@ function OperationsVerification({ session, state, setState, onOpenVendorProfile 
         const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
         const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
         const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
+        const effectiveFileName = fssaiDoc?.fileName || (picked.certificateName && !picked.certificateName.includes("/") ? picked.certificateName : undefined) || "Food Certificate PDF";
         return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
           <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
-          <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{picked.certificateName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
+          <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{effectiveFileName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminClient, callerFromRequest, ensureConceptImage, ImageError, setProductImage } from "@/lib/product-image-server";
 import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
+import { validateFoodName } from "@/lib/food-name-validator";
 
 export const maxDuration = 120;
 
@@ -27,6 +28,17 @@ export async function POST(request: Request) {
       if (caller.role === "vendor" && caller.vendorId !== product.vendor_id) return NextResponse.json({ error: "This product belongs to another store." }, { status: 403 });
       if (product.image_url && !body.force) return NextResponse.json({ imageUrl: product.image_url, source: "existing" });
       name = String(product.name).slice(0, 60); category = String(product.category);
+    }
+
+    // Food-name guard: never generate an AI image for a non-food product name
+    if (name) {
+      const foodCheck = await validateFoodName(name, category);
+      if (!foodCheck.isFood) {
+        return NextResponse.json(
+          { error: "Only food and beverage products can have AI-generated images. Please enter a valid food item name.", code: "not_food" },
+          { status: 422 }
+        );
+      }
     }
 
     if (caller.role === "vendor" && caller.vendorId) {
