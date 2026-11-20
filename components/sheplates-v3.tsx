@@ -900,6 +900,17 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => status === "expired")) return "Expired";
   return "Pending";
 }
+export function getOrderTimestamp(o: Order) {
+  if (o.createdAt) {
+    const t = new Date(o.createdAt).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (o.date) {
+    const t = new Date(`${o.date}T12:00:00`).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  return 0;
+}
 type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> }; function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
   const rawOrders: Order[] = orderRows.map((row) => {
@@ -3154,7 +3165,9 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const savedAddresses = customer?.addresses?.length
     ? customer.addresses
     : customer?.address ? [{ id: "default-address", label: "Home", address: customer.address, latitude: customer.latitude, longitude: customer.longitude, isDefault: true }] : [];
-  const pendingOrders = state.orders.filter((item) => item.customerEmail === session.email && item.payment === "Pending" && item.status !== "Cancelled");
+  const pendingOrders = state.orders
+    .filter((item) => item.customerEmail === session.email && item.payment === "Pending" && item.status !== "Cancelled")
+    .sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a) || (b.id || "").localeCompare(a.id || ""));
   const [paying, setPaying] = useState<Order | null>(null);
   const [savingCart, setSavingCart] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
@@ -3231,6 +3244,29 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   async function removeItem(item: CartItem) {
     const nextOwn = items.filter((row) => row.id !== item.id);
     try { await persistOwnCart(nextOwn); toast.success("Item removed from cart"); } catch { /* toast handled above */ }
+  }
+
+  async function handleCancelPendingOrder(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) {
+        try {
+          await updateLiveOrderStatus(order.id, "Cancelled");
+        } catch {
+          // Fall back to local state update if live API restricts customer role
+        }
+      }
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancelled", payment: "Cancelled" } : x),
+        notifications: [
+          notice(session.email, "customer", "Order cancelled", `Expired scheduled order #${order.orderNumber || order.id.slice(0, 8)} has been cancelled.`),
+          ...s.notifications,
+        ],
+      }));
+      toast.success(order.date < todayISO() ? "Expired scheduled order cancelled" : "Order cancelled");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to cancel order"));
+    }
   }
 
   async function confirm(deliveryAddress: string) {
@@ -3386,7 +3422,32 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   return <div className="space-y-6"><Heading eyebrow="CHECKOUT" title="My cart" body="Your basket is saved with your account. She Agent, Marketplace and Cart all use the same basket, including when you switch devices." />
     {pendingOrders.length > 0 && <div className="space-y-3"><h3 className="text-lg font-black">Awaiting payment</h3>{pendingOrders.map((order) => {
       const scheduledDatePassed = order.date < todayISO();
-      return <div key={order.id} className="surface-card flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center"><div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div><div className="min-w-0 flex-1"><b>{order.description}</b><div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div><div className="mt-2 text-xl font-black">{money(order.total)}</div>{scheduledDatePassed && <p className="mt-2 text-sm font-medium text-amber-800">Payment unavailable: the scheduled date has passed.</p>}</div><Button disabled={scheduledDatePassed} onClick={() => setPaying(order)} title={scheduledDatePassed ? "Payment is unavailable because the scheduled date has passed" : undefined} className="rounded-xl bg-[#155F65] transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600 disabled:hover:transform-none disabled:hover:shadow-none">{scheduledDatePassed ? "Scheduled date passed" : <><CreditCard />Pay & place order</>}</Button></div>;
+      return <div key={order.id} className="surface-card relative flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 pr-12 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center">
+        <button
+          type="button"
+          onClick={() => void handleCancelPendingOrder(order)}
+          aria-label={`Cancel order ${order.orderNumber || order.id}`}
+          title={scheduledDatePassed ? "Cancel expired scheduled order" : "Cancel order"}
+          className="absolute right-3 top-3 grid size-7 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-hidden"
+        >
+          <X className="size-4" />
+        </button>
+        <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div>
+        <div className="min-w-0 flex-1">
+          <b>{order.description}</b>
+          <div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div>
+          <div className="mt-2 text-xl font-black">{money(order.total)}</div>
+          {scheduledDatePassed && <p className="mt-2 text-sm font-medium text-amber-800">Payment unavailable: the scheduled date has passed.</p>}
+        </div>
+        <Button
+          disabled={scheduledDatePassed}
+          onClick={() => setPaying(order)}
+          title={scheduledDatePassed ? "Payment is unavailable because the scheduled date has passed" : undefined}
+          className="rounded-xl bg-[#155F65] transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600 disabled:hover:transform-none disabled:hover:shadow-none"
+        >
+          {scheduledDatePassed ? "Scheduled date passed" : <><CreditCard className="mr-1 size-4" />Pay & place order</>}
+        </Button>
+      </div>;
     })}</div>}
     {items.length ? <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
       <div className="space-y-4">
@@ -3624,7 +3685,8 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
     const uniqueDays = [...new Set(sorted.map((order) => weekdayLabel(order.date)))];
     return { id: scheduleId, customerEmail: session.email, productId: product?.id || "", vendorId: first.vendorId, startDate: first.date, endDate: sorted.at(-1)?.date || first.date, recurrence: sorted.length === 1 ? "Once" : "Custom", weekdays: uniqueDays, timeSlot: first.slot, quantity: first.quantity, unit: first.unit, mode: first.mode, estimatedOccurrences: sorted.length, status: "Active", nextDeliveryAt: sorted.find((order) => order.date >= todayISO())?.date || first.date, whatsappReminder: true };
   });
-  const items = [...storedSchedules, ...syntheticSchedules].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  // Show newest schedules first
+  const items = [...storedSchedules, ...syntheticSchedules].sort((a, b) => b.startDate.localeCompare(a.startDate));
   const firstUpcoming = paidDeliveries.find((order) => order.date >= todayISO())?.date || todayISO();
   const [selectedDate, setSelectedDate] = useState(firstUpcoming);
   const [rescheduling, setRescheduling] = useState<Schedule | null>(null);
@@ -3633,6 +3695,34 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   const [actionBusyId, setActionBusyId] = useState("");
   const [adminReopeningSchedule, setAdminReopeningSchedule] = useState<Schedule | null>(null);
   const [adminReason, setAdminReason] = useState("");
+
+  async function handleCancelSchedule(schedule: Schedule) {
+    try {
+      setState((s) => ({
+        ...s,
+        schedules: s.schedules.map((x) => x.id === schedule.id ? { ...x, status: "Cancelled" } : x),
+        orders: s.orders.map((o) => o.scheduleId === schedule.id && o.date < todayISO() && !["Completed", "Delivered"].includes(o.status) ? { ...o, status: "Cancelled" } : o),
+        notifications: [notice(session.email, "customer", "Schedule cancelled", `Expired schedule #${schedule.id.slice(0, 8)} has been cancelled.`), ...s.notifications],
+      }));
+      toast.success("Expired schedule cancelled");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to cancel schedule"));
+    }
+  }
+
+  async function cancelScheduledDelivery(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Cancelled");
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((o) => o.id === order.id ? { ...o, status: "Cancelled" } : o),
+        notifications: [notice(session.email, "customer", "Delivery cancelled", `Expired scheduled delivery #${order.orderNumber || order.id.slice(0, 8)} has been cancelled.`), ...s.notifications],
+      }));
+      toast.success("Expired scheduled order cancelled");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to cancel order"));
+    }
+  }
 
   const calendarAnchor = new Date(`${todayISO()}T12:00:00`);
   calendarAnchor.setDate(calendarAnchor.getDate() - calendarAnchor.getDay());
@@ -3750,7 +3840,27 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   return <div className="space-y-6"><Heading eyebrow="CALENDAR" title="My schedule" body="Only paid, active schedules appear here. Every confirmed delivery date is taken from your actual orders, so recurring deliveries remain visible after payment and across future days." />
     {pendingOrders.length > 0 && <button onClick={() => navigate("Cart")} className="flex w-full items-center gap-3 rounded-[22px] border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-950"><CreditCard className="size-5 shrink-0" /><span className="flex-1"><b>{pendingOrders.length} schedule{pendingOrders.length === 1 ? "" : "s"} waiting for payment.</b> Complete checkout to activate the delivery calendar.</span><ArrowRight className="size-4" /></button>}
     <div className="surface-card rounded-[28px] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-[#155F65]">Next 7 days</div><div className="mt-1 text-sm text-stone-500">Tap a date to see confirmed paid deliveries.</div></div>{paidDeliveries.length > 0 && <Status>{paidDeliveries.filter((order) => order.date >= todayISO()).length} upcoming</Status>}</div><div className="grid grid-cols-7 gap-1.5 sm:gap-2">{Array.from({ length: 7 }, (_, index) => addDaysISO(todayISO(), index)).map((date) => { const dayOrders = ordersByDate.get(date) || []; const d = new Date(`${date}T12:00:00`); return <button key={date} type="button" onClick={() => setSelectedDate(date)} aria-pressed={selectedDate === date} className={`sp-calendar-day relative rounded-2xl px-1 py-3 text-center transition ${selectedDate === date ? "bg-[#155F65] text-white" : "bg-white hover:bg-[#EAF4F2]"}`}><span className="block text-xs font-medium">{d.toLocaleDateString("en-IN", { weekday: "short" })}</span><span className="block text-xl font-bold tabular-nums">{d.getDate()}</span>{dayOrders.length > 0 ? <span className={`mx-auto mt-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${selectedDate === date ? "bg-[#155F65] text-white" : "bg-[#155F65] text-white"}`}>{dayOrders.length}</span> : <span className="mt-1 block h-5" />}</button>; })}</div>
-      {selectedOrders.length > 0 ? <div className="mt-4 rounded-[22px] bg-[#EEF2F2] p-4"><b>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><div className="mt-3 space-y-2">{selectedOrders.map((order) => <button key={order.id} onClick={() => navigate("Orders")} className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left"><div className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Package className="size-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-black">{order.description}</div><div className="text-xs text-stone-500">{order.slot} · {order.mode}</div></div><Status>{order.status}</Status></button>)}</div></div> : <div className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">No confirmed delivery on this date.</div>}
+      {selectedOrders.length > 0 ? <div className="mt-4 rounded-[22px] bg-[#EEF2F2] p-4"><b>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><div className="mt-3 space-y-2">{selectedOrders.map((order) => {
+        const isExpiredDelivery = order.date < todayISO() && !["Completed", "Delivered", "Cancelled"].includes(order.status);
+        return <div key={order.id} className="flex items-center gap-2">
+          <button onClick={() => navigate("Orders")} className="flex flex-1 items-center gap-3 rounded-2xl bg-white p-3 text-left">
+            <div className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Package className="size-4" /></div>
+            <div className="min-w-0 flex-1"><div className="truncate text-sm font-black">{order.description}</div><div className="text-xs text-stone-500">{order.slot} · {order.mode}</div></div>
+            <Status className={isExpiredDelivery ? "border-red-200 bg-red-50 text-red-700 font-bold" : ""}>{isExpiredDelivery ? "Expired" : order.status}</Status>
+          </button>
+          {isExpiredDelivery && (
+            <button
+              type="button"
+              onClick={() => void cancelScheduledDelivery(order)}
+              className="grid size-10 shrink-0 place-items-center rounded-2xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition shadow-2xs"
+              title="Cancel expired delivery (X)"
+              aria-label="Cancel expired delivery"
+            >
+              <X className="size-4 text-red-600" />
+            </button>
+          )}
+        </div>;
+      })}</div></div> : <div className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">No confirmed delivery on this date.</div>}
     </div>
     {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((schedule) => {
       const product = schedule.productId ? state.products.find((x) => x.id === schedule.productId) : undefined;
@@ -3761,6 +3871,7 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
       const isPaused = status === "Paused";
       const isClosed = status === "Closed";
       const finished = status === "Cancelled" || status === "Completed" || isClosed || (!upcoming.length && !isPaused);
+      const isExpiredSchedule = isClosed || (schedule.endDate < todayISO() && !upcoming.length) || status === "Expired";
       const displayName = product?.name || scheduleOrders[0]?.description || "Scheduled product";
       const daysLeft = schedule.resumeBy ? Math.max(0, Math.ceil((new Date(schedule.resumeBy).getTime() - Date.now()) / (24 * 60 * 60 * 1000))) : 15;
       const resumeFormatted = schedule.resumeBy ? new Date(schedule.resumeBy).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }) : previewResumeDate;
@@ -3775,7 +3886,23 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
             <div className="font-black">{displayName}</div>
             <div className="mt-1 text-xs text-stone-500">{schedule.recurrence}{schedule.recurrence === "Custom" && schedule.weekdays.length ? ` · ${schedule.weekdays.join(", ")}` : ""} · {schedule.timeSlot}</div>
           </div>
-          <Status>{status}</Status>
+          <div className="flex items-center gap-1.5">
+            <Status className={isExpiredSchedule && status !== "Cancelled" ? "border-red-200 bg-red-50 text-red-700 font-bold" : ""}>
+              {isExpiredSchedule && status !== "Cancelled" ? "Expired" : status}
+            </Status>
+            {isExpiredSchedule && status !== "Cancelled" && (
+              <button
+                type="button"
+                onClick={() => void handleCancelSchedule(schedule)}
+                className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700 hover:bg-red-100 transition shadow-2xs"
+                title="Cancel expired schedule (X)"
+                aria-label="Cancel expired schedule"
+              >
+                <X className="size-3 text-red-600" />
+                <span>(X)</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-2 rounded-[20px] bg-[#EEF2F2] p-3 text-xs">
@@ -3805,7 +3932,18 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
 
         <div className="mt-2 rounded-2xl bg-[#EEF2F2] p-3 text-xs text-stone-500"><MessageSquareText className="mr-2 inline size-4" />Reminder is prepared for one hour before each delivery.</div>
 
-        {persisted && !finished ? (
+        {isExpiredSchedule && status !== "Cancelled" ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => void handleCancelSchedule(schedule)} className="rounded-xl border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-bold">
+              <X className="mr-1 size-3.5 text-red-600" />Cancel expired schedule (X)
+            </Button>
+            {isClosed && isStaff && (
+              <Button size="sm" variant="outline" onClick={() => { setAdminReopeningSchedule(schedule); setAdminReason(""); }} className="border-[#155F65] text-[#155F65]">
+                <Play className="mr-1 size-3.5" />Reopen (Admin)
+              </Button>
+            )}
+          </div>
+        ) : persisted && !finished ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {isPaused ? (
               <Button size="sm" onClick={() => executeResume(schedule)} disabled={actionBusyId === schedule.id} className="bg-[#155F65] text-white">
@@ -5538,6 +5676,7 @@ function CustomerOrderCard({
   onRateOrder,
   onIssueThirdPartyCode,
   onVerifyPickup,
+  onCancelOrder,
   deliveryCodes,
   deliveryActionId,
 }: {
@@ -5550,6 +5689,7 @@ function CustomerOrderCard({
   onRateOrder: (order: Order) => void;
   onIssueThirdPartyCode: (order: Order) => void;
   onVerifyPickup?: (order: Order) => void;
+  onCancelOrder?: (order: Order) => void;
   deliveryCodes: Record<string, { code: string; expiresAt: string }>;
   deliveryActionId: string | null;
 }) {
@@ -5558,6 +5698,10 @@ function CustomerOrderCard({
   const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
   const timeline = getOrderTimeline(order);
   const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+  const isExpired =
+    order.status === "Expired" ||
+    order.payment === "Expired" ||
+    (order.date < todayISO() && !["Completed", "Delivered", "Cancelled"].includes(order.status));
 
   return (
     <div className="surface-card rounded-[28px] p-5 sm:p-6 transition-all hover:shadow-md">
@@ -5582,9 +5726,21 @@ function CustomerOrderCard({
           <Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700 font-bold" : ""}>
             {order.payment}
           </Status>
-          <Status className={orderStatusTone(order.status)}>
-            {order.status}
+          <Status className={isExpired ? "border-red-200 bg-red-50 text-red-700 font-bold" : orderStatusTone(order.status)}>
+            {isExpired ? "Expired" : order.status}
           </Status>
+          {isExpired && onCancelOrder && (
+            <button
+              type="button"
+              onClick={() => onCancelOrder(order)}
+              className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700 hover:bg-red-100 hover:border-red-400 transition shadow-2xs"
+              title="Cancel expired scheduled order (X)"
+              aria-label="Cancel expired scheduled order"
+            >
+              <X className="size-3.5 text-red-600" />
+              <span>Cancel (X)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -5743,6 +5899,17 @@ function CustomerOrderCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isExpired && onCancelOrder && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCancelOrder(order)}
+              className="rounded-xl border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-bold"
+            >
+              <X className="mr-1.5 size-4 text-red-600" />
+              Cancel (X)
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -5776,11 +5943,12 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     const sched = state.schedules.find((s) => s.id === x.scheduleId);
     return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
   };
-  const baseOrders = scope === "customer"
+
+  const baseOrders = (scope === "customer"
     ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending" && x.status !== "Awaiting payment")
     : scope === "vendor"
       ? state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x))
-      : state.orders;
+      : state.orders).sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a) || (b.id || "").localeCompare(a.id || ""));
   const [rescheduling, setRescheduling] = useState<Order | null>(null);
   const [paying, setPaying] = useState<Order | null>(null);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
@@ -5936,6 +6104,23 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   function locate(order: Order) { navigator.geolocation?.getCurrentPosition((position) => { setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, trackingLatitude: position.coords.latitude, trackingLongitude: position.coords.longitude } : x), notifications: [notice(order.customerEmail, "customer", "Live location updated", `${order.id} location was refreshed by the vendor.`), ...s.notifications] })); toast.success("Live delivery position updated"); }, () => toast.error("Allow location access on the delivery device"), { enableHighAccuracy: true, maximumAge: 0 }); }
   async function assign(order: Order, staffId: string) { try { if (isLiveSupabaseMode()) await assignLiveDeliveryStaff(order.id, staffId === "unassigned" ? undefined : staffId); const nextAssignments = staffId === "unassigned" ? state.assignments.filter((x) => x.orderId !== order.id) : [{ id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }, ...state.assignments.filter((x) => x.orderId !== order.id)]; setState((s) => ({ ...s, assignments: nextAssignments, notifications: staffId === "unassigned" ? s.notifications : [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name || "Your delivery person"} will handle ${order.id}.`), ...s.notifications] })); toast.success(staffId === "unassigned" ? "Delivery assignment cleared" : "Delivery person assigned"); } catch (error) { toast.error(errorMessage(error, "Delivery assignment could not be saved")); } }
 
+  async function handleCancelOrder(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Cancelled");
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancelled" } : x),
+        notifications: [
+          notice(session.email, "customer", "Order cancelled", `Expired scheduled order #${order.orderNumber || order.id.slice(0, 8)} has been cancelled.`),
+          ...s.notifications,
+        ],
+      }));
+      toast.success("Expired scheduled order cancelled");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to cancel expired order"));
+    }
+  }
+
   const customerSchedules = scope === "customer" ? state.schedules.filter((item) => item.customerEmail === session.email && (item.status || "Active") === "Active").length : 0;
   const customerOpenRequirements = scope === "customer" ? state.requirements.filter((item) => item.customerEmail === session.email && item.status !== "Awarded").length : 0;
 
@@ -5951,11 +6136,9 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     })()}
     {orders.length ? <div className="space-y-4">
       {[...orders].sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        if (aTime && bTime && aTime !== bTime) return bTime - aTime;
-        if (aTime && !bTime) return -1;
-        if (!aTime && bTime) return 1;
+        const bTime = getOrderTimestamp(b);
+        const aTime = getOrderTimestamp(a);
+        if (bTime !== aTime) return bTime - aTime;
         return (b.id || "").localeCompare(a.id || "");
       }).map((order) => {
         if (scope === "customer") {
@@ -5977,6 +6160,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
               onRateOrder={(ord) => setRatingOrder(ord)}
               onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
               onVerifyPickup={(ord) => void handleVerifyFoodDropPickup(ord)}
+              onCancelOrder={(ord) => void handleCancelOrder(ord)}
               deliveryCodes={deliveryCodes}
               deliveryActionId={deliveryActionId}
             />
@@ -6041,6 +6225,18 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+              {scope === "vendor" && ((order.status === "Scheduled" || order.status === "Expired") && order.date < todayISO()) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleCancelOrder(order)}
+                  className="rounded-xl border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-bold"
+                  title="Cancel expired scheduled order (X)"
+                >
+                  <X className="mr-1 size-4 text-red-600" />
+                  Cancel (X)
+                </Button>
               )}
               {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#155F65]"><MapPinned />Share live position</Button>}
             </div>
