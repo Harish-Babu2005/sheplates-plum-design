@@ -20,12 +20,25 @@ type AgentRequest = {
   conversationId?: string;
 };
 
+type BasketItem = {
+  productId: string;
+  quantity: number;
+};
+
+type KitchenConflict = {
+  currentVendorName: string;
+  requestedVendorName: string;
+  conflictingProductId: string;
+  requestedQuantity: number;
+};
+
 type CommerceResult = {
   reply: string;
   intent: "browse" | "recommend" | "add_to_basket" | "remove_from_basket" | "view_basket" | "track" | "navigate" | "support" | "quality_issue" | "clarify" | "answer" | "other";
   budget: number;
   selectedProductIds: string[];
   basketProductIds: string[];
+  basketItems?: BasketItem[];
   removeProductIds: string[];
   navigateTo: "" | "Marketplace" | "Cart" | "My schedule" | "Monthly requirement" | "My quotations" | "Orders" | "Profile & food" | "Ticket centre";
   clarifyingQuestion: string;
@@ -37,6 +50,7 @@ type CommerceResult = {
   ticketPriority: "Low" | "Normal" | "High" | "Urgent";
   memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
   conversationId?: string;
+  kitchenConflict?: KitchenConflict;
 };
 
 /** A plain reading of the numbers the page sent, used when the written analysis is slow or unavailable, so the button never just spins. */
@@ -433,6 +447,7 @@ function validateCommerceResult(raw: CommerceResult, context: Record<string, unk
       budget: -1,
       selectedProductIds: [],
       basketProductIds: [],
+      basketItems: [],
       removeProductIds: [],
       navigateTo: "",
       requiresPhoto: false,
@@ -441,24 +456,90 @@ function validateCommerceResult(raw: CommerceResult, context: Record<string, unk
     };
   }
   const ownOrders = new Set((Array.isArray(context.orders) ? context.orders : []).map((item) => item && typeof item === "object" ? String((item as Record<string, unknown>).id || "") : "").filter(Boolean));
+
+  // Determine existing kitchen from current cart for single-kitchen validation
+  const cartList = Array.isArray(context.cartItems) && context.cartItems.length
+    ? (context.cartItems as Array<Record<string, unknown>>)
+    : Array.isArray(context.cart)
+    ? (context.cart as Array<Record<string, unknown>>)
+    : [];
+
+  let existingVendorId: string | null = null;
+  let existingVendorName = "your current kitchen";
+  for (const it of cartList) {
+    const pId = String(it.menu_item_id || it.productId || it.item_id || "");
+    const prod = allowed.get(pId);
+    if (prod) {
+      const vId = String(prod.vendor_id || prod.vendorId || "");
+      if (vId) {
+        existingVendorId = vId;
+        existingVendorName = String(prod.vendor_name || prod.vendorName || prod.businessName || "Kitchen");
+        break;
+      }
+    }
+  }
+
+  let finalBasketProductIds = enforceBudget(raw.basketProductIds || []);
+  let kitchenConflict = raw.kitchenConflict;
+
+  if (existingVendorId && finalBasketProductIds.length > 0) {
+    const conflictingIds: string[] = [];
+    const validIds: string[] = [];
+    let conflictingVendorName = "";
+
+    for (const id of finalBasketProductIds) {
+      const prod = allowed.get(id);
+      const vId = String(prod?.vendor_id || prod?.vendorId || "");
+      if (vId && vId !== existingVendorId) {
+        conflictingIds.push(id);
+        conflictingVendorName = String(prod?.vendor_name || prod?.vendorName || prod?.businessName || "Another kitchen");
+      } else {
+        validIds.push(id);
+      }
+    }
+
+    if (conflictingIds.length > 0) {
+      finalBasketProductIds = validIds;
+      const requestedQty = raw.basketItems?.find((it) => it.productId === conflictingIds[0])?.quantity || 1;
+      kitchenConflict = {
+        currentVendorName: existingVendorName,
+        requestedVendorName: conflictingVendorName,
+        conflictingProductId: conflictingIds[0],
+        requestedQuantity: requestedQty,
+      };
+      raw.reply = `Your cart currently contains items from **${existingVendorName}**. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery. Would you like to keep your current cart or start a new cart with items from **${conflictingVendorName}**?`;
+      raw.intent = "clarify";
+      raw.clarifyingQuestion = `Keep current cart from ${existingVendorName} or start new cart with ${conflictingVendorName}?`;
+    }
+  }
+
+  const basketItems: BasketItem[] = finalBasketProductIds.map((id) => {
+    const existing = raw.basketItems?.find((it) => it.productId === id);
+    return { productId: id, quantity: Math.max(1, Math.round(existing?.quantity || 1)) };
+  });
+
   return {
     ...raw,
     budget: budgetCap ?? -1,
     selectedProductIds: enforceBudget(raw.selectedProductIds || []),
-    basketProductIds: enforceBudget(raw.basketProductIds || []),
+    basketProductIds: finalBasketProductIds,
+    basketItems,
+    kitchenConflict,
     removeProductIds: uniqueAllowed(raw.removeProductIds || []),
     targetOrderId: raw.targetOrderId && ownOrders.has(raw.targetOrderId) ? raw.targetOrderId : "",
   };
 }
 
 function groundedCommerceFallback(body: AgentRequest, role: Role, context: Record<string, unknown>): CommerceResult {
-  const msg = (body.message || "").toLowerCase().trim();
+  const rawMsg = (body.message || "").trim();
+  const msg = rawMsg.toLowerCase();
   const base: CommerceResult = {
     reply: "",
     intent: "answer",
     budget: -1,
     selectedProductIds: [],
     basketProductIds: [],
+    basketItems: [],
     removeProductIds: [],
     navigateTo: "",
     clarifyingQuestion: "",
@@ -549,38 +630,431 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
   if (role === "customer") {
     const products = Array.isArray(context.availableProducts) ? (context.availableProducts as Array<Record<string, unknown>>) : [];
     const orders = Array.isArray(context.orders) ? (context.orders as Array<Record<string, unknown>>) : [];
-    const cartItems = Array.isArray(context.cartItems) ? (context.cartItems as Array<Record<string, unknown>>) : [];
+    const cartList = Array.isArray(context.cartItems) && context.cartItems.length
+      ? (context.cartItems as Array<Record<string, unknown>>)
+      : Array.isArray(context.cart)
+      ? (context.cart as Array<Record<string, unknown>>)
+      : [];
 
-    if (/order|track|where/i.test(msg) && orders.length > 0) {
+    const isTamil = /[\u0B80-\u0BFF]/.test(rawMsg);
+
+    const pName = (p: Record<string, unknown>) => String(p.name || p.item_name || "Product").trim();
+    const pId = (p: Record<string, unknown>) => String(p.id || p.item_id || "").trim();
+    const pStock = (p: Record<string, unknown>) => Number(p.stock_quantity ?? p.stock ?? 0);
+    const pVendor = (p: Record<string, unknown>) => String(p.vendor_name || p.vendorName || p.businessName || "Verified kitchen").trim();
+    const pVendorId = (p: Record<string, unknown>) => String(p.vendor_id || p.vendorId || "").trim();
+
+    // 1. Order tracking
+    if (/order|track|where|ஆர்டர்\s*எங்கே/i.test(msg) && orders.length > 0 && !/add|place|checkout|சேர்/i.test(msg)) {
       const latest = orders[0];
       const orderId = String(latest.order_number || latest.id || "").slice(-8);
-      base.reply = `Your latest order #${orderId} is currently ${String(latest.status || "confirmed")}.`;
+      base.reply = isTamil
+        ? `உங்கள் சமீபத்திய ஆர்டர் #${orderId} தற்போது ${String(latest.status || "உறுதிப்படுத்தப்பட்டுள்ளது")}.`
+        : `Your latest order #${orderId} is currently ${String(latest.status || "confirmed")}.`;
       base.intent = "track";
       return base;
     }
 
-    if (/cart|basket/i.test(msg)) {
-      if (cartItems.length > 0) {
-        base.reply = `You have ${cartItems.length} item${cartItems.length === 1 ? "" : "s"} in your basket. Would you like to review or proceed to checkout?`;
+    // 2. Checkout / Place order (1.10 Checkout)
+    if (/(place\s+(my\s+)?order|checkout|proceed\s+to\s+checkout|buy\s+now|pay\s+now|செக்\s*அவுட்|ஆர்டர்\s*செய்)/i.test(msg)) {
+      if (cartList.length === 0) {
+        base.reply = isTamil
+          ? "உங்கள் கூடை காலியாக உள்ளது. சுவையான உணவுகளைத் தேர்ந்தெடுக்க என்ன விரும்புகிறீர்கள் என்று சொல்லுங்கள்!"
+          : "Your cart is currently empty. Tell me what you'd like to eat and I'll find delicious options near you!";
+        base.intent = "browse";
+        base.selectedProductIds = products.filter((p) => pStock(p) > 0).slice(0, 4).map(pId);
+        return base;
+      }
+
+      let cartTotal = 0;
+      let firstKitchenName = "";
+      for (const it of cartList) {
+        const itemId = String(it.menu_item_id || it.productId || it.item_id || "");
+        const prod = products.find((p) => pId(p) === itemId);
+        const price = Number(it.unit_price ?? (prod ? productPriceOf(prod) : 0));
+        const qty = Number(it.quantity || 1);
+        cartTotal += price * qty;
+        if (!firstKitchenName && prod) firstKitchenName = pVendor(prod);
+      }
+
+      base.reply = isTamil
+        ? `உங்கள் கூடையில் ${firstKitchenName ? `${firstKitchenName}-லிருந்து ` : ""}${cartList.length} பொருட்கள் உள்ளன (மொத்தம் ₹${cartTotal.toFixed(0)}). விநியோக முகவரியை உறுதிசெய்து கட்டணம் செலுத்த உங்களை செக் அவுட் பக்கத்திற்கு அழைத்துச் செல்கிறோம்.`
+        : `Your cart has ${cartList.length} item${cartList.length === 1 ? "" : "s"}${firstKitchenName ? ` from ${firstKitchenName}` : ""} totaling ₹${cartTotal.toFixed(0)}. Taking you to checkout to confirm your delivery address and payment.`;
+      base.navigateTo = "Cart";
+      base.intent = "navigate";
+      return base;
+    }
+
+    // 3. Cart review / view basket
+    if (/(cart|basket|கூடை|review\s+basket|view\s+cart)/i.test(msg) && !/(add|சேர்)/i.test(msg)) {
+      if (cartList.length > 0) {
+        base.reply = isTamil
+          ? `உங்கள் கூடையில் ${cartList.length} பொருட்கள் உள்ளன. கூடையில் உள்ளவற்றை மதிப்பாய்வு செய்ய அல்லது செக் அவுட் செல்ல விரும்புகிறீர்களா?`
+          : `You have ${cartList.length} item${cartList.length === 1 ? "" : "s"} in your basket. Would you like to review or proceed to checkout?`;
         base.intent = "view_basket";
         base.navigateTo = "Cart";
       } else {
-        base.reply = "Your basket is currently empty. Would you like me to recommend popular dishes nearby?";
+        base.reply = isTamil
+          ? "உங்கள் கூடை காலியாக உள்ளது. அருகிலுள்ள சில சிறந்த உணவுகளைப் பரிந்துரைக்கட்டுமா?"
+          : "Your basket is currently empty. Would you like me to recommend popular dishes nearby?";
         base.intent = "browse";
+        base.selectedProductIds = products.filter((p) => pStock(p) > 0).slice(0, 4).map(pId);
       }
       return base;
     }
 
+    // 4. Unclear request (1.4 Unclear request)
+    if (/(^|\b)(add\s+(an?\s+)?item(\s+to\s+(my\s+)?(cart|basket))?|add\s+something|put\s+something|கூடையில்\s*(ஒரு\s*)?பொருள்\s*சேர்)($|\b)/i.test(msg)) {
+      base.reply = isTamil
+        ? "எந்தப் பொருளை உங்கள் கூடையில் சேர்க்க விரும்புகிறீர்கள்? அருகிலுள்ள சரிபார்க்கப்பட்ட சமையலறைகளிலிருந்து சில புதிய பரிந்துரைகள் இதோ:"
+        : "Which product would you like to add to your cart? Here are some fresh recommendations from verified kitchens near you:";
+      base.selectedProductIds = products.filter((p) => pStock(p) > 0).slice(0, 4).map(pId);
+      base.intent = "clarify";
+      base.clarifyingQuestion = isTamil ? "எந்தப் பொருளைச் சேர்க்க விரும்புகிறீர்கள்?" : "Which product would you like to add?";
+      return base;
+    }
+
+    // Extract recently suggested product IDs from conversation history
+    const historyList = Array.isArray(body.history) ? body.history : [];
+    let recentProductIds: string[] = [];
+    for (let i = historyList.length - 1; i >= 0; i--) {
+      const h = historyList[i] as Record<string, unknown> | undefined;
+      if (h && (h.role === "agent" || h.role === "assistant") && Array.isArray(h.productIds) && h.productIds.length > 0) {
+        recentProductIds = (h.productIds as unknown[]).map((id) => String(id)).filter(Boolean);
+        break;
+      }
+    }
+
+    // Check if user is referencing an option/ordinal or answering a clarification
+    // e.g. "Add the first product to cart", "the first option i prefer", "first one", "option 2", "Harish_shop"
+    let targetOrdinal = -1;
+    if (/\b(first|1st|முதல்)\b/i.test(msg) || /\b(option|choice)\s*(1|one)\b/i.test(msg) || /^(the\s+)?1$/i.test(msg.trim())) {
+      targetOrdinal = 0;
+    } else if (/\b(second|2nd|இரண்டாவது)\b/i.test(msg) || /\b(option|choice)\s*(2|two)\b/i.test(msg) || /^(the\s+)?2$/i.test(msg.trim())) {
+      targetOrdinal = 1;
+    } else if (/\b(third|3rd|மூன்றாவது)\b/i.test(msg) || /\b(option|choice)\s*(3|three)\b/i.test(msg) || /^(the\s+)?3$/i.test(msg.trim())) {
+      targetOrdinal = 2;
+    } else if (/\b(fourth|4th|நான்காவது)\b/i.test(msg) || /\b(option|choice)\s*(4|four)\b/i.test(msg) || /^(the\s+)?4$/i.test(msg.trim())) {
+      targetOrdinal = 3;
+    }
+
+    // Check if user named a vendor from recentProductIds (e.g. "Harish_shop" or "Praga's Bakery")
+    if (targetOrdinal === -1 && recentProductIds.length > 0) {
+      for (let idx = 0; idx < recentProductIds.length; idx++) {
+        const prod = products.find((p) => pId(p) === recentProductIds[idx]);
+        if (prod) {
+          const vName = pVendor(prod).toLowerCase();
+          const cleanV = vName.replace(/[^a-z0-9]/g, "");
+          const cleanM = msg.toLowerCase().replace(/[^a-z0-9]/g, "");
+          if ((cleanV.length >= 3 && cleanM.includes(cleanV)) || (vName.length >= 3 && msg.toLowerCase().includes(vName))) {
+            targetOrdinal = idx;
+            break;
+          }
+        }
+      }
+    }
+
+    const hasSelectionWord = /\b(prefer|choice|choose|select|pick|take|this\s+one|that\s+one|first\s+option|second\s+option)\b/i.test(msg);
+    const isSelectionAnswer = recentProductIds.length > 0 && (targetOrdinal !== -1 || hasSelectionWord);
+
+    // 5. Natural Language Add to Cart or Option Selection
+    const isAddIntent = /(add|put|buy|want|order|take|சேர்|வேண்டும்|வேணும்)/i.test(msg) || isSelectionAnswer;
+    if (isAddIntent) {
+      let requestedQty = 1;
+      const numMatch = msg.match(/\b(\d+)\s*(pack|packs|packet|packets|bottles?|units?|pieces?|box|boxes)?\b/i);
+      if (numMatch) {
+        requestedQty = Math.max(1, parseInt(numMatch[1], 10));
+      } else if (/\btwo\b|இரண்டு/i.test(msg)) {
+        requestedQty = 2;
+      } else if (/\bthree\b|மூன்று/i.test(msg)) {
+        requestedQty = 3;
+      } else if (/\bfour\b|நான்கு/i.test(msg)) {
+        requestedQty = 4;
+      } else if (/\bfive\b|ஐந்து/i.test(msg)) {
+        requestedQty = 5;
+      }
+
+      // Check current cart's kitchen for single-kitchen rule
+      let existingVendorId: string | null = null;
+      let existingVendorName = "your current kitchen";
+      for (const it of cartList) {
+        const itemId = String(it.menu_item_id || it.productId || it.item_id || "");
+        const prod = products.find((p) => pId(p) === itemId);
+        if (prod) {
+          existingVendorId = pVendorId(prod);
+          existingVendorName = pVendor(prod);
+          break;
+        }
+      }
+
+      // Thoroughly clean query to extract product search term
+      let term = msg
+        // Remove conversational preambles & selection phrases
+        .replace(/\b(can\s+you|could\s+you|please|kindly|i\s+want\s+to|i\s+want|i\s+need\s+to|i\s+need|i'd\s+like\s+to|i'd\s+like|i\s+prefer|prefer|i\s+choose|choose|i\s+select|select|i'll\s+take|take|give\s+me|get\s+me)\b/gi, "")
+        // Remove destination phrases with prepositions
+        .replace(/\b(into|in|to|on)\s+(the\s+|my\s+|this\s+|our\s+)?(cart|basket)\b/gi, "")
+        .replace(/\b(into|in|to)\s*(cart|basket)\b/gi, "")
+        .replace(/\b(the\s+|my\s+|this\s+)?(cart|basket)\b/gi, "")
+        // Remove add actions
+        .replace(/\b(add|put|buy|want|order|place|சேர்|கூடையில்|எனக்கு|வேண்டும்|வேணும்)\b/gi, "")
+        // Remove ordinals & selection words
+        .replace(/\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|top|last|one|two|three|four)\b/gi, "")
+        .replace(/\b(option|options|choice|choices)\b/gi, "")
+        // Remove quantity descriptors
+        .replace(/\b(packs?|packets?|bottles?|units?|pieces?|box|boxes)\s+of\b/gi, "")
+        .replace(/\b(packs?|packets?|bottles?|units?|pieces?|box|boxes)\b/gi, "")
+        .replace(/\b\d+\b/g, "")
+        // Remove generic noun references
+        .replace(/\b(product|products|item|items|dish|dishes|food)\b/gi, "")
+        // Remove leading/trailing articles and determiners
+        .replace(/^(the|a|an|some|this|that|these|those|it)\s+/i, "")
+        .replace(/\s+(the|a|an|some|this|that|these|those|it)$/i, "")
+        .replace(/^(the|a|an|some|this|that|these|those|it)$/i, "")
+        .trim();
+
+      const isGenericReference = /^(the\s+)?(first|second|third|fourth|1st|2nd|3rd|4th|top|last)?\s*(product|item|dish|food|one|it|this|that|these|options?|choice)?$/i.test(term) || !term;
+
+      // Handle ordinal/context selection (e.g. "Add the first product to cart", "the first option i prefer", "first one")
+      if ((targetOrdinal !== -1 || isGenericReference) && recentProductIds.length > 0) {
+        const selectedIdx = targetOrdinal >= 0 ? targetOrdinal : 0;
+        const targetId = recentProductIds[selectedIdx] || recentProductIds[0];
+        const matched = products.find((p) => pId(p) === targetId);
+        if (matched) {
+          const stock = pStock(matched);
+          if (stock <= 0) {
+            const alternatives = products.filter((p) => pId(p) !== pId(matched) && pStock(p) > 0 && String(p.category || "").toLowerCase() === String(matched.category || "").toLowerCase());
+            base.reply = isTamil
+              ? `${pName(matched)} தற்போது இருப்பில் இல்லை. அருகிலுள்ள சில மாற்று உணவுகள் இதோ:`
+              : `${pName(matched)} from ${pVendor(matched)} is currently out of stock. Here are similar available alternatives near you:`;
+            base.selectedProductIds = (alternatives.length ? alternatives : products.filter((p) => pStock(p) > 0)).slice(0, 4).map(pId);
+            base.intent = "answer";
+            return base;
+          }
+
+          if (requestedQty > stock) {
+            base.reply = isTamil
+              ? `${pName(matched)} இப்போது ${stock} மட்டுமே இருப்பில் உள்ளது. ${stock} சேர்க்கவா?`
+              : `Only ${stock} pack(s) of ${pName(matched)} are available right now. Would you like me to add ${stock} instead?`;
+            base.selectedProductIds = [pId(matched)];
+            base.intent = "clarify";
+            base.clarifyingQuestion = `Add ${stock} instead?`;
+            return base;
+          }
+
+          if (existingVendorId && pVendorId(matched) && existingVendorId !== pVendorId(matched)) {
+            base.kitchenConflict = {
+              currentVendorName: existingVendorName,
+              requestedVendorName: pVendor(matched),
+              conflictingProductId: pId(matched),
+              requestedQuantity: requestedQty,
+            };
+            base.reply = isTamil
+              ? `உங்கள் கூடையில் ஏற்கனவே **${existingVendorName}** உணவுகள் உள்ளன. சுடச்சுட மற்றும் சரியான நேரத்தில் வழங்க ஒரு ஆர்டருக்கு ஒரு சமையலறை மட்டுமே அனுமதிக்கப்படும். தற்போதைய கூடையை வைத்திருக்க விரும்புகிறீர்களா அல்லது **${pVendor(matched)}** இலிருந்து புதிய கூடையைத் தொடங்கவா?`
+              : `Your cart currently contains items from **${existingVendorName}**. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery. Would you like to keep your current cart or start a new cart with items from **${pVendor(matched)}**?`;
+            base.intent = "clarify";
+            base.selectedProductIds = [pId(matched)];
+            return base;
+          }
+
+          const matchedId = pId(matched);
+          base.basketProductIds = [matchedId];
+          base.basketItems = [{ productId: matchedId, quantity: requestedQty }];
+          base.selectedProductIds = [matchedId];
+          base.reply = isTamil
+            ? `உங்கள் கூடையில் ${requestedQty > 1 ? `${requestedQty} ` : ""}${pName(matched)} சேர்க்கப்பட்டது. கூடையைப் பார்க்கவும்.`
+            : `Added ${requestedQty > 1 ? `${requestedQty} packs of ` : ""}${pName(matched)} to your cart. View cart.`;
+          base.intent = "add_to_basket";
+          return base;
+        }
+      }
+
+      if (/பால்/i.test(rawMsg)) term = "milk";
+      else if (/முட்டை/i.test(rawMsg)) term = "egg";
+      else if (/தயிர்/i.test(rawMsg)) term = "curd";
+      else if (/வெண்ணெய்/i.test(rawMsg)) term = "butter";
+      else if (/தோசை/i.test(rawMsg)) term = "dosa";
+      else if (/இட்லி/i.test(rawMsg)) term = "idli";
+
+      if (!term || term.length < 2) {
+        base.reply = isTamil
+          ? "எந்தப் பொருளை உங்கள் கூடையில் சேர்க்க விரும்புகிறீர்கள்? அருகிலுள்ள சமையலறைகளிலிருந்து சில புதிய பரிந்துரைகள் இதோ:"
+          : "Which product would you like to add to your cart? Here are some fresh recommendations from verified kitchens near you:";
+        base.selectedProductIds = products.filter((p) => pStock(p) > 0).slice(0, 4).map(pId);
+        base.intent = "clarify";
+        base.clarifyingQuestion = "Which product would you like to add?";
+        return base;
+      }
+
+      const STOP_WORDS = new Set([
+        "the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "with",
+        "from", "my", "this", "that", "it", "some", "item", "product", "dish", "food"
+      ]);
+      const queryWords = term.toLowerCase().split(/\s+/).filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+
+      const scoredMatches = products.map((p) => {
+        const name = pName(p).toLowerCase();
+        const category = String(p.category || "").toLowerCase();
+        const vendor = pVendor(p).toLowerCase();
+        const fullText = `${name} ${category} ${vendor}`;
+
+        // 1. Exact name match
+        if (name === term) return { p, score: 1000 };
+        // 2. Name contains whole term
+        if (name.includes(term)) return { p, score: 500 };
+        // 3. Full text contains whole term
+        if (fullText.includes(term)) return { p, score: 300 };
+
+        // 4. Word-by-word matching
+        let score = 0;
+        let matchedWordCount = 0;
+        for (const w of queryWords) {
+          const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const wordBoundary = new RegExp(`\\b${escaped}\\b`, "i");
+          if (wordBoundary.test(name)) {
+            score += 100;
+            matchedWordCount++;
+          } else if (name.includes(w)) {
+            score += 60;
+            matchedWordCount++;
+          } else if (wordBoundary.test(fullText)) {
+            score += 40;
+            matchedWordCount++;
+          } else if (fullText.includes(w)) {
+            score += 20;
+            matchedWordCount++;
+          }
+        }
+
+        if (matchedWordCount === 0) return { p, score: 0 };
+        return { p, score };
+      }).filter((m) => m.score >= 60).sort((a, b) => b.score - a.score);
+
+      const matches = scoredMatches.map((m) => m.p);
+
+      // 1.9 Product not found (e.g. "unicorn cake")
+      if (matches.length === 0) {
+        base.reply = isTamil
+          ? `'${term}' அருகிலுள்ள எந்த சமையலறையிலும் கிடைக்கவில்லை. உங்களுக்குப் பிடித்தமான சில பிரபலமான உணவுகள் இதோ:`
+          : `I couldn't find '${term}' from any verified kitchens near your address. Here are some popular available items you might like:`;
+        base.selectedProductIds = products.filter((p) => pStock(p) > 0).slice(0, 4).map(pId);
+        base.intent = "answer";
+        return base;
+      }
+
+      // 1.5 Multiple matches handling
+      const isGenericQuery = /^(eggs?|milk|cookies?|bread|rice|dosa|idli|curd)$/i.test(term);
+
+      // If multiple vendors sell the exact item, check if customer already has items from one of them in their cart
+      let resolvedMatch = matches[0];
+      let hasSingleKitchenPreference = false;
+      if (matches.length > 1 && existingVendorId) {
+        const sameKitchen = matches.find((m) => pVendorId(m) === existingVendorId);
+        if (sameKitchen) {
+          resolvedMatch = sameKitchen;
+          hasSingleKitchenPreference = true;
+        }
+      }
+
+      if (!hasSingleKitchenPreference && matches.length > 1 && (isGenericQuery || scoredMatches[0].score === scoredMatches[1].score)) {
+        base.reply = isTamil
+          ? `அருகிலுள்ள சமையலறைகளில் பல வகையான '${term}' கிடைக்கின்றன. எதை உங்கள் கூடையில் சேர்க்க விரும்புகிறீர்கள்?`
+          : `I found several ${term} options from nearby kitchens. Which one would you like to add?`;
+        base.selectedProductIds = matches.slice(0, 4).map(pId);
+        base.intent = "clarify";
+        base.clarifyingQuestion = isTamil ? `எந்த ${term} வகையை விரும்புகிறீர்கள்?` : `Which ${term} option would you prefer?`;
+        return base;
+      }
+
+      const matched = resolvedMatch;
+      const stock = pStock(matched);
+
+      // 1.8 Out of stock or closed vendor
+      if (stock <= 0) {
+        const alternatives = products.filter((p) => pId(p) !== pId(matched) && pStock(p) > 0 && String(p.category || "").toLowerCase() === String(matched.category || "").toLowerCase());
+        base.reply = isTamil
+          ? `${pName(matched)} தற்போது இருப்பில் இல்லை. அருகிலுள்ள சில மாற்று உணவுகள் இதோ:`
+          : `${pName(matched)} from ${pVendor(matched)} is currently out of stock. Here are similar available alternatives near you:`;
+        base.selectedProductIds = (alternatives.length ? alternatives : products.filter((p) => pStock(p) > 0)).slice(0, 4).map(pId);
+        base.intent = "answer";
+        return base;
+      }
+
+      // 1.6 Quantity validation
+      if (requestedQty > stock) {
+        base.reply = isTamil
+          ? `${pName(matched)} இப்போது ${stock} மட்டுமே இருப்பில் உள்ளது. ${stock} சேர்க்கவா?`
+          : `Only ${stock} pack(s) of ${pName(matched)} are available right now. Would you like me to add ${stock} instead?`;
+        base.selectedProductIds = [pId(matched)];
+        base.intent = "clarify";
+        base.clarifyingQuestion = `Add ${stock} instead?`;
+        return base;
+      }
+
+      // 1.7 One kitchen per order restriction
+      if (existingVendorId && pVendorId(matched) && existingVendorId !== pVendorId(matched)) {
+        base.kitchenConflict = {
+          currentVendorName: existingVendorName,
+          requestedVendorName: pVendor(matched),
+          conflictingProductId: pId(matched),
+          requestedQuantity: requestedQty,
+        };
+        base.reply = isTamil
+          ? `உங்கள் கூடையில் ஏற்கனவே **${existingVendorName}** உணவுகள் உள்ளன. சுடச்சுட மற்றும் சரியான நேரத்தில் வழங்க ஒரு ஆர்டருக்கு ஒரு சமையலறை மட்டுமே அனுமதிக்கப்படும். தற்போதைய கூடையை வைத்திருக்க விரும்புகிறீர்களா அல்லது **${pVendor(matched)}** இலிருந்து புதிய கூடையைத் தொடங்கவா?`
+          : `Your cart currently contains items from **${existingVendorName}**. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery. Would you like to keep your current cart or start a new cart with items from **${pVendor(matched)}**?`;
+        base.intent = "clarify";
+        base.selectedProductIds = [pId(matched)];
+        return base;
+      }
+
+      const matchedId = pId(matched);
+      base.basketProductIds = [matchedId];
+      base.basketItems = [{ productId: matchedId, quantity: requestedQty }];
+      base.selectedProductIds = [matchedId];
+      base.reply = isTamil
+        ? `உங்கள் கூடையில் ${requestedQty > 1 ? `${requestedQty} ` : ""}${pName(matched)} சேர்க்கப்பட்டது. கூடையைப் பார்க்கவும்.`
+        : `Added ${requestedQty > 1 ? `${requestedQty} packs of ` : ""}${pName(matched)} to your cart. View cart.`;
+      base.intent = "add_to_basket";
+      return base;
+    }
+
+    // 6. Discovery queries (1.1 Find nearby items)
+    let discTerm = msg
+      .replace(/\b(show\s+me|find|what\s+is\s+available|available|near\s+me|nearby|around\s+me|options?|dishes|foods?|காட்டு|உள்ளதா)\b/gi, "")
+      .trim();
+    if (/பால்/i.test(rawMsg)) discTerm = "milk";
+    else if (/முட்டை/i.test(rawMsg)) discTerm = "egg";
+    else if (/தயிர்/i.test(rawMsg)) discTerm = "curd";
+
+    if (discTerm && discTerm.length > 1) {
+      const discWords = discTerm.split(/\s+/).filter((w) => w.length > 1);
+      const matches = products.filter((p) => {
+        const hay = `${pName(p)} ${String(p.category || "")} ${pVendor(p)}`.toLowerCase();
+        return pStock(p) > 0 && discWords.some((w) => hay.includes(w));
+      });
+      if (matches.length > 0) {
+        base.reply = isTamil
+          ? `உங்கள் பகுதிக்கு அருகில் கிடைக்கும் ${discTerm} இதோ: ${matches.slice(0, 3).map(pName).join(", ")}. கீழே உள்ளவற்றில் எளிதாக கூடையில் சேர்க்கலாம்.`
+          : `Here are verified ${discTerm} options available near your location: ${matches.slice(0, 3).map(pName).join(", ")}. You can add them directly to your basket below.`;
+        base.selectedProductIds = matches.slice(0, 6).map(pId);
+        base.intent = "browse";
+        return base;
+      }
+    }
+
     if (products.length > 0) {
-      const topProducts = products.slice(0, 4);
-      const topIds = topProducts.map((p) => String(p.id || p.item_id || "")).filter(Boolean);
-      base.reply = `Here are some popular home-cooked dishes available near you: ${topProducts.map((p) => String(p.name || p.item_name || "Dish")).join(", ")}.`;
+      const topProducts = products.filter((p) => pStock(p) > 0).slice(0, 4);
+      const topIds = topProducts.map(pId);
+      base.reply = isTamil
+        ? `உங்கள் பகுதிக்கு அருகில் கிடைக்கும் பிரபலமான வீட்டு உணவுகள் இதோ: ${topProducts.map(pName).join(", ")}.`
+        : `Here are some popular home-cooked dishes available near you: ${topProducts.map(pName).join(", ")}.`;
       base.selectedProductIds = topIds;
       base.intent = "recommend";
       return base;
     }
 
-    base.reply = "Hello! I'm She Agent, your personal shopping copilot. Ask me about fresh meals, schedules, or tracking your orders!";
+    base.reply = isTamil
+      ? "வணக்கம்! நான் She Agent, உங்கள் தனிப்பட்ட ஷாப்பிங் உதவியாளர். உணவு, ஆர்டர்கள் அல்லது திட்டமிடல் பற்றி என்னிடம் கேளுங்கள்!"
+      : "Hello! I'm She Agent, your personal shopping copilot. Ask me about fresh meals, schedules, or tracking your orders!";
     base.intent = "answer";
     return base;
   }

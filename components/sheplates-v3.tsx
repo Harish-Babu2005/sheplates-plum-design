@@ -166,7 +166,7 @@ export type Product = {
   unitType?: string;
 };
 type AgentMemory = { lastBudget?: number; favoriteCategories?: string[]; lastComplaintAt?: string; calorieTarget?: number; minProtein?: number; preferredDietaryTags?: string[]; preferredDeliveryPeriod?: string; favoriteProducts?: string[] };
-type AgentMessage = { role: "user" | "agent"; text: string; productIds?: string[]; basketTotal?: number; intent?: string; streaming?: boolean };
+type AgentMessage = { role: "user" | "agent"; text: string; productIds?: string[]; basketTotal?: number; intent?: string; streaming?: boolean; isError?: boolean; retryText?: string };
 
 /** Reads She Agent's event stream: "reply" events carry the words written so far, the last event is the validated result. */
 async function readAgentStream(response: Response, onReply: (replySoFar: string) => void): Promise<{ result?: Record<string, unknown>; error?: string }> {
@@ -9656,6 +9656,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   const [messages, setMessages] = useState<AgentMessage[]>([{ role: "agent", text: session.role === "customer" ? `Hi ${session.name.split(" ")[0]} 👋 Tell me what you're planning and I'll turn it into a local basket you can review.` : `Hello ${session.name}. I can analyse your ${roleName[session.role].toLowerCase()} workspace and recommend the next action.` }]);
   const [busy, setBusy] = useState(false);
   const [awaitingPhoto, setAwaitingPhoto] = useState<{ orderId: string; complaintText: string } | null>(null);
+  const [kitchenConflict, setKitchenConflict] = useState<{ currentVendorName: string; requestedVendorName: string; conflictingProductId: string; requestedQuantity: number } | null>(null);
   const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const abortRef = useRef<number | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   const scope = useMemo(() => scopedContext(session, state), [session, state]);
@@ -9663,6 +9664,21 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   const cartTotal = cartItems.reduce((sum, item) => { const product = state.products.find((p) => p.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => { if (!open) setMessage(""); }, [open]);
+
+  useEffect(() => {
+    if (session.role === "customer" && session.email) {
+      try {
+        const stored = sessionStorage.getItem("sheplates_pending_cart_action");
+        if (stored) {
+          sessionStorage.removeItem("sheplates_pending_cart_action");
+          const parsed = JSON.parse(stored) as { productId: string; quantity: number };
+          if (parsed?.productId) {
+            void syncAgentCart([parsed], [], "Restored your pending item to basket");
+          }
+        }
+      } catch {}
+    }
+  }, [session.email]);
 
   useEffect(() => {
     if (!isLiveSupabaseMode()) return;
@@ -9690,28 +9706,97 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
     return () => { active = false; };
   }, [session.email]);
 
-  async function syncAgentCart(addProductIds: string[] = [], removeProductIds: string[] = [], announce?: string) {
-    const own = state.cart.filter((item) => item.customerEmail === session.email);
+  async function syncAgentCart(
+    addItems: Array<{ productId: string; quantity: number }> | string[] = [],
+    removeProductIds: string[] = [],
+    announce?: string,
+    replaceAll = false
+  ) {
+    if (session.role !== "customer" && !session.email) {
+      const first = addItems[0];
+      const firstId = typeof first === "string" ? first : first?.productId;
+      if (firstId) {
+        try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId: firstId, quantity: 1 })); } catch {}
+      }
+      toast.error("Please sign in to add items to your cart");
+      setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
+      return;
+    }
+
+    const normalizedAdd: Array<{ productId: string; quantity: number }> = addItems.map((item) =>
+      typeof item === "string" ? { productId: item, quantity: 1 } : item
+    );
+
+    const own = replaceAll ? [] : state.cart.filter((item) => item.customerEmail === session.email);
+    const existingKitchenVendorId = own.length > 0 ? state.products.find((p) => p.id === own[0].productId)?.vendorId : null;
+
+    if (!replaceAll && existingKitchenVendorId && normalizedAdd.length > 0) {
+      const conflictItem = normalizedAdd.find((item) => {
+        const prod = state.products.find((p) => p.id === item.productId);
+        return prod && prod.vendorId !== existingKitchenVendorId;
+      });
+      if (conflictItem) {
+        const reqProd = state.products.find((p) => p.id === conflictItem.productId);
+        const reqVendor = reqProd ? state.vendors.find((v) => v.id === reqProd.vendorId) : undefined;
+        const currProd = state.products.find((p) => p.id === own[0].productId);
+        const currVendor = currProd ? state.vendors.find((v) => v.id === currProd.vendorId) : undefined;
+        setKitchenConflict({
+          currentVendorName: currVendor?.businessName || "your current kitchen",
+          requestedVendorName: reqVendor?.businessName || "another kitchen",
+          conflictingProductId: conflictItem.productId,
+          requestedQuantity: conflictItem.quantity,
+        });
+        return;
+      }
+    }
+
     const byProduct = new Map(own.map((item) => [item.productId, { ...item }]));
-    for (const productId of addProductIds) {
-      const product = state.products.find((item) => item.id === productId);
+    for (const add of normalizedAdd) {
+      const product = state.products.find((item) => item.id === add.productId);
       if (!product) continue;
-      const existing = byProduct.get(productId);
-      byProduct.set(productId, existing ? { ...existing, quantity: existing.quantity + 1 } : { id: id("CRT"), customerEmail: session.email, productId, quantity: 1 });
+      const existing = byProduct.get(add.productId);
+      byProduct.set(
+        add.productId,
+        existing
+          ? { ...existing, quantity: existing.quantity + add.quantity }
+          : { id: id("CRT"), customerEmail: session.email, productId: add.productId, quantity: add.quantity }
+      );
       rememberCategory(setState, session.email, product.category);
     }
     for (const productId of removeProductIds) byProduct.delete(productId);
     const nextOwn = [...byProduct.values()];
-    setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));
+    setState((current) => ({
+      ...current,
+      cart: replaceAll
+        ? nextOwn
+        : [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn],
+    }));
     if (isLiveSupabaseMode()) {
       const saved = await syncLiveCart({ items: nextOwn.map((item) => ({ productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId })), createdBy: "she_agent" });
       if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
     }
     if (announce) toast.success(announce);
   }
+
+  async function startNewCartWithProduct(productId: string, quantity: number, vendorName: string) {
+    await syncAgentCart([{ productId, quantity }], [], `Started new cart with ${vendorName}`, true);
+    setMessages((curr) => [...curr, { role: "agent", text: `Started a fresh basket with items from ${vendorName}. View cart to review.` }]);
+  }
+
   async function addProduct(productId: string, announce = true) {
-    const product = state.products.find((item) => item.id === productId); if (!product) return;
-    try { await syncAgentCart([productId], [], announce ? `${product.name} added to your basket` : undefined); }
+    const product = state.products.find((item) => item.id === productId);
+    if (!product) return;
+    if (product.stock <= 0) {
+      toast.error("This item is currently out of stock");
+      return;
+    }
+    if (session.role !== "customer" && !session.email) {
+      try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId, quantity: 1 })); } catch {}
+      toast.error("Please sign in to add items to your cart");
+      setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
+      return;
+    }
+    try { await syncAgentCart([{ productId, quantity: 1 }], [], announce ? `Added ${product.name} to your cart` : undefined); }
     catch (error) { toast.error(errorMessage(error, "Cart could not be saved")); }
   }
   async function addSuggestedBasket(productIds: string[]) {
@@ -9756,6 +9841,13 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
           budget?: number;
           selectedProductIds?: string[];
           basketProductIds?: string[];
+          basketItems?: Array<{ productId: string; quantity: number }>;
+          kitchenConflict?: {
+            currentVendorName: string;
+            requestedVendorName: string;
+            conflictingProductId: string;
+            requestedQuantity: number;
+          };
           removeProductIds?: string[];
           navigateTo?: string;
           clarifyingQuestion?: string;
@@ -9778,6 +9870,9 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
       if (result.conversationId || json.conversationId) {
         conversationIdRef.current = result.conversationId || json.conversationId || null;
       }
+      if (result.kitchenConflict) {
+        setKitchenConflict(result.kitchenConflict);
+      }
 
       if (session.role === "customer" && result.memoryUpdates?.length) {
         const patch: Partial<AgentMemory> = {};
@@ -9793,7 +9888,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         if (Object.keys(patch).length) setState((current) => withAgentMemory(current, session.email, patch));
       }
 
-      const permittedProducts = new Map(availableCommerceProducts(state).map((product) => [product.id, product]));
+      const permittedProducts = new Map(state.products.map((product) => [product.id, product]));
       const selectedProducts = [...new Set(result.selectedProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
       const basketProducts = [...new Set(result.basketProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
       const removeIds = new Set((result.removeProductIds || []).filter((productId) => permittedProducts.has(productId)));
@@ -9839,13 +9934,19 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
       setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: reply, productIds: productIds.length ? productIds : undefined, basketTotal, intent: result.intent }]);
       // The reply is already on screen. Saving the basket is a network round trip, so it must not hold the answer back.
       setBusy(false);
-      if (basketProducts.length || removeIds.size) {
-        try { await syncAgentCart(basketProducts.map((product) => product.id), [...removeIds]); }
+      const basketAdditions: Array<{ productId: string; quantity: number }> =
+        result.basketItems && result.basketItems.length > 0
+          ? result.basketItems
+          : basketProducts.map((product) => ({ productId: product.id, quantity: 1 }));
+
+      if (basketAdditions.length || removeIds.size) {
+        try { await syncAgentCart(basketAdditions, [...removeIds]); }
         catch (error) { toast.error(errorMessage(error, "Your basket could not be saved. Please try again")); }
       }
     } catch (error) {
       const timedOut = error instanceof DOMException && error.name === "AbortError";
-      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.") }]);
+      const errMsg = timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.");
+      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: errMsg, isError: true, retryText: text }]);
     } finally {
       if (abortRef.current !== null) { window.clearTimeout(abortRef.current); abortRef.current = null; }
       setBusy(false);
@@ -9857,7 +9958,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   return <div className={page ? "k-agent-page" : "fixed inset-0 z-70 sm:pointer-events-none"}>{!page && <button onClick={() => setOpen(false)} className="absolute inset-0 bg-[#202827]/35 backdrop-blur-[2px] sm:hidden" aria-label="Close She Agent" />}<section className="sp-agent-panel pointer-events-auto absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/60 bg-[#EEF2F2] shadow-[0_-20px_80px_rgba(25, 19, 21,.22)] sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(790px,calc(100vh-36px))] sm:w-120 sm:rounded-4xl sm:shadow-[0_24px_90px_rgba(25, 19, 21,.28)]">
     <div className="relative overflow-hidden bg-[#155F65] px-5 pb-5 pt-5 text-white"><div className="absolute -right-12 -top-16 size-44 rounded-full bg-[#155F65]/30 blur-3xl" /><div className="absolute -bottom-20 left-12 size-40 rounded-full bg-[#b42332]/20 blur-3xl" /><div className="relative flex items-center gap-3"><div className="sp-agent-orb sp-agent-orb-large relative grid size-12 place-items-center rounded-[18px] text-white"><Activity className="size-5" /><span className="sp-agent-orb-status absolute -right-1 -top-1 size-3 rounded-full" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="text-lg font-black">She Agent</h2><span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-white/70">Commerce assistant</span></div><p className="mt-0.5 truncate text-xs text-white/55">{session.role === "customer" ? "Your local shopping copilot" : `${roleName[session.role]} copilot`}</p></div><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10 transition hover:bg-white/15" aria-label="Close"><X className="size-4" /></button></div>{session.role === "customer" && <div className="relative mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs"><ShoppingCart className="size-4 text-[#155F65]" /><span className="font-bold">Review basket</span><span className="text-white/45">{cartItems.length} item{cartItems.length === 1 ? "" : "s"}</span><span className="ml-auto font-black">{money(cartTotal)}</span>{cartItems.length > 0 && <button onClick={() => { navigate("Cart"); setOpen(false); }} className="rounded-lg bg-white px-2.5 py-1.5 font-black text-[#202827]">View</button>}</div>}</div>
     <div className="border-b border-stone-200/70 bg-white/80 px-5 py-3 text-[11px] font-semibold leading-5 text-stone-500 backdrop-blur"><ShieldCheck className="mr-1.5 inline size-3.5 text-[#155F65]" />{scopeCopy} Sensitive payments, refunds and approvals remain human-confirmed.</div>
-    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">{messages.length === 1 && session.role === "customer" && <div className="mb-5 grid grid-cols-2 gap-2">{[["Nearby now", "What products are available near me?"], ["Plan for me", "Plan something useful for me today"], ["Food preferences", "Show options that fit my preferences"], ["Track order", "Where is my next order?"]].map(([label, prompt]) => <button key={label} onClick={() => void send(prompt)} className="surface-card rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#155F65]/40 hover:shadow-md"><Sparkles className="size-4 text-[#155F65]" /><div className="mt-2 text-xs font-black">{label}</div><div className="mt-1 text-[10px] leading-4 text-stone-400">{prompt}</div></button>)}</div>}<div className="space-y-4">{messages.map((item, index) => <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] ${item.role === "user" ? "rounded-[22px_22px_8px_22px] bg-[#155F65] text-white shadow-[0_16px_36px_rgba(22, 17, 18,.18)]" : "rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 text-stone-700 shadow-[0_16px_40px_rgba(35,26,21,.08)]"} px-4 py-3 text-sm leading-6`}><div>{item.text}</div>{item.productIds?.length ? <div className="mt-3 space-y-2">{item.productIds.map((productId) => { const product = state.products.find((p) => p.id === productId); const vendor = product ? state.vendors.find((v) => v.id === product.vendorId) : undefined; if (!product) return null; const inCart = state.cart.some((x) => x.customerEmail === session.email && x.productId === product.id); return <div key={product.id} className="surface-card-muted rounded-[22px] p-3"><div className="flex items-center gap-3"><div className="grid size-12 shrink-0 place-items-center rounded-2xl shadow-sm ring-1 ring-stone-100" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{product.name}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{vendor?.businessName || "Verified vendor"} · {product.baseUnit}</div><div className="mt-1 flex items-center gap-2"><span className="text-sm font-black text-[#202827]">{money(finalPrice(product, state))}</span><span className="text-[10px] font-bold text-[#155F65]">{product.protein}g protein</span></div></div><button onClick={() => void addProduct(product.id)} className={`grid min-w-14 place-items-center rounded-xl px-2.5 py-2 text-[11px] font-black ${inCart ? "bg-[#EAF4F2] text-white" : "bg-[#155F65] text-white"}`}>{inCart ? "Add +" : "+ Add"}</button></div></div>; })}{item.basketTotal !== undefined && <div className="flex items-center justify-between gap-2 pt-1"><span className="text-[11px] font-bold text-stone-400">Suggested total {money(item.basketTotal)}</span><button onClick={() => void addSuggestedBasket(item.productIds || [])} className="rounded-xl bg-[#155F65] px-3 py-2 text-[11px] font-black text-white">Add suggested basket</button></div>}</div> : null}</div></div>)}{busy && !messages.some((m) => m.streaming) && <div className="flex justify-start"><div className="inline-flex items-center gap-2 rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 px-4 py-3 text-sm text-stone-500 shadow-[0_14px_36px_rgba(35,26,21,.08)]"><span className="flex gap-1"><span className="size-1.5 animate-bounce rounded-full bg-[#155F65]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:120ms]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:240ms]" /></span>Working on the best options…</div></div>}<div ref={bottom} /></div></div>
+    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">{messages.length === 1 && session.role === "customer" && <div className="mb-5 grid grid-cols-2 gap-2">{[["Nearby now", "What products are available near me?"], ["Plan for me", "Plan something useful for me today"], ["Food preferences", "Show options that fit my preferences"], ["Track order", "Where is my next order?"]].map(([label, prompt]) => <button key={label} onClick={() => void send(prompt)} className="surface-card rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#155F65]/40 hover:shadow-md"><Sparkles className="size-4 text-[#155F65]" /><div className="mt-2 text-xs font-black">{label}</div><div className="mt-1 text-[10px] leading-4 text-stone-400">{prompt}</div></button>)}</div>}<div className="space-y-4">{messages.map((item, index) => <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] ${item.role === "user" ? "rounded-[22px_22px_8px_22px] bg-[#155F65] text-white shadow-[0_16px_36px_rgba(22, 17, 18,.18)]" : "rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 text-stone-700 shadow-[0_16px_40px_rgba(35,26,21,.08)]"} px-4 py-3 text-sm leading-6`}><div>{item.text}</div>{item.productIds?.length ? <div className="mt-3 space-y-2">{item.productIds.map((productId) => { const product = state.products.find((p) => p.id === productId); const vendor = product ? state.vendors.find((v) => v.id === product.vendorId) : undefined; if (!product) return null; const inCart = state.cart.some((x) => x.customerEmail === session.email && x.productId === product.id); const isOutOfStock = product.stock <= 0; return <div key={product.id} className="surface-card-muted rounded-[22px] p-3"><div className="flex items-center gap-3"><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-sm ring-1 ring-stone-100" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{product.name}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{vendor?.businessName || "Verified kitchen"} · <span className="font-semibold text-stone-700">{product.baseUnit}</span></div><div className="mt-1 flex items-center gap-2"><span className="text-sm font-black text-[#202827]">{money(finalPrice(product, state))}</span><span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold ${!isOutOfStock ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{!isOutOfStock ? (product.stock <= 5 ? `Only ${product.stock} left` : "In stock") : "Out of stock"}</span></div></div><button type="button" disabled={isOutOfStock} onClick={() => void addProduct(product.id)} className={`grid min-w-16 place-items-center rounded-xl px-2.5 py-2 text-[11px] font-black ${isOutOfStock ? "cursor-not-allowed bg-stone-200 text-stone-400" : inCart ? "bg-[#0F4A4F] text-white" : "bg-[#155F65] text-white transition hover:bg-[#0F4A4F]"}`}>{isOutOfStock ? "Sold out" : inCart ? "Add +" : "+ Add"}</button></div></div>; })}{item.basketTotal !== undefined && <div className="flex items-center justify-between gap-2 pt-1"><span className="text-[11px] font-bold text-stone-400">Suggested total {money(item.basketTotal)}</span><button onClick={() => void addSuggestedBasket(item.productIds || [])} className="rounded-xl bg-[#155F65] px-3 py-2 text-[11px] font-black text-white">Add suggested basket</button></div>}</div> : null}{(item.text.includes("View cart") || item.text.includes("கூடையைப் பார்க்கவும்") || item.intent === "view_basket" || item.intent === "add_to_basket") && <div className="mt-2.5"><button type="button" onClick={() => { navigate("Cart"); setOpen(false); }} className="inline-flex items-center gap-1.5 rounded-xl bg-[#155F65] px-3 py-1.5 text-xs font-black text-white shadow-xs transition hover:bg-[#0F4A4F]"><ShoppingCart className="size-3.5" />View cart</button></div>}{item.isError && item.retryText && <div className="mt-2.5"><button type="button" onClick={() => void send(item.retryText)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"><Sparkles className="size-3.5" />Try again</button></div>}</div></div>)}{kitchenConflict && <div className="surface-card rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 shadow-sm"><div className="flex items-center gap-1.5 font-black text-amber-900"><ShieldCheck className="size-4 text-amber-600" />One kitchen per order</div><p className="mt-1 leading-5">Your cart currently has items from <b>{kitchenConflict.currentVendorName}</b>. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { const currName = kitchenConflict.currentVendorName; setKitchenConflict(null); setMessages((curr) => [...curr, { role: "agent", text: `Kept your current basket from ${currName}.` }]); }} className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 font-bold text-amber-900 shadow-2xs hover:bg-amber-100">Keep current cart</button><button type="button" onClick={async () => { const { conflictingProductId, requestedQuantity, requestedVendorName } = kitchenConflict; setKitchenConflict(null); await startNewCartWithProduct(conflictingProductId, requestedQuantity, requestedVendorName); }} className="rounded-xl bg-[#155F65] px-3 py-1.5 font-black text-white shadow-2xs hover:bg-[#0F4A4F]">Start new cart with {kitchenConflict.requestedVendorName}</button></div></div>}{busy && !messages.some((m) => m.streaming) && <div className="flex justify-start"><div className="inline-flex items-center gap-2 rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 px-4 py-3 text-sm text-stone-500 shadow-[0_14px_36px_rgba(35,26,21,.08)]"><span className="flex gap-1"><span className="size-1.5 animate-bounce rounded-full bg-[#155F65]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:120ms]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:240ms]" /></span>Working on the best options…</div></div>}<div ref={bottom} /></div></div>
     <div className="border-t border-stone-200/80 bg-white/96 p-3.5 backdrop-blur sm:p-4"><input ref={fileInputRef} type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handlePhotoSelected(file); e.target.value = ""; }} />{awaitingPhoto && <div className="mb-3 flex gap-2"><Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1 rounded-xl border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"><ImageUp />Attach photo for {awaitingPhoto.orderId}</Button><Button type="button" variant="ghost" onClick={() => setAwaitingPhoto(null)} className="rounded-xl">Cancel</Button></div>}<div className="mb-3 flex gap-2 overflow-x-auto pb-1">{agentPrompts(session.role).map((prompt) => <button key={prompt} onClick={() => void send(prompt)} disabled={busy} className="whitespace-nowrap rounded-full border border-stone-200 bg-[#EEF2F2] px-3 py-2 text-[11px] font-bold text-stone-600 transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]">{prompt}</button>)}</div><div className="flex items-end gap-2 rounded-[20px] border border-stone-200 bg-[#EEF2F2] p-2 focus-within:border-[#155F65]/50 focus-within:ring-4 focus-within:ring-[#155F65]/10"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder={session.role === "customer" ? "Ask naturally about food, products, orders or your plans…" : "Ask She Agent…"} className="min-h-10 max-h-28 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0" /><Button onClick={() => void send()} disabled={busy || !message.trim()} className="size-10 shrink-0 rounded-xl bg-[#155F65] p-0 hover:bg-[#0F4A4F]" aria-label="Send"><Send className="size-4" /></Button></div><p className="mt-2 px-1 text-[10px] leading-4 text-stone-400">She Agent can prepare and modify a proposal. You confirm checkout, payment and sensitive actions.</p></div>
   </section></div>;
 }
