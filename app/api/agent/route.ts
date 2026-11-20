@@ -6,6 +6,7 @@ import { alertAdminBudgetCredit } from "@/lib/uruv-ai";
 import { adminClient } from "@/lib/product-image-server";
 import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 import type { AiAction } from "@/lib/ai-credits-config";
+import { getOrCreateConversation, saveAgentMessage, recordAiAction, loadConversationHistory } from "@/lib/ai-conversation-server";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 type AgentTask = "commerce" | "order_tracking" | "cancellation_review" | "nutrition" | "business_insights" | "quality_complaint" | "campaign_strategy" | "quotation_assistant";
@@ -16,6 +17,7 @@ type AgentRequest = {
   context?: Record<string, unknown>;
   history?: Array<{ role: "user" | "agent"; text: string; productIds?: string[] }>;
   imageBase64?: string;
+  conversationId?: string;
 };
 
 type CommerceResult = {
@@ -34,6 +36,7 @@ type CommerceResult = {
   ticketCategory: "Order" | "Payment" | "Vendor" | "Delivery" | "Other";
   ticketPriority: "Low" | "Normal" | "High" | "Urgent";
   memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
+  conversationId?: string;
 };
 
 /** A plain reading of the numbers the page sent, used when the written analysis is slow or unavailable, so the button never just spins. */
@@ -587,6 +590,67 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
   return base;
 }
 
+async function persistAgentTurn(
+  db: SupabaseClient | null,
+  auth: Authorised,
+  conversationId: string | null,
+  task: string,
+  userMessage: string | undefined,
+  result: Record<string, unknown>
+) {
+  if (!db || auth.demo || !auth.profile?.id) return;
+  try {
+    const replyText = typeof result.reply === "string" ? result.reply : typeof result.summary === "string" ? result.summary : "";
+    if (conversationId && replyText) {
+      await saveAgentMessage(db, {
+        conversationId,
+        actorId: auth.profile.id,
+        messageRole: "assistant",
+        content: replyText,
+        safeContext: {
+          intent: result.intent,
+          selectedProductIds: result.selectedProductIds,
+          basketProductIds: result.basketProductIds,
+          budget: result.budget,
+          navigateTo: result.navigateTo,
+        },
+      });
+    }
+
+    const isConsequential = task === "cancellation_review" || task === "quality_complaint" || Boolean(result.createTicket);
+    const approvalStatus = (task === "cancellation_review" || task === "quality_complaint") ? "pending" : "not_required";
+
+    await recordAiAction(db, {
+      actorId: auth.profile.id,
+      agentType: "she_agent",
+      task,
+      inputContext: { message: userMessage, role: auth.role },
+      recommendation: result,
+      consequential: isConsequential,
+      approvalStatus,
+    });
+  } catch (err) {
+    console.warn("[She Agent] Failed to persist turn to database:", err);
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const auth = await authoriseRole(request, {});
+    if (auth.demo || !auth.profile?.id) {
+      return NextResponse.json({ conversationId: null, messages: [] });
+    }
+    const admin = adminClient();
+    const db = admin || auth.supabase;
+    const url = new URL(request.url);
+    const requestedConvId = url.searchParams.get("conversationId");
+    const history = await loadConversationHistory(db, auth.profile.id, requestedConvId);
+    return NextResponse.json(history);
+  } catch {
+    return NextResponse.json({ conversationId: null, messages: [] });
+  }
+}
+
 export async function POST(request: Request) {
   const body = await request.json() as AgentRequest;
   let auth: Authorised;
@@ -618,6 +682,20 @@ export async function POST(request: Request) {
   const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
   const admin = adminClient();
+  const db = admin || (!auth.demo ? auth.supabase : null);
+  let activeConversationId: string | null = null;
+  if (db && !auth.demo && auth.profile?.id) {
+    activeConversationId = await getOrCreateConversation(db, auth.profile.id, auth.role, body.conversationId);
+    if (activeConversationId && body.message) {
+      await saveAgentMessage(db, {
+        conversationId: activeConversationId,
+        actorId: auth.profile.id,
+        messageRole: "user",
+        content: body.message,
+      });
+    }
+  }
+
   const effectiveVendorId = !auth.demo
     ? auth.profile.vendor_id
     : (((body.context?.vendor as { id?: string } | undefined)?.id) || ((auth.context?.vendor as { id?: string } | undefined)?.id) || ((body.context as { vendorId?: string } | undefined)?.vendorId) || null);
@@ -704,6 +782,11 @@ export async function POST(request: Request) {
               done = { validated, scope: loaded.context.scope };
             }
 
+            if (activeConversationId) {
+              done.validated.conversationId = activeConversationId;
+            }
+            await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, done.validated as unknown as Record<string, unknown>);
+
             if (auth.role === "vendor" && effectiveVendorId && admin) {
               void deductVendorAiCredits(admin, effectiveVendorId, aiAction, "She Agent conversation").catch((err) => console.warn("[She Agent] Failed to deduct credits:", err));
             }
@@ -713,6 +796,10 @@ export async function POST(request: Request) {
             try {
               const loaded = await getContext();
               const fallback = groundedCommerceFallback(body, loaded.role, loaded.context);
+              if (activeConversationId) {
+                fallback.conversationId = activeConversationId;
+              }
+              await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, fallback as unknown as Record<string, unknown>);
               send({ type: "reply", text: fallback.reply });
               send({ type: "result", source: "assistant", scope: loaded.context.scope, result: fallback });
             } catch {
@@ -741,6 +828,11 @@ export async function POST(request: Request) {
         done = { validated, scope: loaded.context.scope };
       }
 
+      if (activeConversationId) {
+        done.validated.conversationId = activeConversationId;
+      }
+      await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, done.validated as unknown as Record<string, unknown>);
+
       if (auth.role === "vendor" && effectiveVendorId && admin) {
         await deductVendorAiCredits(admin, effectiveVendorId, aiAction, "She Agent conversation").catch((err) => console.warn("[She Agent] Failed to deduct credits:", err));
       }
@@ -750,6 +842,10 @@ export async function POST(request: Request) {
       try {
         const loaded = await getContext();
         const fallback = groundedCommerceFallback(body, loaded.role, loaded.context);
+        if (activeConversationId) {
+          fallback.conversationId = activeConversationId;
+        }
+        await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, fallback as unknown as Record<string, unknown>);
         return NextResponse.json({ source: "assistant", scope: loaded.context.scope, result: fallback });
       } catch {
         return NextResponse.json({ error: failureFor(error) }, { status: 502 });
@@ -757,7 +853,12 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!apiKey) { const early = await getContext(); return NextResponse.json({ source: "assistant", scope: early.context.scope, result: controlledFallback({ ...body, role: early.role, context: nutrition ? body.context : early.context }) }); }
+  if (!apiKey) {
+    const early = await getContext();
+    const fallback = controlledFallback({ ...body, role: early.role, context: nutrition ? body.context : early.context });
+    await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, fallback as Record<string, unknown>);
+    return NextResponse.json({ source: "assistant", scope: early.context.scope, result: fallback });
+  }
 
   const access = await getContext();
   const nutritionInput = nutrition ? { productName: body.context?.productName, category: body.context?.category, amount: body.context?.amount, measurementUnit: body.context?.measurementUnit, servingLabel: body.context?.servingLabel, nutritionSource: body.context?.nutritionSource } : undefined;
@@ -912,18 +1013,28 @@ export async function POST(request: Request) {
     if (nutrition) {
       const available = parsed.nutritionAvailable === true && Boolean(parsed.nutrition);
       if (!available || !parsed.nutrition || !nutritionLooksConsistent(parsed.nutrition)) {
+        await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, { ...parsed, nutritionAvailable: false, nutrition: null });
         return NextResponse.json({ source: "assistant", scope: access.context.scope, result: { ...parsed, nutritionAvailable: false, nutrition: null }, warning: "Nutrition needs a human review." });
       }
     }
-    if (qualityComplaint && (!parsed.quality || typeof parsed.quality.recommendedRefundPercent !== "number")) return NextResponse.json({ source: "review", result: controlledFallback(body), warning: "The image assessment needs a manual review." });
+    if (qualityComplaint && (!parsed.quality || typeof parsed.quality.recommendedRefundPercent !== "number")) {
+      const fallback = controlledFallback(body);
+      await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, fallback as Record<string, unknown>);
+      return NextResponse.json({ source: "review", result: fallback, warning: "The image assessment needs a manual review." });
+    }
     if (commerce) {
       const validated = validateCommerceResult(parsed as unknown as CommerceResult, access.context as Record<string, unknown>, access.role);
       if (access.role === "customer" && Array.isArray(validated.memoryUpdates)) await persistCustomerMemory(request, validated.memoryUpdates);
+      if (activeConversationId) {
+        validated.conversationId = activeConversationId;
+      }
+      await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, validated as unknown as Record<string, unknown>);
       return NextResponse.json({ source: "assistant", scope: access.context.scope, result: validated });
     }
     if (auth.role === "vendor" && effectiveVendorId && admin) {
       await deductVendorAiCredits(admin, effectiveVendorId, aiAction, `She Agent task: ${requestedTask}`);
     }
+    await persistAgentTurn(db, auth, activeConversationId, requestedTask, body.message, parsed as Record<string, unknown>);
     return NextResponse.json({ source: "assistant", scope: access.context.scope, result: parsed });
   } catch {
     if (commerce) return NextResponse.json({ error: "She Agent could not complete that request. Please try again." }, { status: 502 });

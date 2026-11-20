@@ -9657,11 +9657,38 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   const [busy, setBusy] = useState(false);
   const [awaitingPhoto, setAwaitingPhoto] = useState<{ orderId: string; complaintText: string } | null>(null);
   const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const abortRef = useRef<number | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
   const scope = useMemo(() => scopedContext(session, state), [session, state]);
   const cartItems = state.cart.filter((item) => item.customerEmail === session.email);
   const cartTotal = cartItems.reduce((sum, item) => { const product = state.products.find((p) => p.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => { if (!open) setMessage(""); }, [open]);
+
+  useEffect(() => {
+    if (!isLiveSupabaseMode()) return;
+    let active = true;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        const res = await fetch("/api/agent", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { conversationId?: string; messages?: Array<{ id: string; role: "user" | "agent"; text: string }> };
+        if (!active) return;
+        if (data.conversationId) {
+          conversationIdRef.current = data.conversationId;
+        }
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages.map((m) => ({ role: m.role, text: m.text })));
+        }
+      } catch {
+        /* Fall back smoothly to default greeting */
+      }
+    })();
+    return () => { active = false; };
+  }, [session.email]);
 
   async function syncAgentCart(addProductIds: string[] = [], removeProductIds: string[] = [], announce?: string) {
     const own = state.cart.filter((item) => item.customerEmail === session.email);
@@ -9694,7 +9721,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
 
   async function submitQualityComplaint(orderId: string, complaintText: string, fileName: string, imageDataUrl: string) {
     const order = state.orders.find((o) => o.id === orderId); let aiDecision = "I reviewed the photo but could not reach live vision analysis, so this needs a careful manual look."; let confidence = 65; let recommendedRefundAmount = order ? Math.round(order.total * 0.5 * 100) / 100 : 0;
-    try { const token = await getAccessToken(); const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "quality_complaint", message: complaintText, context: { ...scope, order }, imageBase64: imageDataUrl, role: session.role }) }); const json = await response.json() as { result?: { summary?: string; recommendedAction?: string; confidence?: number; quality?: { spoilageLikely?: boolean; recommendedRefundPercent?: number } } }; if (response.ok && json.result) { aiDecision = [json.result.summary, json.result.recommendedAction].filter(Boolean).join(" ") || aiDecision; if (typeof json.result.confidence === "number") confidence = json.result.confidence; const percent = json.result.quality?.recommendedRefundPercent; if (order && typeof percent === "number") recommendedRefundAmount = Math.max(0, Math.min(order.total, Math.round(order.total * (percent / 100) * 100) / 100)); } } catch { /* conservative fallback */ }
+    try { const token = await getAccessToken(); const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "quality_complaint", message: complaintText, context: { ...scope, order }, imageBase64: imageDataUrl, role: session.role, conversationId: conversationIdRef.current || undefined }) }); const json = await response.json() as { conversationId?: string; result?: { conversationId?: string; summary?: string; recommendedAction?: string; confidence?: number; quality?: { spoilageLikely?: boolean; recommendedRefundPercent?: number } } }; if (response.ok && json.result) { if (json.result.conversationId || json.conversationId) conversationIdRef.current = json.result.conversationId || json.conversationId || null; aiDecision = [json.result.summary, json.result.recommendedAction].filter(Boolean).join(" ") || aiDecision; if (typeof json.result.confidence === "number") confidence = json.result.confidence; const percent = json.result.quality?.recommendedRefundPercent; if (order && typeof percent === "number") recommendedRefundAmount = Math.max(0, Math.min(order.total, Math.round(order.total * (percent / 100) * 100) / 100)); } } catch { /* conservative fallback */ }
     const cancellation: Cancellation = { id: id("CAN"), orderId, customerEmail: session.email, reason: complaintText, aiDecision, confidence, status: "Awaiting operations", kind: "quality_complaint", recommendedRefundAmount, attachmentName: fileName };
     const ticket: Ticket = { id: id("TKT"), creatorEmail: session.email, creatorRole: session.role, subject: `Quality complaint — ${orderId}`, description: complaintText, category: "Order", priority: "High", status: "Open", attachmentName: fileName, createdVia: "She Agent", at: now() };
     setState((current) => withAgentMemory({ ...current, cancellations: [cancellation, ...current.cancellations], tickets: [ticket, ...current.tickets], notifications: [notice("operations@sheplates.demo", "operations", "Quality complaint needs review", `${cancellation.id} for ${orderId} · She Agent suggests ${money(recommendedRefundAmount)}.`), ...current.notifications], audit: [audit(session, "Quality complaint submitted", `${orderId} · photo attached (${fileName})`), ...current.audit] }, session.email, { lastComplaintAt: now() }));
@@ -9718,10 +9745,12 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role }),
+        body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role, conversationId: conversationIdRef.current || undefined }),
       });
       type AgentJson = {
+        conversationId?: string;
         result?: {
+          conversationId?: string;
           reply?: string;
           intent?: string;
           budget?: number;
@@ -9746,6 +9775,9 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         : await response.json() as AgentJson;
       if ((!streamed && !response.ok) || !json.result) throw new Error(json.error || "She Agent is temporarily unavailable. Please try again shortly.");
       const result = json.result;
+      if (result.conversationId || json.conversationId) {
+        conversationIdRef.current = result.conversationId || json.conversationId || null;
+      }
 
       if (session.role === "customer" && result.memoryUpdates?.length) {
         const patch: Partial<AgentMemory> = {};
