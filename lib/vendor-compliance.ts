@@ -21,6 +21,9 @@ export type VendorComplianceDocument = {
   expiryDate?: string;
   verificationStatus?: string;
   metadata?: Record<string, unknown>;
+  isHistory?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export const VENDOR_TERMS_VERSION = "1.0";

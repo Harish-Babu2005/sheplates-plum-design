@@ -1043,20 +1043,124 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    if (action === "resubmit_verification") {
+    if (action === "resubmit_verification" || action === "save_verification") {
       if (profile.role !== "vendor" || !profile.vendor_id) return NextResponse.json({ error: "Vendor access required." }, { status: 403 });
+      const isResubmit = action === "resubmit_verification" || body.resubmit === true;
       const documentNumber = String(body.documentNumber || "").trim();
-      const expiryDate = body.expiryDate ? String(body.expiryDate) : null;
-      const { data: existing } = await admin.from("vendor_documents").select("id").eq("vendor_id", profile.vendor_id).in("document_type", ["food_certificate", "fssai"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (existing?.id) {
-        await admin.from("vendor_documents").update({ document_number: documentNumber, expiry_date: expiryDate, verification_status: "submitted", updated_at: new Date().toISOString() }).eq("vendor_id", profile.vendor_id).in("document_type", ["food_certificate", "fssai"]);
-      } else {
-        await admin.from("vendor_documents").insert({ vendor_id: profile.vendor_id, document_type: "food_certificate", document_number: documentNumber, storage_path: "pending-upload", expiry_date: expiryDate, verification_status: "submitted" });
+      const expiryDate = body.expiryDate ? String(body.expiryDate).trim() : null;
+      const fileName = body.fileName ? String(body.fileName).trim() : null;
+      const storagePath = body.storagePath ? String(body.storagePath).trim() : null;
+
+      if (expiryDate) {
+        const today = new Date().toISOString().slice(0, 10);
+        if (expiryDate < today) {
+          return NextResponse.json({ error: "Expiry date cannot be in the past." }, { status: 400 });
+        }
       }
-      await admin.from("vendors").update({ verification_status: "submitted", operational_status: "inactive", marketplace_visible: false, updated_at: new Date().toISOString() }).eq("id", profile.vendor_id);
-      const { data: ops } = await admin.from("profiles").select("id").in("role", ["operations", "admin"]);
-      if (ops?.length) await admin.from("notifications").insert(ops.map((p) => ({ recipient_id: p.id, kind: "verification", title: "Vendor resubmitted verification", body: `${profile.full_name || "A vendor"} updated certification details for review.`, entity_type: "vendor", entity_id: profile.vendor_id })));
-      return NextResponse.json({ ok: true });
+
+      const { data: existingDocs } = await admin
+        .from("vendor_documents")
+        .select("id,document_number,storage_path,file_name,expiry_date")
+        .eq("vendor_id", profile.vendor_id)
+        .in("document_type", ["food_certificate", "fssai"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const existing = existingDocs?.[0];
+      const docPath = storagePath || existing?.storage_path || "pending-upload";
+      const docFileName = fileName || existing?.file_name || "fssai-certificate.pdf";
+
+      if (storagePath && existing && storagePath !== existing.storage_path) {
+        // New file uploaded: insert a fresh version row to retain old document in history
+        const insertPayload: Record<string, unknown> = {
+          vendor_id: profile.vendor_id,
+          document_type: "food_certificate",
+          document_number: documentNumber,
+          storage_path: docPath,
+          file_name: docFileName,
+          expiry_date: expiryDate,
+          verification_status: isResubmit ? "submitted" : "draft",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        let insRes = await admin.from("vendor_documents").insert(insertPayload);
+        if (insRes.error && /file_name/i.test(insRes.error.message)) {
+          delete insertPayload.file_name;
+          await admin.from("vendor_documents").insert(insertPayload);
+        }
+      } else if (existing?.id) {
+        // Update the current document
+        const updatePayload: Record<string, unknown> = {
+          document_number: documentNumber,
+          expiry_date: expiryDate,
+          updated_at: new Date().toISOString(),
+        };
+        if (docPath && docPath !== "pending-upload") updatePayload.storage_path = docPath;
+        if (docFileName) updatePayload.file_name = docFileName;
+        if (isResubmit) updatePayload.verification_status = "submitted";
+
+        let updRes = await admin.from("vendor_documents").update(updatePayload).eq("id", existing.id);
+        if (updRes.error && /file_name/i.test(updRes.error.message)) {
+          delete updatePayload.file_name;
+          await admin.from("vendor_documents").update(updatePayload).eq("id", existing.id);
+        }
+      } else {
+        // First time adding document
+        const insertPayload: Record<string, unknown> = {
+          vendor_id: profile.vendor_id,
+          document_type: "food_certificate",
+          document_number: documentNumber,
+          storage_path: docPath,
+          file_name: docFileName,
+          expiry_date: expiryDate,
+          verification_status: isResubmit ? "submitted" : "draft",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        let insRes = await admin.from("vendor_documents").insert(insertPayload);
+        if (insRes.error && /file_name/i.test(insRes.error.message)) {
+          delete insertPayload.file_name;
+          await admin.from("vendor_documents").insert(insertPayload);
+        }
+      }
+
+      // Update vendors row: fssai_number, expiry_date, and status if resubmitting
+      const vendorUpdate: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+        fssai_number: documentNumber,
+        expiry_date: expiryDate,
+      };
+      if (isResubmit) {
+        vendorUpdate.verification_status = "submitted";
+        vendorUpdate.operational_status = "inactive";
+        vendorUpdate.marketplace_visible = false;
+      }
+      let vUpdateRes = await admin.from("vendors").update(vendorUpdate).eq("id", profile.vendor_id);
+      if (vUpdateRes.error && /fssai_number|expiry_date/i.test(vUpdateRes.error.message)) {
+        delete vendorUpdate.fssai_number;
+        delete vendorUpdate.expiry_date;
+        await admin.from("vendors").update(vendorUpdate).eq("id", profile.vendor_id);
+      }
+
+      if (isResubmit) {
+        const { data: vRecord } = await admin.from("vendors").select("name").eq("id", profile.vendor_id).maybeSingle();
+        const vendorName = vRecord?.name || profile.full_name || "A vendor";
+        const { data: ops } = await admin.from("profiles").select("id").in("role", ["operations", "admin"]);
+        if (ops?.length) {
+          await admin.from("notifications").insert(
+            ops.map((p) => ({
+              recipient_id: p.id,
+              kind: "verification",
+              title: "Vendor resubmitted verification",
+              body: `${vendorName} updated certification details for review.`,
+              entity_type: "vendor",
+              entity_id: profile.vendor_id,
+            }))
+          );
+        }
+      }
+
+      return NextResponse.json({ ok: true, fssaiNumber: documentNumber, expiryDate, fileName: docFileName, storagePath: docPath });
     }
 
     if (action === "save_outlet_certificate") {

@@ -871,7 +871,7 @@ export async function loadLiveOperationsWorkspace() {
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type,description").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
-    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata").order("created_at", { ascending: false }),
+    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata,created_at,updated_at").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
     supabase.from("marketing_campaigns").select("*").order("created_at", { ascending: false }).limit(100),
   ]);
@@ -2012,8 +2012,17 @@ export async function assignLiveDeliveryStaff(orderId: string, staffId?: string)
   return commerceRequest({ action: "assign_staff", orderId, staffId: staffId || "" });
 }
 
-export async function resubmitLiveVendorVerification(input: { documentNumber: string; expiryDate?: string }) {
-  return commerceRequest({ action: "resubmit_verification", ...input });
+export async function resubmitLiveVendorVerification(input: {
+  documentNumber: string;
+  expiryDate?: string;
+  fileName?: string;
+  storagePath?: string;
+  resubmit?: boolean;
+}) {
+  return commerceRequest({
+    action: input.resubmit === false ? "save_verification" : "resubmit_verification",
+    ...input,
+  });
 }
 
 export async function saveLiveOutletCertificate(input: { outletId: string; certificateNumber: string; certificateExpiry?: string }) {
