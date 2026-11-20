@@ -14,6 +14,8 @@ export type KitchenConflict = {
   requestedQuantity: number;
 };
 
+import type { SelectableOrder } from "@/lib/ai-conversation-server";
+
 export type CommerceResult = {
   reply: string;
   intent: "browse" | "recommend" | "add_to_basket" | "remove_from_basket" | "view_basket" | "track" | "navigate" | "support" | "quality_issue" | "clarify" | "answer" | "other";
@@ -26,6 +28,7 @@ export type CommerceResult = {
   clarifyingQuestion: string;
   requiresPhoto: boolean;
   targetOrderId: string;
+  selectableOrders?: SelectableOrder[];
   createTicket: boolean;
   ticketSubject: string;
   ticketCategory: "Order" | "Payment" | "Vendor" | "Delivery" | "Other";
@@ -75,17 +78,25 @@ type ToolDefinition =
       };
     };
 
-function normalizeTool(tool: ToolDefinition) {
-  if ("function" in tool && tool.function) return { type: "function", function: tool.function };
-  const flat = tool as { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict?: true };
-  return {
-    type: "function",
-    function: {
+function normalizeTool(tool: ToolDefinition, isGemini = false) {
+  let fn: { name: string; description: string; parameters: Record<string, unknown>; strict?: boolean };
+  if ("function" in tool && tool.function) {
+    fn = { ...tool.function };
+  } else {
+    const flat = tool as { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict?: boolean };
+    fn = {
       name: flat.name,
       description: flat.description,
       parameters: flat.parameters,
       strict: flat.strict,
-    },
+    };
+  }
+  if (isGemini) {
+    delete fn.strict;
+  }
+  return {
+    type: "function" as const,
+    function: fn,
   };
 }
 
@@ -312,12 +323,15 @@ function executeTool(role: Role, context: Record<string, unknown>, name: string,
       return { orders: orders.slice(0, limit) };
     }
     if (name === "get_order_status") {
-      const ref = text(args.order_reference).toLowerCase(); const orders = asObjects(context.orders);
-      const today = new Date().toISOString().slice(0, 10);
-      const nextOrder = [...orders].filter((row) => text(row.scheduled_date) >= today && !["cancelled", "completed"].includes(text(row.status).toLowerCase())).sort((a, b) => text(a.scheduled_date).localeCompare(text(b.scheduled_date)))[0];
-      const latestOrder = [...orders].sort((a, b) => text(b.created_at).localeCompare(text(a.created_at)))[0];
-      const order = orders.find((row) => text(row.id).toLowerCase() === ref || text(row.order_number).toLowerCase() === ref) || (ref === "next" ? nextOrder : undefined) || (["latest", "last", "recent"].includes(ref) ? latestOrder : undefined);
-      return order ? { order } : { error: "No matching order exists in this customer account." };
+      const ref = text(args.order_reference).toLowerCase();
+      const orders = asObjects(context.orders);
+      const activeOrders = orders.filter((row) => !["cancelled", "completed", "delivered", "expired", "failed"].includes(text(row.status).toLowerCase()));
+      const latestOrder = [...orders].sort((a, b) => text(b.created_at || b.date).localeCompare(text(a.created_at || a.date)))[0];
+      const latestActive = [...activeOrders].sort((a, b) => text(b.created_at || b.date).localeCompare(text(a.created_at || a.date)))[0];
+      const order = orders.find((row) => text(row.id).toLowerCase() === ref || text(row.order_number).toLowerCase() === ref || text(row.orderNumber).toLowerCase() === ref) ||
+        (ref === "next" || ref === "active" ? (latestActive || latestOrder) : undefined) ||
+        (["latest", "last", "recent"].includes(ref) ? (latestActive || latestOrder) : undefined);
+      return order ? { order, otherActiveOrders: activeOrders.filter((o) => o !== order) } : { error: "No matching order exists in this customer account." };
     }
     if (name === "get_schedules") return { schedules: context.schedules || [] };
     if (name === "get_quotations") return { requirements: context.requirements || [], quotations: context.quotations || [] };
@@ -617,22 +631,31 @@ export async function runToolDrivenCommerceAgent(args: {
   /** Called with the reply text so far while the model is still writing it. */
   onReply?: (replySoFar: string) => void;
 }) {
-  const tools = toolsForRole(args.role);
+  const isGemini = apiBase(args.apiKey).includes("googleapis.com");
+  const rawTools = toolsForRole(args.role);
+  const tools = rawTools.map((t) => normalizeTool(t, isGemini));
   const instructions = instructionsForRole(args.role);
   const recent = args.history.slice(-12).map((item) => ({ role: item.role === "agent" ? "assistant" : "user", content: item.text, shown_product_ids: item.productIds || [] }));
   const schema = finalSchema(args.role);
   const onText = args.onReply ? (textSoFar: string) => { const reply = extractPartialReply(textSoFar); if (reply) args.onReply?.(reply); } : undefined;
-  const initialPayload = (model: string) => ({
-    model,
-    messages: [
-      { role: "system", content: instructions },
-      { role: "user", content: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}` },
-    ],
-    tools,
-    tool_choice: "auto",
-    parallel_tool_calls: true,
-    response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
-  });
+  const initialPayload = (model: string) => {
+    const payload: Record<string, unknown> = {
+      model,
+      messages: [
+        { role: "system", content: instructions },
+        { role: "user", content: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}` },
+      ],
+      tools,
+      tool_choice: "auto",
+    };
+    if (isGemini) {
+      payload.response_format = { type: "json_object" };
+    } else {
+      payload.parallel_tool_calls = true;
+      payload.response_format = { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } };
+    }
+    return payload;
+  };
   let activeModel = args.model || process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
   let response: UruvChatResponse;
   try {
@@ -651,7 +674,7 @@ export async function runToolDrivenCommerceAgent(args: {
     if (!calls.length) break;
     const toolContext = await args.context;
     const outputs = calls.map((call) => ({ call_id: call.callId, output: JSON.stringify(executeTool(args.role, toolContext, call.name, call.args)) }));
-    response = await callResponses(args.apiKey, {
+    const roundPayload: Record<string, unknown> = {
       model: activeModel,
       messages: [
         { role: "system", content: instructions },
@@ -661,9 +684,14 @@ export async function runToolDrivenCommerceAgent(args: {
       ],
       tools,
       tool_choice: "auto",
-      parallel_tool_calls: true,
-      response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
-    }, onText);
+    };
+    if (isGemini) {
+      roundPayload.response_format = { type: "json_object" };
+    } else {
+      roundPayload.parallel_tool_calls = true;
+      roundPayload.response_format = { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } };
+    }
+    response = await callResponses(args.apiKey, roundPayload, onText);
   }
 
   const refusal = extractRefusal(response);

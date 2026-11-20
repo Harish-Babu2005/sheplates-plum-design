@@ -12,6 +12,17 @@ export type StoredAgentMessage = {
   created_at: string;
 };
 
+export type SelectableOrder = {
+  id: string;
+  orderNumber: string;
+  productNames: string[];
+  date: string;
+  slot?: string;
+  status: string;
+  vendorName: string;
+  total: number;
+};
+
 export type UiChatMessage = {
   role: "user" | "agent";
   text: string;
@@ -19,6 +30,8 @@ export type UiChatMessage = {
   streaming?: boolean;
   intent?: string;
   basketTotal?: number;
+  targetOrderId?: string;
+  selectableOrders?: SelectableOrder[];
 };
 
 export async function getOrCreateConversation(
@@ -39,13 +52,13 @@ export async function getOrCreateConversation(
       if (existing?.id) return existing.id;
     }
 
-    // Look for an existing conversation from the last 24 hours for this actor
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // Look for an existing conversation from the last 30 days for this actor
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: recent } = await client
       .from("agent_conversations")
       .select("id")
       .eq("actor_id", actorId)
-      .gte("updated_at", oneDayAgo)
+      .gte("updated_at", thirtyDaysAgo)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -201,7 +214,14 @@ export async function loadConversationHistory(
     }
 
     const messages: UiChatMessage[] = rows.map((row) => {
-      const ctx = (row.safe_context || {}) as { productIds?: string[]; selectedProductIds?: string[]; intent?: string; basketTotal?: number };
+      const ctx = (row.safe_context || {}) as {
+        productIds?: string[];
+        selectedProductIds?: string[];
+        intent?: string;
+        basketTotal?: number;
+        targetOrderId?: string;
+        selectableOrders?: SelectableOrder[];
+      };
       const productIds = ctx.productIds || ctx.selectedProductIds;
       return {
         role: row.message_role === "assistant" ? "agent" : "user",
@@ -209,6 +229,8 @@ export async function loadConversationHistory(
         ...(Array.isArray(productIds) && productIds.length ? { productIds } : {}),
         ...(ctx.intent ? { intent: ctx.intent } : {}),
         ...(ctx.basketTotal !== undefined ? { basketTotal: ctx.basketTotal } : {}),
+        ...(ctx.targetOrderId ? { targetOrderId: ctx.targetOrderId } : {}),
+        ...(Array.isArray(ctx.selectableOrders) && ctx.selectableOrders.length ? { selectableOrders: ctx.selectableOrders } : {}),
       };
     });
 

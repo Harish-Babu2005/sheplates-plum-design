@@ -6,7 +6,7 @@ import { alertAdminBudgetCredit } from "@/lib/uruv-ai";
 import { adminClient } from "@/lib/product-image-server";
 import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 import type { AiAction } from "@/lib/ai-credits-config";
-import { getOrCreateConversation, saveAgentMessage, recordAiAction, loadConversationHistory } from "@/lib/ai-conversation-server";
+import { getOrCreateConversation, saveAgentMessage, recordAiAction, loadConversationHistory, type SelectableOrder } from "@/lib/ai-conversation-server";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 type AgentTask = "commerce" | "order_tracking" | "cancellation_review" | "nutrition" | "business_insights" | "quality_complaint" | "campaign_strategy" | "quotation_assistant";
@@ -15,7 +15,13 @@ type AgentRequest = {
   role?: Role;
   message?: string;
   context?: Record<string, unknown>;
-  history?: Array<{ role: "user" | "agent"; text: string; productIds?: string[] }>;
+  history?: Array<{
+    role: "user" | "agent";
+    text: string;
+    productIds?: string[];
+    targetOrderId?: string;
+    selectableOrders?: SelectableOrder[];
+  }>;
   imageBase64?: string;
   conversationId?: string;
 };
@@ -44,6 +50,7 @@ type CommerceResult = {
   clarifyingQuestion: string;
   requiresPhoto: boolean;
   targetOrderId: string;
+  selectableOrders?: SelectableOrder[];
   createTicket: boolean;
   ticketSubject: string;
   ticketCategory: "Order" | "Payment" | "Vendor" | "Delivery" | "Other";
@@ -265,6 +272,29 @@ async function loadAuthorisedContext(auth: Authorised): Promise<{ role: Role; li
     const availableProducts: unknown[] = marketplaceResult.error ? [] : (marketplaceResult.data || []);
     const cartItems: unknown[] = cartResult.error ? [] : (cartResult.data || []);
 
+    const rawOrders = orders.error ? [] : ((orders.data || []) as Array<Record<string, unknown>>);
+    const vendorIds = Array.from(new Set(rawOrders.map((o) => String(o.vendor_id || "")).filter(Boolean)));
+    const orderIds = rawOrders.map((o) => String(o.id || "")).filter(Boolean);
+
+    const [vendorsRes, assignmentsRes] = await Promise.all([
+      vendorIds.length ? supabase.from("vendors").select("id,name").in("id", vendorIds) : Promise.resolve({ data: [] }),
+      orderIds.length ? supabase.from("delivery_assignments").select("order_id, delivery_staff_id, vendor_delivery_staff(full_name, phone)").in("order_id", orderIds) : Promise.resolve({ data: [] }),
+    ]);
+
+    const vendorMap = new Map(((vendorsRes.data || []) as Array<{ id: string; name: string }>).map((v) => [v.id, v.name]));
+    const assignmentMap = new Map(((assignmentsRes.data || []) as Array<{ order_id: string; vendor_delivery_staff?: { full_name?: string; phone?: string } }>).map((a) => [a.order_id, a]));
+
+    const enrichedOrders = rawOrders.map((ord) => {
+      const assignment = assignmentMap.get(String(ord.id || ""));
+      const staff = assignment?.vendor_delivery_staff;
+      return {
+        ...ord,
+        vendorName: vendorMap.get(String(ord.vendor_id || "")) || "Verified kitchen",
+        deliveryPartner: staff?.full_name || undefined,
+        deliveryPartnerPhone: staff?.phone || undefined,
+      };
+    });
+
     const safePreferences = preferences.data ? {
       address: preferences.data.address,
       household_size: preferences.data.household_size,
@@ -282,7 +312,7 @@ async function loadAuthorisedContext(auth: Authorised): Promise<{ role: Role; li
         preferences: safePreferences,
         memory: memoryResult.error ? [] : (memoryResult.data || []),
         schedules: schedules.error ? [] : (schedules.data || []),
-        orders: orders.error ? [] : (orders.data || []),
+        orders: enrichedOrders,
         requirements: requirements.error ? [] : (requirements.data || []),
         quotations: quotationResults,
         tickets: tickets.error ? [] : (tickets.data || []),
@@ -644,13 +674,290 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
     const pVendor = (p: Record<string, unknown>) => String(p.vendor_name || p.vendorName || p.businessName || "Verified kitchen").trim();
     const pVendorId = (p: Record<string, unknown>) => String(p.vendor_id || p.vendorId || "").trim();
 
-    // 1. Order tracking
-    if (/order|track|where|ஆர்டர்\s*எங்கே/i.test(msg) && orders.length > 0 && !/add|place|checkout|சேர்/i.test(msg)) {
-      const latest = orders[0];
-      const orderId = String(latest.order_number || latest.id || "").slice(-8);
-      base.reply = isTamil
-        ? `உங்கள் சமீபத்திய ஆர்டர் #${orderId} தற்போது ${String(latest.status || "உறுதிப்படுத்தப்பட்டுள்ளது")}.`
-        : `Your latest order #${orderId} is currently ${String(latest.status || "confirmed")}.`;
+    // 1. Order tracking (UC-02: Customer Order Tracking)
+    const historyList = Array.isArray(body.history) ? body.history : [];
+    let lastTrackedOrderId: string | undefined = undefined;
+    let lastSelectableOrders: SelectableOrder[] | undefined = undefined;
+    for (let i = historyList.length - 1; i >= 0; i--) {
+      const h = historyList[i] as Record<string, unknown> | undefined;
+      if (h && (h.role === "agent" || h.role === "assistant")) {
+        if (typeof h.targetOrderId === "string" && h.targetOrderId) {
+          lastTrackedOrderId = h.targetOrderId;
+        }
+        if (Array.isArray(h.selectableOrders) && h.selectableOrders.length > 0) {
+          lastSelectableOrders = h.selectableOrders as SelectableOrder[];
+        }
+        if (lastTrackedOrderId || lastSelectableOrders) break;
+      }
+    }
+
+    const isExplicitTrackingQuery =
+      body.task === "order_tracking" ||
+      /^track\b/i.test(msg.trim()) ||
+      /\btrack(ing)?\b/i.test(msg) ||
+      /(where('?s|\s+is)\s+(my\s+|that\s+|this\s+|the\s+|next\s+)?(next\s+)?(orders?|food|meal|delivery|package|parcel|[a-z0-9\-]+)|where('?s|\s+is)\s+it)\b/i.test(msg) ||
+      /(order\s+status|status\s+of\s+(my\s+|that\s+|this\s+|the\s+)?orders?|any\s+update\s+(on\s+)?(my\s+|that\s+|this\s+|the\s+)?orders?|has\s+(my\s+|that\s+|this\s+|the\s+)?orders?\s+been\s+delivered|when\s+will\s+(it|my\s+order|that\s+order|the\s+order)\s+arrive|who\s+is\s+delivering(\s+it)?|is\s+(my\s+|that\s+|the\s+)?orders?\s+ready|delivery\s+(status|partner|driver|rider|boy|person|staff))\b/i.test(msg) ||
+      /(^|\b)(track|where\s+is|status\s+of)\s*(the\s+|my\s+|that\s+|this\s+)?order\s*#?[a-z0-9\-]+/i.test(msg) ||
+      /(ஆர்டர்\s*(ட்ராக்|நிலை|எங்கே|தகவல்|அப்டேட்|வந்துவிட்டதா)|எப்போது\s*வரும்|யார்\s*(கொண்டு\s*வருகிறார்|டெலிவரி\s*செய்கிறார்)|டெலிவரி\s*பார்ட்னர்|ட்ராக்)/i.test(rawMsg);
+
+    const isTrackingFollowUp = Boolean(
+      lastTrackedOrderId &&
+      (/(^|\b)(when\s+will\s+it\s+arrive|who\s+is\s+delivering|has\s+it\s+been\s+delivered|any\s+update|what('?s|\s+is)\s+the\s+status|is\s+it\s+ready|how\s+long\s+will\s+it\s+take)\b/i.test(msg) ||
+       /(எப்போது\s*வரும்|யார்\s*டெலிவரி|வந்துவிட்டதா|நிலை\s*என்ன)/i.test(rawMsg))
+    );
+
+    const isOrderOrdinalSelection = Boolean(
+      lastSelectableOrders &&
+      lastSelectableOrders.length > 0 &&
+      (/(first|second|third|fourth|1st|2nd|3rd|4th|முதல்|இரண்டாவது)\s*(one|order)?/i.test(msg) ||
+       /^(option\s*)?[1-4]$/i.test(msg.trim()) ||
+       /track\s*(the\s*)?(first|second|third|1st|2nd|3rd)\s*order/i.test(msg))
+    );
+
+    const isTrackingIntent = (isExplicitTrackingQuery || isTrackingFollowUp || isOrderOrdinalSelection) &&
+      !/(add|buy|put|checkout|place\s+order|சேர்)/i.test(msg);
+
+    if (isTrackingIntent) {
+      // 2.3 No orders on account
+      if (orders.length === 0) {
+        base.reply = isTamil
+          ? "நீங்கள் இன்னும் எந்த ஆர்டரும் செய்யவில்லை. அருகிலுள்ள தயாரிப்புகளைக் கண்டறிய நான் உங்களுக்கு உதவட்டுமா?"
+          : "You haven't placed any orders yet. Would you like me to help you find products nearby?";
+        base.selectedProductIds = products.filter((p) => pStock(p) > 0).slice(0, 4).map(pId);
+        base.intent = "browse";
+        return base;
+      }
+
+      // Check if user requested an explicit order number or ID
+      const explicitHashMatch = rawMsg.match(/#([A-Za-z0-9\-]+)/);
+      const explicitOrderMatch = rawMsg.match(/\border\s+(?:#\s*|number\s*#?\s*)?([A-Za-z0-9\-]+)/i);
+      let requestedRef: string | null = null;
+      if (explicitHashMatch) {
+        requestedRef = explicitHashMatch[1].trim();
+      } else if (explicitOrderMatch) {
+        const candidate = explicitOrderMatch[1].trim();
+        const isNotStopWord = !/^(my|that|this|the|an?|next|recent|latest|been|delivered|status|details|update|info|history|now|today|placed|item|items)$/i.test(candidate);
+        const looksLikeOrderNumber = /\d/.test(candidate) || candidate.includes("-") || candidate.length >= 6;
+        if (isNotStopWord && looksLikeOrderNumber) {
+          requestedRef = candidate;
+        }
+      }
+      if (requestedRef && /^(my|that|this|the|an?|next|recent|latest|been|delivered|status|details|update|info|history|now|today|placed|item|items)$/i.test(requestedRef)) {
+        requestedRef = null;
+      }
+
+      let targetOrder: Record<string, unknown> | undefined = undefined;
+
+      // 2.4 Someone else's order / Security check
+      if (requestedRef) {
+        const refLower = requestedRef.toLowerCase();
+        const matchedByRef = orders.find((o) => {
+          const id = String(o.id || "").toLowerCase();
+          const num = String(o.orderNumber || o.order_number || "").toLowerCase();
+          return id === refLower || id.slice(-8) === refLower || num === refLower;
+        });
+
+        if (!matchedByRef) {
+          base.reply = isTamil
+            ? `உங்கள் சொந்த கணக்கிலிருந்து செய்யப்பட்ட ஆர்டர்களை மட்டுமே நீங்கள் கண்காணிக்க முடியும். ஆர்டர் #${requestedRef} உங்கள் கணக்கில் இல்லை.`
+            : `You can only view and track orders placed from your own account. Order #${requestedRef} does not belong to your account.`;
+          base.intent = "track";
+          return base;
+        }
+        targetOrder = matchedByRef;
+      }
+
+      // Ordinal selection referring to selectable cards from previous turn
+      if (!targetOrder && isOrderOrdinalSelection && lastSelectableOrders && lastSelectableOrders.length > 0) {
+        let ordIdx = 0;
+        if (/(second|2nd|இரண்டாவது|option\s*2|^2$)/i.test(msg)) ordIdx = 1;
+        else if (/(third|3rd|மூன்றாவது|option\s*3|^3$)/i.test(msg)) ordIdx = 2;
+        else if (/(fourth|4th|நான்காவது|option\s*4|^4$)/i.test(msg)) ordIdx = 3;
+
+        const candidate = lastSelectableOrders[ordIdx] || lastSelectableOrders[0];
+        if (candidate) {
+          targetOrder = orders.find((o) => String(o.id || "") === candidate.id || String(o.orderNumber || o.order_number || "") === candidate.orderNumber);
+        }
+      }
+
+      // In-chat follow-up resolution from previous turn
+      if (!targetOrder && isTrackingFollowUp && lastTrackedOrderId) {
+        targetOrder = orders.find((o) => String(o.id || "") === lastTrackedOrderId || String(o.orderNumber || o.order_number || "") === lastTrackedOrderId);
+      }
+
+      // Automatic identification of active orders (2.1 & 2.2)
+      const isActiveOrder = (o: Record<string, unknown>) => {
+        const st = String(o.status || "").toLowerCase();
+        const pay = String(o.payment || "").toLowerCase();
+        const inactive = ["delivered", "completed", "cancelled", "expired", "failed", "payment failed"];
+        if (inactive.includes(st)) return false;
+        if (pay === "failed" || pay === "cancelled" || pay === "refunded") return false;
+        return true;
+      };
+
+      const sortedOrders = [...orders].sort((a, b) => {
+        const dateA = String(a.createdAt || a.created_at || a.scheduledDate || a.scheduled_date || a.date || "");
+        const dateB = String(b.createdAt || b.created_at || b.scheduledDate || b.scheduled_date || b.date || "");
+        return dateB.localeCompare(dateA);
+      });
+
+      const activeOrders = sortedOrders.filter(isActiveOrder);
+
+      const getProductNames = (ord: Record<string, unknown>): string[] => {
+        if (Array.isArray(ord.items) && ord.items.length > 0) {
+          return (ord.items as Array<{ name?: string; quantity?: number }>).map((it) => `${it.quantity || 1}x ${it.name || "Item"}`);
+        }
+        if (Array.isArray(ord.order_items) && ord.order_items.length > 0) {
+          return (ord.order_items as Array<{ product_name?: string; quantity?: number }>).map((it) => `${it.quantity || 1}x ${it.product_name || "Item"}`);
+        }
+        if (ord.description) return [String(ord.description)];
+        if (ord.productName) return [`${ord.quantity || 1}x ${ord.productName}`];
+        return ["Fresh meal"];
+      };
+
+      if (!targetOrder) {
+        // Check if user is asking to track an order containing a specific item name (e.g. "track the puff", "where is my biryani")
+        const trackTerm = msg
+          .replace(/\b(track|tracking|where('?s|\s+is)|status(\s+of)?|any\s+update\s+on|my|the|this|that|next|an?|order|orders|food|item|items|package|parcel|delivery)\b/gi, "")
+          .trim();
+        if (trackTerm && trackTerm.length >= 2) {
+          const matchedByItem = orders.find((o) => {
+            const names = getProductNames(o).join(" ").toLowerCase();
+            const desc = String(o.description || "").toLowerCase();
+            const hay = `${names} ${desc}`;
+            return hay.includes(trackTerm.toLowerCase());
+          });
+          if (matchedByItem) {
+            targetOrder = matchedByItem;
+          }
+        }
+      }
+
+      if (!targetOrder) {
+        targetOrder = activeOrders.length > 0 ? activeOrders[0] : sortedOrders[0];
+      }
+
+      // 2.7 Multiple active orders: populate selectableOrders with other active orders
+      const remainingActive = activeOrders.filter((o) => String(o.id || "") !== String(targetOrder?.id || ""));
+      if (remainingActive.length > 0) {
+        base.selectableOrders = remainingActive.map((ord) => ({
+          id: String(ord.id || ""),
+          orderNumber: String(ord.orderNumber || ord.order_number || String(ord.id || "").slice(-8)),
+          productNames: getProductNames(ord),
+          date: String(ord.scheduledDate || ord.scheduled_date || ord.date || ""),
+          slot: String(ord.scheduledSlot || ord.scheduled_slot || ord.slot || ""),
+          status: String(ord.status || "Confirmed"),
+          vendorName: String(ord.vendorName || ord.vendor_name || "Verified kitchen"),
+          total: Number(ord.totalAmount || ord.customer_total || ord.total || 0),
+        }));
+      }
+
+      const orderNumber = String(targetOrder.orderNumber || targetOrder.order_number || String(targetOrder.id || "").slice(-8));
+      const vendorName = String(targetOrder.vendorName || targetOrder.vendor_name || "Verified kitchen");
+      const status = String(targetOrder.status || "Confirmed");
+      const deliveryPartner = targetOrder.deliveryPartner ? String(targetOrder.deliveryPartner) : undefined;
+      const deliveryPartnerPhone = targetOrder.deliveryPartnerPhone ? String(targetOrder.deliveryPartnerPhone) : undefined;
+      const scheduledDate = String(targetOrder.scheduledDate || targetOrder.scheduled_date || targetOrder.date || "");
+      const scheduledSlot = String(targetOrder.scheduledSlot || targetOrder.scheduled_slot || targetOrder.slot || "");
+      const fulfilmentMode = String(targetOrder.fulfilmentMode || targetOrder.fulfilment_mode || targetOrder.mode || "Vendor delivery");
+      const itemsList = getProductNames(targetOrder).join(", ");
+
+      const deliveryTextEn = deliveryPartner
+        ? ` Your delivery partner is ${deliveryPartner}${deliveryPartnerPhone ? ` (phone: ${deliveryPartnerPhone})` : ""}.`
+        : ` Your delivery partner has not been assigned yet.`;
+
+      const deliveryTextTa = deliveryPartner
+        ? ` டெலிவரி பார்ட்னர்: ${deliveryPartner}${deliveryPartnerPhone ? ` (தொலைபேசி: ${deliveryPartnerPhone})` : ""}.`
+        : ` உங்கள் டெலிவரி பார்ட்னர் இன்னும் நியமிக்கப்படவில்லை.`;
+
+      const timeTextEn = (scheduledDate || scheduledSlot)
+        ? ` Expected delivery: ${scheduledDate}${scheduledSlot ? ` during ${scheduledSlot}` : ""}.`
+        : "";
+
+      const timeTextTa = (scheduledDate || scheduledSlot)
+        ? ` எதிர்பார்க்கப்படும் டெலிவரி நேரம்: ${scheduledDate}${scheduledSlot ? ` (${scheduledSlot})` : ""}.`
+        : "";
+
+      const isDelivered = status.toLowerCase() === "delivered" || status.toLowerCase() === "completed";
+      const isCancelled = status.toLowerCase() === "cancelled";
+      const isDelayed = status.toLowerCase() === "delayed";
+      const isPickup = fulfilmentMode.toLowerCase().includes("pickup");
+
+      // Handle specific follow-up questions
+      if (/(when\s+will\s+it\s+arrive|when\s+will\s+my\s+order\s+arrive|எப்போது\s*வரும்)/i.test(msg)) {
+        base.reply = isTamil
+          ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் தற்போது ${status} நிலையில் உள்ளது.${timeTextTa}${deliveryTextTa} அடுத்த கட்டம்: உணவு உங்கள் முகவரிக்கு புறப்பட்டதும் தெரிவிக்கப்படும்.`
+          : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is currently ${status.toLowerCase()}.${timeTextEn}${deliveryTextEn} Next step: You will receive an update once your delivery partner is on the way.`;
+      } else if (/(who\s+is\s+delivering|delivery\s+partner|driver|rider|யார்\s*டெலிவரி|யார்\s*கொண்டு\s*வருகிறார்)/i.test(msg)) {
+        if (deliveryPartner) {
+          base.reply = isTamil
+            ? `ஆர்டர் #${orderNumber}-க்கான உங்கள் டெலிவரி பார்ட்னர்: ${deliveryPartner}${deliveryPartnerPhone ? ` (தொலைபேசி: ${deliveryPartnerPhone})` : ""}.${timeTextTa}`
+            : `Your delivery partner for order #${orderNumber} is ${deliveryPartner}${deliveryPartnerPhone ? ` (phone: ${deliveryPartnerPhone})` : ""}.${timeTextEn}`;
+        } else {
+          base.reply = isTamil
+            ? `ஆர்டர் #${orderNumber}-க்கு உங்கள் டெலிவரி பார்ட்னர் இன்னும் நியமிக்கப்படவில்லை. சமையலறையில் உணவு தயாரானதும் டெலிவரி பார்ட்னர் ஒதுக்கப்படுவார்.`
+            : `Your delivery partner has not been assigned yet for order #${orderNumber} from ${vendorName}. A delivery partner will be assigned once preparation is complete.`;
+        }
+      } else if (/(has\s+(it|my\s+order)\s+been\s+delivered|வந்துவிட்டதா|டெலிவரி\s*ஆகிவிட்டதா)/i.test(msg)) {
+        if (isDelivered) {
+          base.reply = isTamil
+            ? `ஆம், உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் இருந்து வெற்றிகரமாக டெலிவரி செய்யப்பட்டுவிட்டது. உணவை மகிழ்ந்து உண்ணுங்கள்!`
+            : `Yes, your order #${orderNumber} (${itemsList}) from ${vendorName} has been delivered. Enjoy your meal!`;
+        } else {
+          base.reply = isTamil
+            ? `இல்லை, உங்கள் ஆர்டர் #${orderNumber} இன்னும் டெலிவரி செய்யப்படவில்லை. தற்போது நிலை: ${status}.${deliveryTextTa}${timeTextTa}`
+            : `Not yet. Your order #${orderNumber} is currently ${status.toLowerCase()}.${deliveryTextEn}${timeTextEn}`;
+        }
+      } else {
+        // Full standard status response according to status
+        if (status === "Confirmed") {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் உறுதிப்படுத்தப்பட்டு, சமையலறையில் தயாரிக்கப்பட்டு வருகிறது.${deliveryTextTa}${timeTextTa} அடுத்த கட்டம்: சமையல் முடிந்ததும் பேக் செய்யப்படும்.`
+            : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is confirmed and is being prepared by the vendor.${deliveryTextEn}${timeTextEn} Next step: The kitchen will finish cooking and pack your meal.`;
+        } else if (status === "Preparing") {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName} சமையலறையில் புத்தம் புதியதாகத் தயாரிக்கப்பட்டு வருகிறது.${deliveryTextTa}${timeTextTa} அடுத்த கட்டம்: உணவு பேக் செய்யப்பட்டு டெலிவரிக்கு ஒப்படைக்கப்படும்.`
+            : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is currently being prepared fresh in the kitchen.${deliveryTextEn}${timeTextEn} Next step: Order will be packed and handed over for delivery.`;
+        } else if (status === "Ready" || status === "Ready for pickup") {
+          if (isPickup) {
+            base.reply = isTamil
+              ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் எடுத்துக்கொள்ள தயாராக உள்ளது! அடுத்த கட்டம்: சமையலறையிலிருந்து நீங்கள் நேரடியாகப் பெற்றுக்கொள்ளலாம்.`
+              : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is ready for pickup! Next step: You can collect it from the vendor kitchen.`;
+          } else {
+            base.reply = isTamil
+              ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் தயாராக பேக் செய்யப்பட்டுள்ளது.${deliveryTextTa}${timeTextTa} அடுத்த கட்டம்: டெலிவரி பார்ட்னரிடம் ஒப்படைக்கப்படும்.`
+              : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is packed and ready.${deliveryTextEn}${timeTextEn} Next step: Handover to delivery partner.`;
+          }
+        } else if (status === "Out for delivery") {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் இருந்து டெலிவரிக்கு புறப்பட்டுவிட்டது!${deliveryTextTa}${timeTextTa} அடுத்த கட்டம்: டெலிவரி பார்ட்னர் விரைவில் உங்கள் முகவரிக்கு வருவார்.`
+            : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is out for delivery!${deliveryTextEn}${timeTextEn} Next step: Your delivery partner will arrive at your address shortly.`;
+        } else if (isDelivered) {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் இருந்து வெற்றிகரமாக டெலிவரி செய்யப்பட்டுவிட்டது. உணவை மகிழ்ந்து உண்ணுங்கள்!`
+            : `Your order #${orderNumber} (${itemsList}) from ${vendorName} has been delivered. Enjoy your meal! If you need any help or have feedback, let me know.`;
+        } else if (isDelayed) {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் சிறிது தாமதமாகிறது. சமையலறை விரைவில் தயாரித்து முடிக்கும் பணியில் உள்ளது.${deliveryTextTa}${timeTextTa} அடுத்த கட்டம்: உணவு புறப்பட்டவுடன் உடனே உங்களுக்கு தெரிவிக்கப்படும்.`
+            : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is currently experiencing a delay. The kitchen is completing preparation as quickly as possible.${deliveryTextEn}${timeTextEn} Next step: We are monitoring the kitchen and will update you the moment it leaves.`;
+        } else if (isCancelled) {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ரத்து செய்யப்பட்டுள்ளது. பிடித்தம் செய்யப்பட்ட தொகை விதிகளின்படி திருப்பி அளிக்கப்படும். அடுத்த கட்டம்: அருகிலுள்ள மற்றொரு உணவைக் கண்டறிய உதவட்டுமா?`
+            : `Your order #${orderNumber} (${itemsList}) was cancelled. Any payment deducted will be processed for refund per ShePlates policy. Next step: Would you like help finding another meal nearby?`;
+        } else {
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் தற்போது ${status} நிலையில் உள்ளது.${deliveryTextTa}${timeTextTa}`
+            : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is currently ${status}.${deliveryTextEn}${timeTextEn}`;
+        }
+      }
+
+      if (base.selectableOrders && base.selectableOrders.length > 0) {
+        base.reply += isTamil
+          ? `\n\nகீழே மேலும் ${base.selectableOrders.length} செயலில் உள்ள ஆர்டர்கள் உள்ளன. கண்காணிக்க ஏதேனும் ஒன்றைத் தேர்ந்தெடுக்கலாம்.`
+          : `\n\nYou have ${base.selectableOrders.length} other active order(s) below. Select any card to track it.`;
+      }
+
+      base.targetOrderId = String(targetOrder.id || targetOrder.orderNumber || orderNumber);
       base.intent = "track";
       return base;
     }
@@ -703,6 +1010,65 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
       return base;
     }
 
+    // Vendor / Kitchen listing query (e.g. "list the vendors", "show kitchens near me")
+    const isVendorListQuery =
+      /(^|\b)(list|show|what|who|view|find|get|tell(\s+me)?(\s+about)?)?\s*(the\s*)?(vendors?|kitchens?|restaurants?|cooks?|sellers?|stores?)\b/i.test(msg) ||
+      /(vendors?\s+near\s+me|kitchens?\s+near\s+me|available\s+kitchens?|available\s+vendors?)/i.test(msg) ||
+      /(விற்பனையாளர்கள்|சமையலறைகள்)/i.test(rawMsg);
+
+    if (isVendorListQuery && !/(add|buy|put|சேர்)/i.test(msg)) {
+      const vendorMap = new Map<string, { id: string; name: string; categories: Set<string>; count: number }>();
+      if (Array.isArray(context.vendors)) {
+        for (const v of context.vendors as Array<Record<string, unknown>>) {
+          const id = String(v.id || "");
+          const name = String(v.businessName || v.name || "Kitchen");
+          if (id && name) {
+            vendorMap.set(id, { id, name, categories: new Set<string>(), count: 0 });
+          }
+        }
+      }
+      for (const p of products) {
+        const vId = pVendorId(p);
+        const vName = pVendor(p);
+        if (vName && vName !== "Verified kitchen") {
+          let entry = vendorMap.get(vId) || Array.from(vendorMap.values()).find((v) => v.name.toLowerCase() === vName.toLowerCase());
+          if (!entry) {
+            entry = { id: vId || vName, name: vName, categories: new Set<string>(), count: 0 };
+            vendorMap.set(entry.id, entry);
+          }
+          entry.count++;
+          if (p.category) entry.categories.add(String(p.category));
+        }
+      }
+
+      const vendorList = Array.from(vendorMap.values());
+      if (vendorList.length > 0) {
+        const vendorLines = vendorList.map((v) => {
+          const cats = Array.from(v.categories).slice(0, 3).join(", ");
+          return `• **${v.name}**${cats ? ` (${cats})` : ""}${v.count > 0 ? ` – ${v.count} item${v.count === 1 ? "" : "s"} available` : ""}`;
+        }).join("\n");
+
+        base.reply = isTamil
+          ? `உங்கள் பகுதிக்கு அருகில் கிடைக்கும் சரிபார்க்கப்பட்ட சமையலறைகள் மற்றும் விற்பனையாளர்கள் இதோ:\n\n${vendorLines}\n\nஎந்த சமையலறையின் உணவுகளைப் பார்க்க விரும்புகிறீர்கள் என்று சொல்லுங்கள்!`
+          : `Here are the verified kitchens and home chefs available near your address:\n\n${vendorLines}\n\nTell me which kitchen you'd like to explore, or ask for any specific dish!`;
+
+        const sampleProductIds: string[] = [];
+        for (const v of vendorList) {
+          const vProd = products.find((p) => pVendorId(p) === v.id || pVendor(p).toLowerCase() === v.name.toLowerCase());
+          if (vProd && pStock(vProd) > 0) sampleProductIds.push(pId(vProd));
+        }
+        base.selectedProductIds = sampleProductIds.slice(0, 6);
+        base.intent = "browse";
+        return base;
+      } else {
+        base.reply = isTamil
+          ? "உங்கள் பகுதிக்கு அருகில் தற்போது செயலில் உள்ள சமையலறைகள் எதுவும் கிடைக்கவில்லை."
+          : "There are currently no active verified kitchens listed in your delivery area.";
+        base.intent = "answer";
+        return base;
+      }
+    }
+
     // 4. Unclear request (1.4 Unclear request)
     if (/(^|\b)(add\s+(an?\s+)?item(\s+to\s+(my\s+)?(cart|basket))?|add\s+something|put\s+something|கூடையில்\s*(ஒரு\s*)?பொருள்\s*சேர்)($|\b)/i.test(msg)) {
       base.reply = isTamil
@@ -715,7 +1081,6 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
     }
 
     // Extract recently suggested product IDs from conversation history
-    const historyList = Array.isArray(body.history) ? body.history : [];
     let recentProductIds: string[] = [];
     for (let i = historyList.length - 1; i >= 0; i--) {
       const h = historyList[i] as Record<string, unknown> | undefined;
@@ -1023,7 +1388,7 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
 
     // 6. Discovery queries (1.1 Find nearby items)
     let discTerm = msg
-      .replace(/\b(show\s+me|find|what\s+is\s+available|available|near\s+me|nearby|around\s+me|options?|dishes|foods?|காட்டு|உள்ளதா)\b/gi, "")
+      .replace(/\b(track|tracking|show\s+me|find|what\s+is\s+available|available|near\s+me|nearby|around\s+me|options?|dishes|foods?|காட்டு|உள்ளதா)\b/gi, "")
       .trim();
     if (/பால்/i.test(rawMsg)) discTerm = "milk";
     else if (/முட்டை/i.test(rawMsg)) discTerm = "egg";
@@ -1091,6 +1456,8 @@ async function persistAgentTurn(
           basketProductIds: result.basketProductIds,
           budget: result.budget,
           navigateTo: result.navigateTo,
+          targetOrderId: result.targetOrderId,
+          selectableOrders: result.selectableOrders,
         },
       });
     }
