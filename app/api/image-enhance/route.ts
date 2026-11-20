@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { uruvImageEdit, uruvApiKey, UruvAiError } from "@/lib/uruv-ai";
 import { adminClient } from "@/lib/product-image-server";
 import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
+import { validateFoodName } from "@/lib/food-name-validator";
 
 async function callerFromRequest(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -50,6 +51,18 @@ export async function POST(request: Request) {
   if (bytes.length > 10 * 1024 * 1024) return NextResponse.json({ error: "Image must be under 10 MB. Please upload a smaller photo." }, { status: 413 });
 
   const productName = String(body.productName ?? body.name ?? "").trim().slice(0, 60);
+  const category = String(body.category ?? "").trim();
+
+  // Food-name guard: block AI enhancement for non-food product names
+  if (productName) {
+    const foodCheck = await validateFoodName(productName, category);
+    if (!foodCheck.isFood) {
+      return NextResponse.json(
+        { error: "Only food and beverage products can have AI-enhanced images. Please enter a valid food item name.", code: "not_food" },
+        { status: 422 }
+      );
+    }
+  }
 
   const form = new FormData();
   form.append("model", process.env.AI_IMAGE_MODEL || process.env.URUV_IMAGE_MODEL || "uruv-image");

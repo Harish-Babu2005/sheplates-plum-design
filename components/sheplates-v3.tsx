@@ -7803,6 +7803,11 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   const [imageUrl, setImageUrl] = useState("");
   const [originalImageUrl, setOriginalImageUrl] = useState("");
 
+  const [foodNameError, setFoodNameError] = useState(false);
+  const [foodNameValid, setFoodNameValid] = useState<boolean | null>(null);
+  const [foodNameValidating, setFoodNameValidating] = useState(false);
+  const foodValidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [customGroup, setCustomGroup] = useState("");
   const [customPackSize, setCustomPackSize] = useState("");
   const [customUnit, setCustomUnit] = useState<SkuUnitType>("pack/set/loaf");
@@ -7872,6 +7877,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
       setNutritionConfidence(editingProduct.nutritionConfidence);
       setNutritionNote(editingProduct.nutritionNote || "");
       setConfirmed(editingProduct.nutritionStatus === "Verified");
+      setFoodNameValid(null);
+      setFoodNameError(false);
     } else if (open) {
       const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
       setCategory(initialCat);
@@ -7895,6 +7902,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
       setNutritionConfidence(undefined);
       setNutritionNote("");
       setConfirmed(false);
+      setFoodNameValid(null);
+      setFoodNameError(false);
     }
   }, [editingProduct, open, vendor.category]);
 
@@ -7939,9 +7948,49 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
     setConfirmed(false);
   }
 
+  async function runFoodValidation(nameToCheck: string): Promise<boolean> {
+    const trimmed = nameToCheck.trim();
+    if (trimmed.length < 2) {
+      setFoodNameValid(false);
+      return false;
+    }
+    setFoodNameValidating(true);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch("/api/validate-food-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ name: trimmed, category }),
+      });
+      const json = await res.json() as { isFood?: boolean };
+      const valid = !!json.isFood;
+      setFoodNameValid(valid);
+      if (!valid) setImageUrl("");
+      return valid;
+    } catch {
+      setFoodNameValid(null);
+      return true;
+    } finally {
+      setFoodNameValidating(false);
+    }
+  }
+
+  function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value.slice(0, 60);
+    setName(val);
+    setConfirmed(false);
+    setFoodNameValid(null);
+    if (foodValidateTimerRef.current) clearTimeout(foodValidateTimerRef.current);
+    if (val.trim().length >= 2 && isLiveSupabaseMode()) {
+      foodValidateTimerRef.current = setTimeout(() => { void runFoodValidation(val); }, 500);
+    }
+  }
+
   async function draftImage() {
     if (!name.trim()) return toast.error("Enter the product name first");
     if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
+    const isFood = await runFoodValidation(name.trim());
+    if (!isFood) { setFoodNameError(true); return; }
     setImageBusy(true);
     try {
       setImageUrl(await generateLiveProductImage({ name: name.trim().slice(0, 60), category }));
@@ -8000,6 +8049,8 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   async function enhanceImage() {
     if (!imageUrl) return toast.error("Upload a product image first");
     if (!name.trim()) return toast.error("Enter the product name before image enhancement");
+    const isFood = await runFoodValidation(name.trim());
+    if (!isFood) { setFoodNameError(true); return; }
     setImageBusy(true);
     try {
       const token = await getAccessToken();
@@ -8015,6 +8066,10 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   async function save() {
     if (!name.trim()) return toast.error("Enter the product display name");
     if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
+    if (isLiveSupabaseMode()) {
+      const isFood = await runFoodValidation(name.trim());
+      if (!isFood) { setFoodNameError(true); return; }
+    }
     const cleanDesc = sanitizeProductDescription(description);
     if (cleanDesc.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
       return toast.error(`Description must be within ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`);
@@ -8144,7 +8199,9 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
   }
 
   const metrics: Array<[keyof Nutrition, string]> = [["calories", "Calories"], ["protein", "Protein g"], ["carbs", "Carbs g"], ["fat", "Fat g"], ["fibre", "Fibre g"]];
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
+  return (
+    <>
+      <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
     <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
       <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
 
@@ -8236,8 +8293,20 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
 
         <div className="space-y-4">
           <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
-            <input maxLength={60} value={name} onChange={(e) => { setName(e.target.value.slice(0, 60)); setConfirmed(false); }} className={inputClass} placeholder="Example: Fresh Cow Milk (500 ml)" />
-            <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>
+            <input
+              maxLength={60}
+              value={name}
+              onChange={handleNameChange}
+              className={`${inputClass}${foodNameValid === false ? " ring-2 ring-red-400" : ""}`}
+              placeholder="Example: Fresh Cow Milk (500 ml)"
+            />
+            {foodNameValid === false && (
+              <p className="mt-1 text-xs font-semibold text-red-500">Please enter a valid food or beverage product name.</p>
+            )}
+            {foodNameValidating && (
+              <p className="mt-1 text-xs text-stone-400">Validating product name…</p>
+            )}
+            {foodNameValid !== false && <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>}
           </Field>
           <Field
             label="Description (optional)"
@@ -8273,7 +8342,21 @@ function ProductDialog({ open, close, vendor, setState, session, editingProduct,
     {nutritionPresent && !nutritionConsistent && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">The entered calories and macros do not align. This does not block publishing; the product will be marked “Nutrition pending” and Operations will be notified.</div>}
     {!nutritionPresent && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Nutrition is optional.</b> Publish now if you do not have it. Operations will receive a review notification and the marketplace will show nutrition as pending.</div>}
     <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? (editingProduct ? "Updating…" : "Publishing…") : (editingProduct ? "Update product pack" : "Publish product pack")}</Button>
-  </DialogContent></Dialog>;
+  </DialogContent></Dialog>
+  <Dialog open={foodNameError} onOpenChange={(v) => { if (!v) setFoodNameError(false); }}>
+    <DialogContent className="rounded-[28px] sm:max-w-sm">
+      <DialogHeader>
+        <DialogTitle className="text-lg font-black">Invalid product name</DialogTitle>
+        <DialogDescription className="pt-2 text-sm leading-relaxed text-stone-600">
+          Please enter a valid food item name. Sheplates only supports food and beverage products.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="mt-4 flex justify-end">
+        <Button onClick={() => setFoodNameError(false)} className="rounded-full bg-[#155F65] px-8">OK</Button>
+      </div>
+    </DialogContent>
+  </Dialog>
+  </>);
 }
 
 function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
