@@ -812,6 +812,10 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
         .replace(/^(the|a|an|some|this|that|these|those|it)$/i, "")
         .trim();
 
+      while (/^(the|a|an|some|this|that|these|those|it)\s+/i.test(term)) {
+        term = term.replace(/^(the|a|an|some|this|that|these|those|it)\s+/i, "").trim();
+      }
+
       const isGenericReference = /^(the\s+)?(first|second|third|fourth|1st|2nd|3rd|4th|top|last)?\s*(product|item|dish|food|one|it|this|that|these|options?|choice)?$/i.test(term) || !term;
 
       // Handle ordinal/context selection (e.g. "Add the first product to cart", "the first option i prefer", "first one")

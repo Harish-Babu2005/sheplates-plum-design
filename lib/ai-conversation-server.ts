@@ -17,6 +17,8 @@ export type UiChatMessage = {
   text: string;
   productIds?: string[];
   streaming?: boolean;
+  intent?: string;
+  basketTotal?: number;
 };
 
 export async function getOrCreateConversation(
@@ -199,12 +201,14 @@ export async function loadConversationHistory(
     }
 
     const messages: UiChatMessage[] = rows.map((row) => {
-      const ctx = (row.safe_context || {}) as { productIds?: string[]; selectedProductIds?: string[] };
+      const ctx = (row.safe_context || {}) as { productIds?: string[]; selectedProductIds?: string[]; intent?: string; basketTotal?: number };
       const productIds = ctx.productIds || ctx.selectedProductIds;
       return {
         role: row.message_role === "assistant" ? "agent" : "user",
         text: row.content,
         ...(Array.isArray(productIds) && productIds.length ? { productIds } : {}),
+        ...(ctx.intent ? { intent: ctx.intent } : {}),
+        ...(ctx.basketTotal !== undefined ? { basketTotal: ctx.basketTotal } : {}),
       };
     });
 

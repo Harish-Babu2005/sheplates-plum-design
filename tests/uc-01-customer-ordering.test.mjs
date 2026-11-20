@@ -289,4 +289,14 @@ test("ShePlates She Agent – UC-01: Customer Ordering", async (t) => {
     assert.match(agentRouteSource, /hasSelectionWord/);
     assert.match(agentRouteSource, /hasSingleKitchenPreference/);
   });
+
+  await t.test("1.17 View cart navigation & conversation history persistence on revisit", () => {
+    // View cart button does not overwrite navigation on full-page mode
+    assert.match(uiSource, /navigate\("Cart"\);\s*if\s*\(!page\)\s*setOpen\(false\);/);
+    // SheAgent saves and restores conversation from sessionStorage on revisit
+    assert.match(uiSource, /sessionStorage\.getItem\(`sheplates_agent_convo_\${session\.email}`\)/);
+    assert.match(uiSource, /sessionStorage\.setItem\(`sheplates_agent_convo_\${session\.email}`/);
+    // When loading messages, productIds and intent are preserved
+    assert.match(uiSource, /productIds:\s*m\.productIds/);
+  });
 });
