@@ -256,7 +256,20 @@ export function VendorProfileDialog({ vendorId, onClose, state, customerEmail, s
                 <div className="rounded-2xl border border-stone-200/70 bg-white p-3.5"><div className="text-[11px] font-black uppercase tracking-wider text-[#155F65]">Designated Representative</div><div className="mt-1 font-bold text-stone-800">{vendor.ownerName}</div><div className="text-xs text-stone-500">{vendor.ownerRole || "Proprietor"}</div></div>
                 <div className="rounded-2xl border border-stone-200/70 bg-white p-3.5"><div className="text-[11px] font-black uppercase tracking-wider text-[#155F65]">Food Safety &amp; Compliance</div><div className="mt-1 font-bold text-stone-800">{vendor.fssaiNumber ? `FSSAI: ${vendor.fssaiNumber}` : "Licence pending"}</div><div className="text-xs text-stone-500">Status: <span className="font-bold text-emerald-700">{vendor.verification}</span>{vendor.expiryDate ? ` · Exp: ${vendor.expiryDate}` : ""}</div></div>
                 <div className="rounded-2xl border border-stone-200/70 bg-white p-3.5"><div className="text-[11px] font-black uppercase tracking-wider text-[#155F65]">Kitchen Address &amp; Reach</div><div className="mt-1 font-medium text-stone-800">{vendor.address}</div><div className="mt-1 text-xs text-stone-500">Service radius: {vendor.radiusKm} km · {vendor.openToday ? "Open Today" : "Closed Today"}</div></div>
-                <div className="rounded-2xl border border-stone-200/70 bg-white p-3.5"><div className="text-[11px] font-black uppercase tracking-wider text-[#155F65]">Contact &amp; Fulfilment</div><div className="mt-1 font-bold text-stone-800">{vendor.phone || vendor.ownerEmail}</div><div className="mt-1 text-xs text-stone-500">{[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" · ") || "Standard service"}</div></div>
+                <div className="rounded-2xl border border-stone-200/70 bg-white p-3.5">
+                  <div className="text-[11px] font-black uppercase tracking-wider text-[#155F65]">Contact &amp; Fulfilment</div>
+                  {vendor.phone && !vendor.phone.includes("@") ? (
+                    <>
+                      <div className="mt-1 font-bold text-stone-800">{vendor.phone}</div>
+                      <div className="mt-1 text-xs text-stone-500">{[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" · ") || "Standard service"}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mt-1 font-bold text-stone-800">{[vendor.delivery && "Delivery", vendor.pickup && "Pickup"].filter(Boolean).join(" · ") || "Standard service"}</div>
+                      <div className="mt-1 text-xs text-stone-500">Fulfilment available</div>
+                    </>
+                  )}
+                </div>
               </div>
               {vendor.outlets && vendor.outlets.length > 0 && (
                 <div className="pt-3"><h4 className="font-black text-sm text-[#202827] mb-2">POS / Physical Outlets</h4><div className="space-y-2">{vendor.outlets.map((outlet) => <div key={outlet.id} className="rounded-2xl border border-stone-200/70 bg-white p-3 text-xs"><div className="font-bold text-stone-800">{outlet.name}</div><div className="text-stone-500">{outlet.address}</div>{outlet.certificateNumber && <div className="mt-1 text-stone-400">Licence: {outlet.certificateNumber}</div>}</div>)}</div></div>

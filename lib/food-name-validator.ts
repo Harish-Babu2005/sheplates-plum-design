@@ -108,9 +108,7 @@ const apiKey = () =>
   process.env.URUV_API_KEY ||
   process.env.URV_API_KEY ||
   process.env.AI_API_KEY ||
-  process.env.OPENAI_API_KEY ||
-  process.env.GEMINI_API_KEY ||
-  process.env.GOOGLE_API_KEY ||
+  
   "";
 
 const FOOD_CLASSIFY_SYSTEM = `You are a food product validator for Sheplates, an Indian food delivery marketplace. 
