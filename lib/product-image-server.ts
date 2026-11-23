@@ -13,7 +13,7 @@ type Fetch = typeof fetch;
 
 const apiBase = () => (process.env.AI_API_BASE || process.env.URUV_API_BASE || "https://api.uruv.ai/v1").replace(/\/$/, "");
 
-const apiKey = () => process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+const apiKey = () => process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || "";
 
 export const DAILY_LIMIT = () => Math.max(0, Number(process.env.AI_IMAGE_DAILY_LIMIT ?? 60));
 export const VENDOR_DAILY_LIMIT = () => Math.max(0, Number(process.env.AI_IMAGE_VENDOR_DAILY_LIMIT ?? 15));

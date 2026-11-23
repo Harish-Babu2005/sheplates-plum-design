@@ -78,7 +78,7 @@ type ToolDefinition =
       };
     };
 
-function normalizeTool(tool: ToolDefinition, isGemini = false) {
+function normalizeTool(tool: ToolDefinition) {
   let fn: { name: string; description: string; parameters: Record<string, unknown>; strict?: boolean };
   if ("function" in tool && tool.function) {
     fn = { ...tool.function };
@@ -90,9 +90,6 @@ function normalizeTool(tool: ToolDefinition, isGemini = false) {
       parameters: flat.parameters,
       strict: flat.strict,
     };
-  }
-  if (isGemini) {
-    delete fn.strict;
   }
   return {
     type: "function" as const,
@@ -431,15 +428,9 @@ function finalSchema(role: Role) {
   return { type: "object", additionalProperties: false, properties, required };
 }
 
-const apiBase = (apiKey?: string) => {
+const apiBase = (_apiKey?: string) => {
   if (process.env.AI_API_BASE) return process.env.AI_API_BASE.replace(/\/$/, "");
   if (process.env.URUV_API_BASE) return process.env.URUV_API_BASE.replace(/\/$/, "");
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (apiKey && apiKey.startsWith("AIza")) || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza"))) {
-    return "https://generativelanguage.googleapis.com/v1beta/openai";
-  }
-  if (process.env.OPENAI_API_KEY && !process.env.URUV_API_KEY) {
-    return "https://api.openai.com/v1";
-  }
   return "https://api.uruv.ai/v1";
 };
 
@@ -631,9 +622,8 @@ export async function runToolDrivenCommerceAgent(args: {
   /** Called with the reply text so far while the model is still writing it. */
   onReply?: (replySoFar: string) => void;
 }) {
-  const isGemini = apiBase(args.apiKey).includes("googleapis.com");
   const rawTools = toolsForRole(args.role);
-  const tools = rawTools.map((t) => normalizeTool(t, isGemini));
+  const tools = rawTools.map((t) => normalizeTool(t));
   const instructions = instructionsForRole(args.role);
   const recent = args.history.slice(-12).map((item) => ({ role: item.role === "agent" ? "assistant" : "user", content: item.text, shown_product_ids: item.productIds || [] }));
   const schema = finalSchema(args.role);
@@ -647,13 +637,9 @@ export async function runToolDrivenCommerceAgent(args: {
       ],
       tools,
       tool_choice: "auto",
+      parallel_tool_calls: true,
+      response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
     };
-    if (isGemini) {
-      payload.response_format = { type: "json_object" };
-    } else {
-      payload.parallel_tool_calls = true;
-      payload.response_format = { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } };
-    }
     return payload;
   };
   let activeModel = args.model || process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
@@ -684,13 +670,9 @@ export async function runToolDrivenCommerceAgent(args: {
       ],
       tools,
       tool_choice: "auto",
+      parallel_tool_calls: true,
+      response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
     };
-    if (isGemini) {
-      roundPayload.response_format = { type: "json_object" };
-    } else {
-      roundPayload.parallel_tool_calls = true;
-      roundPayload.response_format = { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } };
-    }
     response = await callResponses(args.apiKey, roundPayload, onText);
   }
 

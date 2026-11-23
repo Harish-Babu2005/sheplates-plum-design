@@ -37,17 +37,11 @@ export class UruvAiError extends Error {
 export const uruvBaseUrl = () => {
   if (process.env.AI_API_BASE) return process.env.AI_API_BASE.replace(/\/$/, "");
   if (process.env.URUV_API_BASE) return process.env.URUV_API_BASE.replace(/\/$/, "");
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza"))) {
-    return "https://generativelanguage.googleapis.com/v1beta/openai";
-  }
-  if (process.env.OPENAI_API_KEY && !process.env.URUV_API_KEY) {
-    return "https://api.openai.com/v1";
-  }
   return "https://api.uruv.ai/v1";
 };
 
 export const uruvApiKey = () =>
-  process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+  process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || "";
 
 export async function alertAdminBudgetCredit(err: { code?: string; requestId?: string; message?: string }) {
   // Always log structured error without any API keys

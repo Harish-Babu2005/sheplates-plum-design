@@ -205,7 +205,7 @@ test("ShePlates She Agent – UC-02: Customer Order Tracking", async (t) => {
     assert.ok(agentRouteSource.includes("ரத்து செய்யப்பட்டுள்ளது"));
   });
 
-  await t.test("2.11 Tracking variations: track, track my next order, track the puff, and Gemini tool normalization", () => {
+  await t.test("2.11 Tracking variations: track, track my next order, track the puff, and tool normalization", () => {
     // Regex matching
     const isExplicitTrackingQuery = (msg, rawMsg = msg) =>
       /^track\b/i.test(msg.trim()) ||
@@ -236,10 +236,9 @@ test("ShePlates She Agent – UC-02: Customer Order Tracking", async (t) => {
     });
     assert.equal(matchedPuffOrder?.id, "ord-1");
 
-    // Runtime normalizes tools and handles Gemini OpenAI format
+    // Runtime normalizes tools and handles structured schema format
     const freshRuntime = fs.readFileSync(path.join(root, "lib/she-agent-commerce-runtime.ts"), "utf8");
-    assert.match(freshRuntime, /normalizeTool\(t, isGemini\)/);
-    assert.match(freshRuntime, /delete fn\.strict/);
-    assert.match(freshRuntime, /response_format\s*=\s*\{\s*type:\s*"json_object"\s*\}/);
+    assert.match(freshRuntime, /normalizeTool\(t\)/);
+    assert.match(freshRuntime, /response_format/);
   });
 });

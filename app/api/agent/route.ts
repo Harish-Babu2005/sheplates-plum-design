@@ -1524,7 +1524,7 @@ export async function POST(request: Request) {
   const campaignStrategy = requestedTask === "campaign_strategy";
   const qualityComplaint = requestedTask === "quality_complaint";
   const commerce = requestedTask === "commerce";
-  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.URUV_API_KEY || process.env.URV_API_KEY || process.env.AI_API_KEY;
 
   const admin = adminClient();
   const db = admin || (!auth.demo ? auth.supabase : null);
@@ -1572,14 +1572,7 @@ export async function POST(request: Request) {
   // offline or in demo mode so She Agent never leaves the user with an error screen.
   if (commerce) {
     const runCommerce = async (onReply?: (replySoFar: string) => void) => {
-      let activeModel = process.env.AI_MODEL || process.env.URUV_MODEL;
-      if (!activeModel || (activeModel.startsWith("uruv") && !process.env.URUV_API_KEY && !process.env.URV_API_KEY && (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY))) {
-        activeModel = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza")))
-          ? "gemini-1.5-flash"
-          : process.env.OPENAI_API_KEY
-          ? "gpt-4o-mini"
-          : "uruv-chat";
-      }
+      const activeModel = process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
       const result = await runToolDrivenCommerceAgent({
         apiKey: apiKey!,
         model: activeModel,
