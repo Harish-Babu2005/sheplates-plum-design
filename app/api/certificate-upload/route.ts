@@ -18,6 +18,12 @@ export async function POST(request: Request) {
   const outletId = String(form.get("outletId") || "");
   const documentNumber = String(form.get("documentNumber") || "").trim();
   const expiryDate = String(form.get("expiryDate") || "").trim();
+  if (expiryDate && /^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (expiryDate < today) {
+      return NextResponse.json({ error: "Expiry date cannot be in the past." }, { status: 400 });
+    }
+  }
   if (!(file instanceof File) || !vendorId) return NextResponse.json({ error: "Choose a certificate file." }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "The uploaded file is empty (0 bytes). Please upload a valid certificate file." }, { status: 400 });
   if (profile.role === "vendor" && profile.vendor_id !== vendorId) return NextResponse.json({ error: "This certificate belongs to another store." }, { status: 403 });
@@ -72,8 +78,26 @@ export async function POST(request: Request) {
     if (saved.error) return NextResponse.json({ error: "The file uploaded but its certificate record could not be saved. Retry with a new upload." }, { status: 500 });
   }
   else {
-    const { data: doc } = await admin.from("vendor_documents").select("id").eq("vendor_id", vendorId).in("document_type", ["food_certificate", "fssai"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (doc?.id) await admin.from("vendor_documents").update({ storage_path: path, updated_at: new Date().toISOString() }).eq("id", doc.id);
+    const newDoc: Record<string, unknown> = {
+      vendor_id: vendorId,
+      document_type: "food_certificate",
+      document_number: documentNumber || null,
+      storage_path: path,
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type || "application/pdf",
+      expiry_date: expiryDate || null,
+      verification_status: "submitted",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    let docRes = await admin.from("vendor_documents").insert(newDoc);
+    if (docRes.error && /file_name|file_size|mime_type/i.test(docRes.error.message)) {
+      delete newDoc.file_name;
+      delete newDoc.file_size;
+      delete newDoc.mime_type;
+      await admin.from("vendor_documents").insert(newDoc);
+    }
   }
   return NextResponse.json({ path, fileName: file.name });
 }
