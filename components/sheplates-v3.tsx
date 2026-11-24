@@ -166,7 +166,28 @@ export type Product = {
   unitType?: string;
 };
 type AgentMemory = { lastBudget?: number; favoriteCategories?: string[]; lastComplaintAt?: string; calorieTarget?: number; minProtein?: number; preferredDietaryTags?: string[]; preferredDeliveryPeriod?: string; favoriteProducts?: string[] };
-type AgentMessage = { role: "user" | "agent"; text: string; productIds?: string[]; basketTotal?: number; intent?: string; streaming?: boolean };
+export type SelectableOrder = {
+  id: string;
+  orderNumber: string;
+  productNames: string[];
+  date: string;
+  slot?: string;
+  status: string;
+  vendorName: string;
+  total: number;
+};
+type AgentMessage = {
+  role: "user" | "agent";
+  text: string;
+  productIds?: string[];
+  basketTotal?: number;
+  intent?: string;
+  streaming?: boolean;
+  isError?: boolean;
+  retryText?: string;
+  targetOrderId?: string;
+  selectableOrders?: SelectableOrder[];
+};
 
 /** Reads She Agent's event stream: "reply" events carry the words written so far, the last event is the validated result. */
 async function readAgentStream(response: Response, onReply: (replySoFar: string) => void): Promise<{ result?: Record<string, unknown>; error?: string }> {
@@ -244,7 +265,7 @@ type Schedule = {
   id: string; customerEmail: string; productId: string; vendorId: string; startDate: string;
   endDate: string; recurrence: "Once" | "Daily" | "Weekly" | "Custom"; weekdays: string[];
   timeSlot: string; quantity: number; unit: string; mode: DeliveryMode; estimatedOccurrences: number;
-  status?: "Awaiting payment" | "Active" | "Paused" | "Cancelled" | "Completed" | "Closed"; nextDeliveryAt?: string; whatsappReminder?: boolean;
+  status?: "Awaiting payment" | "Active" | "Paused" | "Cancelled" | "Completed" | "Closed" | "Expired"; nextDeliveryAt?: string; whatsappReminder?: boolean;
   pausedAt?: string; resumeBy?: string; closedAt?: string; closureReason?: string;
 };
 export type VendorDeliverySlot = {
@@ -261,7 +282,7 @@ export type VendorDeliverySlot = {
 type Order = {
   id: string; scheduleId?: string; customerEmail: string; vendorId: string; productId?: string;
   description: string; quantity: number; unit: string; total: number; date: string; slot: string; deliveryAddress?: string;
-  mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled" | "Awaiting payment" | "Payment failed" | "Expired"; payment: "Pending" | "Paid" | "Reversal pending" | "Refunded" | "Failed" | "Expired";
+  mode: DeliveryMode; status: "Scheduled" | "Confirmed" | "Preparing" | "Ready" | "Out for delivery" | "Ready for pickup" | "Completed" | "Delivered" | "Cancellation requested" | "Cancelled" | "Awaiting payment" | "Payment failed" | "Expired"; payment: "Pending" | "Paid" | "Reversal pending" | "Refunded" | "Failed" | "Expired" | "Cancelled";
   trackingLatitude?: number; trackingLongitude?: number; cancellationFee?: number;
   orderNumber?: string;
   paymentReference?: string;
@@ -917,6 +938,17 @@ function livePaymentStatus(payments: unknown, orderStatus?: unknown): Order["pay
   if (statuses.some((status) => status === "failed")) return "Failed";
   if (statuses.some((status) => status === "expired")) return "Expired";
   return "Pending";
+}
+export function getOrderTimestamp(o: Order) {
+  if (o.createdAt) {
+    const t = new Date(o.createdAt).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (o.date) {
+    const t = new Date(`${o.date}T12:00:00`).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  return 0;
 }
 type LiveCommerceStateSnapshot = { orders?: Array<Record<string, unknown>>; schedules?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; assignments?: Array<Record<string, unknown>>; thirdPartyDeliveries?: Array<Record<string, unknown>>; thirdPartyDeliveryAvailable?: boolean; cart?: Record<string, unknown> | null; cartItems?: Array<Record<string, unknown>>; deliverySlots?: Array<Record<string, unknown>> }; function mergeLiveCommerce(current: V3State, snapshot: LiveCommerceStateSnapshot, session: DemoSession): V3State {
   const orderRows = snapshot.orders || [];
@@ -2010,7 +2042,7 @@ useEffect(() => {
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
     if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} onNavigate={setActive} />;
-    if (active === "She Agent") return <div className="space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
+    if (active === "She Agent") return <div className="mx-auto max-w-4xl space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
     if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={handleOpenVendor} onConfirmLocation={() => setActive("Marketplace")} />;
     if (active === "Food Drops") return <FoodDropsTab state={state} profile={area} social={social} onClaim={claimDrop} onRefresh={() => void refreshDrops()} />;
     if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={handleOpenVendor} />;
@@ -3173,7 +3205,9 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   const savedAddresses = customer?.addresses?.length
     ? customer.addresses
     : customer?.address ? [{ id: "default-address", label: "Home", address: customer.address, latitude: customer.latitude, longitude: customer.longitude, isDefault: true }] : [];
-  const pendingOrders = state.orders.filter((item) => item.customerEmail === session.email && item.payment === "Pending" && item.status !== "Cancelled");
+  const pendingOrders = state.orders
+    .filter((item) => item.customerEmail === session.email && item.payment === "Pending" && item.status !== "Cancelled")
+    .sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a) || (b.id || "").localeCompare(a.id || ""));
   const [paying, setPaying] = useState<Order | null>(null);
 
 
@@ -3252,6 +3286,29 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   async function removeItem(item: CartItem) {
     const nextOwn = items.filter((row) => row.id !== item.id);
     try { await persistOwnCart(nextOwn); toast.success("Item removed from cart"); } catch { /* toast handled above */ }
+  }
+
+  async function handleCancelPendingOrder(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) {
+        try {
+          await updateLiveOrderStatus(order.id, "Cancelled");
+        } catch {
+          // Fall back to local state update if live API restricts customer role
+        }
+      }
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancelled", payment: "Cancelled" } : x),
+        notifications: [
+          notice(session.email, "customer", "Order cancelled", `Expired scheduled order #${order.orderNumber || order.id.slice(0, 8)} has been cancelled.`),
+          ...s.notifications,
+        ],
+      }));
+      toast.success(order.date < todayISO() ? "Expired scheduled order cancelled" : "Order cancelled");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to cancel order"));
+    }
   }
 
   async function confirm(deliveryAddress: string) {
@@ -3407,7 +3464,32 @@ function CartView({ session, state, setState, navigate }: { session: DemoSession
   return <div className="space-y-6"><Heading eyebrow="CHECKOUT" title="My cart" body="Your basket is saved with your account. She Agent, Marketplace and Cart all use the same basket, including when you switch devices." />
     {pendingOrders.length > 0 && <div className="space-y-3"><h3 className="text-lg font-black">Awaiting payment</h3>{pendingOrders.map((order) => {
       const scheduledDatePassed = order.date < todayISO();
-      return <div key={order.id} className="surface-card flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center"><div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div><div className="min-w-0 flex-1"><b>{order.description}</b><div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div><div className="mt-2 text-xl font-black">{money(order.total)}</div>{scheduledDatePassed && <p className="mt-2 text-sm font-medium text-amber-800">Payment unavailable: the scheduled date has passed.</p>}</div><Button disabled={scheduledDatePassed} onClick={() => setPaying(order)} title={scheduledDatePassed ? "Payment is unavailable because the scheduled date has passed" : undefined} className="rounded-xl bg-[#155F65] transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600 disabled:hover:transform-none disabled:hover:shadow-none">{scheduledDatePassed ? "Scheduled date passed" : <><CreditCard />Pay & place order</>}</Button></div>;
+      return <div key={order.id} className="surface-card relative flex flex-col gap-4 rounded-3xl border-l-4 border-l-amber-400 p-5 pr-12 transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center">
+        <button
+          type="button"
+          onClick={() => void handleCancelPendingOrder(order)}
+          aria-label={`Cancel order ${order.orderNumber || order.id}`}
+          title={scheduledDatePassed ? "Cancel expired scheduled order" : "Cancel order"}
+          className="absolute right-3 top-3 grid size-7 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-hidden"
+        >
+          <X className="size-4" />
+        </button>
+        <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600"><Clock3 className="size-5" /></div>
+        <div className="min-w-0 flex-1">
+          <b>{order.description}</b>
+          <div className="mt-1 text-sm text-stone-500">{order.date} · {order.slot} · {order.mode}</div>
+          <div className="mt-2 text-xl font-black">{money(order.total)}</div>
+          {scheduledDatePassed && <p className="mt-2 text-sm font-medium text-amber-800">Payment unavailable: the scheduled date has passed.</p>}
+        </div>
+        <Button
+          disabled={scheduledDatePassed}
+          onClick={() => setPaying(order)}
+          title={scheduledDatePassed ? "Payment is unavailable because the scheduled date has passed" : undefined}
+          className="rounded-xl bg-[#155F65] transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600 disabled:hover:transform-none disabled:hover:shadow-none"
+        >
+          {scheduledDatePassed ? "Scheduled date passed" : <><CreditCard className="mr-1 size-4" />Pay & place order</>}
+        </Button>
+      </div>;
     })}</div>}
     {items.length ? <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
       <div className="space-y-4">
@@ -3645,7 +3727,8 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
     const uniqueDays = [...new Set(sorted.map((order) => weekdayLabel(order.date)))];
     return { id: scheduleId, customerEmail: session.email, productId: product?.id || "", vendorId: first.vendorId, startDate: first.date, endDate: sorted.at(-1)?.date || first.date, recurrence: sorted.length === 1 ? "Once" : "Custom", weekdays: uniqueDays, timeSlot: first.slot, quantity: first.quantity, unit: first.unit, mode: first.mode, estimatedOccurrences: sorted.length, status: "Active", nextDeliveryAt: sorted.find((order) => order.date >= todayISO())?.date || first.date, whatsappReminder: true };
   });
-  const items = [...storedSchedules, ...syntheticSchedules].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  // Show newest schedules first
+  const items = [...storedSchedules, ...syntheticSchedules].sort((a, b) => b.startDate.localeCompare(a.startDate));
   const firstUpcoming = paidDeliveries.find((order) => order.date >= todayISO())?.date || todayISO();
   const [selectedDate, setSelectedDate] = useState(firstUpcoming);
   const [rescheduling, setRescheduling] = useState<Schedule | null>(null);
@@ -3654,6 +3737,34 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   const [actionBusyId, setActionBusyId] = useState("");
   const [adminReopeningSchedule, setAdminReopeningSchedule] = useState<Schedule | null>(null);
   const [adminReason, setAdminReason] = useState("");
+
+  async function handleCancelSchedule(schedule: Schedule) {
+    try {
+      setState((s) => ({
+        ...s,
+        schedules: s.schedules.map((x) => x.id === schedule.id ? { ...x, status: "Cancelled" } : x),
+        orders: s.orders.map((o) => o.scheduleId === schedule.id && o.date < todayISO() && !["Completed", "Delivered"].includes(o.status) ? { ...o, status: "Cancelled" } : o),
+        notifications: [notice(session.email, "customer", "Schedule cancelled", `Expired schedule #${schedule.id.slice(0, 8)} has been cancelled.`), ...s.notifications],
+      }));
+      toast.success("Expired schedule cancelled");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to cancel schedule"));
+    }
+  }
+
+  async function cancelScheduledDelivery(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Cancelled");
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((o) => o.id === order.id ? { ...o, status: "Cancelled" } : o),
+        notifications: [notice(session.email, "customer", "Delivery cancelled", `Expired scheduled delivery #${order.orderNumber || order.id.slice(0, 8)} has been cancelled.`), ...s.notifications],
+      }));
+      toast.success("Expired scheduled order cancelled");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to cancel order"));
+    }
+  }
 
   const calendarAnchor = new Date(`${todayISO()}T12:00:00`);
   calendarAnchor.setDate(calendarAnchor.getDate() - calendarAnchor.getDay());
@@ -3771,7 +3882,27 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
   return <div className="space-y-6"><Heading eyebrow="CALENDAR" title="My schedule" body="Only paid, active schedules appear here. Every confirmed delivery date is taken from your actual orders, so recurring deliveries remain visible after payment and across future days." />
     {pendingOrders.length > 0 && <button onClick={() => navigate("Cart")} className="flex w-full items-center gap-3 rounded-[22px] border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-950"><CreditCard className="size-5 shrink-0" /><span className="flex-1"><b>{pendingOrders.length} schedule{pendingOrders.length === 1 ? "" : "s"} waiting for payment.</b> Complete checkout to activate the delivery calendar.</span><ArrowRight className="size-4" /></button>}
     <div className="surface-card rounded-[28px] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-[#155F65]">Next 7 days</div><div className="mt-1 text-sm text-stone-500">Tap a date to see confirmed paid deliveries.</div></div>{paidDeliveries.length > 0 && <Status>{paidDeliveries.filter((order) => order.date >= todayISO()).length} upcoming</Status>}</div><div className="grid grid-cols-7 gap-1.5 sm:gap-2">{Array.from({ length: 7 }, (_, index) => addDaysISO(todayISO(), index)).map((date) => { const dayOrders = ordersByDate.get(date) || []; const d = new Date(`${date}T12:00:00`); return <button key={date} type="button" onClick={() => setSelectedDate(date)} aria-pressed={selectedDate === date} className={`sp-calendar-day relative rounded-2xl px-1 py-3 text-center transition ${selectedDate === date ? "bg-[#155F65] text-white" : "bg-white hover:bg-[#EAF4F2]"}`}><span className="block text-xs font-medium">{d.toLocaleDateString("en-IN", { weekday: "short" })}</span><span className="block text-xl font-bold tabular-nums">{d.getDate()}</span>{dayOrders.length > 0 ? <span className={`mx-auto mt-1 grid size-5 place-items-center rounded-full text-[10px] font-bold ${selectedDate === date ? "bg-[#155F65] text-white" : "bg-[#155F65] text-white"}`}>{dayOrders.length}</span> : <span className="mt-1 block h-5" />}</button>; })}</div>
-      {selectedOrders.length > 0 ? <div className="mt-4 rounded-[22px] bg-[#EEF2F2] p-4"><b>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><div className="mt-3 space-y-2">{selectedOrders.map((order) => <button key={order.id} onClick={() => navigate("Orders")} className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left"><div className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Package className="size-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-black">{order.description}</div><div className="text-xs text-stone-500">{order.slot} · {order.mode}</div></div><Status>{order.status}</Status></button>)}</div></div> : <div className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">No confirmed delivery on this date.</div>}
+      {selectedOrders.length > 0 ? <div className="mt-4 rounded-[22px] bg-[#EEF2F2] p-4"><b>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</b><div className="mt-3 space-y-2">{selectedOrders.map((order) => {
+        const isExpiredDelivery = order.date < todayISO() && !["Completed", "Delivered", "Cancelled"].includes(order.status);
+        return <div key={order.id} className="flex items-center gap-2">
+          <button onClick={() => navigate("Orders")} className="flex flex-1 items-center gap-3 rounded-2xl bg-white p-3 text-left">
+            <div className="grid size-10 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]"><Package className="size-4" /></div>
+            <div className="min-w-0 flex-1"><div className="truncate text-sm font-black">{order.description}</div><div className="text-xs text-stone-500">{order.slot} · {order.mode}</div></div>
+            <Status className={isExpiredDelivery ? "border-red-200 bg-red-50 text-red-700 font-bold" : ""}>{isExpiredDelivery ? "Expired" : order.status}</Status>
+          </button>
+          {isExpiredDelivery && (
+            <button
+              type="button"
+              onClick={() => void cancelScheduledDelivery(order)}
+              className="grid size-10 shrink-0 place-items-center rounded-2xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition shadow-2xs"
+              title="Cancel expired delivery (X)"
+              aria-label="Cancel expired delivery"
+            >
+              <X className="size-4 text-red-600" />
+            </button>
+          )}
+        </div>;
+      })}</div></div> : <div className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">No confirmed delivery on this date.</div>}
     </div>
     {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((schedule) => {
       const product = schedule.productId ? state.products.find((x) => x.id === schedule.productId) : undefined;
@@ -3782,6 +3913,7 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
       const isPaused = status === "Paused";
       const isClosed = status === "Closed";
       const finished = status === "Cancelled" || status === "Completed" || isClosed || (!upcoming.length && !isPaused);
+      const isExpiredSchedule = isClosed || (schedule.endDate < todayISO() && !upcoming.length) || status === "Expired";
       const displayName = product?.name || scheduleOrders[0]?.description || "Scheduled product";
       const daysLeft = schedule.resumeBy ? Math.max(0, Math.ceil((new Date(schedule.resumeBy).getTime() - Date.now()) / (24 * 60 * 60 * 1000))) : 15;
       const resumeFormatted = schedule.resumeBy ? new Date(schedule.resumeBy).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }) : previewResumeDate;
@@ -3796,7 +3928,23 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
             <div className="font-black">{displayName}</div>
             <div className="mt-1 text-xs text-stone-500">{schedule.recurrence}{schedule.recurrence === "Custom" && schedule.weekdays.length ? ` · ${schedule.weekdays.join(", ")}` : ""} · {schedule.timeSlot}</div>
           </div>
-          <Status>{status}</Status>
+          <div className="flex items-center gap-1.5">
+            <Status className={isExpiredSchedule && status !== "Cancelled" ? "border-red-200 bg-red-50 text-red-700 font-bold" : ""}>
+              {isExpiredSchedule && status !== "Cancelled" ? "Expired" : status}
+            </Status>
+            {isExpiredSchedule && status !== "Cancelled" && (
+              <button
+                type="button"
+                onClick={() => void handleCancelSchedule(schedule)}
+                className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700 hover:bg-red-100 transition shadow-2xs"
+                title="Cancel expired schedule (X)"
+                aria-label="Cancel expired schedule"
+              >
+                <X className="size-3 text-red-600" />
+                <span>(X)</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-2 rounded-[20px] bg-[#EEF2F2] p-3 text-xs">
@@ -3826,7 +3974,18 @@ function SchedulesV4({ session, state, setState, navigate }: { session: DemoSess
 
         <div className="mt-2 rounded-2xl bg-[#EEF2F2] p-3 text-xs text-stone-500"><MessageSquareText className="mr-2 inline size-4" />Reminder is prepared for one hour before each delivery.</div>
 
-        {persisted && !finished ? (
+        {isExpiredSchedule && status !== "Cancelled" ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => void handleCancelSchedule(schedule)} className="rounded-xl border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-bold">
+              <X className="mr-1 size-3.5 text-red-600" />Cancel expired schedule (X)
+            </Button>
+            {isClosed && isStaff && (
+              <Button size="sm" variant="outline" onClick={() => { setAdminReopeningSchedule(schedule); setAdminReason(""); }} className="border-[#155F65] text-[#155F65]">
+                <Play className="mr-1 size-3.5" />Reopen (Admin)
+              </Button>
+            )}
+          </div>
+        ) : persisted && !finished ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {isPaused ? (
               <Button size="sm" onClick={() => executeResume(schedule)} disabled={actionBusyId === schedule.id} className="bg-[#155F65] text-white">
@@ -5559,6 +5718,7 @@ function CustomerOrderCard({
   onRateOrder,
   onIssueThirdPartyCode,
   onVerifyPickup,
+  onCancelOrder,
   deliveryCodes,
   deliveryActionId,
 }: {
@@ -5571,6 +5731,7 @@ function CustomerOrderCard({
   onRateOrder: (order: Order) => void;
   onIssueThirdPartyCode: (order: Order) => void;
   onVerifyPickup?: (order: Order) => void;
+  onCancelOrder?: (order: Order) => void;
   deliveryCodes: Record<string, { code: string; expiresAt: string }>;
   deliveryActionId: string | null;
 }) {
@@ -5579,6 +5740,10 @@ function CustomerOrderCard({
   const thirdPartyDelivery = state.thirdPartyDeliveries.find((request) => request.orderId === order.id);
   const timeline = getOrderTimeline(order);
   const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+  const isExpired =
+    order.status === "Expired" ||
+    order.payment === "Expired" ||
+    (order.date < todayISO() && !["Completed", "Delivered", "Cancelled"].includes(order.status));
 
   return (
     <div className="surface-card rounded-[28px] p-5 sm:p-6 transition-all hover:shadow-md">
@@ -5603,9 +5768,21 @@ function CustomerOrderCard({
           <Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700 font-bold" : ""}>
             {order.payment}
           </Status>
-          <Status className={orderStatusTone(order.status)}>
-            {order.status}
+          <Status className={isExpired ? "border-red-200 bg-red-50 text-red-700 font-bold" : orderStatusTone(order.status)}>
+            {isExpired ? "Expired" : order.status}
           </Status>
+          {isExpired && onCancelOrder && (
+            <button
+              type="button"
+              onClick={() => onCancelOrder(order)}
+              className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700 hover:bg-red-100 hover:border-red-400 transition shadow-2xs"
+              title="Cancel expired scheduled order (X)"
+              aria-label="Cancel expired scheduled order"
+            >
+              <X className="size-3.5 text-red-600" />
+              <span>Cancel (X)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -5764,6 +5941,17 @@ function CustomerOrderCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isExpired && onCancelOrder && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCancelOrder(order)}
+              className="rounded-xl border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-bold"
+            >
+              <X className="mr-1.5 size-4 text-red-600" />
+              Cancel (X)
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -5797,11 +5985,12 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     const sched = state.schedules.find((s) => s.id === x.scheduleId);
     return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
   };
-  const baseOrders = scope === "customer"
+
+  const baseOrders = (scope === "customer"
     ? state.orders.filter((x) => x.customerEmail === session.email && x.payment !== "Pending" && x.status !== "Awaiting payment")
     : scope === "vendor"
       ? state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x))
-      : state.orders;
+      : state.orders).sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a) || (b.id || "").localeCompare(a.id || ""));
   const [rescheduling, setRescheduling] = useState<Order | null>(null);
   const [paying, setPaying] = useState<Order | null>(null);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
@@ -5957,6 +6146,23 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   function locate(order: Order) { navigator.geolocation?.getCurrentPosition((position) => { setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, trackingLatitude: position.coords.latitude, trackingLongitude: position.coords.longitude } : x), notifications: [notice(order.customerEmail, "customer", "Live location updated", `${order.id} location was refreshed by the vendor.`), ...s.notifications] })); toast.success("Live delivery position updated"); }, () => toast.error("Allow location access on the delivery device"), { enableHighAccuracy: true, maximumAge: 0 }); }
   async function assign(order: Order, staffId: string) { try { if (isLiveSupabaseMode()) await assignLiveDeliveryStaff(order.id, staffId === "unassigned" ? undefined : staffId); const nextAssignments = staffId === "unassigned" ? state.assignments.filter((x) => x.orderId !== order.id) : [{ id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }, ...state.assignments.filter((x) => x.orderId !== order.id)]; setState((s) => ({ ...s, assignments: nextAssignments, notifications: staffId === "unassigned" ? s.notifications : [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name || "Your delivery person"} will handle ${order.id}.`), ...s.notifications] })); toast.success(staffId === "unassigned" ? "Delivery assignment cleared" : "Delivery person assigned"); } catch (error) { toast.error(errorMessage(error, "Delivery assignment could not be saved")); } }
 
+  async function handleCancelOrder(order: Order) {
+    try {
+      if (isLiveSupabaseMode()) await updateLiveOrderStatus(order.id, "Cancelled");
+      setState((s) => ({
+        ...s,
+        orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancelled" } : x),
+        notifications: [
+          notice(session.email, "customer", "Order cancelled", `Expired scheduled order #${order.orderNumber || order.id.slice(0, 8)} has been cancelled.`),
+          ...s.notifications,
+        ],
+      }));
+      toast.success("Expired scheduled order cancelled");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to cancel expired order"));
+    }
+  }
+
   const customerSchedules = scope === "customer" ? state.schedules.filter((item) => item.customerEmail === session.email && (item.status || "Active") === "Active").length : 0;
   const customerOpenRequirements = scope === "customer" ? state.requirements.filter((item) => item.customerEmail === session.email && item.status !== "Awarded").length : 0;
 
@@ -5972,11 +6178,9 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     })()}
     {orders.length ? <div className="space-y-4">
       {[...orders].sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        if (aTime && bTime && aTime !== bTime) return bTime - aTime;
-        if (aTime && !bTime) return -1;
-        if (!aTime && bTime) return 1;
+        const bTime = getOrderTimestamp(b);
+        const aTime = getOrderTimestamp(a);
+        if (bTime !== aTime) return bTime - aTime;
         return (b.id || "").localeCompare(a.id || "");
       }).map((order) => {
         if (scope === "customer") {
@@ -5998,6 +6202,7 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
               onRateOrder={(ord) => setRatingOrder(ord)}
               onIssueThirdPartyCode={(ord) => void issueThirdPartyCode(ord)}
               onVerifyPickup={(ord) => void handleVerifyFoodDropPickup(ord)}
+              onCancelOrder={(ord) => void handleCancelOrder(ord)}
               deliveryCodes={deliveryCodes}
               deliveryActionId={deliveryActionId}
             />
@@ -6062,6 +6267,18 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+              {scope === "vendor" && ((order.status === "Scheduled" || order.status === "Expired") && order.date < todayISO()) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleCancelOrder(order)}
+                  className="rounded-xl border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-bold"
+                  title="Cancel expired scheduled order (X)"
+                >
+                  <X className="mr-1 size-4 text-red-600" />
+                  Cancel (X)
+                </Button>
               )}
               {scope === "vendor" && order.status === "Out for delivery" && <Button size="sm" onClick={() => locate(order)} className="bg-[#155F65]"><MapPinned />Share live position</Button>}
             </div>
@@ -9866,38 +10083,175 @@ function rememberCategory(setState: React.Dispatch<React.SetStateAction<V3State>
 function SheAgent({ page = false, open, setOpen, session, state, setState, navigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void }) {
   const customer = state.customers.find((c) => c.email === session.email);
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<AgentMessage[]>([{ role: "agent", text: session.role === "customer" ? `Hi ${session.name.split(" ")[0]} 👋 Tell me what you're planning and I'll turn it into a local basket you can review.` : `Hello ${session.name}. I can analyse your ${roleName[session.role].toLowerCase()} workspace and recommend the next action.` }]);
+  const [messages, setMessages] = useState<AgentMessage[]>(() => {
+    if (typeof window !== "undefined" && session.email) {
+      try {
+        const stored = sessionStorage.getItem(`sheplates_agent_convo_${session.email}`);
+        if (stored) {
+          const parsed = JSON.parse(stored) as AgentMessage[];
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return [{ role: "agent", text: session.role === "customer" ? `Hi ${session.name.split(" ")[0]} 👋 Tell me what you're planning and I'll turn it into a local basket you can review.` : `Hello ${session.name}. I can analyse your ${roleName[session.role].toLowerCase()} workspace and recommend the next action.` }];
+  });
   const [busy, setBusy] = useState(false);
   const [awaitingPhoto, setAwaitingPhoto] = useState<{ orderId: string; complaintText: string } | null>(null);
+  const [kitchenConflict, setKitchenConflict] = useState<{ currentVendorName: string; requestedVendorName: string; conflictingProductId: string; requestedQuantity: number } | null>(null);
   const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const abortRef = useRef<number | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
   const scope = useMemo(() => scopedContext(session, state), [session, state]);
   const cartItems = state.cart.filter((item) => item.customerEmail === session.email);
   const cartTotal = cartItems.reduce((sum, item) => { const product = state.products.find((p) => p.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => { if (!open) setMessage(""); }, [open]);
 
-  async function syncAgentCart(addProductIds: string[] = [], removeProductIds: string[] = [], announce?: string) {
-    const own = state.cart.filter((item) => item.customerEmail === session.email);
+  useEffect(() => {
+    if (typeof window !== "undefined" && session.email && messages.length > 0) {
+      try {
+        sessionStorage.setItem(`sheplates_agent_convo_${session.email}`, JSON.stringify(messages));
+      } catch {}
+    }
+  }, [messages, session.email]);
+
+  useEffect(() => {
+    if (session.role === "customer" && session.email) {
+      try {
+        const stored = sessionStorage.getItem("sheplates_pending_cart_action");
+        if (stored) {
+          sessionStorage.removeItem("sheplates_pending_cart_action");
+          const parsed = JSON.parse(stored) as { productId: string; quantity: number };
+          if (parsed?.productId) {
+            void syncAgentCart([parsed], [], "Restored your pending item to basket");
+          }
+        }
+      } catch {}
+    }
+  }, [session.email]);
+
+  useEffect(() => {
+    if (!isLiveSupabaseMode()) return;
+    let active = true;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        const res = await fetch("/api/agent", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { conversationId?: string; messages?: Array<{ id: string; role: "user" | "agent"; text: string; productIds?: string[]; intent?: string; basketTotal?: number }> };
+        if (!active) return;
+        if (data.conversationId) {
+          conversationIdRef.current = data.conversationId;
+        }
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages.map((m) => ({
+            role: m.role,
+            text: m.text,
+            productIds: m.productIds,
+            intent: m.intent,
+            basketTotal: m.basketTotal,
+          })));
+        }
+      } catch {
+        /* Fall back smoothly to default greeting */
+      }
+    })();
+    return () => { active = false; };
+  }, [session.email]);
+
+  async function syncAgentCart(
+    addItems: Array<{ productId: string; quantity: number }> | string[] = [],
+    removeProductIds: string[] = [],
+    announce?: string,
+    replaceAll = false
+  ) {
+    if (session.role !== "customer" && !session.email) {
+      const first = addItems[0];
+      const firstId = typeof first === "string" ? first : first?.productId;
+      if (firstId) {
+        try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId: firstId, quantity: 1 })); } catch {}
+      }
+      toast.error("Please sign in to add items to your cart");
+      setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
+      return;
+    }
+
+    const normalizedAdd: Array<{ productId: string; quantity: number }> = addItems.map((item) =>
+      typeof item === "string" ? { productId: item, quantity: 1 } : item
+    );
+
+    const own = replaceAll ? [] : state.cart.filter((item) => item.customerEmail === session.email);
+    const existingKitchenVendorId = own.length > 0 ? state.products.find((p) => p.id === own[0].productId)?.vendorId : null;
+
+    if (!replaceAll && existingKitchenVendorId && normalizedAdd.length > 0) {
+      const conflictItem = normalizedAdd.find((item) => {
+        const prod = state.products.find((p) => p.id === item.productId);
+        return prod && prod.vendorId !== existingKitchenVendorId;
+      });
+      if (conflictItem) {
+        const reqProd = state.products.find((p) => p.id === conflictItem.productId);
+        const reqVendor = reqProd ? state.vendors.find((v) => v.id === reqProd.vendorId) : undefined;
+        const currProd = state.products.find((p) => p.id === own[0].productId);
+        const currVendor = currProd ? state.vendors.find((v) => v.id === currProd.vendorId) : undefined;
+        setKitchenConflict({
+          currentVendorName: currVendor?.businessName || "your current kitchen",
+          requestedVendorName: reqVendor?.businessName || "another kitchen",
+          conflictingProductId: conflictItem.productId,
+          requestedQuantity: conflictItem.quantity,
+        });
+        return;
+      }
+    }
+
     const byProduct = new Map(own.map((item) => [item.productId, { ...item }]));
-    for (const productId of addProductIds) {
-      const product = state.products.find((item) => item.id === productId);
+    for (const add of normalizedAdd) {
+      const product = state.products.find((item) => item.id === add.productId);
       if (!product) continue;
-      const existing = byProduct.get(productId);
-      byProduct.set(productId, existing ? { ...existing, quantity: existing.quantity + 1 } : { id: id("CRT"), customerEmail: session.email, productId, quantity: 1 });
+      const existing = byProduct.get(add.productId);
+      byProduct.set(
+        add.productId,
+        existing
+          ? { ...existing, quantity: existing.quantity + add.quantity }
+          : { id: id("CRT"), customerEmail: session.email, productId: add.productId, quantity: add.quantity }
+      );
       rememberCategory(setState, session.email, product.category);
     }
     for (const productId of removeProductIds) byProduct.delete(productId);
     const nextOwn = [...byProduct.values()];
-    setState((current) => ({ ...current, cart: [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn] }));
+    setState((current) => ({
+      ...current,
+      cart: replaceAll
+        ? nextOwn
+        : [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn],
+    }));
     if (isLiveSupabaseMode()) {
       const saved = await syncLiveCart({ items: nextOwn.map((item) => ({ productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId })), createdBy: "she_agent" });
       if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
     }
     if (announce) toast.success(announce);
   }
+
+  async function startNewCartWithProduct(productId: string, quantity: number, vendorName: string) {
+    await syncAgentCart([{ productId, quantity }], [], `Started new cart with ${vendorName}`, true);
+    setMessages((curr) => [...curr, { role: "agent", text: `Started a fresh basket with items from ${vendorName}. View cart to review.` }]);
+  }
+
   async function addProduct(productId: string, announce = true) {
-    const product = state.products.find((item) => item.id === productId); if (!product) return;
-    try { await syncAgentCart([productId], [], announce ? `${product.name} added to your basket` : undefined); }
+    const product = state.products.find((item) => item.id === productId);
+    if (!product) return;
+    if (product.stock <= 0) {
+      toast.error("This item is currently out of stock");
+      return;
+    }
+    if (session.role !== "customer" && !session.email) {
+      try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId, quantity: 1 })); } catch {}
+      toast.error("Please sign in to add items to your cart");
+      setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
+      return;
+    }
+    try { await syncAgentCart([{ productId, quantity: 1 }], [], announce ? `Added ${product.name} to your cart` : undefined); }
     catch (error) { toast.error(errorMessage(error, "Cart could not be saved")); }
   }
   async function addSuggestedBasket(productIds: string[]) {
@@ -9907,7 +10261,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
 
   async function submitQualityComplaint(orderId: string, complaintText: string, fileName: string, imageDataUrl: string) {
     const order = state.orders.find((o) => o.id === orderId); let aiDecision = "I reviewed the photo but could not reach live vision analysis, so this needs a careful manual look."; let confidence = 65; let recommendedRefundAmount = order ? Math.round(order.total * 0.5 * 100) / 100 : 0;
-    try { const token = await getAccessToken(); const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "quality_complaint", message: complaintText, context: { ...scope, order }, imageBase64: imageDataUrl, role: session.role }) }); const json = await response.json() as { result?: { summary?: string; recommendedAction?: string; confidence?: number; quality?: { spoilageLikely?: boolean; recommendedRefundPercent?: number } } }; if (response.ok && json.result) { aiDecision = [json.result.summary, json.result.recommendedAction].filter(Boolean).join(" ") || aiDecision; if (typeof json.result.confidence === "number") confidence = json.result.confidence; const percent = json.result.quality?.recommendedRefundPercent; if (order && typeof percent === "number") recommendedRefundAmount = Math.max(0, Math.min(order.total, Math.round(order.total * (percent / 100) * 100) / 100)); } } catch { /* conservative fallback */ }
+    try { const token = await getAccessToken(); const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "quality_complaint", message: complaintText, context: { ...scope, order }, imageBase64: imageDataUrl, role: session.role, conversationId: conversationIdRef.current || undefined }) }); const json = await response.json() as { conversationId?: string; result?: { conversationId?: string; summary?: string; recommendedAction?: string; confidence?: number; quality?: { spoilageLikely?: boolean; recommendedRefundPercent?: number } } }; if (response.ok && json.result) { if (json.result.conversationId || json.conversationId) conversationIdRef.current = json.result.conversationId || json.conversationId || null; aiDecision = [json.result.summary, json.result.recommendedAction].filter(Boolean).join(" ") || aiDecision; if (typeof json.result.confidence === "number") confidence = json.result.confidence; const percent = json.result.quality?.recommendedRefundPercent; if (order && typeof percent === "number") recommendedRefundAmount = Math.max(0, Math.min(order.total, Math.round(order.total * (percent / 100) * 100) / 100)); } } catch { /* conservative fallback */ }
     const cancellation: Cancellation = { id: id("CAN"), orderId, customerEmail: session.email, reason: complaintText, aiDecision, confidence, status: "Awaiting operations", kind: "quality_complaint", recommendedRefundAmount, attachmentName: fileName };
     const ticket: Ticket = { id: id("TKT"), creatorEmail: session.email, creatorRole: session.role, subject: `Quality complaint — ${orderId}`, description: complaintText, category: "Order", priority: "High", status: "Open", attachmentName: fileName, createdVia: "She Agent", at: now() };
     setState((current) => withAgentMemory({ ...current, cancellations: [cancellation, ...current.cancellations], tickets: [ticket, ...current.tickets], notifications: [notice("operations@sheplates.demo", "operations", "Quality complaint needs review", `${cancellation.id} for ${orderId} · She Agent suggests ${money(recommendedRefundAmount)}.`), ...current.notifications], audit: [audit(session, "Quality complaint submitted", `${orderId} · photo attached (${fileName})`), ...current.audit] }, session.email, { lastComplaintAt: now() }));
@@ -9931,20 +10285,30 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role }),
+        body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role, conversationId: conversationIdRef.current || undefined }),
       });
       type AgentJson = {
+        conversationId?: string;
         result?: {
+          conversationId?: string;
           reply?: string;
           intent?: string;
           budget?: number;
           selectedProductIds?: string[];
           basketProductIds?: string[];
+          basketItems?: Array<{ productId: string; quantity: number }>;
+          kitchenConflict?: {
+            currentVendorName: string;
+            requestedVendorName: string;
+            conflictingProductId: string;
+            requestedQuantity: number;
+          };
           removeProductIds?: string[];
           navigateTo?: string;
           clarifyingQuestion?: string;
           requiresPhoto?: boolean;
           targetOrderId?: string;
+          selectableOrders?: SelectableOrder[];
           createTicket?: boolean;
           ticketSubject?: string;
           ticketCategory?: Ticket["category"];
@@ -9959,6 +10323,12 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         : await response.json() as AgentJson;
       if ((!streamed && !response.ok) || !json.result) throw new Error(json.error || "She Agent is temporarily unavailable. Please try again shortly.");
       const result = json.result;
+      if (result.conversationId || json.conversationId) {
+        conversationIdRef.current = result.conversationId || json.conversationId || null;
+      }
+      if (result.kitchenConflict) {
+        setKitchenConflict(result.kitchenConflict);
+      }
 
       if (session.role === "customer" && result.memoryUpdates?.length) {
         const patch: Partial<AgentMemory> = {};
@@ -9974,7 +10344,7 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
         if (Object.keys(patch).length) setState((current) => withAgentMemory(current, session.email, patch));
       }
 
-      const permittedProducts = new Map(availableCommerceProducts(state).map((product) => [product.id, product]));
+      const permittedProducts = new Map(state.products.map((product) => [product.id, product]));
       const selectedProducts = [...new Set(result.selectedProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
       const basketProducts = [...new Set(result.basketProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
       const removeIds = new Set((result.removeProductIds || []).filter((productId) => permittedProducts.has(productId)));
@@ -10017,16 +10387,33 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
       const basketTotal = result.intent === "recommend" && selectedProducts.length ? selectedProducts.reduce((sum, product) => sum + finalPrice(product, state), 0) : undefined;
       let reply = result.clarifyingQuestion?.trim() || result.reply?.trim() || "I couldn't complete that request just now. Please try again.";
       if (result.requiresPhoto && awaitingPhoto === null) reply = `${reply} You can attach the photo below.`;
-      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: reply, productIds: productIds.length ? productIds : undefined, basketTotal, intent: result.intent }]);
+      setMessages((current) => [
+        ...current.filter((m) => !m.streaming),
+        {
+          role: "agent",
+          text: reply,
+          productIds: productIds.length ? productIds : undefined,
+          basketTotal,
+          intent: result.intent,
+          targetOrderId: typeof result.targetOrderId === "string" ? result.targetOrderId : undefined,
+          selectableOrders: Array.isArray(result.selectableOrders) ? (result.selectableOrders as SelectableOrder[]) : undefined,
+        },
+      ]);
       // The reply is already on screen. Saving the basket is a network round trip, so it must not hold the answer back.
       setBusy(false);
-      if (basketProducts.length || removeIds.size) {
-        try { await syncAgentCart(basketProducts.map((product) => product.id), [...removeIds]); }
+      const basketAdditions: Array<{ productId: string; quantity: number }> =
+        result.basketItems && result.basketItems.length > 0
+          ? result.basketItems
+          : basketProducts.map((product) => ({ productId: product.id, quantity: 1 }));
+
+      if (basketAdditions.length || removeIds.size) {
+        try { await syncAgentCart(basketAdditions, [...removeIds]); }
         catch (error) { toast.error(errorMessage(error, "Your basket could not be saved. Please try again")); }
       }
     } catch (error) {
       const timedOut = error instanceof DOMException && error.name === "AbortError";
-      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.") }]);
+      const errMsg = timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.");
+      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: errMsg, isError: true, retryText: text }]);
     } finally {
       if (abortRef.current !== null) { window.clearTimeout(abortRef.current); abortRef.current = null; }
       setBusy(false);
@@ -10036,9 +10423,9 @@ function SheAgent({ page = false, open, setOpen, session, state, setState, navig
   if (!open) return null;
   const scopeCopy = session.role === "customer" ? "Uses only your profile, nearby catalogue, basket, schedules and orders." : session.role === "vendor" ? "Uses only your vendor catalogue, staff and orders." : "Uses authorised platform operational data.";
   return <div className={page ? "k-agent-page" : "fixed inset-0 z-70 sm:pointer-events-none"}>{!page && <button onClick={() => setOpen(false)} className="absolute inset-0 bg-[#202827]/35 backdrop-blur-[2px] sm:hidden" aria-label="Close She Agent" />}<section className="sp-agent-panel pointer-events-auto absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/60 bg-[#EEF2F2] shadow-[0_-20px_80px_rgba(25, 19, 21,.22)] sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(790px,calc(100vh-36px))] sm:w-120 sm:rounded-4xl sm:shadow-[0_24px_90px_rgba(25, 19, 21,.28)]">
-    <div className="relative overflow-hidden bg-[#155F65] px-5 pb-5 pt-5 text-white"><div className="absolute -right-12 -top-16 size-44 rounded-full bg-[#155F65]/30 blur-3xl" /><div className="absolute -bottom-20 left-12 size-40 rounded-full bg-[#b42332]/20 blur-3xl" /><div className="relative flex items-center gap-3"><div className="sp-agent-orb sp-agent-orb-large relative grid size-12 place-items-center rounded-[18px] text-white"><Activity className="size-5" /><span className="sp-agent-orb-status absolute -right-1 -top-1 size-3 rounded-full" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="text-lg font-black">She Agent</h2><span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-white/70">Commerce assistant</span></div><p className="mt-0.5 truncate text-xs text-white/55">{session.role === "customer" ? "Your local shopping copilot" : `${roleName[session.role]} copilot`}</p></div><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10 transition hover:bg-white/15" aria-label="Close"><X className="size-4" /></button></div>{session.role === "customer" && <div className="relative mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs"><ShoppingCart className="size-4 text-[#155F65]" /><span className="font-bold">Review basket</span><span className="text-white/45">{cartItems.length} item{cartItems.length === 1 ? "" : "s"}</span><span className="ml-auto font-black">{money(cartTotal)}</span>{cartItems.length > 0 && <button onClick={() => { navigate("Cart"); setOpen(false); }} className="rounded-lg bg-white px-2.5 py-1.5 font-black text-[#202827]">View</button>}</div>}</div>
+    <div className="relative overflow-hidden bg-[#155F65] px-5 pb-5 pt-5 text-white"><div className="absolute -right-12 -top-16 size-44 rounded-full bg-[#155F65]/30 blur-3xl" /><div className="absolute -bottom-20 left-12 size-40 rounded-full bg-[#b42332]/20 blur-3xl" /><div className="relative flex items-center gap-3"><div className="sp-agent-orb sp-agent-orb-large relative grid size-12 place-items-center rounded-[18px] text-white"><Activity className="size-5" /><span className="sp-agent-orb-status absolute -right-1 -top-1 size-3 rounded-full" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="text-lg font-black">She Agent</h2><span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-white/70">Commerce assistant</span></div><p className="mt-0.5 truncate text-xs text-white/55">{session.role === "customer" ? "Your local shopping copilot" : `${roleName[session.role]} copilot`}</p></div><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10 transition hover:bg-white/15" aria-label="Close"><X className="size-4" /></button></div>{session.role === "customer" && <div className="relative mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs"><ShoppingCart className="size-4 text-[#155F65]" /><span className="font-bold">Review basket</span><span className="text-white/45">{cartItems.length} item{cartItems.length === 1 ? "" : "s"}</span><span className="ml-auto font-black">{money(cartTotal)}</span>{cartItems.length > 0 && <button onClick={() => { navigate("Cart"); if (!page) setOpen(false); }} className="rounded-lg bg-white px-2.5 py-1.5 font-black text-[#202827]">View</button>}</div>}</div>
     <div className="border-b border-stone-200/70 bg-white/80 px-5 py-3 text-[11px] font-semibold leading-5 text-stone-500 backdrop-blur"><ShieldCheck className="mr-1.5 inline size-3.5 text-[#155F65]" />{scopeCopy} Sensitive payments, refunds and approvals remain human-confirmed.</div>
-    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">{messages.length === 1 && session.role === "customer" && <div className="mb-5 grid grid-cols-2 gap-2">{[["Nearby now", "What products are available near me?"], ["Plan for me", "Plan something useful for me today"], ["Food preferences", "Show options that fit my preferences"], ["Track order", "Where is my next order?"]].map(([label, prompt]) => <button key={label} onClick={() => void send(prompt)} className="surface-card rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#155F65]/40 hover:shadow-md"><Sparkles className="size-4 text-[#155F65]" /><div className="mt-2 text-xs font-black">{label}</div><div className="mt-1 text-[10px] leading-4 text-stone-400">{prompt}</div></button>)}</div>}<div className="space-y-4">{messages.map((item, index) => <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] ${item.role === "user" ? "rounded-[22px_22px_8px_22px] bg-[#155F65] text-white shadow-[0_16px_36px_rgba(22, 17, 18,.18)]" : "rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 text-stone-700 shadow-[0_16px_40px_rgba(35,26,21,.08)]"} px-4 py-3 text-sm leading-6`}><div>{item.text}</div>{item.productIds?.length ? <div className="mt-3 space-y-2">{item.productIds.map((productId) => { const product = state.products.find((p) => p.id === productId); const vendor = product ? state.vendors.find((v) => v.id === product.vendorId) : undefined; if (!product) return null; const inCart = state.cart.some((x) => x.customerEmail === session.email && x.productId === product.id); return <div key={product.id} className="surface-card-muted rounded-[22px] p-3"><div className="flex items-center gap-3"><div className="grid size-12 shrink-0 place-items-center rounded-2xl shadow-sm ring-1 ring-stone-100" style={{ background: categoryVisual(product.category).bg }}><ProductGlyph category={product.category} /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{product.name}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{vendor?.businessName || "Verified vendor"} · {product.baseUnit}</div><div className="mt-1 flex items-center gap-2"><span className="text-sm font-black text-[#202827]">{money(finalPrice(product, state))}</span><span className="text-[10px] font-bold text-[#155F65]">{product.protein}g protein</span></div></div><button onClick={() => void addProduct(product.id)} className={`grid min-w-14 place-items-center rounded-xl px-2.5 py-2 text-[11px] font-black ${inCart ? "bg-[#EAF4F2] text-white" : "bg-[#155F65] text-white"}`}>{inCart ? "Add +" : "+ Add"}</button></div></div>; })}{item.basketTotal !== undefined && <div className="flex items-center justify-between gap-2 pt-1"><span className="text-[11px] font-bold text-stone-400">Suggested total {money(item.basketTotal)}</span><button onClick={() => void addSuggestedBasket(item.productIds || [])} className="rounded-xl bg-[#155F65] px-3 py-2 text-[11px] font-black text-white">Add suggested basket</button></div>}</div> : null}</div></div>)}{busy && !messages.some((m) => m.streaming) && <div className="flex justify-start"><div className="inline-flex items-center gap-2 rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 px-4 py-3 text-sm text-stone-500 shadow-[0_14px_36px_rgba(35,26,21,.08)]"><span className="flex gap-1"><span className="size-1.5 animate-bounce rounded-full bg-[#155F65]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:120ms]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:240ms]" /></span>Working on the best options…</div></div>}<div ref={bottom} /></div></div>
+    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">{messages.length === 1 && session.role === "customer" && <div className="mb-5 grid grid-cols-2 gap-2">{[["Nearby now", "What products are available near me?"], ["Plan for me", "Plan something useful for me today"], ["Food preferences", "Show options that fit my preferences"], ["Track order", "Where is my next order?"]].map(([label, prompt]) => <button key={label} onClick={() => void send(prompt)} className="surface-card rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#155F65]/40 hover:shadow-md"><Sparkles className="size-4 text-[#155F65]" /><div className="mt-2 text-xs font-black">{label}</div><div className="mt-1 text-[10px] leading-4 text-stone-400">{prompt}</div></button>)}</div>}<div className="space-y-4">{messages.map((item, index) => <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] ${item.role === "user" ? "rounded-[22px_22px_8px_22px] bg-[#155F65] text-white shadow-[0_16px_36px_rgba(22, 17, 18,.18)]" : "rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 text-stone-700 shadow-[0_16px_40px_rgba(35,26,21,.08)]"} px-4 py-3 text-sm leading-6`}><div>{item.text}</div>{item.productIds?.length ? <div className="mt-3 space-y-2">{item.productIds.map((productId) => { const product = state.products.find((p) => p.id === productId); const vendor = product ? state.vendors.find((v) => v.id === product.vendorId) : undefined; if (!product) return null; const inCart = state.cart.some((x) => x.customerEmail === session.email && x.productId === product.id); const isOutOfStock = product.stock <= 0; return <div key={product.id} className="surface-card-muted rounded-[22px] p-3"><div className="flex items-center gap-3"><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-sm ring-1 ring-stone-100" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{product.name}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{vendor?.businessName || "Verified kitchen"} · <span className="font-semibold text-stone-700">{product.baseUnit}</span></div><div className="mt-1 flex items-center gap-2"><span className="text-sm font-black text-[#202827]">{money(finalPrice(product, state))}</span><span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold ${!isOutOfStock ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{!isOutOfStock ? (product.stock <= 5 ? `Only ${product.stock} left` : "In stock") : "Out of stock"}</span></div></div><button type="button" disabled={isOutOfStock} onClick={() => void addProduct(product.id)} className={`grid min-w-16 place-items-center rounded-xl px-2.5 py-2 text-[11px] font-black ${isOutOfStock ? "cursor-not-allowed bg-stone-200 text-stone-400" : inCart ? "bg-[#0F4A4F] text-white" : "bg-[#155F65] text-white transition hover:bg-[#0F4A4F]"}`}>{isOutOfStock ? "Sold out" : inCart ? "Add +" : "+ Add"}</button></div></div>; })}{item.basketTotal !== undefined && <div className="flex items-center justify-between gap-2 pt-1"><span className="text-[11px] font-bold text-stone-400">Suggested total {money(item.basketTotal)}</span><button onClick={() => void addSuggestedBasket(item.productIds || [])} className="rounded-xl bg-[#155F65] px-3 py-2 text-[11px] font-black text-white">Add suggested basket</button></div>}</div> : null}{item.selectableOrders?.length ? <div className="mt-3 space-y-2"><div className="text-[11px] font-bold text-stone-500">Other active orders:</div>{item.selectableOrders.map((ord) => <button type="button" onClick={() => void send(`Track order #${ord.orderNumber}`)} key={ord.id} className="surface-card-muted flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]"><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{ord.productNames.join(", ") || ord.orderNumber}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{ord.vendorName} · {ord.date}{ord.slot ? ` · ${ord.slot}` : ""}</div><div className="mt-1 text-xs font-bold text-[#155F65]">{ord.status}</div></div><div className="text-right"><div className="text-xs font-black text-[#202827]">{money(ord.total)}</div><span className="mt-1 inline-block rounded-lg bg-[#155F65] px-2 py-1 text-[10px] font-bold text-white">Track</span></div></button>)}</div> : null}{(item.text.includes("View cart") || item.text.includes("கூடையைப் பார்க்கவும்") || item.intent === "view_basket" || item.intent === "add_to_basket") && <div className="mt-2.5"><button type="button" onClick={() => { navigate("Cart"); if (!page) setOpen(false); }} className="inline-flex items-center gap-1.5 rounded-xl bg-[#155F65] px-3 py-1.5 text-xs font-black text-white shadow-xs transition hover:bg-[#0F4A4F]"><ShoppingCart className="size-3.5" />View cart</button></div>}{item.isError && item.retryText && <div className="mt-2.5"><button type="button" onClick={() => void send(item.retryText)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"><Sparkles className="size-3.5" />Try again</button></div>}</div></div>)}{kitchenConflict && <div className="surface-card rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 shadow-sm"><div className="flex items-center gap-1.5 font-black text-amber-900"><ShieldCheck className="size-4 text-amber-600" />One kitchen per order</div><p className="mt-1 leading-5">Your cart currently has items from <b>{kitchenConflict.currentVendorName}</b>. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { const currName = kitchenConflict.currentVendorName; setKitchenConflict(null); setMessages((curr) => [...curr, { role: "agent", text: `Kept your current basket from ${currName}.` }]); }} className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 font-bold text-amber-900 shadow-2xs hover:bg-amber-100">Keep current cart</button><button type="button" onClick={async () => { const { conflictingProductId, requestedQuantity, requestedVendorName } = kitchenConflict; setKitchenConflict(null); await startNewCartWithProduct(conflictingProductId, requestedQuantity, requestedVendorName); }} className="rounded-xl bg-[#155F65] px-3 py-1.5 font-black text-white shadow-2xs hover:bg-[#0F4A4F]">Start new cart with {kitchenConflict.requestedVendorName}</button></div></div>}{busy && !messages.some((m) => m.streaming) && <div className="flex justify-start"><div className="inline-flex items-center gap-2 rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 px-4 py-3 text-sm text-stone-500 shadow-[0_14px_36px_rgba(35,26,21,.08)]"><span className="flex gap-1"><span className="size-1.5 animate-bounce rounded-full bg-[#155F65]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:120ms]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:240ms]" /></span>Working on the best options…</div></div>}<div ref={bottom} /></div></div>
     <div className="border-t border-stone-200/80 bg-white/96 p-3.5 backdrop-blur sm:p-4"><input ref={fileInputRef} type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handlePhotoSelected(file); e.target.value = ""; }} />{awaitingPhoto && <div className="mb-3 flex gap-2"><Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1 rounded-xl border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"><ImageUp />Attach photo for {awaitingPhoto.orderId}</Button><Button type="button" variant="ghost" onClick={() => setAwaitingPhoto(null)} className="rounded-xl">Cancel</Button></div>}<div className="mb-3 flex gap-2 overflow-x-auto pb-1">{agentPrompts(session.role).map((prompt) => <button key={prompt} onClick={() => void send(prompt)} disabled={busy} className="whitespace-nowrap rounded-full border border-stone-200 bg-[#EEF2F2] px-3 py-2 text-[11px] font-bold text-stone-600 transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]">{prompt}</button>)}</div><div className="flex items-end gap-2 rounded-[20px] border border-stone-200 bg-[#EEF2F2] p-2 focus-within:border-[#155F65]/50 focus-within:ring-4 focus-within:ring-[#155F65]/10"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder={session.role === "customer" ? "Ask naturally about food, products, orders or your plans…" : "Ask She Agent…"} className="min-h-10 max-h-28 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0" /><Button onClick={() => void send()} disabled={busy || !message.trim()} className="size-10 shrink-0 rounded-xl bg-[#155F65] p-0 hover:bg-[#0F4A4F]" aria-label="Send"><Send className="size-4" /></Button></div><p className="mt-2 px-1 text-[10px] leading-4 text-stone-400">She Agent can prepare and modify a proposal. You confirm checkout, payment and sensitive actions.</p></div>
   </section></div>;
 }
@@ -10053,6 +10440,7 @@ function scopedContext(session: DemoSession, state: V3State) {
     requirements: state.requirements.filter((x) => x.customerEmail === session.email),
     quotations: state.quotes.filter((quote) => state.requirements.some((requirement) => requirement.id === quote.requirementId && requirement.customerEmail === session.email)),
     availableProducts: state.products.filter((product) => state.vendors.some((vendor) => vendor.id === product.vendorId && vendor.verification === "Verified" && vendor.openToday)),
+    vendors: state.vendors.filter((vendor) => vendor.verification === "Verified" && vendor.openToday),
   };
   if (session.role === "vendor") {
     const vendor = vendorFor(state, session);

@@ -221,7 +221,7 @@ SHEPLATES_ADMIN_NAME=Super Admin
 
 See `supabase/SETUP.md` for environment variables and the RLS test matrix.
 
-## OpenAI and She Agent
+## She Agent AI Integration
 
 `app/api/agent/route.ts` uses the URUV-compatible chat-completions API when an AI key is configured. In live Supabase mode, the endpoint validates the caller's bearer token, derives the role from `profiles`, and queries data through the caller's RLS session. It does not trust a role supplied by browser code. Without an AI key it returns deterministic, testable recommendations.
 
@@ -271,7 +271,7 @@ Money in this build is a **simulated capture**: "Pay now" does not call a real p
 
 ## v4.6.0 — Agentic Marketplace
 
-The v4.6 release moves the customer experience to a sidebar-free marketplace, adds top-bar Cart / Quotations / Notifications, dismissible OpenAI-grounded recommendations, advanced nutrition / budget / planning-period filters, controlled customer preference memory, vendor AI insights, AI-assisted product-image presentation, and Super Admin homepage / campaign controls.
+The v4.6 release moves the customer experience to a sidebar-free marketplace, adds top-bar Cart / Quotations / Notifications, dismissible AI-grounded recommendations, advanced nutrition / budget / planning-period filters, controlled customer preference memory, vendor AI insights, AI-assisted product-image presentation, and Super Admin homepage / campaign controls.
 
 **Database upgrade required:** run `supabase/V4_6_AGENTIC_COMMERCE.sql` once after the prior migrations. See `FINAL_V4_6_AGENTIC_MARKETPLACE_RELEASE_NOTES.md` for the full setup and guardrails.
 

@@ -877,33 +877,47 @@ export async function POST(request: Request) {
 
 
     if (action === "update_order_status") {
-      if (!(["vendor", "operations", "admin"] as Role[]).includes(profile.role)) return NextResponse.json({ error: "Not authorised." }, { status: 403 });
       const orderId = String(body.orderId || "");
-      // Cancellation is disabled for new order-status updates. Keep historical
-      // cancellation records untouched, but reject cancellation statuses (and
-      // any unrecognized status) at the API boundary.
-     const statusMap: Record<string, string> = {
-  Scheduled: "awarded",
-  Confirmed: "confirmed",
-  Preparing: "preparing",
-  Ready: "ready",
-  "Out for delivery": "out_for_delivery",
-  "Ready for pickup": "ready_for_pickup",
-  Completed: "completed",
-  Delivered: "delivered",
-};
+      const statusMap: Record<string, string> = {
+        Scheduled: "awarded",
+        Confirmed: "confirmed",
+        Preparing: "preparing",
+        Ready: "ready",
+        "Out for delivery": "out_for_delivery",
+        "Ready for pickup": "ready_for_pickup",
+        Completed: "completed",
+        Delivered: "delivered",
+        Cancelled: "cancelled",
+      };
       const requestedStatus = String(body.status || "").trim();
       const nextStatus = statusMap[requestedStatus] || requestedStatus.toLowerCase().replace(/[ -]+/g, "_");
-    const allowedStatuses = new Set([
-  "awarded",
-  "confirmed",
-  "preparing",
-  "ready",
-  "out_for_delivery",
-  "ready_for_pickup",
-  "completed",
-  "delivered",
-]);
+
+      if (nextStatus === "cancelled") {
+        const { data: order } = await admin.from("orders").select("id,vendor_id,customer_id,order_number,fulfilment_mode,scheduled_date,status,payments(id,status,provider)").eq("id", orderId).maybeSingle();
+        if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+        if (profile.role === "customer" && order.customer_id !== profile.id) {
+          return NextResponse.json({ error: "Not authorised." }, { status: 403 });
+        }
+        if (profile.role === "vendor" && order.vendor_id !== profile.vendor_id) {
+          return NextResponse.json({ error: "This order belongs to another store." }, { status: 403 });
+        }
+        await admin.from("orders").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", orderId);
+        await admin.from("payments").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("order_id", orderId).eq("status", "pending");
+        await admin.from("communication_outbox").update({ status: "cancelled" }).eq("recipient_id", order.customer_id).eq("template_key", "payment_reminder").contains("payload", { orderId: order.id }).eq("status", "queued");
+        return NextResponse.json({ ok: true, snapshot: await commerceSnapshot(ctx) });
+      }
+
+      if (!(["vendor", "operations", "admin"] as Role[]).includes(profile.role)) return NextResponse.json({ error: "Not authorised." }, { status: 403 });
+      const allowedStatuses = new Set([
+        "awarded",
+        "confirmed",
+        "preparing",
+        "ready",
+        "out_for_delivery",
+        "ready_for_pickup",
+        "completed",
+        "delivered",
+      ]);
       if (!allowedStatuses.has(nextStatus)) {
         return NextResponse.json({ error: "Cancellation and unsupported order statuses are disabled." }, { status: 400 });
       }

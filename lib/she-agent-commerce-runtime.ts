@@ -2,22 +2,40 @@ type Role = "customer" | "vendor" | "operations" | "admin";
 
 type AgentHistoryItem = { role: "user" | "agent"; text: string; productIds?: string[] };
 
+export type BasketItem = {
+  productId: string;
+  quantity: number;
+};
+
+export type KitchenConflict = {
+  currentVendorName: string;
+  requestedVendorName: string;
+  conflictingProductId: string;
+  requestedQuantity: number;
+};
+
+import type { SelectableOrder } from "@/lib/ai-conversation-server";
+
 export type CommerceResult = {
   reply: string;
   intent: "browse" | "recommend" | "add_to_basket" | "remove_from_basket" | "view_basket" | "track" | "navigate" | "support" | "quality_issue" | "clarify" | "answer" | "other";
   budget: number;
   selectedProductIds: string[];
   basketProductIds: string[];
+  basketItems?: BasketItem[];
   removeProductIds: string[];
   navigateTo: "" | "Marketplace" | "Cart" | "My schedule" | "Monthly requirement" | "My quotations" | "Orders" | "Profile & food" | "Ticket centre";
   clarifyingQuestion: string;
   requiresPhoto: boolean;
   targetOrderId: string;
+  selectableOrders?: SelectableOrder[];
   createTicket: boolean;
   ticketSubject: string;
   ticketCategory: "Order" | "Payment" | "Vendor" | "Delivery" | "Other";
   ticketPriority: "Low" | "Normal" | "High" | "Urgent";
   memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
+  conversationId?: string;
+  kitchenConflict?: KitchenConflict;
 };
 
 type UruvChoiceMessage = {
@@ -61,16 +79,21 @@ type ToolDefinition =
     };
 
 function normalizeTool(tool: ToolDefinition) {
-  if ("function" in tool && tool.function) return { type: "function", function: tool.function };
-  const flat = tool as { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict?: true };
-  return {
-    type: "function",
-    function: {
+  let fn: { name: string; description: string; parameters: Record<string, unknown>; strict?: boolean };
+  if ("function" in tool && tool.function) {
+    fn = { ...tool.function };
+  } else {
+    const flat = tool as { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict?: boolean };
+    fn = {
       name: flat.name,
       description: flat.description,
       parameters: flat.parameters,
       strict: flat.strict,
-    },
+    };
+  }
+  return {
+    type: "function" as const,
+    function: fn,
   };
 }
 
@@ -297,12 +320,15 @@ function executeTool(role: Role, context: Record<string, unknown>, name: string,
       return { orders: orders.slice(0, limit) };
     }
     if (name === "get_order_status") {
-      const ref = text(args.order_reference).toLowerCase(); const orders = asObjects(context.orders);
-      const today = new Date().toISOString().slice(0, 10);
-      const nextOrder = [...orders].filter((row) => text(row.scheduled_date) >= today && !["cancelled", "completed"].includes(text(row.status).toLowerCase())).sort((a, b) => text(a.scheduled_date).localeCompare(text(b.scheduled_date)))[0];
-      const latestOrder = [...orders].sort((a, b) => text(b.created_at).localeCompare(text(a.created_at)))[0];
-      const order = orders.find((row) => text(row.id).toLowerCase() === ref || text(row.order_number).toLowerCase() === ref) || (ref === "next" ? nextOrder : undefined) || (["latest", "last", "recent"].includes(ref) ? latestOrder : undefined);
-      return order ? { order } : { error: "No matching order exists in this customer account." };
+      const ref = text(args.order_reference).toLowerCase();
+      const orders = asObjects(context.orders);
+      const activeOrders = orders.filter((row) => !["cancelled", "completed", "delivered", "expired", "failed"].includes(text(row.status).toLowerCase()));
+      const latestOrder = [...orders].sort((a, b) => text(b.created_at || b.date).localeCompare(text(a.created_at || a.date)))[0];
+      const latestActive = [...activeOrders].sort((a, b) => text(b.created_at || b.date).localeCompare(text(a.created_at || a.date)))[0];
+      const order = orders.find((row) => text(row.id).toLowerCase() === ref || text(row.order_number).toLowerCase() === ref || text(row.orderNumber).toLowerCase() === ref) ||
+        (ref === "next" || ref === "active" ? (latestActive || latestOrder) : undefined) ||
+        (["latest", "last", "recent"].includes(ref) ? (latestActive || latestOrder) : undefined);
+      return order ? { order, otherActiveOrders: activeOrders.filter((o) => o !== order) } : { error: "No matching order exists in this customer account." };
     }
     if (name === "get_schedules") return { schedules: context.schedules || [] };
     if (name === "get_quotations") return { requirements: context.requirements || [], quotations: context.quotations || [] };
@@ -402,15 +428,9 @@ function finalSchema(role: Role) {
   return { type: "object", additionalProperties: false, properties, required };
 }
 
-const apiBase = (apiKey?: string) => {
+const apiBase = (_apiKey?: string) => {
   if (process.env.AI_API_BASE) return process.env.AI_API_BASE.replace(/\/$/, "");
   if (process.env.URUV_API_BASE) return process.env.URUV_API_BASE.replace(/\/$/, "");
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || (apiKey && apiKey.startsWith("AIza")) || (process.env.AI_API_KEY && process.env.AI_API_KEY.startsWith("AIza"))) {
-    return "https://generativelanguage.googleapis.com/v1beta/openai";
-  }
-  if (process.env.OPENAI_API_KEY && !process.env.URUV_API_KEY) {
-    return "https://api.openai.com/v1";
-  }
   return "https://api.uruv.ai/v1";
 };
 
@@ -585,7 +605,7 @@ async function callResponses(apiKey: string, payload: Record<string, unknown>, o
 
 function instructionsForRole(role: Role) {
   const shared = `You are She Agent, Sheplates' natural agentic-commerce assistant. Understand normal human language semantically; never require command phrases. You achieve commerce outcomes by using the available business tools whenever current Sheplates facts are needed. Never invent a product, price, vendor, availability, nutrition value, order, schedule, quotation, payment state or business fact. Do not answer a current-data question from memory when a relevant business tool can verify it. Keep responses concise, natural and useful. Do not mention internal implementation, databases, APIs, model providers, tool protocols or developer configuration. Consequential actions remain human-confirmed.`;
-  if (role === "customer") return `${shared} You are scoped to this signed-in customer only. For product discovery, use search_catalogue. For a multi-item recommendation, normally search first and then validate the proposed basket with build_cart. Use get_current_cart before answering basket/cart questions. When the customer naturally asks you to add, order, buy, keep, put, or remove products, use the catalogue/cart tools as needed and return the exact live product IDs in basketProductIds/removeProductIds; basketProductIds means the app should persist those items into the customer's saved cart, and navigateTo should normally be Cart when the customer wants to review or checkout. Do not claim that something was added unless the IDs are returned for the app to persist. Use get_customer_context for personalization when useful, not as a substitute for live catalogue search. Use get_order_history for previous/recent purchases and get_order_status for a specific/next/latest order; never invent past food names. Use get_schedules and get_quotations for those questions. If the user says 'near me', 'available', 'low calorie', 'under a budget', 'healthy', 'something for me', or any equivalent natural wording, infer the constraints and call the appropriate tools rather than asking the user to reformulate. Never treat missing nutrition as zero calories or zero protein; nutrition_available=false means nutrition is pending and must not be ranked as a low-calorie or high-protein choice. Use exact item IDs returned by tools in selectedProductIds/basketProductIds. Never reveal another customer's data. memoryUpdates may contain only stable, non-sensitive shopping preferences that the customer explicitly states or repeatedly confirms.`;
+  if (role === "customer") return `${shared} You are scoped to this signed-in customer only. Support English and Tamil naturally (e.g. பால், முட்டை, கூடையில் சேர், ஆர்டர் செய்). For product discovery, use search_catalogue to return verified, active and open vendor products within service radius. If the customer request is unclear (e.g. 'Add an item'), ask which product they would like and offer suggestions in selectedProductIds. If multiple products match (e.g. 'Add eggs'), return the matching candidates in selectedProductIds and ask the customer to choose. When adding products with specific quantities (e.g. 'Add 3 packs of A2 milk'), validate stock availability and return the requested quantity. Understand the one-kitchen-per-order rule: if current cart already has items from Kitchen A and the customer requests Kitchen B, explain the restriction and offer to keep current cart or start a new cart, never replacing without confirmation. For out-of-stock or not-found items, explain unavailability clearly and suggest alternatives. For 'Place my order' or checkout, validate the cart and set navigateTo to Cart. For a multi-item recommendation, normally search first and then validate the proposed basket with build_cart. Use get_current_cart before answering basket/cart questions. When the customer naturally asks you to add, order, buy, keep, put, or remove products, use the catalogue/cart tools as needed and return the exact live product IDs in basketProductIds/removeProductIds; basketProductIds means the app should persist those items into the customer's saved cart, and navigateTo should normally be Cart when the customer wants to review or checkout. Do not claim that something was added unless the IDs are returned for the app to persist. Use get_customer_context for personalization when useful, not as a substitute for live catalogue search. Use get_order_history for previous/recent purchases and get_order_status for a specific/next/latest order; never invent past food names. Use get_schedules and get_quotations for those questions. If the user says 'near me', 'available', 'low calorie', 'under a budget', 'healthy', 'something for me', or any equivalent natural wording, infer the constraints and call the appropriate tools rather than asking the user to reformulate. Never treat missing nutrition as zero calories or zero protein; nutrition_available=false means nutrition is pending and must not be ranked as a low-calorie or high-protein choice. Use exact item IDs returned by tools in selectedProductIds/basketProductIds. Never reveal another customer's data. memoryUpdates may contain only stable, non-sensitive shopping preferences that the customer explicitly states or repeatedly confirms.`;
   if (role === "vendor") return `${shared} You are scoped to this signed-in vendor only. Use vendor tools to answer about this store, its catalogue, stock, own orders, RFQs, staff and payouts. Never reveal another vendor's private records.`;
   if (role === "operations") return `${shared} You are scoped to authorised operational records. You may analyse cross-platform operational data through Operations tools, but do not claim Super Admin governance access.`;
   return `${shared} You are scoped to authorised Super Admin records. You may use operational and governance tools to analyse the platform, while leaving consequential actions for explicit human confirmation.`;
@@ -602,22 +622,26 @@ export async function runToolDrivenCommerceAgent(args: {
   /** Called with the reply text so far while the model is still writing it. */
   onReply?: (replySoFar: string) => void;
 }) {
-  const tools = toolsForRole(args.role);
+  const rawTools = toolsForRole(args.role);
+  const tools = rawTools.map((t) => normalizeTool(t));
   const instructions = instructionsForRole(args.role);
   const recent = args.history.slice(-12).map((item) => ({ role: item.role === "agent" ? "assistant" : "user", content: item.text, shown_product_ids: item.productIds || [] }));
   const schema = finalSchema(args.role);
   const onText = args.onReply ? (textSoFar: string) => { const reply = extractPartialReply(textSoFar); if (reply) args.onReply?.(reply); } : undefined;
-  const initialPayload = (model: string) => ({
-    model,
-    messages: [
-      { role: "system", content: instructions },
-      { role: "user", content: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}` },
-    ],
-    tools,
-    tool_choice: "auto",
-    parallel_tool_calls: true,
-    response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
-  });
+  const initialPayload = (model: string) => {
+    const payload: Record<string, unknown> = {
+      model,
+      messages: [
+        { role: "system", content: instructions },
+        { role: "user", content: `Recent conversation: ${JSON.stringify(recent)}\nCurrent user message: ${args.message}` },
+      ],
+      tools,
+      tool_choice: "auto",
+      parallel_tool_calls: true,
+      response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
+    };
+    return payload;
+  };
   let activeModel = args.model || process.env.AI_MODEL || process.env.URUV_MODEL || "uruv-chat";
   let response: UruvChatResponse;
   try {
@@ -636,7 +660,7 @@ export async function runToolDrivenCommerceAgent(args: {
     if (!calls.length) break;
     const toolContext = await args.context;
     const outputs = calls.map((call) => ({ call_id: call.callId, output: JSON.stringify(executeTool(args.role, toolContext, call.name, call.args)) }));
-    response = await callResponses(args.apiKey, {
+    const roundPayload: Record<string, unknown> = {
       model: activeModel,
       messages: [
         { role: "system", content: instructions },
@@ -648,7 +672,8 @@ export async function runToolDrivenCommerceAgent(args: {
       tool_choice: "auto",
       parallel_tool_calls: true,
       response_format: { type: "json_schema", json_schema: { name: "sheplates_commerce_result", strict: true, schema } },
-    }, onText);
+    };
+    response = await callResponses(args.apiKey, roundPayload, onText);
   }
 
   const refusal = extractRefusal(response);
