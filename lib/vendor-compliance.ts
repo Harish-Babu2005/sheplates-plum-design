@@ -77,20 +77,20 @@ export async function isPdfBlankOrEmpty(data: ArrayBuffer | Uint8Array | Buffer)
       let hasFont = false;
       let hasXObject = false;
       if (resources) {
-        const font = resources.lookup(PDFName.of("Font")) as any;
+        const font = resources.lookup(PDFName.of("Font")) as unknown as { size?: () => number } | undefined;
         if (font && typeof font.size === "function" && font.size() > 0) hasFont = true;
-        const xObject = resources.lookup(PDFName.of("XObject")) as any;
+        const xObject = resources.lookup(PDFName.of("XObject")) as unknown as { size?: () => number } | undefined;
         if (xObject && typeof xObject.size === "function" && xObject.size() > 0) hasXObject = true;
       }
 
-      const contentsRef = node.Contents() as any;
+      const contentsRef = node.Contents() as unknown as { sizeInBytes?: () => number; asArray?: () => unknown[] } | undefined;
       let hasMeaningfulStream = false;
       if (contentsRef) {
         if (typeof contentsRef.sizeInBytes === "function" && contentsRef.sizeInBytes() > 100) {
           hasMeaningfulStream = true;
         } else if (contentsRef && typeof contentsRef.asArray === "function") {
           for (const ref of contentsRef.asArray()) {
-            const stream = pdfDoc.context.lookup(ref) as any;
+            const stream = pdfDoc.context.lookup(ref as unknown as Parameters<typeof pdfDoc.context.lookup>[0]) as unknown as { sizeInBytes?: () => number } | undefined;
             if (stream && typeof stream.sizeInBytes === "function" && stream.sizeInBytes() > 100) {
               hasMeaningfulStream = true;
               break;

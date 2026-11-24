@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Wordmark } from "@/components/brand";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { createPortal } from "react-dom";
 import type * as React from "react";
@@ -4597,7 +4597,7 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
 /** Re-renders once a second purely to keep a countdown string fresh — the
  * source of truth (starts_at/ends_at) always comes from the server, this
  * never derives or trusts a client-computed deadline. */
-function CreateFoodDropDialog({ open, close, vendor, products, state, setState }: { open: boolean; close: () => void; vendor: Vendor; products: Product[]; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+const CreateFoodDropDialog = memo(function CreateFoodDropDialog({ open, close, vendor, products, state, setState }: { open: boolean; close: () => void; vendor: Vendor; products: Product[]; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const [productId, setProductId] = useState("");
   const [title, setTitle] = useState("");
   const [dropPrice, setDropPrice] = useState(0);
@@ -4606,6 +4606,7 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
   const [busy, setBusy] = useState(false);
   const product = products.find((p) => p.id === productId);
   const originalPrice = product ? finalPrice(product, state) : 0;
+  const productOptions = useMemo(() => products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>), [products]);
   function dismiss() {
     setProductId("");
     setTitle("");
@@ -4673,7 +4674,7 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
 
   return <Dialog open={open} onOpenChange={(v) => !v && dismiss()}><DialogContent className="rounded-[26px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-lg font-black">New Food Drop</DialogTitle><DialogDescription>Prepare a discounted quantity of one of your products in advance. Customers can claim it only on the day you create it, from 12:00 PM to 6:00 PM IST.. Stock is enforced by the database, even under simultaneous requests.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Product"><Select value={productId} onValueChange={handleProductSelect}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Product"><Select value={productId} onValueChange={handleProductSelect}><SelectTrigger className="h-11 w-full rounded-xl"><SelectValue placeholder="Choose a product" /></SelectTrigger><SelectContent>{productOptions}</SelectContent></Select></Field>
       <Field label="Drop title"><input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={`Drop price${originalPrice ? ` (was ${money(originalPrice)})` : ""}`}><input type="number" min="1" value={dropPrice || ""} onChange={(e) => setDropPrice(Number(e.target.value))} className={inputClass} /></Field>
@@ -4698,9 +4699,9 @@ function CreateFoodDropDialog({ open, close, vendor, products, state, setState }
       <Button onClick={() => void submit()} disabled={busy || !products.length} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Zap />{busy ? "Publishing…" : "Schedule drop"}</Button>
     </div>
   </DialogContent></Dialog>;
-}
+});
 
-function EditFoodDropDialog({
+const EditFoodDropDialog = memo(function EditFoodDropDialog({
   open,
   close,
   drop,
@@ -4807,7 +4808,7 @@ function EditFoodDropDialog({
       </DialogContent>
     </Dialog>
   );
-}
+});
 
 function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const loadedRef = useRef(false);
@@ -4817,7 +4818,7 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
   const drops = state.foodDrops.filter((d) => d.vendorId === vendor.id).sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const dropIds = drops.map((d) => d.id);
   const claims = state.foodDropClaims.filter((c) => dropIds.includes(c.dropId));
-  const products = state.products.filter((p) => p.vendorId === vendor.id && p.active);
+  const products = useMemo(() => state.products.filter((p) => p.vendorId === vendor.id && p.active), [state.products, vendor.id]);
 
   useEffect(() => {
     if (loadedRef.current) return;

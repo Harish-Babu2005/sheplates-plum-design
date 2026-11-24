@@ -1097,7 +1097,7 @@ export async function POST(request: Request) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        let insRes = await admin.from("vendor_documents").insert(insertPayload);
+        const insRes = await admin.from("vendor_documents").insert(insertPayload);
         if (insRes.error && /file_name/i.test(insRes.error.message)) {
           delete insertPayload.file_name;
           await admin.from("vendor_documents").insert(insertPayload);
@@ -1113,7 +1113,7 @@ export async function POST(request: Request) {
         if (docFileName) updatePayload.file_name = docFileName;
         if (isResubmit) updatePayload.verification_status = "submitted";
 
-        let updRes = await admin.from("vendor_documents").update(updatePayload).eq("id", existing.id);
+        const updRes = await admin.from("vendor_documents").update(updatePayload).eq("id", existing.id);
         if (updRes.error && /file_name/i.test(updRes.error.message)) {
           delete updatePayload.file_name;
           await admin.from("vendor_documents").update(updatePayload).eq("id", existing.id);
@@ -1131,7 +1131,7 @@ export async function POST(request: Request) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        let insRes = await admin.from("vendor_documents").insert(insertPayload);
+        const insRes = await admin.from("vendor_documents").insert(insertPayload);
         if (insRes.error && /file_name/i.test(insRes.error.message)) {
           delete insertPayload.file_name;
           await admin.from("vendor_documents").insert(insertPayload);
@@ -1149,7 +1149,7 @@ export async function POST(request: Request) {
         vendorUpdate.operational_status = "inactive";
         vendorUpdate.marketplace_visible = false;
       }
-      let vUpdateRes = await admin.from("vendors").update(vendorUpdate).eq("id", profile.vendor_id);
+      const vUpdateRes = await admin.from("vendors").update(vendorUpdate).eq("id", profile.vendor_id);
       if (vUpdateRes.error && /fssai_number|expiry_date/i.test(vUpdateRes.error.message)) {
         delete vendorUpdate.fssai_number;
         delete vendorUpdate.expiry_date;

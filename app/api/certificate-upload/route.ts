@@ -100,7 +100,7 @@ export async function POST(request: Request) {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    let docRes = await admin.from("vendor_documents").insert(newDoc);
+    const docRes = await admin.from("vendor_documents").insert(newDoc);
     if (docRes.error && /file_name|file_size|mime_type/i.test(docRes.error.message)) {
       delete newDoc.file_name;
       delete newDoc.file_size;
