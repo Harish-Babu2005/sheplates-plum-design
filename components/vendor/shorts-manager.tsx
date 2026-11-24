@@ -30,6 +30,10 @@ export function VendorShortsManager({ vendor, products, shorts }: { vendor: Mana
 
   async function choose(next: File | undefined) {
     if (!next) return;
+    if (next.size <= 0) {
+      setError(`"${next.name}" is empty (0 bytes). Please choose a valid video file.`);
+      return;
+    }
     setError(""); setInfo(null); setFile(null); setChecking(true);
     try {
       const inspected = await inspectVideo(next);

@@ -132,11 +132,24 @@ export async function POST(request: Request) {
     // Optional list of additional compliance documents
     const rawDocuments = Array.isArray(body.documents) ? (body.documents as Array<Record<string, unknown>>) : [];
 
-    // Enforce PDF-only validation for all submitted documents
+    // Enforce PDF-only validation and non-empty documents for all submitted documents
     for (const doc of rawDocuments) {
       const fileName = String(doc.fileName || "").toLowerCase();
       const storagePath = String(doc.storagePath || "").toLowerCase();
       const mimeType = String(doc.mimeType || "").toLowerCase();
+
+      if (typeof doc.fileSize === "number" && doc.fileSize <= 0) {
+        return NextResponse.json(
+          { error: `Document "${doc.fileName || doc.documentType}" is empty (0 bytes). Please upload a valid document in PDF format.` },
+          { status: 400 }
+        );
+      }
+      if (fileName === "blank.pdf" || fileName === "empty.pdf" || /^blank[._-]/i.test(fileName) || /^empty[._-]/i.test(fileName)) {
+        return NextResponse.json(
+          { error: `Document "${doc.fileName || doc.documentType}" is empty (0 bytes). Please upload a valid document in PDF format.` },
+          { status: 400 }
+        );
+      }
 
       const isPdf =
         mimeType === "application/pdf" ||

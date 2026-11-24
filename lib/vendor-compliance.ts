@@ -62,11 +62,79 @@ export function isPdfFile(file: Pick<File, "name" | "type">): boolean {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
 
+/** Check if a PDF buffer has no pages or no printable content (empty/blank). */
+export async function isPdfBlankOrEmpty(data: ArrayBuffer | Uint8Array | Buffer): Promise<boolean> {
+  try {
+    const { PDFDocument, PDFName } = await import("pdf-lib");
+    const pdfDoc = await PDFDocument.load(data);
+    const pages = pdfDoc.getPages();
+    if (!pages || pages.length === 0) return true;
+
+    let hasAnyContent = false;
+    for (const page of pages) {
+      const node = page.node;
+      const resources = node.Resources();
+      let hasFont = false;
+      let hasXObject = false;
+      if (resources) {
+        const font = resources.lookup(PDFName.of("Font")) as any;
+        if (font && typeof font.size === "function" && font.size() > 0) hasFont = true;
+        const xObject = resources.lookup(PDFName.of("XObject")) as any;
+        if (xObject && typeof xObject.size === "function" && xObject.size() > 0) hasXObject = true;
+      }
+
+      const contentsRef = node.Contents() as any;
+      let hasMeaningfulStream = false;
+      if (contentsRef) {
+        if (typeof contentsRef.sizeInBytes === "function" && contentsRef.sizeInBytes() > 100) {
+          hasMeaningfulStream = true;
+        } else if (contentsRef && typeof contentsRef.asArray === "function") {
+          for (const ref of contentsRef.asArray()) {
+            const stream = pdfDoc.context.lookup(ref) as any;
+            if (stream && typeof stream.sizeInBytes === "function" && stream.sizeInBytes() > 100) {
+              hasMeaningfulStream = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (hasFont || hasXObject || hasMeaningfulStream) {
+        hasAnyContent = true;
+        break;
+      }
+    }
+    return !hasAnyContent;
+  } catch {
+    return true;
+  }
+}
+
 /** The message to show when a file cannot be used, or null when it is fine. */
 export function pdfProblem(file: Pick<File, "name" | "type" | "size">, label: string): string | null {
   if (file.size <= 0) return `"${file.name}" is empty (0 bytes). Please upload a valid ${label} in PDF format.`;
+  const baseName = file.name.toLowerCase();
+  if (baseName === "blank.pdf" || baseName === "empty.pdf" || /^blank[._-]/i.test(file.name) || /^empty[._-]/i.test(file.name)) {
+    return `"${file.name}" is empty (0 bytes). Please upload a valid ${label} in PDF format.`;
+  }
   if (!isPdfFile(file)) return `"${file.name}" is not a PDF. ${label} must be in PDF format (.pdf) only.`;
   if (file.size > MAX_COMPLIANCE_PDF_BYTES) return `"${file.name}" is larger than 15 MB.`;
+  return null;
+}
+
+/** Async validation that inspects file metadata and PDF contents for emptiness/blankness. */
+export async function validatePdfDocument(file: File, label: string): Promise<string | null> {
+  const syncProb = pdfProblem(file, label);
+  if (syncProb) return syncProb;
+  try {
+    const buf = await file.arrayBuffer();
+    const blank = await isPdfBlankOrEmpty(buf);
+    if (blank) {
+      return `"${file.name}" is empty (0 bytes). Please upload a valid ${label} in PDF format.`;
+    }
+  } catch {
+    return `"${file.name}" could not be read. Please upload a valid ${label} in PDF format.`;
+  }
   return null;
 }
 

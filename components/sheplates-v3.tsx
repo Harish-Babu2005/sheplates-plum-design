@@ -1576,73 +1576,73 @@ export function SheplatesV3() {
   }, [active, hydrated, navEmail, navRole]);
   useEffect(() => { if (!hydrated) return; if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session)); else localStorage.removeItem(SESSION_KEY); }, [session, hydrated]);
   useEffect(() => { if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined); }, []);
-  
-useEffect(() => {
-  if (!session) return;
 
-  const newest = state.notifications.find(
-    (item) =>
-      notificationBelongsToSession(item, session) && !item.read
-  );
+  useEffect(() => {
+    if (!session) return;
 
-  if (!newest) return;
+    const newest = state.notifications.find(
+      (item) =>
+        notificationBelongsToSession(item, session) && !item.read
+    );
 
-  // Keep a separate notification history for each account and role.
-  const storageKey = `sheplates-v3-alerted-notifications:${session.role}:${session.email.toLowerCase()}`;
+    if (!newest) return;
 
-  let alertedIds: string[] = [];
+    // Keep a separate notification history for each account and role.
+    const storageKey = `sheplates-v3-alerted-notifications:${session.role}:${session.email.toLowerCase()}`;
 
-  try {
-    const saved = localStorage.getItem(storageKey);
-    const parsed = saved ? JSON.parse(saved) : [];
+    let alertedIds: string[] = [];
 
-    if (Array.isArray(parsed)) {
-      alertedIds = parsed.filter(
-        (item): item is string => typeof item === "string"
-      );
+    try {
+      const saved = localStorage.getItem(storageKey);
+      const parsed = saved ? JSON.parse(saved) : [];
+
+      if (Array.isArray(parsed)) {
+        alertedIds = parsed.filter(
+          (item): item is string => typeof item === "string"
+        );
+      }
+    } catch {
+      alertedIds = [];
     }
-  } catch {
-    alertedIds = [];
-  }
 
-  // Do not show an already displayed notification again.
-  if (
-    alertedIds.includes(newest.id) ||
-    newest.id === lastAlertedNotification.current
-  ) {
-    return;
-  }
+    // Do not show an already displayed notification again.
+    if (
+      alertedIds.includes(newest.id) ||
+      newest.id === lastAlertedNotification.current
+    ) {
+      return;
+    }
 
-  // Save immediately so refreshing cannot trigger it again.
-  lastAlertedNotification.current = newest.id;
-  alertedIds.push(newest.id);
+    // Save immediately so refreshing cannot trigger it again.
+    lastAlertedNotification.current = newest.id;
+    alertedIds.push(newest.id);
 
-  try {
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify(alertedIds.slice(-200))
-    );
-  } catch {
-    // Continue without persistent storage if unavailable.
-  }
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(alertedIds.slice(-200))
+      );
+    } catch {
+      // Continue without persistent storage if unavailable.
+    }
 
-  const important =
-    /order|payment|delivery|verification|quote|schedule/i.test(
-      `${newest.title} ${newest.body}`
-    );
+    const important =
+      /order|payment|delivery|verification|quote|schedule/i.test(
+        `${newest.title} ${newest.body}`
+      );
 
-  if (!important) return;
+    if (!important) return;
 
-  playNotificationSound();
+    playNotificationSound();
 
-  toast(newest.title, {
-    description: newest.body,
-    duration: 7000,
-  });
+    toast(newest.title, {
+      description: newest.body,
+      duration: 7000,
+    });
 
-  showDeviceNotification(newest.title, newest.body);
+    showDeviceNotification(newest.title, newest.body);
 
-}, [state.notifications, session]);
+  }, [state.notifications, session]);
 
   useEffect(() => {
     if (!session || !isLiveSupabaseMode()) return;
@@ -2042,7 +2042,7 @@ useEffect(() => {
   function renderCustomerPage() {
     const area = { latitude: customer?.latitude, longitude: customer?.longitude, address: customer?.address };
     if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session!} state={state} setState={setState} people={people} onNavigate={setActive} />;
-    if (active === "She Agent") return <div className="mx-auto max-w-4xl space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
+    if (active === "She Agent") return <div className="mx-auto w-full max-w-5xl space-y-4"><div><h1 className="text-[28px] font-bold leading-tight">She Agent</h1><p className="mt-1 text-sm text-[#55656A]">Your food assistant. It never pays for you: you confirm every order.</p></div><SheAgent page open setOpen={() => setActive("Marketplace")} session={session!} state={state} setState={setState} navigate={setActive} /></div>;
     if (active === "Maps") return <MapsTab key={mapsStart ?? "maps"} initialTab={mapsStart} state={state} profile={area} social={social} shorts={shorts} people={people} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} onOpenShorts={openShorts} locationConfirmed={hasPin} onOpenVendor={handleOpenVendor} onConfirmLocation={() => setActive("Marketplace")} />;
     if (active === "Food Drops") return <FoodDropsTab state={state} profile={area} social={social} onClaim={claimDrop} onRefresh={() => void refreshDrops()} />;
     if (active === "Stories") return <StoriesTab state={state} social={social} shorts={shorts} people={people} statuses={statuses} peopleRadius={peopleRadius} onPeopleRadius={setPeopleRadius} shortsRadius={shortsRadius} onShortsRadius={setShortsRadius} onOpenShorts={openShorts} hasPin={hasPin} onSetLocation={() => setActive("Marketplace")} userName={session!.name} onOpenVendor={handleOpenVendor} />;
@@ -2454,12 +2454,12 @@ function CustomerOnboarding({ session, onSave, onLogout, onSwitchToVendor }: { s
           body: JSON.stringify({ preferredRole: "vendor" }),
         });
       }
-    } catch {}
+    } catch { }
     onSwitchToVendor?.();
   }} className="text-xs font-bold text-[#155F65] underline hover:text-black">Registering as a vendor? Switch to vendor onboarding →</button><button onClick={onLogout} className="text-sm font-bold text-stone-500">Sign out</button></div></div><div className="mx-auto mt-5 grid max-w-5xl overflow-hidden rounded-[30px] surface-card sm:mt-8 sm:rounded-[36px] lg:grid-cols-[.82fr_1.18fr]"><div className="sp-onboarding-side surface-dark p-8 text-white sm:p-10"><div className="grid size-12 place-items-center rounded-2xl bg-[#155F65]"><HeartPulse /></div><h1 className="mt-8 text-xl font-black tracking-[-.02em]">Help She Agent understand your home.</h1><p className="mt-4 leading-7 text-white/60">Your address finds serviceable vendors. Your food preferences help personalize products and calorie guidance. You remain in control of every purchase.</p><div className="mt-8 space-y-3 text-sm">{["Location & household", "Diet, allergies & goals", "Review your private profile"].map((item, index) => <div key={item} className={`flex items-center gap-3 rounded-xl p-3 ${step === index + 1 ? "bg-white/10 text-white" : "text-white/45"}`}><span className={`grid size-7 place-items-center rounded-full ${step > index + 1 ? "bg-[#155F65]" : "border border-white/25"}`}>{step > index + 1 ? <Check className="size-4" /> : index + 1}</span>{item}</div>)}</div></div><div className="p-7 sm:p-10"><p className="text-xs font-black uppercase tracking-[.16em] text-[#b42332]">Customer setup · {step}/3</p>{step === 1 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Where should we serve you?</h2><p className="text-sm text-stone-500">Use GPS or enter an address and choose a suggestion, then drag the map pin to your exact delivery point. Confirmed coordinates are required to continue.</p><Field label="Delivery address"><Textarea value={address} onChange={(e) => { ++pinLookup.current; setAddress(e.target.value); setCoords({}); }} placeholder="Flat, street, landmark, area, city and PIN" /></Field><LocationSuggestions query={address} onSelect={(place) => { ++pinLookup.current; setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} /><div className="flex flex-wrap gap-2"><Button onClick={detect} disabled={locating} variant="outline" className="h-11 rounded-xl"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Finding current address…" : "Use my current location"}</Button><Button onClick={locateAddress} disabled={mapBusy} variant="outline" className="h-11 rounded-xl"><Search className={mapBusy ? "animate-pulse" : ""} />{mapBusy ? "Finding…" : "Find typed address"}</Button></div><MapPreview lat={coords.lat} lng={coords.lng} radius={2} label="Delivery location" onPinChange={movePin} /><Field label="Household size"><input ref={householdRef} id="customer-household-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field></div>}
-  {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Household size"><input ref={householdStep2Ref} id="customer-household-step2-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
-  {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#EEF2F2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
-  <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Check />Save profile</Button>}</div></div></div></div>;
+    {step === 2 && <div className="mt-5 space-y-5"><h2 className="text-lg font-black">Food preferences</h2><Field label="Diet"><Select value={diet} onValueChange={setDiet}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{STANDARD_DIETS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></Field><ChoiceGroup label="Allergies" options={STANDARD_ALLERGIES as unknown as string[]} value={allergies} setValue={setAllergies} /><ChoiceGroup label="Health goals" options={STANDARD_GOALS as unknown as string[]} value={goals} setValue={setGoals} /><Field label="Household size"><input ref={householdStep2Ref} id="customer-household-step2-input" type="number" min="1" max="20" step="1" value={household} onChange={(e) => { const val = e.target.value; const num = Number(val); setHousehold(num); const prob = householdProblem(val === "" ? "" : num); setHouseholdError(prob || ""); }} className={inputClass} />{householdError && <p role="alert" data-testid="field-error" className="mt-1 text-xs font-semibold text-[#b42332]">{householdError}</p>}</Field><Field label="Dislikes or instructions"><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} className={inputClass} placeholder="Example: no coriander, mild spice" /></Field></div>}
+    {step === 3 && <div className="mt-5"><h2 className="text-lg font-black">Review your food profile</h2><div className="mt-5 space-y-3 rounded-2xl bg-[#EEF2F2] p-5 text-sm"><Review label="Address" value={address} /><Review label="Household" value={`${household} people`} /><Review label="Diet" value={diet} /><Review label="Allergies" value={allergies.join(", ") || "None selected"} /><Review label="Goals" value={goals.join(", ") || "None selected"} /></div><div className="mt-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-4"><div><h3 className="text-sm font-black">Customer account privacy</h3><p className="mt-1 text-xs leading-5 text-stone-500">Choose whether other customers can follow you directly or need your approval first.</p></div><div className="grid gap-2 sm:grid-cols-2"><button type="button" aria-pressed={!privateAccount} onClick={() => setPrivateAccount(false)} className={`rounded-xl border p-3 text-left ${!privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Public</b><span className="mt-1 block text-xs text-stone-500">Customers can follow you directly.</span></button><button type="button" aria-pressed={privateAccount} onClick={() => setPrivateAccount(true)} className={`rounded-xl border p-3 text-left ${privateAccount ? "border-[#155F65] bg-[#EAF4F2]" : "border-stone-200"}`}><b className="block text-sm">Private</b><span className="mt-1 block text-xs text-stone-500">Approve follow requests before they follow you.</span></button></div></div><div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><b>Important:</b> calorie and nutrition values are estimates, not medical advice. Verify labels and allergens with the vendor.</div></div>}
+    <div className="mt-8 flex justify-between"><Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)} className="rounded-xl"><ArrowLeft />Back</Button>{step < 3 ? <Button onClick={continueSetup} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]">Continue<ArrowRight /></Button> : <Button onClick={finish} className="rounded-xl bg-[#155F65] hover:bg-[#0F4A4F]"><Check />Save profile</Button>}</div></div></div></div>;
 }
 
 function ChoiceGroup({ label, options, value, setValue }: { label: string; options: string[]; value: string[]; setValue: (next: string[]) => void }) { return <div><div className="mb-2 text-xs font-black uppercase tracking-widest text-stone-500">{label}</div><div className="flex flex-wrap gap-2">{options.map((option) => <button type="button" key={option} onClick={() => setValue(value.includes(option) ? value.filter((x) => x !== option) : [...value, option])} className={`rounded-full border px-3 py-2 text-sm font-bold ${value.includes(option) ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]" : "bg-white text-stone-500"}`}>{option}</button>)}</div></div>; }
@@ -4449,8 +4449,8 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                     key={option}
                     onClick={() => toggleAllergy(option)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selected
-                        ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]"
-                        : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                      ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]"
+                      : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
                       }`}
                   >
                     {selected ? "✓ " : "+ "}{option}
@@ -4478,8 +4478,8 @@ function CustomerProfileV4({ session, state, setState }: { session: DemoSession;
                     key={option}
                     onClick={() => toggleGoal(option)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selected
-                        ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]"
-                        : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
+                      ? "border-[#155F65] bg-[#EAF4F2] text-[#202827]"
+                      : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
                       }`}
                   >
                     {selected ? "✓ " : "+ "}{option}
@@ -5262,12 +5262,12 @@ function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
               <div className="relative z-10 flex flex-col items-center text-center">
                 <div
                   className={`grid size-7 sm:size-8 place-items-center rounded-full text-xs font-bold transition-all ${isCancelled
-                      ? "bg-rose-500 text-white ring-4 ring-rose-100"
-                      : isCompleted
-                        ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
-                        : isCurrent
-                          ? "bg-[#155F65] text-white ring-4 ring-stone-200 animate-pulse"
-                          : "bg-stone-200 text-stone-500"
+                    ? "bg-rose-500 text-white ring-4 ring-rose-100"
+                    : isCompleted
+                      ? "bg-emerald-600 text-white ring-4 ring-emerald-50"
+                      : isCurrent
+                        ? "bg-[#155F65] text-white ring-4 ring-stone-200 animate-pulse"
+                        : "bg-stone-200 text-stone-500"
                     }`}
                 >
                   {isCancelled ? (
@@ -5283,12 +5283,12 @@ function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
                 <div className="mt-1.5 max-w-[70px] sm:max-w-[100px]">
                   <p
                     className={`text-[11px] sm:text-xs font-bold leading-tight ${isCancelled
-                        ? "text-rose-600"
-                        : isCurrent
-                          ? "text-stone-900"
-                          : isCompleted
-                            ? "text-emerald-800"
-                            : "text-stone-400"
+                      ? "text-rose-600"
+                      : isCurrent
+                        ? "text-stone-900"
+                        : isCompleted
+                          ? "text-emerald-800"
+                          : "text-stone-400"
                       }`}
                   >
                     {step.label}
@@ -6848,3648 +6848,3648 @@ function DeliverySlotsSection({
       const conflicting = slots.find(
         (s) => s.id !== slot.id && s.isActive && slotsOverlap(slot.startTime, slot.endTime, s.startTime, s.endTime)
       );
-      if (conflicting) {
-        toast.error(`Cannot activate: overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`);
+        if (conflicting) {
+          toast.error(`Cannot activate: overlaps with active slot "${conflicting.slotName}" (${formatTime12(conflicting.startTime)} - ${formatTime12(conflicting.endTime)}).`);
+          return;
+        }
+      }
+
+    setActionId(slot.id);
+      if (isLiveSupabaseMode()) {
+        try {
+          const res = await toggleLiveDeliverySlot(slot.id, nextActive);
+          if (res.snapshot) {
+            setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+          } else {
+            setState((curr) => ({
+              ...curr,
+              deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
+            }));
+          }
+          toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
+        } catch (err) {
+          toast.error(errorMessage(err, "Failed to update slot status."));
+        } finally {
+          setActionId(null);
+        }
         return;
       }
+
+      // Demo mode
+      setState((curr) => ({
+        ...curr,
+        deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
+      }));
+      toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
+      setActionId(null);
     }
 
-    setActionId(slot.id);
-    if (isLiveSupabaseMode()) {
-      try {
-        const res = await toggleLiveDeliverySlot(slot.id, nextActive);
-        if (res.snapshot) {
-          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
-        } else {
-          setState((curr) => ({
-            ...curr,
-            deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
-          }));
+    async function handleDelete(slot: VendorDeliverySlot) {
+      if (!confirm(`Delete delivery slot "${slot.slotName}" (${formatTime12(slot.startTime)} - ${formatTime12(slot.endTime)})?`)) return;
+      setActionId(slot.id);
+      if (isLiveSupabaseMode()) {
+        try {
+          const res = await deleteLiveDeliverySlot(slot.id);
+          if (res.snapshot) {
+            setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
+          } else {
+            setState((curr) => ({
+              ...curr,
+              deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
+            }));
+          }
+          toast.success("Delivery slot deleted.");
+        } catch (err) {
+          toast.error(errorMessage(err, "Failed to delete slot."));
+        } finally {
+          setActionId(null);
         }
-        toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
-      } catch (err) {
-        toast.error(errorMessage(err, "Failed to update slot status."));
-      } finally {
-        setActionId(null);
+        return;
       }
-      return;
+
+      // Demo mode
+      setState((curr) => ({
+        ...curr,
+        deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
+      }));
+      toast.success("Delivery slot deleted.");
+      setActionId(null);
     }
 
-    // Demo mode
-    setState((curr) => ({
-      ...curr,
-      deliverySlots: (curr.deliverySlots || []).map((s) => (s.id === slot.id ? { ...s, isActive: nextActive } : s)),
-    }));
-    toast.success(nextActive ? `"${slot.slotName}" is now active.` : `"${slot.slotName}" deactivated.`);
-    setActionId(null);
-  }
-
-  async function handleDelete(slot: VendorDeliverySlot) {
-    if (!confirm(`Delete delivery slot "${slot.slotName}" (${formatTime12(slot.startTime)} - ${formatTime12(slot.endTime)})?`)) return;
-    setActionId(slot.id);
-    if (isLiveSupabaseMode()) {
-      try {
-        const res = await deleteLiveDeliverySlot(slot.id);
-        if (res.snapshot) {
-          setState((curr) => mergeLiveCommerce(curr, res.snapshot as LiveCommerceStateSnapshot, session));
-        } else {
-          setState((curr) => ({
-            ...curr,
-            deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
-          }));
-        }
-        toast.success("Delivery slot deleted.");
-      } catch (err) {
-        toast.error(errorMessage(err, "Failed to delete slot."));
-      } finally {
-        setActionId(null);
-      }
-      return;
-    }
-
-    // Demo mode
-    setState((curr) => ({
-      ...curr,
-      deliverySlots: (curr.deliverySlots || []).filter((s) => s.id !== slot.id),
-    }));
-    toast.success("Delivery slot deleted.");
-    setActionId(null);
-  }
-
-  return (
-    <div className="mt-6 border-t border-stone-200/80 pt-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h3 className="text-base font-black text-stone-900">Delivery Slots</h3>
-          <p className="text-xs text-stone-500">Configure the time windows when your store can deliver orders.</p>
+    return (
+      <div className="mt-6 border-t border-stone-200/80 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-base font-black text-stone-900">Delivery Slots</h3>
+            <p className="text-xs text-stone-500">Configure the time windows when your store can deliver orders.</p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleOpenAdd}
+            className="rounded-xl bg-[#155F65] text-white hover:bg-stone-800 font-bold"
+          >
+            <Plus className="size-4 mr-1.5" />
+            Add Delivery Slot
+          </Button>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleOpenAdd}
-          className="rounded-xl bg-[#155F65] text-white hover:bg-stone-800 font-bold"
-        >
-          <Plus className="size-4 mr-1.5" />
-          Add Delivery Slot
-        </Button>
-      </div>
 
-      {slots.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/60 p-6 text-center">
-          <Clock3 className="size-6 text-stone-400 mx-auto" />
-          <div className="mt-2 text-xs font-bold text-stone-700">No delivery slots configured</div>
-          <p className="text-xs text-stone-500 mt-0.5">Add delivery time slots so customers can schedule their orders.</p>
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          {slots.map((slot) => (
-            <div
-              key={slot.id}
-              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${slot.isActive ? "border-stone-200/90 bg-white shadow-xs" : "border-stone-200/60 bg-stone-50/70 opacity-75"
-                }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className={`grid size-9 shrink-0 place-items-center rounded-xl ${slot.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"
-                    }`}
-                >
-                  <Clock3 className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-stone-900 text-sm truncate">{slot.slotName}</span>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${slot.isActive
+        {slots.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/60 p-6 text-center">
+            <Clock3 className="size-6 text-stone-400 mx-auto" />
+            <div className="mt-2 text-xs font-bold text-stone-700">No delivery slots configured</div>
+            <p className="text-xs text-stone-500 mt-0.5">Add delivery time slots so customers can schedule their orders.</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {slots.map((slot) => (
+              <div
+                key={slot.id}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${slot.isActive ? "border-stone-200/90 bg-white shadow-xs" : "border-stone-200/60 bg-stone-50/70 opacity-75"
+                  }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`grid size-9 shrink-0 place-items-center rounded-xl ${slot.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"
+                      }`}
+                  >
+                    <Clock3 className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-stone-900 text-sm truncate">{slot.slotName}</span>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${slot.isActive
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : "bg-stone-100 text-stone-500 border border-stone-200"
-                        }`}
-                    >
-                      {slot.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                  <div className="text-xs text-stone-500 font-medium mt-0.5">
-                    {formatTime12(slot.startTime)} – {formatTime12(slot.endTime)}
+                          }`}
+                      >
+                        {slot.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                    <div className="text-xs text-stone-500 font-medium mt-0.5">
+                      {formatTime12(slot.startTime)} – {formatTime12(slot.endTime)}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                <button
-                  type="button"
-                  onClick={() => void handleToggle(slot)}
-                  disabled={actionId === slot.id}
-                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition ${slot.isActive
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => void handleToggle(slot)}
+                    disabled={actionId === slot.id}
+                    className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition ${slot.isActive
                       ? "bg-emerald-100/70 text-emerald-800 hover:bg-emerald-200"
                       : "bg-stone-200 text-stone-700 hover:bg-stone-300"
-                    }`}
-                >
-                  {slot.isActive ? "Active" : "Disabled"}
-                </button>
-                <button
+                      }`}
+                  >
+                    {slot.isActive ? "Active" : "Disabled"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEdit(slot)}
+                    className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
+                    title="Edit slot"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(slot)}
+                    disabled={actionId === slot.id}
+                    className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                    title="Delete slot"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add / Edit Dialog */}
+        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+          <DialogContent className="rounded-[26px] sm:max-w-md p-6">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black text-stone-900">
+                {editingSlot ? "Edit Delivery Slot" : "Add Delivery Slot"}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-stone-500">
+                Set the time window when your kitchen can deliver orders.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-2">
+              {formError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 font-semibold">
+                  {formError}
+                </div>
+              )}
+
+              <Field label="Slot Name" hint="e.g. Morning, Afternoon, Evening">
+                <input
+                  type="text"
+                  maxLength={80}
+                  value={slotName}
+                  onChange={(e) => {
+                    setSlotName(e.target.value);
+                    setFormError("");
+                  }}
+                  placeholder="e.g. Morning"
+                  className={inputClass}
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Start Time">
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => {
+                      setStartTime(e.target.value);
+                      setFormError("");
+                    }}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="End Time">
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => {
+                      setEndTime(e.target.value);
+                      setFormError("");
+                    }}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <div>
+                  <div className="text-xs font-bold text-stone-800">Active status</div>
+                  <div className="text-[11px] text-stone-500">Enable this slot for customer checkout</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                  className="size-4 accent-[#155F65] rounded"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
                   type="button"
-                  onClick={() => handleOpenEdit(slot)}
-                  className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
-                  title="Edit slot"
+                  variant="outline"
+                  onClick={() => setModalOpen(false)}
+                  className="rounded-xl"
                 >
-                  <Pencil className="size-3.5" />
-                </button>
-                <button
+                  Cancel
+                </Button>
+                <Button
                   type="button"
-                  onClick={() => void handleDelete(slot)}
-                  disabled={actionId === slot.id}
-                  className="grid size-8 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
-                  title="Delete slot"
+                  disabled={saving}
+                  onClick={() => void handleSave()}
+                  className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#0F4A4F]"
                 >
-                  <Trash2 className="size-3.5" />
-                </button>
+                  {saving ? "Saving…" : editingSlot ? "Save Changes" : "Add Slot"}
+                </Button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
 
-      {/* Add / Edit Dialog */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="rounded-[26px] sm:max-w-md p-6">
+  function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+    const [radius, setRadius] = useState(vendor.radiusKm), [address, setAddress] = useState(vendor.address), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({ lat: vendor.latitude, lng: vendor.longitude }), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
+    async function update(patch: Partial<Vendor>, message: string) { try { if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { ...(patch.openToday !== undefined ? { store_open_today: patch.openToday } : {}), ...(patch.operational ? { operational_status: patch.operational.toLowerCase() } : {}), ...(patch.delivery !== undefined ? { delivery_enabled: patch.delivery } : {}), ...(patch.pickup !== undefined ? { pickup_enabled: patch.pickup } : {}), ...(patch.openToday === true && vendor.verification === "Verified" ? { marketplace_visible: true } : {}) }); setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, ...patch } : x), audit: [audit(session, message, vendor.businessName), ...s.audit] })); toast.success(message); } catch (error) { toast.error(errorMessage(error, "Store control could not be saved")); } }
+    function detectStore() {
+      if (!navigator.geolocation) return toast.error("Location detection is not supported in this browser.");
+      if (!window.isSecureContext) return toast.error("Location requires HTTPS or localhost. Open the app on a secure page and try again.");
+      setLocating(true);
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const point = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setCoords(point);
+        setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`);
+        try {
+          const place = await findLocation(point);
+          setAddress(place.address);
+          setCoords({ lat: place.latitude, lng: place.longitude });
+          toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`);
+        } catch (error) {
+          toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still shown.` : "The exact GPS pin is shown.");
+        } finally {
+          setLocating(false);
+        }
+      }, (error) => {
+        setLocating(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          toast.error("Location permission is blocked. In Chrome, open the site settings from the icon beside the address, set Location to Allow, then retry. You can also search the store address.");
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          toast.error("Your device could not determine its location. Turn on Windows Location services and retry, or search the store address.");
+        } else if (error.code === error.TIMEOUT) {
+          toast.error("Location detection timed out. Retry near a window or search the store address.");
+        } else {
+          toast.error(error.message || "Location could not be detected. Search the store address instead.");
+        }
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    }
+    async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first."); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
+    async function saveStorePin() { if (!address.trim()) return toast.error("Enter the complete store address first."); if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving."); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
+    return <div className="space-y-6">
+      <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
+      <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
+        <div className="surface-card min-w-0 max-w-full overflow-hidden space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
+          <Field label="Full store address"><Textarea value={address} onChange={(event) => setAddress(event.target.value)} className="min-h-24 rounded-xl" /></Field>
+          <LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} />
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={detectStore} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use actual store GPS"}</Button>
+            <Button onClick={findStore} disabled={mapBusy} variant="outline" className="rounded-xl"><Search />{mapBusy ? "Searching…" : "Find typed address"}</Button>
+          </div>
+          <div className="min-w-0" data-testid="store-map"><MapPreview lat={coords.lat} lng={coords.lng} radius={radius} label="Exact store pin" onPinChange={(point) => setCoords({ lat: point.lat, lng: point.lng })} /></div>
+          <Field label={`Supply radius · ${radius} km`} hint="This is measured from the exact store pin shown on the map."><Slider value={[radius]} min={1} max={30} step={1} onValueChange={(v) => setRadius(v[0])} /></Field>
+          <Button onClick={saveStorePin} className="w-full rounded-xl bg-[#155F65]"><Check />Save store pin & radius</Button>
+        </div>
+        <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6">
+          <div data-tour="store-open"><ToggleCard icon={Store} title={vendor.openToday ? "Open today" : "Closed today"} body={vendor.verification === "Verified" ? "Customers inside your saved radius can see active in-stock items while open." : "Verification is still required before customers can see items."} checked={vendor.openToday} setChecked={(value) => update({ openToday: value, operational: value && vendor.verification === "Verified" ? "Active" : value ? "Inactive" : "Paused" }, value ? "Store opened for today" : "Store closed for today")} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <ToggleCard icon={Truck} title="Delivery" body="Your own team" checked={vendor.delivery} setChecked={(v) => update({ delivery: v }, "Delivery mode updated")} />
+            <ToggleCard icon={ShoppingBag} title="Pickup" body="At your store" checked={vendor.pickup} setChecked={(v) => update({ pickup: v }, "Pickup mode updated")} />
+          </div>
+          <DeliverySlotsSection vendor={vendor} state={state} setState={setState} session={session} />
+        </div>
+      </div>
+    </div>;
+  }
+  const THREE_VENDOR_PLANS = [
+    {
+      name: "Crave" as const,
+      price: 699,
+      description: "Pre-orders, subscriptions, delivery fleet management, Food Stories and daily Food Drops (up to 2/day).",
+      features: [
+        "Pre-orders & scheduled subscriptions",
+        "Delivery fleet & staff assignment",
+        "Customer Food Stories & storefront",
+        "Daily Food Drops (up to 2 per day)",
+      ],
+    },
+    {
+      name: "Thrive" as const,
+      price: 799,
+      popular: true,
+      description: "Everything in Crave, plus up to 5 daily Food Drops for surplus promotions.",
+      features: [
+        "Everything in Crave plan",
+        "Daily Food Drops (up to 5 per day)",
+        "Surplus deals badge & live countdown",
+      ],
+    },
+    {
+      name: "Crown" as const,
+      price: 999,
+      description: "Everything in Thrive, plus up to 15 daily Food Drops, Request for Quote (RFQ) with AI assistance and demand alerts.",
+      features: [
+        "Everything in Thrive plan (15 Food Drops/day)",
+        "Request for Quote (RFQ) opportunities",
+        "AI quotation assistant & demand alerts",
+      ],
+    },
+  ];
+  const vendorPlanRank: Record<string, number> = { Taster: 0, Crave: 1, Thrive: 2, Crown: 3 };
+
+
+  export function EditVendorProfileDialog({
+    open,
+    onClose,
+    vendor,
+    setState,
+    session,
+  }: {
+    open: boolean;
+    onClose: () => void;
+    vendor: Vendor;
+    setState: React.Dispatch<React.SetStateAction<V3State>>;
+    session: DemoSession;
+  }) {
+    const [businessName, setBusinessName] = useState(vendor.businessName);
+    const [category, setCategory] = useState(vendor.category);
+    const [customCategory, setCustomCategory] = useState("");
+    const [ownerName, setOwnerName] = useState(vendor.ownerName || "");
+    const [ownerRole, setOwnerRole] = useState(vendor.ownerRole || "Proprietor");
+    const [phone, setPhone] = useState(vendor.phone || "");
+    const [bio, setBio] = useState(vendor.bio || "");
+    const [address, setAddress] = useState(vendor.address || "");
+    const [radiusKm, setRadiusKm] = useState(vendor.radiusKm || 5);
+    const [logoUrl, setLogoUrl] = useState(vendor.logoUrl || "");
+    const [bannerUrl, setBannerUrl] = useState(vendor.bannerUrl || "");
+    const [busy, setBusy] = useState(false);
+
+    function handleImagePick(kind: "logoUrl" | "bannerUrl", file?: File) {
+      if (!file) return;
+      const maxW = kind === "logoUrl" ? 256 : 960;
+      const maxH = kind === "logoUrl" ? 256 : 360;
+      readImage(file, (dataUrl) => {
+        if (kind === "logoUrl") setLogoUrl(dataUrl);
+        else setBannerUrl(dataUrl);
+      }, maxW, maxH, 0.85);
+    }
+
+    async function handleSave() {
+      if (!businessName.trim()) return toast.error("Enter your business name");
+      if (!ownerName.trim()) return toast.error("Enter the representative / owner name");
+      const effectiveCategory = category === "Other" ? customCategory.trim() : category;
+      if (!effectiveCategory) return toast.error("Enter your business category");
+
+      setBusy(true);
+      try {
+        let finalLogo = logoUrl;
+        let finalBanner = bannerUrl;
+
+        if (isLiveSupabaseMode()) {
+          if (logoUrl.startsWith("data:")) {
+            finalLogo = await uploadLiveVendorImage(vendor.id, logoUrl);
+          }
+          if (bannerUrl.startsWith("data:")) {
+            finalBanner = await uploadLiveVendorImage(vendor.id, bannerUrl);
+          }
+          await saveLiveVendorProfile({
+            vendorId: vendor.id,
+            businessName: businessName.trim(),
+            category: effectiveCategory,
+            ownerName: ownerName.trim(),
+            ownerRole,
+            phone: phone.trim(),
+            bio: bio.trim(),
+            address: address.trim(),
+            logoUrl: finalLogo || undefined,
+            bannerUrl: finalBanner || undefined,
+          });
+          await saveLiveVendorBranding({
+            vendorId: vendor.id,
+            logoUrl: finalLogo,
+            bannerUrl: finalBanner,
+            bio: bio.trim(),
+          });
+          if (vendor.latitude && vendor.longitude) {
+            await saveLiveVendorLocation({
+              vendorId: vendor.id,
+              address: address.trim(),
+              latitude: vendor.latitude,
+              longitude: vendor.longitude,
+              radiusKm,
+            });
+          }
+        }
+
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((v) =>
+            v.id === vendor.id
+              ? {
+                ...v,
+                businessName: businessName.trim(),
+                category: effectiveCategory,
+                ownerName: ownerName.trim(),
+                ownerRole,
+                phone: phone.trim(),
+                bio: bio.trim(),
+                address: address.trim(),
+                radiusKm,
+                logoUrl: finalLogo || undefined,
+                bannerUrl: finalBanner || undefined,
+              }
+              : v
+          ),
+          audit: [
+            audit(session, "Updated store & representative profile", `${businessName.trim()} (${ownerName.trim()}, ${ownerRole})`),
+            ...s.audit,
+          ],
+        }));
+
+        toast.success("Store and representative profile updated successfully!");
+        onClose();
+      } catch (error) {
+        toast.error(errorMessage(error, "Profile could not be saved"));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    return (
+      <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-2xl overflow-y-auto rounded-[32px] p-6 sm:p-8">
           <DialogHeader>
-            <DialogTitle className="text-lg font-black text-stone-900">
-              {editingSlot ? "Edit Delivery Slot" : "Add Delivery Slot"}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-stone-500">
-              Set the time window when your kitchen can deliver orders.
-            </DialogDescription>
+            <div className="flex items-center gap-2">
+              <span className="grid size-9 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]">
+                <Building2 className="size-5" />
+              </span>
+              <div>
+                <DialogTitle className="text-xl font-black text-[#202827]">Edit Store &amp; Representative Profile</DialogTitle>
+                <DialogDescription className="text-xs text-stone-500">
+                  Update your business name, designated representative (Proprietor, Partner, Director), and store details.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
-          <div className="space-y-4 mt-2">
-            {formError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 font-semibold">
-                {formError}
-              </div>
-            )}
-
-            <Field label="Slot Name" hint="e.g. Morning, Afternoon, Evening">
-              <input
-                type="text"
-                maxLength={80}
-                value={slotName}
-                onChange={(e) => {
-                  setSlotName(e.target.value);
-                  setFormError("");
-                }}
-                placeholder="e.g. Morning"
-                className={inputClass}
-              />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Start Time">
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => {
-                    setStartTime(e.target.value);
-                    setFormError("");
-                  }}
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="End Time">
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => {
-                    setEndTime(e.target.value);
-                    setFormError("");
-                  }}
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-
-            <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-3">
-              <div>
-                <div className="text-xs font-bold text-stone-800">Active status</div>
-                <div className="text-[11px] text-stone-500">Enable this slot for customer checkout</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={isActive}
-                onChange={(e) => setIsActive(e.target.checked)}
-                className="size-4 accent-[#155F65] rounded"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setModalOpen(false)}
-                className="rounded-xl"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                disabled={saving}
-                onClick={() => void handleSave()}
-                className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#0F4A4F]"
-              >
-                {saving ? "Saving…" : editingSlot ? "Save Changes" : "Add Slot"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function StoreRadius({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const [radius, setRadius] = useState(vendor.radiusKm), [address, setAddress] = useState(vendor.address), [coords, setCoords] = useState<{ lat?: number; lng?: number }>({ lat: vendor.latitude, lng: vendor.longitude }), [locating, setLocating] = useState(false), [mapBusy, setMapBusy] = useState(false);
-  async function update(patch: Partial<Vendor>, message: string) { try { if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { ...(patch.openToday !== undefined ? { store_open_today: patch.openToday } : {}), ...(patch.operational ? { operational_status: patch.operational.toLowerCase() } : {}), ...(patch.delivery !== undefined ? { delivery_enabled: patch.delivery } : {}), ...(patch.pickup !== undefined ? { pickup_enabled: patch.pickup } : {}), ...(patch.openToday === true && vendor.verification === "Verified" ? { marketplace_visible: true } : {}) }); setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, ...patch } : x), audit: [audit(session, message, vendor.businessName), ...s.audit] })); toast.success(message); } catch (error) { toast.error(errorMessage(error, "Store control could not be saved")); } }
-  function detectStore() {
-    if (!navigator.geolocation) return toast.error("Location detection is not supported in this browser.");
-    if (!window.isSecureContext) return toast.error("Location requires HTTPS or localhost. Open the app on a secure page and try again.");
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const point = { lat: position.coords.latitude, lng: position.coords.longitude };
-      setCoords(point);
-      setAddress(`GPS pin ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)} — add store details`);
-      try {
-        const place = await findLocation(point);
-        setAddress(place.address);
-        setCoords({ lat: place.latitude, lng: place.longitude });
-        toast.success(`Actual store GPS location detected (±${Math.round(position.coords.accuracy)} m)`);
-      } catch (error) {
-        toast.info(error instanceof Error ? `${error.message} The exact GPS pin is still shown.` : "The exact GPS pin is shown.");
-      } finally {
-        setLocating(false);
-      }
-    }, (error) => {
-      setLocating(false);
-      if (error.code === error.PERMISSION_DENIED) {
-        toast.error("Location permission is blocked. In Chrome, open the site settings from the icon beside the address, set Location to Allow, then retry. You can also search the store address.");
-      } else if (error.code === error.POSITION_UNAVAILABLE) {
-        toast.error("Your device could not determine its location. Turn on Windows Location services and retry, or search the store address.");
-      } else if (error.code === error.TIMEOUT) {
-        toast.error("Location detection timed out. Retry near a window or search the store address.");
-      } else {
-        toast.error(error.message || "Location could not be detected. Search the store address instead.");
-      }
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
-  }
-  async function findStore() { if (!address.trim()) return toast.error("Enter the complete store address first."); setMapBusy(true); try { const place = await findLocation({ address }); setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); toast.success("Store address located on the map"); } catch (error) { toast.error(errorMessage(error, "Store address was not found")); } finally { setMapBusy(false); } }
-  async function saveStorePin() { if (!address.trim()) return toast.error("Enter the complete store address first."); if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return toast.error("Detect GPS or find the store address before saving."); try { if (session.userId && process.env.NEXT_PUBLIC_DEMO_MODE === "false" && isSupabaseConfigured()) await saveLiveVendorLocation({ vendorId: vendor.id, address, latitude: coords.lat!, longitude: coords.lng!, radiusKm: radius }); update({ address, latitude: coords.lat, longitude: coords.lng, radiusKm: radius }, "Store pin and service radius updated"); } catch (error) { toast.error(errorMessage(error, "Store location could not be saved")); } }
-  return <div className="space-y-6">
-    <Heading eyebrow="DAILY SERVICE CONTROL" title="Store location, radius & fulfilment" body="Customer matching uses this exact store pin and the saved service radius—not the address text alone." />
-    <div className="grid items-start gap-5 lg:grid-cols-[1.15fr_.85fr]" data-testid="store-radius-layout">
-      <div className="surface-card min-w-0 max-w-full overflow-hidden space-y-4 rounded-3xl p-5 sm:p-6" data-testid="store-location-card">
-        <Field label="Full store address"><Textarea value={address} onChange={(event) => setAddress(event.target.value)} className="min-h-24 rounded-xl" /></Field>
-        <LocationSuggestions query={address} onSelect={(place) => { setAddress(place.address); setCoords({ lat: place.latitude, lng: place.longitude }); }} />
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={detectStore} disabled={locating} className="rounded-xl bg-[#155F65]"><LocateFixed className={locating ? "animate-spin" : ""} />{locating ? "Getting fresh GPS…" : "Use actual store GPS"}</Button>
-          <Button onClick={findStore} disabled={mapBusy} variant="outline" className="rounded-xl"><Search />{mapBusy ? "Searching…" : "Find typed address"}</Button>
-        </div>
-        <div className="min-w-0" data-testid="store-map"><MapPreview lat={coords.lat} lng={coords.lng} radius={radius} label="Exact store pin" onPinChange={(point) => setCoords({ lat: point.lat, lng: point.lng })} /></div>
-        <Field label={`Supply radius · ${radius} km`} hint="This is measured from the exact store pin shown on the map."><Slider value={[radius]} min={1} max={30} step={1} onValueChange={(v) => setRadius(v[0])} /></Field>
-        <Button onClick={saveStorePin} className="w-full rounded-xl bg-[#155F65]"><Check />Save store pin & radius</Button>
-      </div>
-      <div className="surface-card min-w-0 space-y-4 rounded-3xl p-5 sm:p-6">
-        <div data-tour="store-open"><ToggleCard icon={Store} title={vendor.openToday ? "Open today" : "Closed today"} body={vendor.verification === "Verified" ? "Customers inside your saved radius can see active in-stock items while open." : "Verification is still required before customers can see items."} checked={vendor.openToday} setChecked={(value) => update({ openToday: value, operational: value && vendor.verification === "Verified" ? "Active" : value ? "Inactive" : "Paused" }, value ? "Store opened for today" : "Store closed for today")} /></div>
-        <div className="grid grid-cols-2 gap-3">
-          <ToggleCard icon={Truck} title="Delivery" body="Your own team" checked={vendor.delivery} setChecked={(v) => update({ delivery: v }, "Delivery mode updated")} />
-          <ToggleCard icon={ShoppingBag} title="Pickup" body="At your store" checked={vendor.pickup} setChecked={(v) => update({ pickup: v }, "Pickup mode updated")} />
-        </div>
-        <DeliverySlotsSection vendor={vendor} state={state} setState={setState} session={session} />
-      </div>
-    </div>
-  </div>;
-}
-const THREE_VENDOR_PLANS = [
-  {
-    name: "Crave" as const,
-    price: 699,
-    description: "Pre-orders, subscriptions, delivery fleet management, Food Stories and daily Food Drops (up to 2/day).",
-    features: [
-      "Pre-orders & scheduled subscriptions",
-      "Delivery fleet & staff assignment",
-      "Customer Food Stories & storefront",
-      "Daily Food Drops (up to 2 per day)",
-    ],
-  },
-  {
-    name: "Thrive" as const,
-    price: 799,
-    popular: true,
-    description: "Everything in Crave, plus up to 5 daily Food Drops for surplus promotions.",
-    features: [
-      "Everything in Crave plan",
-      "Daily Food Drops (up to 5 per day)",
-      "Surplus deals badge & live countdown",
-    ],
-  },
-  {
-    name: "Crown" as const,
-    price: 999,
-    description: "Everything in Thrive, plus up to 15 daily Food Drops, Request for Quote (RFQ) with AI assistance and demand alerts.",
-    features: [
-      "Everything in Thrive plan (15 Food Drops/day)",
-      "Request for Quote (RFQ) opportunities",
-      "AI quotation assistant & demand alerts",
-    ],
-  },
-];
-const vendorPlanRank: Record<string, number> = { Taster: 0, Crave: 1, Thrive: 2, Crown: 3 };
-
-
-export function EditVendorProfileDialog({
-  open,
-  onClose,
-  vendor,
-  setState,
-  session,
-}: {
-  open: boolean;
-  onClose: () => void;
-  vendor: Vendor;
-  setState: React.Dispatch<React.SetStateAction<V3State>>;
-  session: DemoSession;
-}) {
-  const [businessName, setBusinessName] = useState(vendor.businessName);
-  const [category, setCategory] = useState(vendor.category);
-  const [customCategory, setCustomCategory] = useState("");
-  const [ownerName, setOwnerName] = useState(vendor.ownerName || "");
-  const [ownerRole, setOwnerRole] = useState(vendor.ownerRole || "Proprietor");
-  const [phone, setPhone] = useState(vendor.phone || "");
-  const [bio, setBio] = useState(vendor.bio || "");
-  const [address, setAddress] = useState(vendor.address || "");
-  const [radiusKm, setRadiusKm] = useState(vendor.radiusKm || 5);
-  const [logoUrl, setLogoUrl] = useState(vendor.logoUrl || "");
-  const [bannerUrl, setBannerUrl] = useState(vendor.bannerUrl || "");
-  const [busy, setBusy] = useState(false);
-
-  function handleImagePick(kind: "logoUrl" | "bannerUrl", file?: File) {
-    if (!file) return;
-    const maxW = kind === "logoUrl" ? 256 : 960;
-    const maxH = kind === "logoUrl" ? 256 : 360;
-    readImage(file, (dataUrl) => {
-      if (kind === "logoUrl") setLogoUrl(dataUrl);
-      else setBannerUrl(dataUrl);
-    }, maxW, maxH, 0.85);
-  }
-
-  async function handleSave() {
-    if (!businessName.trim()) return toast.error("Enter your business name");
-    if (!ownerName.trim()) return toast.error("Enter the representative / owner name");
-    const effectiveCategory = category === "Other" ? customCategory.trim() : category;
-    if (!effectiveCategory) return toast.error("Enter your business category");
-
-    setBusy(true);
-    try {
-      let finalLogo = logoUrl;
-      let finalBanner = bannerUrl;
-
-      if (isLiveSupabaseMode()) {
-        if (logoUrl.startsWith("data:")) {
-          finalLogo = await uploadLiveVendorImage(vendor.id, logoUrl);
-        }
-        if (bannerUrl.startsWith("data:")) {
-          finalBanner = await uploadLiveVendorImage(vendor.id, bannerUrl);
-        }
-        await saveLiveVendorProfile({
-          vendorId: vendor.id,
-          businessName: businessName.trim(),
-          category: effectiveCategory,
-          ownerName: ownerName.trim(),
-          ownerRole,
-          phone: phone.trim(),
-          bio: bio.trim(),
-          address: address.trim(),
-          logoUrl: finalLogo || undefined,
-          bannerUrl: finalBanner || undefined,
-        });
-        await saveLiveVendorBranding({
-          vendorId: vendor.id,
-          logoUrl: finalLogo,
-          bannerUrl: finalBanner,
-          bio: bio.trim(),
-        });
-        if (vendor.latitude && vendor.longitude) {
-          await saveLiveVendorLocation({
-            vendorId: vendor.id,
-            address: address.trim(),
-            latitude: vendor.latitude,
-            longitude: vendor.longitude,
-            radiusKm,
-          });
-        }
-      }
-
-      setState((s) => ({
-        ...s,
-        vendors: s.vendors.map((v) =>
-          v.id === vendor.id
-            ? {
-              ...v,
-              businessName: businessName.trim(),
-              category: effectiveCategory,
-              ownerName: ownerName.trim(),
-              ownerRole,
-              phone: phone.trim(),
-              bio: bio.trim(),
-              address: address.trim(),
-              radiusKm,
-              logoUrl: finalLogo || undefined,
-              bannerUrl: finalBanner || undefined,
-            }
-            : v
-        ),
-        audit: [
-          audit(session, "Updated store & representative profile", `${businessName.trim()} (${ownerName.trim()}, ${ownerRole})`),
-          ...s.audit,
-        ],
-      }));
-
-      toast.success("Store and representative profile updated successfully!");
-      onClose();
-    } catch (error) {
-      toast.error(errorMessage(error, "Profile could not be saved"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
-      <DialogContent className="max-h-[92vh] w-[95vw] max-w-2xl overflow-y-auto rounded-[32px] p-6 sm:p-8">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <span className="grid size-9 place-items-center rounded-xl bg-[#EAF4F2] text-[#155F65]">
-              <Building2 className="size-5" />
-            </span>
-            <div>
-              <DialogTitle className="text-xl font-black text-[#202827]">Edit Store &amp; Representative Profile</DialogTitle>
-              <DialogDescription className="text-xs text-stone-500">
-                Update your business name, designated representative (Proprietor, Partner, Director), and store details.
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <div className="mt-5 space-y-4">
-          <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4 space-y-3">
-            <span className="block text-xs font-black uppercase tracking-wider text-[#155F65]">
-              Storefront Branding &amp; Images
-            </span>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-xs font-bold text-stone-600 mb-1.5">Store Logo / Avatar</label>
-                <div className="flex items-center gap-3">
-                  <div className="size-16 shrink-0 overflow-hidden rounded-2xl border-2 border-stone-300 bg-white grid place-items-center">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="Store logo" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-xl font-black text-[#155F65]">{businessName[0] || "V"}</span>
-                    )}
+          <div className="mt-5 space-y-4">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4 space-y-3">
+              <span className="block text-xs font-black uppercase tracking-wider text-[#155F65]">
+                Storefront Branding &amp; Images
+              </span>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 mb-1.5">Store Logo / Avatar</label>
+                  <div className="flex items-center gap-3">
+                    <div className="size-16 shrink-0 overflow-hidden rounded-2xl border-2 border-stone-300 bg-white grid place-items-center">
+                      {logoUrl ? (
+                        <img src={logoUrl} alt="Store logo" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-xl font-black text-[#155F65]">{businessName[0] || "V"}</span>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-[#155F65] shadow-xs hover:bg-[#EAF4F2]">
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("logoUrl", e.target.files?.[0])} />
+                        <Pencil className="size-3.5" />
+                        <span>{logoUrl ? "Change logo" : "Upload logo"}</span>
+                      </label>
+                      {logoUrl && (
+                        <button type="button" onClick={() => setLogoUrl("")} className="block text-[11px] text-rose-600 font-semibold hover:underline">
+                          Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-[#155F65] shadow-xs hover:bg-[#EAF4F2]">
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("logoUrl", e.target.files?.[0])} />
-                      <Pencil className="size-3.5" />
-                      <span>{logoUrl ? "Change logo" : "Upload logo"}</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-600 mb-1.5">Cover Banner</label>
+                  <div className="relative h-16 w-full overflow-hidden rounded-2xl border-2 border-stone-300 bg-stone-100">
+                    {bannerUrl ? (
+                      <img src={bannerUrl} alt="Store banner" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full bg-linear-to-r from-[#155F65] to-[#155F65] flex items-center justify-center text-xs font-bold text-white/80">
+                        Default banner
+                      </div>
+                    )}
+                    <label className="absolute right-2 top-2 inline-flex cursor-pointer items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#202827] shadow-xs backdrop-blur hover:bg-white">
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("bannerUrl", e.target.files?.[0])} />
+                      <ImageUp className="size-3" />
+                      <span>Update</span>
                     </label>
-                    {logoUrl && (
-                      <button type="button" onClick={() => setLogoUrl("")} className="block text-[11px] text-rose-600 font-semibold hover:underline">
-                        Remove
+                    {bannerUrl && (
+                      <button type="button" onClick={() => setBannerUrl("")} className="absolute left-2 bottom-1 text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-md hover:bg-black/80">
+                        Reset
                       </button>
                     )}
                   </div>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-600 mb-1.5">Cover Banner</label>
-                <div className="relative h-16 w-full overflow-hidden rounded-2xl border-2 border-stone-300 bg-stone-100">
-                  {bannerUrl ? (
-                    <img src={bannerUrl} alt="Store banner" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full bg-linear-to-r from-[#155F65] to-[#155F65] flex items-center justify-center text-xs font-bold text-white/80">
-                      Default banner
-                    </div>
-                  )}
-                  <label className="absolute right-2 top-2 inline-flex cursor-pointer items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#202827] shadow-xs backdrop-blur hover:bg-white">
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImagePick("bannerUrl", e.target.files?.[0])} />
-                    <ImageUp className="size-3" />
-                    <span>Update</span>
-                  </label>
-                  {bannerUrl && (
-                    <button type="button" onClick={() => setBannerUrl("")} className="absolute left-2 bottom-1 text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-md hover:bg-black/80">
-                      Reset
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Business name">
-              <input
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                className={inputClass}
-                placeholder="e.g. Praga's Bakery"
-              />
-            </Field>
-
-            <Field label="Business Category">
-              <Select value={category} onValueChange={(val) => setCategory(val)}>
-                <SelectTrigger className="h-11 rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {categoryNames.map((cat) => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-
-          {category === "Other" && (
-            <Field label="Custom Category">
-              <input
-                value={customCategory}
-                onChange={(e) => setCustomCategory(e.target.value)}
-                placeholder="Specify category"
-                className={inputClass}
-              />
-            </Field>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Representative Designation" hint="Legal capacity / business role">
-              <Select value={ownerRole} onValueChange={(val) => setOwnerRole(val)}>
-                <SelectTrigger className="h-11 rounded-xl font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VENDOR_DESIGNATION_OPTIONS.map((role) => (
-                    <SelectItem key={role} value={role}>{role}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <Field label="Representative / Owner Name" hint="Full legal name of the representative">
-              <input
-                value={ownerName}
-                onChange={(e) => setOwnerName(e.target.value)}
-                className={inputClass}
-                placeholder="e.g. Harish Kumar"
-              />
-            </Field>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Phone / WhatsApp Contact">
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className={inputClass}
-                placeholder="+91 98765 43210"
-              />
-            </Field>
-
-            <Field label={`Service Radius · ${radiusKm} km`}>
-              <div className="pt-2">
-                <Slider
-                  value={[radiusKm]}
-                  min={1}
-                  max={30}
-                  step={1}
-                  onValueChange={(val) => setRadiusKm(val[0])}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Business name">
+                <input
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Praga's Bakery"
                 />
-              </div>
+              </Field>
+
+              <Field label="Business Category">
+                <Select value={category} onValueChange={(val) => setCategory(val)}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categoryNames.map((cat) => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            {category === "Other" && (
+              <Field label="Custom Category">
+                <input
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  placeholder="Specify category"
+                  className={inputClass}
+                />
+              </Field>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Representative Designation" hint="Legal capacity / business role">
+                <Select value={ownerRole} onValueChange={(val) => setOwnerRole(val)}>
+                  <SelectTrigger className="h-11 rounded-xl font-bold">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VENDOR_DESIGNATION_OPTIONS.map((role) => (
+                      <SelectItem key={role} value={role}>{role}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Representative / Owner Name" hint="Full legal name of the representative">
+                <input
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Harish Kumar"
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Phone / WhatsApp Contact">
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className={inputClass}
+                  placeholder="+91 98765 43210"
+                />
+              </Field>
+
+              <Field label={`Service Radius · ${radiusKm} km`}>
+                <div className="pt-2">
+                  <Slider
+                    value={[radiusKm]}
+                    min={1}
+                    max={30}
+                    step={1}
+                    onValueChange={(val) => setRadiusKm(val[0])}
+                  />
+                </div>
+              </Field>
+            </div>
+
+            <Field label="Store Description / Bio" hint="Brief introduction for customers">
+              <Textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                className="min-h-20 rounded-xl"
+                placeholder="Share what makes your kitchen or store special..."
+              />
+            </Field>
+
+            <Field label="Store Address">
+              <Textarea
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="min-h-16 rounded-xl"
+                placeholder="Street address, locality, area, city"
+              />
             </Field>
           </div>
 
-          <Field label="Store Description / Bio" hint="Brief introduction for customers">
-            <Textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              className="min-h-20 rounded-xl"
-              placeholder="Share what makes your kitchen or store special..."
-            />
-          </Field>
-
-          <Field label="Store Address">
-            <Textarea
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="min-h-16 rounded-xl"
-              placeholder="Street address, locality, area, city"
-            />
-          </Field>
-        </div>
-
-        <DialogFooter className="mt-6 flex flex-row justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={busy} className="rounded-xl font-bold">
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={busy}
-            className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#0F4A4F]"
-          >
-            {busy ? "Saving…" : "Save Changes"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; onOpenVendorProfile?: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [certificate, setCertificate] = useState(vendor.fssaiNumber || "");
-  const [fileName, setFileName] = useState(vendor.certificateName || "");
-  const [certificateFile, setCertificateFile] = useState<File | null>(null);
-  const [expiry, setExpiry] = useState(vendor.expiryDate || "");
-  const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
-  const [profileEditOpen, setProfileEditOpen] = useState(false);
-  const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
-  const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
-
-  const planRank: Record<Vendor["plan"], number> = {
-    Taster: 0,
-    Crave: 1,
-    Thrive: 2,
-    Crown: 3,
-  };
-
-  function handlePlanSelection(newPlan: Vendor["plan"]) {
-    if (vendor.plan === newPlan) return;
-    if (planRank[newPlan] < planRank[vendor.plan]) {
-      setDowngradeTarget(newPlan);
-      setDowngradeConfirmOpen(true);
-      return;
-    }
-    void upgradePlan(newPlan);
+          <DialogFooter className="mt-6 flex flex-row justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy} className="rounded-xl font-bold">
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={busy}
+              className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#0F4A4F]"
+            >
+              {busy ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
   }
 
-  function confirmDowngrade() {
-    if (!downgradeTarget) return;
-    const target = downgradeTarget;
-    setDowngradeConfirmOpen(false);
-    setDowngradeTarget(null);
-    const effectiveDate = getNextMonthFirstIst();
-    setState((s) => ({
-      ...s,
-      vendors: s.vendors.map((x) => x.id === vendor.id ? {
-        ...x,
-        scheduledPlanChange: {
-          nextPlan: target,
-          effectiveDate,
-          requestedAt: new Date().toISOString(),
-        },
-      } : x),
-      audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
-    }));
-    toast.success(`You can enjoy all ${vendor.plan} features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
-  }
+  function VerificationView({ vendor, setState, session, onOpenVendorProfile }: { vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; onOpenVendorProfile?: () => void }) {
+    const [editing, setEditing] = useState(false);
+    const [certificate, setCertificate] = useState(vendor.fssaiNumber || "");
+    const [fileName, setFileName] = useState(vendor.certificateName || "");
+    const [certificateFile, setCertificateFile] = useState<File | null>(null);
+    const [expiry, setExpiry] = useState(vendor.expiryDate || "");
+    const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
+    const [profileEditOpen, setProfileEditOpen] = useState(false);
+    const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
+    const [downgradeTarget, setDowngradeTarget] = useState<Vendor["plan"] | null>(null);
 
-  async function upgradePlan(newPlan: Vendor["plan"]) {
-    if (vendor.plan === newPlan) return;
-    setUpgradingTo(newPlan);
-    try {
-      if (isLiveSupabaseMode()) {
-        await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+    const planRank: Record<Vendor["plan"], number> = {
+      Taster: 0,
+      Crave: 1,
+      Thrive: 2,
+      Crown: 3,
+    };
+
+    function handlePlanSelection(newPlan: Vendor["plan"]) {
+      if (vendor.plan === newPlan) return;
+      if (planRank[newPlan] < planRank[vendor.plan]) {
+        setDowngradeTarget(newPlan);
+        setDowngradeConfirmOpen(true);
+        return;
       }
-      const newLimits = getPlanLimits(newPlan);
-      setState((s) => {
-        const activeProds = s.products.filter((p) => p.vendorId === vendor.id && p.active);
-        const excessProds = activeProds.length > newLimits.maxProducts
-          ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
-          : new Set<string>();
-
-        const activeStaff = s.staff.filter((st) => st.vendorId === vendor.id && st.active);
-        const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
-          ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
-          : new Set<string>();
-
-        const activeSlots = (s.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
-        const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
-          ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
-          : new Set<string>();
-
-        return {
-          ...s,
-          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan, scheduledPlanChange: undefined } : x),
-          products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
-          staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
-          deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
-          audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${vendor.plan} to ${newPlan} by ${session.name} (${session.email})`), ...s.audit],
-        };
-      });
-      toast.success(`Plan upgraded to ${newPlan}!`);
-    } catch (error) {
-      toast.error(errorMessage(error, "Plan update could not be saved"));
-    } finally {
-      setUpgradingTo(null);
+      void upgradePlan(newPlan);
     }
-  }
 
-  const [termsTick, setTermsTick] = useState(false), [termsBusy, setTermsBusy] = useState(false);
-  const [termsViewOpen, setTermsViewOpen] = useState(false), [signOpen, setSignOpen] = useState(false);
-  async function acceptTerms() {
-    if (!termsTick) return toast.error("Tick the box to accept the Vendor Terms and Conditions");
-    setTermsBusy(true);
-    try {
-      if (isLiveSupabaseMode()) await acceptLiveVendorTerms(vendor.id);
-      setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true } : x), audit: [audit(session, "Accepted the Vendor Terms and Conditions", vendor.businessName), ...s.audit] }));
-      toast.success("Thank you. The Vendor Terms and Conditions are accepted.");
-    } catch (error) { toast.error(errorMessage(error, "The terms could not be accepted")); } finally { setTermsBusy(false); }
-  }
-  async function save(resubmit = false) {
-    if (resubmit && vendor.termsAccepted === false) return toast.error("Accept the Vendor Terms and Conditions first, then resubmit");
-    if (!certificate.trim()) return toast.error("Enter the certification / licence number");
-    if (certificateFile && certificateFile.size === 0) return toast.error(`"${certificateFile.name}" is empty (0 bytes). Please upload a valid certificate file.`);
-    if (expiry) {
-      const today = new Date().toISOString().slice(0, 10);
-      if (expiry < today) {
-        return toast.error("Expiry date cannot be in the past");
-      }
-    }
-    try {
-      let uploadedPath: string | undefined = undefined;
-      let effectiveFileName = fileName;
-      if (isLiveSupabaseMode()) {
-        if (certificateFile) {
-          const uploaded = await uploadLiveCertificate({
-            vendorId: vendor.id,
-            file: certificateFile,
-            documentNumber: certificate.trim(),
-            expiryDate: expiry || undefined,
-          });
-          uploadedPath = uploaded.path;
-          effectiveFileName = uploaded.fileName || certificateFile.name;
-          setFileName(effectiveFileName);
-        }
-        await resubmitLiveVendorVerification({
-          documentNumber: certificate.trim(),
-          expiryDate: expiry || undefined,
-          fileName: effectiveFileName,
-          storagePath: uploadedPath,
-          resubmit,
-        });
-      }
-      const nextStatus: Verification = resubmit ? "Submitted" : vendor.verification;
-      const updatedCertificate = certificate.trim();
+    function confirmDowngrade() {
+      if (!downgradeTarget) return;
+      const target = downgradeTarget;
+      setDowngradeConfirmOpen(false);
+      setDowngradeTarget(null);
+      const effectiveDate = getNextMonthFirstIst();
       setState((s) => ({
         ...s,
         vendors: s.vendors.map((x) => x.id === vendor.id ? {
           ...x,
-          fssaiNumber: updatedCertificate,
-          certificateName: effectiveFileName || x.certificateName,
-          expiryDate: expiry,
-          verification: nextStatus,
-          operational: resubmit ? "Inactive" : x.operational,
-          documents: [
-            {
-              id: id("cert"),
-              documentType: "food_certificate",
-              title: "Food Safety Certificate (FSSAI)",
-              documentNumber: updatedCertificate,
-              expiryDate: expiry,
-              fileName: effectiveFileName || "fssai-certificate.pdf",
-              storagePath: uploadedPath || x.documents?.[0]?.storagePath,
-              verificationStatus: resubmit ? "submitted" : (x.documents?.[0]?.verificationStatus || "submitted"),
-              isHistory: false,
-            },
-            ...(x.documents || []).filter((d) => d.documentType !== "food_certificate" && (d.documentType as string) !== "fssai"),
-            ...(x.documents || []).filter((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai").map((d) => ({
-              ...d,
-              isHistory: true,
-            })),
-          ],
+          scheduledPlanChange: {
+            nextPlan: target,
+            effectiveDate,
+            requestedAt: new Date().toISOString(),
+          },
         } : x),
-        audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit]
+        audit: [audit(session, "Scheduled plan downgrade", `${vendor.businessName} scheduled plan change to ${target} effective ${effectiveDate} by ${session.name} (${session.email})`), ...s.audit],
       }));
-      setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
-    } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
-  }
-  return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
-    <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
-    <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
-    <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
-      {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; if (next && next.size === 0) { toast.error(`"${next.name}" is empty (0 bytes). Please upload a valid certificate file.`); e.target.value = ""; return; } setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
-    </div>
-    <div className="surface-card rounded-[28px] p-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-xl font-black">Subscription plans</h3>
-            <Status className="border-emerald-200 bg-emerald-50 text-emerald-800 font-bold">Active: {vendor.plan}</Status>
-          </div>
-          <p className="mt-1 text-sm text-stone-500">
-            Choose a plan to upgrade your store capabilities, food drops, and quotation opportunities.
-          </p>
-        </div>
+      toast.success(`You can enjoy all ${vendor.plan} features until ${formatIstEffectiveDate(effectiveDate)}. Your plan will change to ${target} on ${formatIstEffectiveDate(effectiveDate)}.`);
+    }
+
+    async function upgradePlan(newPlan: Vendor["plan"]) {
+      if (vendor.plan === newPlan) return;
+      setUpgradingTo(newPlan);
+      try {
+        if (isLiveSupabaseMode()) {
+          await saveLiveVendorPlan(vendor.id, newPlan.toLowerCase() as "taster" | "crave" | "thrive" | "crown");
+        }
+        const newLimits = getPlanLimits(newPlan);
+        setState((s) => {
+          const activeProds = s.products.filter((p) => p.vendorId === vendor.id && p.active);
+          const excessProds = activeProds.length > newLimits.maxProducts
+            ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+            : new Set<string>();
+
+          const activeStaff = s.staff.filter((st) => st.vendorId === vendor.id && st.active);
+          const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+            ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+            : new Set<string>();
+
+          const activeSlots = (s.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+          const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+            ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+            : new Set<string>();
+
+          return {
+            ...s,
+            vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: newPlan, scheduledPlanChange: undefined } : x),
+            products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+            staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+            deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+            audit: [audit(session, "Vendor plan changed", `${vendor.businessName} plan changed from ${vendor.plan} to ${newPlan} by ${session.name} (${session.email})`), ...s.audit],
+          };
+        });
+        toast.success(`Plan upgraded to ${newPlan}!`);
+      } catch (error) {
+        toast.error(errorMessage(error, "Plan update could not be saved"));
+      } finally {
+        setUpgradingTo(null);
+      }
+    }
+
+    const [termsTick, setTermsTick] = useState(false), [termsBusy, setTermsBusy] = useState(false);
+    const [termsViewOpen, setTermsViewOpen] = useState(false), [signOpen, setSignOpen] = useState(false);
+    async function acceptTerms() {
+      if (!termsTick) return toast.error("Tick the box to accept the Vendor Terms and Conditions");
+      setTermsBusy(true);
+      try {
+        if (isLiveSupabaseMode()) await acceptLiveVendorTerms(vendor.id);
+        setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true } : x), audit: [audit(session, "Accepted the Vendor Terms and Conditions", vendor.businessName), ...s.audit] }));
+        toast.success("Thank you. The Vendor Terms and Conditions are accepted.");
+      } catch (error) { toast.error(errorMessage(error, "The terms could not be accepted")); } finally { setTermsBusy(false); }
+    }
+    async function save(resubmit = false) {
+      if (resubmit && vendor.termsAccepted === false) return toast.error("Accept the Vendor Terms and Conditions first, then resubmit");
+      if (!certificate.trim()) return toast.error("Enter the certification / licence number");
+      if (certificateFile && certificateFile.size === 0) return toast.error(`"${certificateFile.name}" is empty (0 bytes). Please upload a valid certificate file.`);
+      if (expiry) {
+        const today = new Date().toISOString().slice(0, 10);
+        if (expiry < today) {
+          return toast.error("Expiry date cannot be in the past");
+        }
+      }
+      try {
+        let uploadedPath: string | undefined = undefined;
+        let effectiveFileName = fileName;
+        if (isLiveSupabaseMode()) {
+          if (certificateFile) {
+            const uploaded = await uploadLiveCertificate({
+              vendorId: vendor.id,
+              file: certificateFile,
+              documentNumber: certificate.trim(),
+              expiryDate: expiry || undefined,
+            });
+            uploadedPath = uploaded.path;
+            effectiveFileName = uploaded.fileName || certificateFile.name;
+            setFileName(effectiveFileName);
+          }
+          await resubmitLiveVendorVerification({
+            documentNumber: certificate.trim(),
+            expiryDate: expiry || undefined,
+            fileName: effectiveFileName,
+            storagePath: uploadedPath,
+            resubmit,
+          });
+        }
+        const nextStatus: Verification = resubmit ? "Submitted" : vendor.verification;
+        const updatedCertificate = certificate.trim();
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? {
+            ...x,
+            fssaiNumber: updatedCertificate,
+            certificateName: effectiveFileName || x.certificateName,
+            expiryDate: expiry,
+            verification: nextStatus,
+            operational: resubmit ? "Inactive" : x.operational,
+            documents: [
+              {
+                id: id("cert"),
+                documentType: "food_certificate",
+                title: "Food Safety Certificate (FSSAI)",
+                documentNumber: updatedCertificate,
+                expiryDate: expiry,
+                fileName: effectiveFileName || "fssai-certificate.pdf",
+                storagePath: uploadedPath || x.documents?.[0]?.storagePath,
+                verificationStatus: resubmit ? "submitted" : (x.documents?.[0]?.verificationStatus || "submitted"),
+                isHistory: false,
+              },
+              ...(x.documents || []).filter((d) => d.documentType !== "food_certificate" && (d.documentType as string) !== "fssai"),
+              ...(x.documents || []).filter((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai").map((d) => ({
+                ...d,
+                isHistory: true,
+              })),
+            ],
+          } : x),
+          audit: [audit(session, resubmit ? "Resubmitted verification" : "Edited verification details", vendor.businessName), ...s.audit]
+        }));
+        setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
+      } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
+    }
+    return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
+      <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
+      <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
+      <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
+        {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; if (next && next.size === 0) { toast.error(`"${next.name}" is empty (0 bytes). Please upload a valid certificate file.`); e.target.value = ""; return; } setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
       </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {THREE_VENDOR_PLANS.map((plan) => {
-          const isCurrent = vendor.plan === plan.name;
-          const isHigher = (vendorPlanRank[plan.name] ?? 0) > (vendorPlanRank[vendor.plan || "Taster"] ?? 0);
-          return (
-            <div
-              key={plan.name}
-              data-plan-card={plan.name}
-              className={`flex flex-col justify-between rounded-3xl border p-5 transition ${isCurrent
+      <div className="surface-card rounded-[28px] p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-black">Subscription plans</h3>
+              <Status className="border-emerald-200 bg-emerald-50 text-emerald-800 font-bold">Active: {vendor.plan}</Status>
+            </div>
+            <p className="mt-1 text-sm text-stone-500">
+              Choose a plan to upgrade your store capabilities, food drops, and quotation opportunities.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          {THREE_VENDOR_PLANS.map((plan) => {
+            const isCurrent = vendor.plan === plan.name;
+            const isHigher = (vendorPlanRank[plan.name] ?? 0) > (vendorPlanRank[vendor.plan || "Taster"] ?? 0);
+            return (
+              <div
+                key={plan.name}
+                data-plan-card={plan.name}
+                className={`flex flex-col justify-between rounded-3xl border p-5 transition ${isCurrent
                   ? "border-[#155F65] bg-[#EEF2F2] shadow-sm ring-2 ring-[#155F65]/20"
                   : "border-stone-200/80 bg-white hover:border-stone-300"
-                }`}
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-black">{plan.name}</h4>
+                  }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-lg font-black">{plan.name}</h4>
+                    {isCurrent ? (
+                      <Status className="border-emerald-200 bg-emerald-100 text-emerald-800 font-bold">Current plan</Status>
+                    ) : plan.popular ? (
+                      <span className="rounded-full bg-[#b42332]/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#b42332]">Popular</span>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 flex items-baseline gap-1">
+                    <span className="text-2xl font-black">{money(plan.price)}</span>
+                    <span className="text-xs font-bold text-stone-500">/ month + GST</span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-stone-500">{plan.description}</p>
+                  <ul className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-xs text-stone-600">
+                    {plan.features.map((feat) => (
+                      <li key={feat} className="flex items-center gap-2">
+                        <Check className="size-3.5 text-[#155F65] shrink-0" />
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="mt-5">
                   {isCurrent ? (
-                    <Status className="border-emerald-200 bg-emerald-100 text-emerald-800 font-bold">Current plan</Status>
-                  ) : plan.popular ? (
-                    <span className="rounded-full bg-[#b42332]/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#b42332]">Popular</span>
-                  ) : null}
-                </div>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-2xl font-black">{money(plan.price)}</span>
-                  <span className="text-xs font-bold text-stone-500">/ month + GST</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-stone-500">{plan.description}</p>
-                <ul className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-xs text-stone-600">
-                  {plan.features.map((feat) => (
-                    <li key={feat} className="flex items-center gap-2">
-                      <Check className="size-3.5 text-[#155F65] shrink-0" />
-                      <span>{feat}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="mt-5">
-                {isCurrent ? (
-                  <Button disabled variant="outline" className="w-full rounded-xl border-emerald-300 bg-emerald-50 text-emerald-800 font-black opacity-90 cursor-default">
-                    <Check className="mr-1.5 size-4" />Current plan
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={() => handlePlanSelection(plan.name)}
-                    disabled={upgradingTo === plan.name}
-                    className={`w-full rounded-xl font-black ${isHigher
+                    <Button disabled variant="outline" className="w-full rounded-xl border-emerald-300 bg-emerald-50 text-emerald-800 font-black opacity-90 cursor-default">
+                      <Check className="mr-1.5 size-4" />Current plan
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={() => handlePlanSelection(plan.name)}
+                      disabled={upgradingTo === plan.name}
+                      className={`w-full rounded-xl font-black ${isHigher
                         ? "bg-[#155F65] hover:bg-[#4d8b00] text-white shadow-sm"
                         : "bg-stone-900 hover:bg-stone-800 text-white"
-                      }`}
-                  >
-                    {upgradingTo === plan.name ? (
-                      "Updating…"
-                    ) : isHigher ? (
-                      <><Sparkles className="mr-1.5 size-4" />Upgrade to {plan.name}</>
-                    ) : (
-                      <>Switch to {plan.name}</>
-                    )}
-                  </Button>
-                )}
+                        }`}
+                    >
+                      {upgradingTo === plan.name ? (
+                        "Updating…"
+                      ) : isHigher ? (
+                        <><Sparkles className="mr-1.5 size-4" />Upgrade to {plan.name}</>
+                      ) : (
+                        <>Switch to {plan.name}</>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-    {profileEditOpen && (
-      <EditVendorProfileDialog
-        open
-        onClose={() => setProfileEditOpen(false)}
-        vendor={vendor}
-        setState={setState}
-        session={session}
-      />
-    )}
-    <Dialog open={downgradeConfirmOpen} onOpenChange={(v) => { if (!v) { setDowngradeConfirmOpen(false); setDowngradeTarget(null); } }}>
-      <DialogContent className="rounded-[28px] sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-black">Change to Crave plan</DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed text-stone-600 pt-2">
-            {vendor.plan === "Crown"
-              ? `You can enjoy all the features of the Crown plan until the end of this month. Your plan will change to ${downgradeTarget || "selected plan"} from the 1st of next month.`
-              : "You can enjoy all the features of the Thrive plan until the end of this month. Your plan will change to Crave from the 1st of next month."}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-wrap justify-end gap-3 pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => { setDowngradeConfirmOpen(false); setDowngradeTarget(null); }}
-            className="rounded-xl font-bold"
-          >
-            {vendor.plan === "Crown" ? "Keep Crown" : "Keep Thrive"}
-          </Button>
-          <Button
-            type="button"
-            onClick={confirmDowngrade}
-            className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#114b50]"
-          >
-            Confirm
-          </Button>
+            );
+          })}
         </div>
-      </DialogContent>
-    </Dialog>
-  </div>;
-}
-
-function FoodTypeSelect({ product, setState }: { product: Product; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  async function choose(value: string) {
-    const next = normalizeFoodType(value) ?? null;
-    const previous = product.foodType;
-    setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, foodType: next ?? undefined } : x) }));
-    try {
-      if (isLiveSupabaseMode()) await saveLiveProductFoodType(product.id, next);
-    } catch (error) {
-      setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, foodType: previous } : x) }));
-      toast.error(errorMessage(error, "The food type could not be saved"));
-    }
-  }
-  return <Select value={product.foodType ?? "unset"} onValueChange={(value) => void choose(value === "unset" ? "" : value)}>
-    <SelectTrigger aria-label={`Food type of ${product.name}`} className="h-10 w-48 rounded-xl">
-      <div className="flex items-center gap-1.5 truncate">
-        {product.foodType ? <FoodTypeMark type={product.foodType} /> : null}
-        <SelectValue placeholder="Set food type" />
       </div>
-    </SelectTrigger>
-    <SelectContent>
-      {!product.foodType && <SelectItem value="unset">Not set</SelectItem>}
-      {FOOD_TYPES.map((type) => (
-        <SelectItem key={type.value} value={type.value}>
-          <div className="flex items-center gap-2">
-            <FoodTypeMark type={type.value} />
-            <span>{type.label}</span>
+      {profileEditOpen && (
+        <EditVendorProfileDialog
+          open
+          onClose={() => setProfileEditOpen(false)}
+          vendor={vendor}
+          setState={setState}
+          session={session}
+        />
+      )}
+      <Dialog open={downgradeConfirmOpen} onOpenChange={(v) => { if (!v) { setDowngradeConfirmOpen(false); setDowngradeTarget(null); } }}>
+        <DialogContent className="rounded-[28px] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black">Change to Crave plan</DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed text-stone-600 pt-2">
+              {vendor.plan === "Crown"
+                ? `You can enjoy all the features of the Crown plan until the end of this month. Your plan will change to ${downgradeTarget || "selected plan"} from the 1st of next month.`
+                : "You can enjoy all the features of the Thrive plan until the end of this month. Your plan will change to Crave from the 1st of next month."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-3 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setDowngradeConfirmOpen(false); setDowngradeTarget(null); }}
+              className="rounded-xl font-bold"
+            >
+              {vendor.plan === "Crown" ? "Keep Crown" : "Keep Thrive"}
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmDowngrade}
+              className="rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#114b50]"
+            >
+              Confirm
+            </Button>
           </div>
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>;
-}
-
-function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const [open, setOpen] = useState(false); const [bulkOpen, setBulkOpen] = useState(false); const items = state.products.filter((x) => x.vendorId === vendor.id);
-  const [toDelete, setToDelete] = useState<Product | null>(null); const [deleting, setDeleting] = useState(false);
-  const [clearAllOpen, setClearAllOpen] = useState(false); const [clearingAll, setClearingAll] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  async function setActive(product: Product, value: boolean) {
-    setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: value } : x) }));
-    try { if (isLiveSupabaseMode()) await setLiveProductActive(product.id, value); }
-    catch (error) { setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: !value } : x) })); toast.error(errorMessage(error, "The change could not be saved")); }
-  }
-  async function confirmDelete() {
-    if (!toDelete) return;
-    const product = toDelete; setDeleting(true);
-    try {
-      const result = isLiveSupabaseMode() ? await deleteLiveVendorProduct(product.id) : { deleted: true, removedFromBaskets: 0 };
-      if (result.deleted) {
-        setState((s) => ({ ...s, products: s.products.filter((x) => x.id !== product.id), cart: s.cart.filter((x) => x.productId !== product.id), audit: [audit(session, "Deleted catalogue product", `${product.name} (${product.baseUnit})`), ...s.audit] }));
-        toast.success(result.removedFromBaskets ? `${product.name} deleted and removed from ${result.removedFromBaskets} customer basket${result.removedFromBaskets === 1 ? "" : "s"}` : `${product.name} deleted`);
-      } else {
-        setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: false } : x) }));
-        toast.info(`${product.name} is in a customer's basket, so it was taken off sale instead. Ask the Super Admin to run the V9_19 database update to delete it fully.`);
-      }
-      setToDelete(null);
-    } catch (error) { toast.error(errorMessage(error, "The product could not be deleted")); }
-    finally { setDeleting(false); }
+        </DialogContent>
+      </Dialog>
+    </div>;
   }
 
-  async function confirmClearAll() {
-    if (!items.length) return;
-    setClearingAll(true);
-    const itemIds = items.map((x) => x.id);
-    const count = items.length;
-    try {
-      if (isLiveSupabaseMode()) {
-        await clearLiveVendorProducts(itemIds);
+  function FoodTypeSelect({ product, setState }: { product: Product; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    async function choose(value: string) {
+      const next = normalizeFoodType(value) ?? null;
+      const previous = product.foodType;
+      setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, foodType: next ?? undefined } : x) }));
+      try {
+        if (isLiveSupabaseMode()) await saveLiveProductFoodType(product.id, next);
+      } catch (error) {
+        setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, foodType: previous } : x) }));
+        toast.error(errorMessage(error, "The food type could not be saved"));
       }
-      setState((s) => ({
-        ...s,
-        products: s.products.filter((x) => x.vendorId !== vendor.id),
-        cart: s.cart.filter((x) => !itemIds.includes(x.productId)),
-        audit: [audit(session, "Cleared all catalogue products", `Cleared all ${count} products for ${vendor.businessName}`), ...s.audit],
-      }));
-      toast.success(`Cleared all ${count} product${count === 1 ? "" : "s"} from your catalogue`);
-      setClearAllOpen(false);
-    } catch (error) {
-      toast.error(errorMessage(error, "Could not clear all products"));
-    } finally {
-      setClearingAll(false);
     }
+    return <Select value={product.foodType ?? "unset"} onValueChange={(value) => void choose(value === "unset" ? "" : value)}>
+      <SelectTrigger aria-label={`Food type of ${product.name}`} className="h-10 w-48 rounded-xl">
+        <div className="flex items-center gap-1.5 truncate">
+          {product.foodType ? <FoodTypeMark type={product.foodType} /> : null}
+          <SelectValue placeholder="Set food type" />
+        </div>
+      </SelectTrigger>
+      <SelectContent>
+        {!product.foodType && <SelectItem value="unset">Not set</SelectItem>}
+        {FOOD_TYPES.map((type) => (
+          <SelectItem key={type.value} value={type.value}>
+            <div className="flex items-center gap-2">
+              <FoodTypeMark type={type.value} />
+              <span>{type.label}</span>
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>;
   }
 
-  const unsetFoodType = items.filter((item) => !item.foodType).length;
-  const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
-  return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { const check = canAddProduct(vendor.plan, items.length); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div>{product.description?.trim() ? <div className="text-xs text-stone-500 line-clamp-1 italic max-w-xs">{product.description.trim()}</div> : null}</div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { const check = canAddProduct(vendor.plan, 0); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} existingProductsCount={items.length} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
-}
-
-
-type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; description?: string; imageUrl?: string; generating?: boolean; error?: string };
-const bulkCatalogGridClass = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.85fr)_minmax(0,.7fr)_minmax(0,.5fr)_minmax(0,.5fr)_minmax(0,.8fr)_6rem]";
-const BULK_FILE_LIMIT = 2 * 1024 * 1024;
-function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { open: boolean; close: () => void; vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const [rows, setRows] = useState<BulkCatalogDraft[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [reading, setReading] = useState(false);
-  const [note, setNote] = useState("");
-  const existingProducts = state.products.filter((item) => item.vendorId === vendor.id);
-  const [replaceExisting, setReplaceExisting] = useState(false);
-  const defaultCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
-  const patch = (rowId: string, change: Partial<BulkCatalogDraft>) => setRows((current) => current.map((item) => item.id === rowId ? { ...item, ...change, error: undefined } : item));
-  const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType, description: item.description });
-
-  async function fileToText(file: File): Promise<string> {
-    if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
-      const XLSX = await import("xlsx");
-      const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const sheet = book.Sheets[book.SheetNames[0]];
-      if (!sheet) return "";
-      return XLSX.utils.sheet_to_csv(sheet);
+  function Catalog({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+    const [open, setOpen] = useState(false); const [bulkOpen, setBulkOpen] = useState(false); const items = state.products.filter((x) => x.vendorId === vendor.id);
+    const [toDelete, setToDelete] = useState<Product | null>(null); const [deleting, setDeleting] = useState(false);
+    const [clearAllOpen, setClearAllOpen] = useState(false); const [clearingAll, setClearingAll] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    async function setActive(product: Product, value: boolean) {
+      setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: value } : x) }));
+      try { if (isLiveSupabaseMode()) await setLiveProductActive(product.id, value); }
+      catch (error) { setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: !value } : x) })); toast.error(errorMessage(error, "The change could not be saved")); }
     }
-    return file.text();
+    async function confirmDelete() {
+      if (!toDelete) return;
+      const product = toDelete; setDeleting(true);
+      try {
+        const result = isLiveSupabaseMode() ? await deleteLiveVendorProduct(product.id) : { deleted: true, removedFromBaskets: 0 };
+        if (result.deleted) {
+          setState((s) => ({ ...s, products: s.products.filter((x) => x.id !== product.id), cart: s.cart.filter((x) => x.productId !== product.id), audit: [audit(session, "Deleted catalogue product", `${product.name} (${product.baseUnit})`), ...s.audit] }));
+          toast.success(result.removedFromBaskets ? `${product.name} deleted and removed from ${result.removedFromBaskets} customer basket${result.removedFromBaskets === 1 ? "" : "s"}` : `${product.name} deleted`);
+        } else {
+          setState((s) => ({ ...s, products: s.products.map((x) => x.id === product.id ? { ...x, active: false } : x) }));
+          toast.info(`${product.name} is in a customer's basket, so it was taken off sale instead. Ask the Super Admin to run the V9_19 database update to delete it fully.`);
+        }
+        setToDelete(null);
+      } catch (error) { toast.error(errorMessage(error, "The product could not be deleted")); }
+      finally { setDeleting(false); }
+    }
+
+    async function confirmClearAll() {
+      if (!items.length) return;
+      setClearingAll(true);
+      const itemIds = items.map((x) => x.id);
+      const count = items.length;
+      try {
+        if (isLiveSupabaseMode()) {
+          await clearLiveVendorProducts(itemIds);
+        }
+        setState((s) => ({
+          ...s,
+          products: s.products.filter((x) => x.vendorId !== vendor.id),
+          cart: s.cart.filter((x) => !itemIds.includes(x.productId)),
+          audit: [audit(session, "Cleared all catalogue products", `Cleared all ${count} products for ${vendor.businessName}`), ...s.audit],
+        }));
+        toast.success(`Cleared all ${count} product${count === 1 ? "" : "s"} from your catalogue`);
+        setClearAllOpen(false);
+      } catch (error) {
+        toast.error(errorMessage(error, "Could not clear all products"));
+      } finally {
+        setClearingAll(false);
+      }
+    }
+
+    const unsetFoodType = items.filter((item) => !item.foodType).length;
+    const readiness = [{ label: "Exact store pin", ready: Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude) }, { label: "Operations verified", ready: vendor.verification === "Verified" }, { label: "Store open today", ready: vendor.openToday && vendor.operational === "Active" }, { label: "Active product with stock", ready: items.some((item) => item.active && item.stock > 0) }];
+    return <div className="space-y-6"><Heading eyebrow="PRODUCT CATALOG" title="Items, packs & nutrition" body="Add one item manually or upload a grocery/product list. AI can structure the catalogue and create optional product images; nothing is published until you approve it." action={<div className="flex flex-wrap gap-2">{items.length > 0 && <Button type="button" onClick={() => setClearAllOpen(true)} variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"><Trash2 className="size-4" />Clear all products</Button>}<Button onClick={() => setBulkOpen(true)} variant="outline" className="rounded-xl"><FileUp />Upload product list</Button><Button onClick={() => { const check = canAddProduct(vendor.plan, items.length); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add product pack</Button></div>} />{unsetFoodType > 0 && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">{unsetFoodType} product{unsetFoodType === 1 ? " has" : "s have"} no food type yet. Choose Vegetarian, Non-vegetarian or Contains egg in the Food type column so customers see the right mark.</p>}<div className="surface-card rounded-[22px] p-4"><div className="text-sm font-black">Customer marketplace readiness</div><div className="mt-3 flex flex-wrap gap-2">{readiness.map((item) => <span key={item.label} className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${item.ready ? "bg-[#EAF4F2] text-[#202827]" : "bg-amber-50 text-amber-800"}`}>{item.ready ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}{item.label}</span>)}</div>{readiness.some((item) => !item.ready) && <p className="mt-3 text-xs text-stone-500">The product will not appear to customers until all three checks are green.</p>}</div>{items.length ? <div className="space-y-2"><div className="flex items-center justify-between px-1 text-xs text-stone-500 font-bold"><span>{items.length} product{items.length === 1 ? "" : "s"} in your catalogue</span><Button type="button" variant="ghost" size="sm" onClick={() => setClearAllOpen(true)} className="h-7 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5 mr-1" />Clear all products</Button></div><div className="surface-card overflow-hidden rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Selling pack</TableHead><TableHead>Pack stock</TableHead><TableHead>Price / pack</TableHead><TableHead>Nutrition / pack</TableHead><TableHead>Food type</TableHead><TableHead>Active</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{items.map((product) => <TableRow key={product.id}><TableCell><div className="flex items-center gap-3"><span className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</span><div><b><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</b><div className="text-xs text-stone-500">{product.category}</div>{product.description?.trim() ? <div className="text-xs text-stone-500 line-clamp-1 italic max-w-xs">{product.description.trim()}</div> : null}</div></div></TableCell><TableCell><b>{product.baseUnit}</b></TableCell><TableCell>{product.stock} packs</TableCell><TableCell className="font-black">{money(product.vendorPrice)}</TableCell><TableCell>{product.nutritionStatus === "Pending review" || product.calories <= 0 ? <div><Status className="border-amber-200 bg-amber-50 text-amber-800">Pending review</Status><div className="mt-1 text-xs text-stone-500">Product can stay active while Operations reviews nutrition.</div></div> : <div><b>{product.calories} kcal</b><div className="text-xs text-stone-500">P {product.protein}g · C {product.carbs}g · F {product.fat}g</div><div className="mt-1 text-[10px] font-bold text-[#155F65]">{product.nutritionStatus || "Estimated"}</div></div>}</TableCell><TableCell><FoodTypeSelect product={product} setState={setState} /></TableCell><TableCell><Switch aria-label={`${product.name} active`} checked={product.active} disabled={vendor.verification !== "Verified" || product.stock <= 0} onCheckedChange={(value) => void setActive(product, value)} /></TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${product.name}`} title="Edit this product pack" onClick={() => setEditingProduct(product)} className="rounded-xl text-stone-600 hover:bg-stone-100"><Pencil className="size-4" /></Button><Button type="button" variant="ghost" size="icon" aria-label={`Delete ${product.name}`} title="Delete this product" onClick={() => setToDelete(product)} className="rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table></div></div> : <Empty icon={ShoppingBag} title="Your catalogue is empty" body="Add the first sellable product pack. Nothing is seeded in V3." action={<Button onClick={() => { const check = canAddProduct(vendor.plan, 0); if (!check.allowed) { toast.error(check.reason); return; } setEditingProduct(null); setOpen(true); }} className="rounded-xl bg-[#155F65]"><Plus />Add first product pack</Button>} />}<Dialog open={Boolean(toDelete)} onOpenChange={(value) => !value && !deleting && setToDelete(null)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black">Delete this product?</DialogTitle><DialogDescription>{toDelete ? `${toDelete.name} (${toDelete.baseUnit}) will be removed from your catalogue and from customers' baskets. Past orders keep their own record of it. This cannot be undone.` : ""}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={deleting} onClick={() => setToDelete(null)} className="rounded-xl">Keep it</Button><Button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 text-white hover:bg-red-700">{deleting ? "Deleting…" : "Delete product"}</Button></div></DialogContent></Dialog><Dialog open={clearAllOpen} onOpenChange={(value) => !value && !clearingAll && setClearAllOpen(false)}><DialogContent className="rounded-[28px] sm:max-w-md"><DialogHeader><DialogTitle className="text-lg font-black text-red-600 flex items-center gap-2"><AlertTriangle className="size-5 text-red-600" />Clear all products?</DialogTitle><DialogDescription>This will remove all {items.length} product{items.length === 1 ? "" : "s"} from your catalogue and active customer baskets. Past orders will retain their historical records. This action cannot be undone.</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2 pt-2"><Button type="button" variant="outline" disabled={clearingAll} onClick={() => setClearAllOpen(false)} className="rounded-xl">Keep products</Button><Button type="button" disabled={clearingAll} onClick={() => void confirmClearAll()} className="rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold">{clearingAll ? "Clearing products…" : `Yes, clear all (${items.length})`}</Button></div></DialogContent></Dialog><ProductDialog open={open || Boolean(editingProduct)} close={() => { setOpen(false); setEditingProduct(null); }} vendor={vendor} setState={setState} session={session} editingProduct={editingProduct} existingProductsCount={items.length} /><BulkCatalogDialog open={bulkOpen} close={() => setBulkOpen(false)} vendor={vendor} state={state} setState={setState} session={session} /></div>;
   }
 
-  async function readList(file?: File) {
-    if (!file) return;
-    if (file.size === 0) return toast.error(`"${file.name}" is empty (0 bytes). Please upload a valid product list file (Excel or CSV).`);
-    if (file.size > BULK_FILE_LIMIT) return toast.error("That file is larger than 2 MB. Split the list into smaller files.");
-    setReading(true); setNote("");
-    try {
-      const text = await fileToText(file);
-      if (!text.trim()) return toast.error(`"${file.name}" contains no readable data. Please upload a valid product list file (Excel or CSV).`);
-      const reading = readCatalogueText(text, { categories: categoryNames, defaultCategory });
-      if (!reading.rows.length) return toast.error("No products were found in that file. Use a header row like Name, Category, Pack, Price, Stock, or download the template.");
-      let list = reading.rows;
-      // A list that has no header and no prices is just names; the smart reader may tidy it. Anything it cannot do falls back to what we read.
-      if (!reading.structured) {
-        try {
-          const token = await getAccessToken();
-          const controller = new AbortController(); const timer = window.setTimeout(() => controller.abort(), 20000);
-          const response = await fetch("/api/catalogue-import", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ text: text.slice(0, 30000), defaultCategory }) }).finally(() => window.clearTimeout(timer));
-          const json = await response.json() as { items?: Array<{ name: string; category: string; pack: string; price: number; stock: number }>; error?: string };
-          if (response.ok && json.items?.length) list = json.items.map((item) => { const draft = { name: String(item.name || "").trim(), category: matchCategory(item.category, categoryNames, defaultCategory), pack: item.pack || "1 pack", price: Number(item.price || 0), stock: Math.max(1, Number(item.stock || 1)) }; return { ...draft, problems: rowProblems(draft) } as CatalogueDraftRow; }).filter((item) => item.name);
-        } catch { /* keep the rows read directly from the file */ }
+
+  type BulkCatalogDraft = { id: string; name: string; category: string; pack: string; price: number; stock: number; foodType?: FoodType; description?: string; imageUrl?: string; generating?: boolean; error?: string };
+  const bulkCatalogGridClass = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.85fr)_minmax(0,.7fr)_minmax(0,.5fr)_minmax(0,.5fr)_minmax(0,.8fr)_6rem]";
+  const BULK_FILE_LIMIT = 2 * 1024 * 1024;
+  function BulkCatalogDialog({ open, close, vendor, state, setState, session }: { open: boolean; close: () => void; vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+    const [rows, setRows] = useState<BulkCatalogDraft[]>([]);
+    const [busy, setBusy] = useState(false);
+    const [reading, setReading] = useState(false);
+    const [note, setNote] = useState("");
+    const existingProducts = state.products.filter((item) => item.vendorId === vendor.id);
+    const [replaceExisting, setReplaceExisting] = useState(false);
+    const defaultCategory = vendor.category in unitsByCategory ? vendor.category : "Groceries";
+    const patch = (rowId: string, change: Partial<BulkCatalogDraft>) => setRows((current) => current.map((item) => item.id === rowId ? { ...item, ...change, error: undefined } : item));
+    const toDraft = (item: CatalogueDraftRow): BulkCatalogDraft => ({ id: id("BULK"), name: item.name, category: item.category, pack: item.pack, price: item.price, stock: item.stock, foodType: item.foodType, description: item.description });
+
+    async function fileToText(file: File): Promise<string> {
+      if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
+        const XLSX = await import("xlsx");
+        const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
+        const sheet = book.Sheets[book.SheetNames[0]];
+        if (!sheet) return "";
+        return XLSX.utils.sheet_to_csv(sheet);
       }
+      return file.text();
+    }
+
+    async function readList(file?: File) {
+      if (!file) return;
+      if (file.size === 0) return toast.error(`"${file.name}" is empty (0 bytes). Please upload a valid product list file (Excel or CSV).`);
+      if (file.size > BULK_FILE_LIMIT) return toast.error("That file is larger than 2 MB. Split the list into smaller files.");
+      setReading(true); setNote("");
+      try {
+        const text = await fileToText(file);
+        if (!text.trim()) return toast.error(`"${file.name}" contains no readable data. Please upload a valid product list file (Excel or CSV).`);
+        const reading = readCatalogueText(text, { categories: categoryNames, defaultCategory });
+        if (!reading.rows.length) return toast.error("No products were found in that file. Use a header row like Name, Category, Pack, Price, Stock, or download the template.");
+        let list = reading.rows;
+        // A list that has no header and no prices is just names; the smart reader may tidy it. Anything it cannot do falls back to what we read.
+        if (!reading.structured) {
+          try {
+            const token = await getAccessToken();
+            const controller = new AbortController(); const timer = window.setTimeout(() => controller.abort(), 20000);
+            const response = await fetch("/api/catalogue-import", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ text: text.slice(0, 30000), defaultCategory }) }).finally(() => window.clearTimeout(timer));
+            const json = await response.json() as { items?: Array<{ name: string; category: string; pack: string; price: number; stock: number }>; error?: string };
+            if (response.ok && json.items?.length) list = json.items.map((item) => { const draft = { name: String(item.name || "").trim(), category: matchCategory(item.category, categoryNames, defaultCategory), pack: item.pack || "1 pack", price: Number(item.price || 0), stock: Math.max(1, Number(item.stock || 1)) }; return { ...draft, problems: rowProblems(draft) } as CatalogueDraftRow; }).filter((item) => item.name);
+          } catch { /* keep the rows read directly from the file */ }
+        }
+        const currentCount = replaceExisting ? 0 : existingProducts.length;
+        const maxProducts = getPlanLimits(vendor.plan).maxProducts;
+        if (currentCount >= maxProducts) {
+          return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Upgrade to Thrive to add more.`);
+        }
+        let trimmed = false;
+        if (currentCount + list.length > maxProducts) {
+          const allowed = Math.max(0, maxProducts - currentCount);
+          list = list.slice(0, allowed);
+          trimmed = true;
+          toast.warning(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Trimming upload to ${allowed} products.`);
+        }
+        setRows(list.map(toDraft));
+        const missing = list.filter((item) => item.problems.length).length;
+        setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.${trimmed ? ` (Trimmed to meet ${getPlanDisplayName(vendor.plan)} limit of ${maxProducts})` : ""}`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
+        toast.success(`${list.length} item(s) prepared. Review every row before publishing.`);
+      } catch (error) { toast.error(errorMessage(error, "That file could not be read. Try saving it as CSV.")); }
+      finally { setReading(false); }
+    }
+    function downloadTemplate() {
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([CATALOGUE_TEMPLATE_CSV], { type: "text/csv" }));
+      link.download = "sheplates-product-list-template.csv";
+      document.body.appendChild(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+    async function generateImage(row: BulkCatalogDraft) {
+      setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: true } : item));
+      try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ name: row.name.slice(0, 60), productName: row.name.slice(0, 60), category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
+    }
+    async function publishAll() {
+      const valid = rows.filter((row) => rowProblems(row).length === 0);
+      if (!valid.length) return toast.error("Add a price and stock for at least one item");
       const currentCount = replaceExisting ? 0 : existingProducts.length;
       const maxProducts = getPlanLimits(vendor.plan).maxProducts;
-      if (currentCount >= maxProducts) {
-        return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Upgrade to Thrive to add more.`);
+      if (currentCount + valid.length > maxProducts) {
+        return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${existingProducts.length}. Upgrade to Thrive to add more.`);
       }
-      let trimmed = false;
-      if (currentCount + list.length > maxProducts) {
-        const allowed = Math.max(0, maxProducts - currentCount);
-        list = list.slice(0, allowed);
-        trimmed = true;
-        toast.warning(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${currentCount}. Trimming upload to ${allowed} products.`);
+      setBusy(true);
+      const created: Product[] = [];
+      const failed = new Map<string, string>();
+      for (const row of valid) {
+        try {
+          const options = unitsByCategory[row.category] || unitsByCategory.Groceries; const spec = options[0];
+          const nutrition: Nutrition = { calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 };
+          const nutritionNote = "Bulk-imported product published without verified nutrition. Operations review requested.";
+          let imageUrl = row.imageUrl;
+          if (imageUrl?.startsWith("data:") && isLiveSupabaseMode()) imageUrl = await uploadLiveProductImage(vendor.id, imageUrl);
+          const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
+          if (isLiveSupabaseMode()) { try { await notifyLiveNutritionReview({ productId, productName: row.name, reason: nutritionNote }); } catch (error) { console.error("Bulk nutrition review notification", error); } }
+          created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "Pending review", nutritionNote });
+        } catch (error) { failed.set(row.id, errorMessage(error, "This item could not be saved")); }
       }
-      setRows(list.map(toDraft));
-      const missing = list.filter((item) => item.problems.length).length;
-      setNote([`${list.length} product${list.length === 1 ? "" : "s"} found.${trimmed ? ` (Trimmed to meet ${getPlanDisplayName(vendor.plan)} limit of ${maxProducts})` : ""}`, missing ? `${missing} still need a price or stock before they can be published.` : "Every row is ready.", reading.skipped ? `${reading.skipped} blank or unreadable line${reading.skipped === 1 ? " was" : "s were"} skipped.` : "", reading.truncated ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : ""].filter(Boolean).join(" "));
-      toast.success(`${list.length} item(s) prepared. Review every row before publishing.`);
-    } catch (error) { toast.error(errorMessage(error, "That file could not be read. Try saving it as CSV.")); }
-    finally { setReading(false); }
-  }
-  function downloadTemplate() {
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([CATALOGUE_TEMPLATE_CSV], { type: "text/csv" }));
-    link.download = "sheplates-product-list-template.csv";
-    document.body.appendChild(link); link.click(); link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  }
-  async function generateImage(row: BulkCatalogDraft) {
-    setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: true } : item));
-    try { const token = await getAccessToken(); const response = await fetch("/api/product-image-generate", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ name: row.name.slice(0, 60), productName: row.name.slice(0, 60), category: row.category, pack: row.pack }) }); const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string }; if (!response.ok) throw new Error(json.error || "Image creation failed"); setRows((current) => current.map((item) => item.id === row.id ? { ...item, imageUrl: json.imageDataUrl || json.imageUrl, generating: false } : item)); } catch (error) { setRows((current) => current.map((item) => item.id === row.id ? { ...item, generating: false } : item)); toast.error(errorMessage(error, "Image creation failed")); }
-  }
-  async function publishAll() {
-    const valid = rows.filter((row) => rowProblems(row).length === 0);
-    if (!valid.length) return toast.error("Add a price and stock for at least one item");
-    const currentCount = replaceExisting ? 0 : existingProducts.length;
-    const maxProducts = getPlanLimits(vendor.plan).maxProducts;
-    if (currentCount + valid.length > maxProducts) {
-      return toast.error(`${getPlanDisplayName(vendor.plan)} allows ${maxProducts} products. You have ${existingProducts.length}. Upgrade to Thrive to add more.`);
-    }
-    setBusy(true);
-    const created: Product[] = [];
-    const failed = new Map<string, string>();
-    for (const row of valid) {
-      try {
-        const options = unitsByCategory[row.category] || unitsByCategory.Groceries; const spec = options[0];
-        const nutrition: Nutrition = { calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 };
-        const nutritionNote = "Bulk-imported product published without verified nutrition. Operations review requested.";
-        let imageUrl = row.imageUrl;
-        if (imageUrl?.startsWith("data:") && isLiveSupabaseMode()) imageUrl = await uploadLiveProductImage(vendor.id, imageUrl);
-        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({ vendorId: vendor.id, name: row.name.trim(), category: row.category, unit: row.pack || spec.label, price: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "pending_review", nutritionNote }) : id("PRD");
-        if (isLiveSupabaseMode()) { try { await notifyLiveNutritionReview({ productId, productName: row.name, reason: nutritionNote }); } catch (error) { console.error("Bulk nutrition review notification", error); } }
-        created.push({ id: productId, vendorId: vendor.id, name: row.name.trim(), category: row.category, emoji: spec.emoji, baseUnit: row.pack || spec.label, quantityStep: 1, vendorPrice: row.price, stock: Math.round(row.stock), active: vendor.verification === "Verified", ...nutrition, dietaryTags: [], packAmount: spec.amount, packMeasure: spec.measure, imageUrl, foodType: row.foodType, description: row.description, nutritionStatus: "Pending review", nutritionNote });
-      } catch (error) { failed.set(row.id, errorMessage(error, "This item could not be saved")); }
-    }
-    if (created.length) {
-      if (replaceExisting && existingProducts.length > 0) {
-        if (isLiveSupabaseMode()) {
-          try { await clearLiveVendorProducts(existingProducts.map((p) => p.id)); }
-          catch (error) { console.error("Clearing previous products during replacement", error); }
+      if (created.length) {
+        if (replaceExisting && existingProducts.length > 0) {
+          if (isLiveSupabaseMode()) {
+            try { await clearLiveVendorProducts(existingProducts.map((p) => p.id)); }
+            catch (error) { console.error("Clearing previous products during replacement", error); }
+          }
         }
+        const replacedIds = replaceExisting ? new Set(existingProducts.map((p) => p.id)) : new Set<string>();
+        if (isLiveSupabaseMode()) void drawSampleImages(created.filter((item) => !item.imageUrl).map((item) => item.id).slice(0, 10), setState);
+        setState((current) => ({
+          ...current,
+          products: [...created, ...current.products.filter((item) => !replacedIds.has(item.id) && !created.some((next) => next.id === item.id))],
+          cart: current.cart.filter((x) => !replacedIds.has(x.productId)),
+          audit: [audit(session, replaceExisting ? "Bulk catalogue replaced" : "Bulk catalogue approved", `${created.length} item(s) published by human approval`), ...current.audit]
+        }));
       }
-      const replacedIds = replaceExisting ? new Set(existingProducts.map((p) => p.id)) : new Set<string>();
-      if (isLiveSupabaseMode()) void drawSampleImages(created.filter((item) => !item.imageUrl).map((item) => item.id).slice(0, 10), setState);
-      setState((current) => ({
-        ...current,
-        products: [...created, ...current.products.filter((item) => !replacedIds.has(item.id) && !created.some((next) => next.id === item.id))],
-        cart: current.cart.filter((x) => !replacedIds.has(x.productId)),
-        audit: [audit(session, replaceExisting ? "Bulk catalogue replaced" : "Bulk catalogue approved", `${created.length} item(s) published by human approval`), ...current.audit]
-      }));
+      setBusy(false);
+      if (!failed.size) { toast.success(`${created.length} item(s) published`); setRows([]); setNote(""); close(); return; }
+      // Keep only what still needs attention, each with the reason it failed.
+      const publishedIds = new Set(valid.filter((row) => !failed.has(row.id)).map((row) => row.id));
+      setRows((current) => current.filter((row) => !publishedIds.has(row.id)).map((row) => failed.has(row.id) ? { ...row, error: failed.get(row.id) } : row));
+      toast.error(created.length ? `${created.length} published. ${failed.size} could not be saved; see the rows marked in red.` : `Nothing was published: ${[...failed.values()][0]}`);
     }
-    setBusy(false);
-    if (!failed.size) { toast.success(`${created.length} item(s) published`); setRows([]); setNote(""); close(); return; }
-    // Keep only what still needs attention, each with the reason it failed.
-    const publishedIds = new Set(valid.filter((row) => !failed.has(row.id)).map((row) => row.id));
-    setRows((current) => current.filter((row) => !publishedIds.has(row.id)).map((row) => failed.has(row.id) ? { ...row, error: failed.get(row.id) } : row));
-    toast.error(created.length ? `${created.length} published. ${failed.size} could not be saved; see the rows marked in red.` : `Nothing was published: ${[...failed.values()][0]}`);
+    const incomplete = rows.filter((row) => rowProblems(row).length > 0).length;
+    const readyCount = rows.length - incomplete;
+    return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-6xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload a CSV, Excel (.xlsx) or text file. Each line becomes a draft product. Review every row, set the food type, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
+      <div className="flex flex-wrap items-center gap-2"><label className="surface-card flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl border-dashed p-6 text-sm font-black"><input type="file" data-testid="bulk-file" className="sr-only" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,text/csv,text/plain" onChange={(e) => { const input = e.target; const file = input.files?.[0]; void readList(file).finally(() => { input.value = ""; }); }} /><FileUp className="mr-2 shrink-0" />{reading ? "Reading the file…" : "Upload product list"}</label><Button type="button" variant="outline" onClick={downloadTemplate} className="rounded-xl"><Download />Download template</Button>{rows.length > 0 && <Button type="button" variant="outline" onClick={() => { setRows([]); setNote(""); }} className="rounded-xl border-stone-200 text-stone-600 hover:text-red-600 hover:bg-red-50"><Trash2 className="size-4" />Clear draft rows ({rows.length})</Button>}</div>
+      <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. Product names must be within 60 characters. The first row is read as headings.</p>
+      {note && <p role="status" data-testid="bulk-summary" className="rounded-2xl bg-[#EAF4F2] p-3 text-sm font-medium text-[#202827]">{note}</p>}
+      {rows.length > 0 && <div className="space-y-3">
+        <div className={`hidden gap-3 px-4 text-xs font-black tracking-wide text-stone-500 lg:grid ${bulkCatalogGridClass}`}>
+          <div className="min-w-0">Product name</div><div className="min-w-0">Category</div><div className="min-w-0">Pack size</div><div className="min-w-0">Price (₹)</div><div className="min-w-0">Stock (packs)</div><div className="min-w-0">Food type</div><div className="w-24" aria-hidden="true" />
+        </div>
+        {rows.map((row, index) => {
+          const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} maxLength={60} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value.slice(0, 60) })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
+            <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
+            <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
+            {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
+          </div>;
+        })}
+      </div>}
+      {existingProducts.length > 0 && rows.length > 0 && (
+        <label className="flex items-center gap-2 rounded-2xl bg-amber-50 p-3.5 text-xs font-bold text-amber-900 border border-amber-200 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={replaceExisting}
+            onChange={(e) => setReplaceExisting(e.target.checked)}
+            className="size-4 rounded border-amber-400 text-[#155F65] focus:ring-[#155F65]"
+          />
+          <span>
+            Replace existing catalogue: remove {existingProducts.length} previously published product{existingProducts.length === 1 ? "" : "s"} when publishing this new list
+          </span>
+        </label>
+      )}
+      <Button onClick={() => void publishAll()} disabled={busy || !readyCount} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Check />{busy ? "Publishing…" : readyCount ? `Approve & publish ${readyCount} item${readyCount === 1 ? "" : "s"}${incomplete ? ` (${incomplete} incomplete will wait)` : ""}` : "Approve & publish selected catalogue"}</Button>
+    </DialogContent></Dialog>;
   }
-  const incomplete = rows.filter((row) => rowProblems(row).length > 0).length;
-  const readyCount = rows.length - incomplete;
-  return <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="max-h-[92vh] overflow-y-auto rounded-[28px] sm:max-w-6xl"><DialogHeader><DialogTitle className="text-lg font-black">Build catalogue from a product list</DialogTitle><DialogDescription>Upload a CSV, Excel (.xlsx) or text file. Each line becomes a draft product. Review every row, set the food type, optionally create an image, then approve the final catalogue yourself.</DialogDescription></DialogHeader>
-    <div className="flex flex-wrap items-center gap-2"><label className="surface-card flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl border-dashed p-6 text-sm font-black"><input type="file" data-testid="bulk-file" className="sr-only" accept=".csv,.txt,.tsv,.xlsx,.xlsm,.xls,text/csv,text/plain" onChange={(e) => { const input = e.target; const file = input.files?.[0]; void readList(file).finally(() => { input.value = ""; }); }} /><FileUp className="mr-2 shrink-0" />{reading ? "Reading the file…" : "Upload product list"}</label><Button type="button" variant="outline" onClick={downloadTemplate} className="rounded-xl"><Download />Download template</Button>{rows.length > 0 && <Button type="button" variant="outline" onClick={() => { setRows([]); setNote(""); }} className="rounded-xl border-stone-200 text-stone-600 hover:text-red-600 hover:bg-red-50"><Trash2 className="size-4" />Clear draft rows ({rows.length})</Button>}</div>
-    <p className="text-xs text-stone-500">Columns: Name, Category, Pack, Price, Stock, Food type (Veg, Non-veg or Egg). Only Name, Price and Stock are required. Product names must be within 60 characters. The first row is read as headings.</p>
-    {note && <p role="status" data-testid="bulk-summary" className="rounded-2xl bg-[#EAF4F2] p-3 text-sm font-medium text-[#202827]">{note}</p>}
-    {rows.length > 0 && <div className="space-y-3">
-      <div className={`hidden gap-3 px-4 text-xs font-black tracking-wide text-stone-500 lg:grid ${bulkCatalogGridClass}`}>
-        <div className="min-w-0">Product name</div><div className="min-w-0">Category</div><div className="min-w-0">Pack size</div><div className="min-w-0">Price (₹)</div><div className="min-w-0">Stock (packs)</div><div className="min-w-0">Food type</div><div className="w-24" aria-hidden="true" />
-      </div>
-      {rows.map((row, index) => {
-        const problems = rowProblems(row); return <div key={row.id} data-testid="bulk-row" className={`surface-card grid gap-3 rounded-3xl p-4 ${bulkCatalogGridClass} ${row.error ? "ring-2 ring-red-300" : ""}`}><input aria-label={`Product name, row ${index + 1}`} maxLength={60} value={row.name} onChange={(e) => patch(row.id, { name: e.target.value.slice(0, 60) })} className={`${inputClass} min-w-0`} placeholder="Product" /><Select value={row.category} onValueChange={(value) => patch(row.id, { category: value })}><SelectTrigger aria-label={`Category, row ${index + 1}`} className="min-w-0"><SelectValue /></SelectTrigger><SelectContent>{categoryNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select><input aria-label={`Pack size, row ${index + 1}`} value={row.pack} onChange={(e) => patch(row.id, { pack: e.target.value })} className={`${inputClass} min-w-0`} placeholder="Pack" /><input aria-label={`Price, row ${index + 1}`} type="number" min="0" value={row.price || ""} onChange={(e) => patch(row.id, { price: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.price > 0 ? "" : "border-amber-400"}`} placeholder="₹" /><input aria-label={`Stock, row ${index + 1}`} type="number" min="1" value={row.stock || ""} onChange={(e) => patch(row.id, { stock: Number(e.target.value) })} className={`${inputClass} min-w-0 ${row.stock > 0 ? "" : "border-amber-400"}`} placeholder="Stock" />
-          <select aria-label={`Food type, row ${index + 1}`} value={row.foodType ?? ""} onChange={(e) => patch(row.id, { foodType: normalizeFoodType(e.target.value) })} className={`${inputClass} min-w-0`}><option value="">Not set</option>{FOOD_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
-          <div className="flex w-24 gap-2"><button type="button" onClick={() => void generateImage(row)} className="grid size-11 place-items-center rounded-xl border" title="Create optional image" aria-label={`Create image, row ${index + 1}`}>{row.generating ? <RefreshCcw className="size-4 animate-spin" /> : row.imageUrl ? <img src={row.imageUrl} alt="" className="size-9 rounded-lg object-cover" /> : <Sparkles className="size-4" />}</button><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="grid size-11 place-items-center rounded-xl border text-red-600" aria-label={`Remove row ${index + 1}`}><Trash2 className="size-4" /></button></div>
-          {(row.error || problems.length > 0) && <p className={`text-xs font-bold lg:col-span-full ${row.error ? "text-red-700" : "text-amber-800"}`}>{row.error || problems.join(" · ")}</p>}
-        </div>;
-      })}
-    </div>}
-    {existingProducts.length > 0 && rows.length > 0 && (
-      <label className="flex items-center gap-2 rounded-2xl bg-amber-50 p-3.5 text-xs font-bold text-amber-900 border border-amber-200 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={replaceExisting}
-          onChange={(e) => setReplaceExisting(e.target.checked)}
-          className="size-4 rounded border-amber-400 text-[#155F65] focus:ring-[#155F65]"
-        />
-        <span>
-          Replace existing catalogue: remove {existingProducts.length} previously published product{existingProducts.length === 1 ? "" : "s"} when publishing this new list
-        </span>
-      </label>
-    )}
-    <Button onClick={() => void publishAll()} disabled={busy || !readyCount} className="h-12 w-full rounded-xl bg-[#155F65] font-black"><Check />{busy ? "Publishing…" : readyCount ? `Approve & publish ${readyCount} item${readyCount === 1 ? "" : "s"}${incomplete ? ` (${incomplete} incomplete will wait)` : ""}` : "Approve & publish selected catalogue"}</Button>
-  </DialogContent></Dialog>;
-}
 
-function ProductDialog({ open, close, vendor, setState, session, editingProduct, existingProductsCount }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null; existingProductsCount?: number }) {
-  const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<string>(defaultCategory);
-  const [skuGroup, setSkuGroup] = useState<string>("");
-  const [packSize, setPackSize] = useState<string>("");
-  const [price, setPrice] = useState(0);
-  const [stock, setStock] = useState(0);
-  const [nutrition, setNutrition] = useState<Nutrition>({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
-  const [confirmed, setConfirmed] = useState(false);
-  const [nutritionConfidence, setNutritionConfidence] = useState<number | undefined>();
-  const [nutritionNote, setNutritionNote] = useState("");
-  const [nutritionSource, setNutritionSource] = useState("");
-  const [nutritionLabelImage, setNutritionLabelImage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [imageBusy, setImageBusy] = useState(false);
-  const [foodType, setFoodType] = useState<FoodType | "">("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [originalImageUrl, setOriginalImageUrl] = useState("");
+  function ProductDialog({ open, close, vendor, setState, session, editingProduct, existingProductsCount }: { open: boolean; close: () => void; vendor: Vendor; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; editingProduct?: Product | null; existingProductsCount?: number }) {
+    const defaultCategory = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
+    const [name, setName] = useState("");
+    const [description, setDescription] = useState("");
+    const [category, setCategory] = useState<string>(defaultCategory);
+    const [skuGroup, setSkuGroup] = useState<string>("");
+    const [packSize, setPackSize] = useState<string>("");
+    const [price, setPrice] = useState(0);
+    const [stock, setStock] = useState(0);
+    const [nutrition, setNutrition] = useState<Nutrition>({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
+    const [confirmed, setConfirmed] = useState(false);
+    const [nutritionConfidence, setNutritionConfidence] = useState<number | undefined>();
+    const [nutritionNote, setNutritionNote] = useState("");
+    const [nutritionSource, setNutritionSource] = useState("");
+    const [nutritionLabelImage, setNutritionLabelImage] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [imageBusy, setImageBusy] = useState(false);
+    const [foodType, setFoodType] = useState<FoodType | "">("");
+    const [imageUrl, setImageUrl] = useState("");
+    const [originalImageUrl, setOriginalImageUrl] = useState("");
 
-  const [foodNameError, setFoodNameError] = useState(false);
-  const [foodNameValid, setFoodNameValid] = useState<boolean | null>(null);
-  const [foodNameValidating, setFoodNameValidating] = useState(false);
-  const foodValidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [foodNameError, setFoodNameError] = useState(false);
+    const [foodNameValid, setFoodNameValid] = useState<boolean | null>(null);
+    const [foodNameValidating, setFoodNameValidating] = useState(false);
+    const foodValidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [customGroup, setCustomGroup] = useState("");
-  const [customPackSize, setCustomPackSize] = useState("");
-  const [customUnit, setCustomUnit] = useState<SkuUnitType>("pack/set/loaf");
+    const [customGroup, setCustomGroup] = useState("");
+    const [customPackSize, setCustomPackSize] = useState("");
+    const [customUnit, setCustomUnit] = useState<SkuUnitType>("pack/set/loaf");
 
-  const groupsForCat = useMemo(() => {
-    const list = getSkuGroups(category);
-    return list.includes("Other") ? list : [...list, "Other"];
-  }, [category]);
-  const skusForGroup = useMemo(() => (skuGroup === "Other" ? [] : getSkusForGroup(category, skuGroup)), [category, skuGroup]);
-  const currentSku = useMemo(() => (skuGroup === "Other" || packSize === "Other" ? undefined : findSkuDefinition(category, skuGroup, packSize)), [category, skuGroup, packSize]);
-  const unitType = currentSku?.unitType || "";
+    const groupsForCat = useMemo(() => {
+      const list = getSkuGroups(category);
+      return list.includes("Other") ? list : [...list, "Other"];
+    }, [category]);
+    const skusForGroup = useMemo(() => (skuGroup === "Other" ? [] : getSkusForGroup(category, skuGroup)), [category, skuGroup]);
+    const currentSku = useMemo(() => (skuGroup === "Other" || packSize === "Other" ? undefined : findSkuDefinition(category, skuGroup, packSize)), [category, skuGroup, packSize]);
+    const unitType = currentSku?.unitType || "";
 
-  const effectiveGroup = skuGroup === "Other" ? (customGroup.trim() || "Other") : skuGroup;
-  const effectivePack = packSize === "Other" ? (customPackSize.trim() || "1 pack") : packSize;
-  const effectiveUnit = (packSize === "Other" || skuGroup === "Other") ? (customUnit || "pack/set/loaf") : (unitType || "pack/set/loaf");
+    const effectiveGroup = skuGroup === "Other" ? (customGroup.trim() || "Other") : skuGroup;
+    const effectivePack = packSize === "Other" ? (customPackSize.trim() || "1 pack") : packSize;
+    const effectiveUnit = (packSize === "Other" || skuGroup === "Other") ? (customUnit || "pack/set/loaf") : (unitType || "pack/set/loaf");
 
-  useEffect(() => {
-    if (editingProduct) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- editing a product fills the form once from that product
-      setCategory(editingProduct.category);
-      const groups = getSkuGroups(editingProduct.category);
-      const grp = editingProduct.skuGroupName || "";
-      if (grp && groups.includes(grp)) {
-        setSkuGroup(grp);
-        setCustomGroup("");
-        const skus = getSkusForGroup(editingProduct.category, grp);
-        const pk = editingProduct.packSize || editingProduct.baseUnit || "";
-        if (pk && skus.some((s) => s.packSize.toLowerCase() === pk.toLowerCase())) {
-          setPackSize(pk);
-          setCustomPackSize("");
-        } else if (pk) {
+    useEffect(() => {
+      if (editingProduct) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- editing a product fills the form once from that product
+        setCategory(editingProduct.category);
+        const groups = getSkuGroups(editingProduct.category);
+        const grp = editingProduct.skuGroupName || "";
+        if (grp && groups.includes(grp)) {
+          setSkuGroup(grp);
+          setCustomGroup("");
+          const skus = getSkusForGroup(editingProduct.category, grp);
+          const pk = editingProduct.packSize || editingProduct.baseUnit || "";
+          if (pk && skus.some((s) => s.packSize.toLowerCase() === pk.toLowerCase())) {
+            setPackSize(pk);
+            setCustomPackSize("");
+          } else if (pk) {
+            setPackSize("Other");
+            setCustomPackSize(pk);
+          } else {
+            setPackSize(skus[0]?.packSize || "Other");
+            setCustomPackSize("");
+          }
+        } else if (grp) {
+          setSkuGroup("Other");
+          setCustomGroup(grp);
           setPackSize("Other");
-          setCustomPackSize(pk);
+          setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
         } else {
-          setPackSize(skus[0]?.packSize || "Other");
-          setCustomPackSize("");
+          const fallbackGrp = groups[0] || "Other";
+          setSkuGroup(fallbackGrp);
+          setCustomGroup("");
+          setPackSize(editingProduct.packSize || editingProduct.baseUnit || "Other");
+          setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
         }
-      } else if (grp) {
-        setSkuGroup("Other");
-        setCustomGroup(grp);
-        setPackSize("Other");
-        setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
-      } else {
-        const fallbackGrp = groups[0] || "Other";
-        setSkuGroup(fallbackGrp);
+        if (editingProduct.unitType && (SKU_UNIT_TYPES as readonly string[]).includes(editingProduct.unitType)) {
+          setCustomUnit(editingProduct.unitType as SkuUnitType);
+        }
+        setName(editingProduct.name);
+        setDescription(editingProduct.description || "");
+        setPrice(editingProduct.vendorPrice);
+        setStock(editingProduct.stock);
+        setFoodType(editingProduct.foodType || "");
+        setImageUrl(editingProduct.imageUrl || "");
+        setOriginalImageUrl(editingProduct.originalImageUrl || editingProduct.imageUrl || "");
+        setNutrition({
+          calories: editingProduct.calories || 0,
+          protein: editingProduct.protein || 0,
+          carbs: editingProduct.carbs || 0,
+          fat: editingProduct.fat || 0,
+          fibre: editingProduct.fibre || 0,
+        });
+        setNutritionConfidence(editingProduct.nutritionConfidence);
+        setNutritionNote(editingProduct.nutritionNote || "");
+        setConfirmed(editingProduct.nutritionStatus === "Verified");
+        setFoodNameValid(null);
+        setFoodNameError(false);
+      } else if (open) {
+        const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
+        setCategory(initialCat);
+        const groups = getSkuGroups(initialCat);
+        const firstGrp = groups[0] || "Other";
+        setSkuGroup(firstGrp);
         setCustomGroup("");
-        setPackSize(editingProduct.packSize || editingProduct.baseUnit || "Other");
-        setCustomPackSize(editingProduct.packSize || editingProduct.baseUnit || "");
+        const skus = getSkusForGroup(initialCat, firstGrp);
+        const firstPack = skus[0]?.packSize || "Other";
+        setPackSize(firstPack);
+        setCustomPackSize("");
+        setCustomUnit("pack/set/loaf");
+        setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
+        setDescription("");
+        setPrice(0);
+        setStock(0);
+        setFoodType("");
+        setImageUrl("");
+        setOriginalImageUrl("");
+        setNutrition({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
+        setNutritionConfidence(undefined);
+        setNutritionNote("");
+        setConfirmed(false);
+        setFoodNameValid(null);
+        setFoodNameError(false);
       }
-      if (editingProduct.unitType && (SKU_UNIT_TYPES as readonly string[]).includes(editingProduct.unitType)) {
-        setCustomUnit(editingProduct.unitType as SkuUnitType);
-      }
-      setName(editingProduct.name);
-      setDescription(editingProduct.description || "");
-      setPrice(editingProduct.vendorPrice);
-      setStock(editingProduct.stock);
-      setFoodType(editingProduct.foodType || "");
-      setImageUrl(editingProduct.imageUrl || "");
-      setOriginalImageUrl(editingProduct.originalImageUrl || editingProduct.imageUrl || "");
-      setNutrition({
-        calories: editingProduct.calories || 0,
-        protein: editingProduct.protein || 0,
-        carbs: editingProduct.carbs || 0,
-        fat: editingProduct.fat || 0,
-        fibre: editingProduct.fibre || 0,
-      });
-      setNutritionConfidence(editingProduct.nutritionConfidence);
-      setNutritionNote(editingProduct.nutritionNote || "");
-      setConfirmed(editingProduct.nutritionStatus === "Verified");
-      setFoodNameValid(null);
-      setFoodNameError(false);
-    } else if (open) {
-      const initialCat = (SKU_CATEGORIES.includes(vendor.category) ? vendor.category : "Milk & dairy");
-      setCategory(initialCat);
-      const groups = getSkuGroups(initialCat);
+    }, [editingProduct, open, vendor.category]);
+
+    function handleCategoryChange(newCat: string) {
+      setCategory(newCat);
+      const groups = getSkuGroups(newCat);
       const firstGrp = groups[0] || "Other";
       setSkuGroup(firstGrp);
       setCustomGroup("");
-      const skus = getSkusForGroup(initialCat, firstGrp);
+      const skus = getSkusForGroup(newCat, firstGrp);
       const firstPack = skus[0]?.packSize || "Other";
       setPackSize(firstPack);
       setCustomPackSize("");
-      setCustomUnit("pack/set/loaf");
-      setName(firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "");
-      setDescription("");
-      setPrice(0);
-      setStock(0);
-      setFoodType("");
-      setImageUrl("");
-      setOriginalImageUrl("");
-      setNutrition({ calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
-      setNutritionConfidence(undefined);
-      setNutritionNote("");
+      if (!editingProduct) setName((firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "").slice(0, 60));
+      setConfirmed(false);
+    }
+
+    function handleGroupChange(newGrp: string) {
+      setSkuGroup(newGrp);
+      if (newGrp === "Other") {
+        setPackSize("Other");
+        if (!editingProduct) setName((customGroup.trim() ? formatProductPackLabel(customGroup.trim(), customPackSize.trim() || "") : "").slice(0, 60));
+      } else {
+        setCustomGroup("");
+        const skus = getSkusForGroup(category, newGrp);
+        const firstPack = skus[0]?.packSize || "Other";
+        setPackSize(firstPack);
+        setCustomPackSize("");
+        if (!editingProduct) setName(formatProductPackLabel(newGrp, firstPack !== "Other" ? firstPack : "").slice(0, 60));
+      }
+      setConfirmed(false);
+    }
+
+    function handlePackChange(newPack: string) {
+      setPackSize(newPack);
+      if (newPack === "Other") {
+        if (!editingProduct && effectiveGroup) setName((customPackSize.trim() ? formatProductPackLabel(effectiveGroup, customPackSize.trim()) : effectiveGroup).slice(0, 60));
+      } else {
+        setCustomPackSize("");
+        if (!editingProduct && effectiveGroup) setName(formatProductPackLabel(effectiveGroup, newPack).slice(0, 60));
+      }
+      setConfirmed(false);
+    }
+
+    async function runFoodValidation(nameToCheck: string): Promise<boolean> {
+      const trimmed = nameToCheck.trim();
+      if (trimmed.length < 2) {
+        setFoodNameValid(false);
+        return false;
+      }
+      setFoodNameValidating(true);
+      try {
+        const token = await getAccessToken();
+        const res = await fetch("/api/validate-food-name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ name: trimmed, category }),
+        });
+        const json = await res.json() as { isFood?: boolean };
+        const valid = !!json.isFood;
+        setFoodNameValid(valid);
+        if (!valid) setImageUrl("");
+        return valid;
+      } catch {
+        setFoodNameValid(null);
+        return true;
+      } finally {
+        setFoodNameValidating(false);
+      }
+    }
+
+    function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+      const val = e.target.value.slice(0, 60);
+      setName(val);
       setConfirmed(false);
       setFoodNameValid(null);
-      setFoodNameError(false);
-    }
-  }, [editingProduct, open, vendor.category]);
-
-  function handleCategoryChange(newCat: string) {
-    setCategory(newCat);
-    const groups = getSkuGroups(newCat);
-    const firstGrp = groups[0] || "Other";
-    setSkuGroup(firstGrp);
-    setCustomGroup("");
-    const skus = getSkusForGroup(newCat, firstGrp);
-    const firstPack = skus[0]?.packSize || "Other";
-    setPackSize(firstPack);
-    setCustomPackSize("");
-    if (!editingProduct) setName((firstGrp && firstGrp !== "Other" ? formatProductPackLabel(firstGrp, firstPack !== "Other" ? firstPack : "") : "").slice(0, 60));
-    setConfirmed(false);
-  }
-
-  function handleGroupChange(newGrp: string) {
-    setSkuGroup(newGrp);
-    if (newGrp === "Other") {
-      setPackSize("Other");
-      if (!editingProduct) setName((customGroup.trim() ? formatProductPackLabel(customGroup.trim(), customPackSize.trim() || "") : "").slice(0, 60));
-    } else {
-      setCustomGroup("");
-      const skus = getSkusForGroup(category, newGrp);
-      const firstPack = skus[0]?.packSize || "Other";
-      setPackSize(firstPack);
-      setCustomPackSize("");
-      if (!editingProduct) setName(formatProductPackLabel(newGrp, firstPack !== "Other" ? firstPack : "").slice(0, 60));
-    }
-    setConfirmed(false);
-  }
-
-  function handlePackChange(newPack: string) {
-    setPackSize(newPack);
-    if (newPack === "Other") {
-      if (!editingProduct && effectiveGroup) setName((customPackSize.trim() ? formatProductPackLabel(effectiveGroup, customPackSize.trim()) : effectiveGroup).slice(0, 60));
-    } else {
-      setCustomPackSize("");
-      if (!editingProduct && effectiveGroup) setName(formatProductPackLabel(effectiveGroup, newPack).slice(0, 60));
-    }
-    setConfirmed(false);
-  }
-
-  async function runFoodValidation(nameToCheck: string): Promise<boolean> {
-    const trimmed = nameToCheck.trim();
-    if (trimmed.length < 2) {
-      setFoodNameValid(false);
-      return false;
-    }
-    setFoodNameValidating(true);
-    try {
-      const token = await getAccessToken();
-      const res = await fetch("/api/validate-food-name", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ name: trimmed, category }),
-      });
-      const json = await res.json() as { isFood?: boolean };
-      const valid = !!json.isFood;
-      setFoodNameValid(valid);
-      if (!valid) setImageUrl("");
-      return valid;
-    } catch {
-      setFoodNameValid(null);
-      return true;
-    } finally {
-      setFoodNameValidating(false);
-    }
-  }
-
-  function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = e.target.value.slice(0, 60);
-    setName(val);
-    setConfirmed(false);
-    setFoodNameValid(null);
-    if (foodValidateTimerRef.current) clearTimeout(foodValidateTimerRef.current);
-    if (val.trim().length >= 2 && isLiveSupabaseMode()) {
-      foodValidateTimerRef.current = setTimeout(() => { void runFoodValidation(val); }, 500);
-    }
-  }
-
-  async function draftImage() {
-    if (!name.trim()) return toast.error("Enter the product name first");
-    if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
-    const isFood = await runFoodValidation(name.trim());
-    if (!isFood) { setFoodNameError(true); return; }
-    setImageBusy(true);
-    try {
-      setImageUrl(await generateLiveProductImage({ name: name.trim().slice(0, 60), category }));
-      toast.success("A sample image is ready. Replace it any time with a real photo.");
-    } catch (error) { toast.error(errorMessage(error, "The image could not be created")); }
-    finally { setImageBusy(false); }
-  }
-
-  const packSpec = parsePackSpec(effectivePack, effectiveUnit);
-  const nutritionPresent = Object.values(nutrition).some((value) => Number(value) > 0);
-  const nutritionConsistent = nutritionPresent && nutritionLooksConsistent(nutrition);
-  const nutritionStatus: Product["nutritionStatus"] = confirmed && nutritionConsistent ? "Verified" : nutritionConsistent ? "Estimated" : "Pending review";
-  const baseReady = Boolean(name.trim()) && name.trim().length <= 60 && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
-  const foodTypeReady = Boolean(foodType);
-  const measurable = nutritionPresent && ["g", "kg", "ml", "L"].includes(packSpec.measure);
-  const packBase = packSpec.measure === "kg" || packSpec.measure === "L" ? packSpec.amount * 1000 : packSpec.amount;
-  const per100 = measurable && packBase > 0 ? Object.fromEntries(Object.entries(nutrition).map(([key, value]) => [key, Math.round(Number(value) * 100 / packBase * 10) / 10])) as Nutrition : null;
-
-  async function calculate() {
-    if (!name.trim()) return toast.error("Enter the exact product name");
-    setBusy(true);
-    try {
-      const token = await getAccessToken();
-      const response = await fetchWithDeadline("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: packSpec.amount, measurementUnit: packSpec.measure, servingLabel: effectivePack, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
-      }, 60000);
-      const json = await response.json() as { result?: { nutritionAvailable?: boolean; nutrition?: Nutrition | null; confidence?: number; summary?: string; recommendedAction?: string }; error?: string };
-      if (!response.ok) throw new Error(json.error || "Nutrition could not be estimated");
-      const result = json.result;
-      if (result?.nutritionAvailable && result.nutrition && nutritionLooksConsistent(result.nutrition)) {
-        setNutrition(result.nutrition);
-        setNutritionConfidence(Number(result.confidence || 0));
-        setNutritionNote(result.summary || "Estimated for this selling pack. Verify against a label or recipe when possible.");
-        setConfirmed(false);
-        toast.success("Nutrition estimate added for this pack");
-      } else {
-        setNutritionConfidence(undefined);
-        setNutritionNote(result?.summary || "Nutrition could not be estimated reliably from the information provided.");
-        toast.info("Nutrition is pending. You can still publish this product.");
+      if (foodValidateTimerRef.current) clearTimeout(foodValidateTimerRef.current);
+      if (val.trim().length >= 2 && isLiveSupabaseMode()) {
+        foodValidateTimerRef.current = setTimeout(() => { void runFoodValidation(val); }, 500);
       }
-    } catch (error) {
-      setNutritionConfidence(undefined);
-      setNutritionNote(errorMessage(error, "Nutrition could not be estimated reliably."));
-      toast.info("Nutrition is pending. You can still publish this product.");
-    } finally { setBusy(false); }
-  }
+    }
 
-  function chooseImage(file?: File) {
-    if (!file) return;
-    if (file.size === 0) return toast.error(`"${file.name}" is empty (0 bytes). Please choose a valid image file.`);
-    readImage(file, (value) => { setOriginalImageUrl(value); setImageUrl(value); toast.success("Product image ready. You can publish it as-is or improve its presentation."); });
-  }
-
-  async function enhanceImage() {
-    if (!imageUrl) return toast.error("Upload a product image first");
-    if (!name.trim()) return toast.error("Enter the product name before image enhancement");
-    const isFood = await runFoodValidation(name.trim());
-    if (!isFood) { setFoodNameError(true); return; }
-    setImageBusy(true);
-    try {
-      const token = await getAccessToken();
-      const response = await fetch("/api/image-enhance", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ imageDataUrl: imageUrl, productName: name, category }) });
-      const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string };
-      if (!response.ok) throw new Error(json.error || "Image enhancement failed");
-      setImageUrl(json.imageDataUrl || json.imageUrl || imageUrl);
-      toast.success("Marketplace image is ready. Review it before publishing.");
-    } catch (error) { toast.error(errorMessage(error, "Image enhancement failed")); }
-    finally { setImageBusy(false); }
-  }
-
-  async function save() {
-    if (!name.trim()) return toast.error("Enter the product display name");
-    if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
-    if (isLiveSupabaseMode()) {
+    async function draftImage() {
+      if (!name.trim()) return toast.error("Enter the product name first");
+      if (!isLiveSupabaseMode()) return toast.info("Sample images are created on the live site.");
       const isFood = await runFoodValidation(name.trim());
       if (!isFood) { setFoodNameError(true); return; }
-    }
-    const cleanDesc = sanitizeProductDescription(description);
-    if (cleanDesc.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
-      return toast.error(`Description must be within ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`);
-    }
-    if (!baseReady) return toast.error("Select the category, SKU group, pack size, and enter price & stock");
-    if (!foodType) return toast.error("Choose Vegetarian, Non-vegetarian or Contains egg");
-    if (skuGroup === "Other" && !customGroup.trim()) return toast.error("Please enter your custom product / SKU group name");
-    if (packSize === "Other" && !customPackSize.trim()) return toast.error("Please enter your custom pack size");
-    const skuValidation = validateSkuSelection(category, effectiveGroup, effectivePack, effectiveUnit);
-    if (!skuValidation.valid) {
-      return toast.error(skuValidation.error || "Invalid Category, SKU Group, or Pack Size selection.");
+      setImageBusy(true);
+      try {
+        setImageUrl(await generateLiveProductImage({ name: name.trim().slice(0, 60), category }));
+        toast.success("A sample image is ready. Replace it any time with a real photo.");
+      } catch (error) { toast.error(errorMessage(error, "The image could not be created")); }
+      finally { setImageBusy(false); }
     }
 
-    if (!editingProduct) {
-      const planCheck = canAddProduct(vendor.plan, existingProductsCount ?? 0);
-      if (!planCheck.allowed) {
-        return toast.error(planCheck.reason);
+    const packSpec = parsePackSpec(effectivePack, effectiveUnit);
+    const nutritionPresent = Object.values(nutrition).some((value) => Number(value) > 0);
+    const nutritionConsistent = nutritionPresent && nutritionLooksConsistent(nutrition);
+    const nutritionStatus: Product["nutritionStatus"] = confirmed && nutritionConsistent ? "Verified" : nutritionConsistent ? "Estimated" : "Pending review";
+    const baseReady = Boolean(name.trim()) && name.trim().length <= 60 && price > 0 && Number.isInteger(stock) && stock > 0 && Boolean(effectiveGroup) && Boolean(effectivePack) && (skuGroup !== "Other" || Boolean(customGroup.trim())) && (packSize !== "Other" || Boolean(customPackSize.trim()));
+    const foodTypeReady = Boolean(foodType);
+    const measurable = nutritionPresent && ["g", "kg", "ml", "L"].includes(packSpec.measure);
+    const packBase = packSpec.measure === "kg" || packSpec.measure === "L" ? packSpec.amount * 1000 : packSpec.amount;
+    const per100 = measurable && packBase > 0 ? Object.fromEntries(Object.entries(nutrition).map(([key, value]) => [key, Math.round(Number(value) * 100 / packBase * 10) / 10])) as Nutrition : null;
+
+    async function calculate() {
+      if (!name.trim()) return toast.error("Enter the exact product name");
+      setBusy(true);
+      try {
+        const token = await getAccessToken();
+        const response = await fetchWithDeadline("/api/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ task: "nutrition", message: name, context: { productName: name, category, amount: packSpec.amount, measurementUnit: packSpec.measure, servingLabel: effectivePack, nutritionSource }, imageBase64: nutritionLabelImage || undefined }),
+        }, 60000);
+        const json = await response.json() as { result?: { nutritionAvailable?: boolean; nutrition?: Nutrition | null; confidence?: number; summary?: string; recommendedAction?: string }; error?: string };
+        if (!response.ok) throw new Error(json.error || "Nutrition could not be estimated");
+        const result = json.result;
+        if (result?.nutritionAvailable && result.nutrition && nutritionLooksConsistent(result.nutrition)) {
+          setNutrition(result.nutrition);
+          setNutritionConfidence(Number(result.confidence || 0));
+          setNutritionNote(result.summary || "Estimated for this selling pack. Verify against a label or recipe when possible.");
+          setConfirmed(false);
+          toast.success("Nutrition estimate added for this pack");
+        } else {
+          setNutritionConfidence(undefined);
+          setNutritionNote(result?.summary || "Nutrition could not be estimated reliably from the information provided.");
+          toast.info("Nutrition is pending. You can still publish this product.");
+        }
+      } catch (error) {
+        setNutritionConfidence(undefined);
+        setNutritionNote(errorMessage(error, "Nutrition could not be estimated reliably."));
+        toast.info("Nutrition is pending. You can still publish this product.");
+      } finally { setBusy(false); }
+    }
+
+    function chooseImage(file?: File) {
+      if (!file) return;
+      if (file.size === 0) return toast.error(`"${file.name}" is empty (0 bytes). Please choose a valid image file.`);
+      readImage(file, (value) => { setOriginalImageUrl(value); setImageUrl(value); toast.success("Product image ready. You can publish it as-is or improve its presentation."); });
+    }
+
+    async function enhanceImage() {
+      if (!imageUrl) return toast.error("Upload a product image first");
+      if (!name.trim()) return toast.error("Enter the product name before image enhancement");
+      const isFood = await runFoodValidation(name.trim());
+      if (!isFood) { setFoodNameError(true); return; }
+      setImageBusy(true);
+      try {
+        const token = await getAccessToken();
+        const response = await fetch("/api/image-enhance", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ imageDataUrl: imageUrl, productName: name, category }) });
+        const json = await response.json() as { imageDataUrl?: string; imageUrl?: string; error?: string };
+        if (!response.ok) throw new Error(json.error || "Image enhancement failed");
+        setImageUrl(json.imageDataUrl || json.imageUrl || imageUrl);
+        toast.success("Marketplace image is ready. Review it before publishing.");
+      } catch (error) { toast.error(errorMessage(error, "Image enhancement failed")); }
+      finally { setImageBusy(false); }
+    }
+
+    async function save() {
+      if (!name.trim()) return toast.error("Enter the product display name");
+      if (name.trim().length > 60) return toast.error("Product name must be within 60 characters");
+      if (isLiveSupabaseMode()) {
+        const isFood = await runFoodValidation(name.trim());
+        if (!isFood) { setFoodNameError(true); return; }
       }
-    }
+      const cleanDesc = sanitizeProductDescription(description);
+      if (cleanDesc.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
+        return toast.error(`Description must be within ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`);
+      }
+      if (!baseReady) return toast.error("Select the category, SKU group, pack size, and enter price & stock");
+      if (!foodType) return toast.error("Choose Vegetarian, Non-vegetarian or Contains egg");
+      if (skuGroup === "Other" && !customGroup.trim()) return toast.error("Please enter your custom product / SKU group name");
+      if (packSize === "Other" && !customPackSize.trim()) return toast.error("Please enter your custom pack size");
+      const skuValidation = validateSkuSelection(category, effectiveGroup, effectivePack, effectiveUnit);
+      if (!skuValidation.valid) {
+        return toast.error(skuValidation.error || "Invalid Category, SKU Group, or Pack Size selection.");
+      }
 
-    setBusy(true);
-    try {
-      const active = vendor.verification === "Verified";
-      let publishedImage = imageUrl || undefined;
-      if (publishedImage && isLiveSupabaseMode()) publishedImage = await uploadLiveProductImage(vendor.id, publishedImage);
-      const statusForDb = nutritionStatus === "Verified" ? "verified" : nutritionStatus === "Estimated" ? "estimated" : "pending_review";
-      const note = nutritionStatus === "Pending review" ? (nutritionNote || (nutritionPresent ? "Entered nutrition needs review." : "Nutrition was not supplied or could not be estimated reliably.")) : (nutritionNote || "Nutrition supplied for this selling pack.");
+      if (!editingProduct) {
+        const planCheck = canAddProduct(vendor.plan, existingProductsCount ?? 0);
+        if (!planCheck.allowed) {
+          return toast.error(planCheck.reason);
+        }
+      }
 
-      if (editingProduct) {
-        if (isLiveSupabaseMode()) {
-          await updateLiveVendorProduct({
-            id: editingProduct.id,
-            vendorId: vendor.id,
+      setBusy(true);
+      try {
+        const active = vendor.verification === "Verified";
+        let publishedImage = imageUrl || undefined;
+        if (publishedImage && isLiveSupabaseMode()) publishedImage = await uploadLiveProductImage(vendor.id, publishedImage);
+        const statusForDb = nutritionStatus === "Verified" ? "verified" : nutritionStatus === "Estimated" ? "estimated" : "pending_review";
+        const note = nutritionStatus === "Pending review" ? (nutritionNote || (nutritionPresent ? "Entered nutrition needs review." : "Nutrition was not supplied or could not be estimated reliably.")) : (nutritionNote || "Nutrition supplied for this selling pack.");
+
+        if (editingProduct) {
+          if (isLiveSupabaseMode()) {
+            await updateLiveVendorProduct({
+              id: editingProduct.id,
+              vendorId: vendor.id,
+              name: name.trim(),
+              category,
+              unit: effectivePack,
+              price,
+              stock,
+              active: editingProduct.active,
+              calories: nutrition.calories,
+              protein: nutrition.protein,
+              carbs: nutrition.carbs,
+              fat: nutrition.fat,
+              fibre: nutrition.fibre,
+              dietaryTags: editingProduct.dietaryTags || [],
+              packAmount: packSpec.amount,
+              packMeasure: packSpec.measure,
+              imageUrl: publishedImage,
+              foodType,
+              description: cleanDesc || undefined,
+              nutritionStatus: statusForDb,
+              nutritionConfidence,
+              nutritionNote: note,
+              skuGroupName: effectiveGroup,
+              packSize: effectivePack,
+              unitType: effectiveUnit,
+            });
+          }
+          const updatedProduct: Product = {
+            ...editingProduct,
             name: name.trim(),
             category,
-            unit: effectivePack,
-            price,
+            emoji: unitsByCategory[category]?.[0]?.emoji || "📦",
+            baseUnit: effectivePack,
+            vendorPrice: price,
             stock,
-            active: editingProduct.active,
-            calories: nutrition.calories,
-            protein: nutrition.protein,
-            carbs: nutrition.carbs,
-            fat: nutrition.fat,
-            fibre: nutrition.fibre,
-            dietaryTags: editingProduct.dietaryTags || [],
-            packAmount: packSpec.amount,
-            packMeasure: packSpec.measure,
-            imageUrl: publishedImage,
             foodType,
             description: cleanDesc || undefined,
-            nutritionStatus: statusForDb,
+            imageUrl: publishedImage,
+            originalImageUrl: originalImageUrl || undefined,
+            nutritionStatus,
             nutritionConfidence,
             nutritionNote: note,
+            ...nutrition,
+            packAmount: packSpec.amount,
+            packMeasure: packSpec.measure,
             skuGroupName: effectiveGroup,
             packSize: effectivePack,
             unitType: effectiveUnit,
-          });
+          };
+          setState((current) => ({
+            ...current,
+            products: current.products.map((p) => p.id === editingProduct.id ? updatedProduct : p),
+            audit: [audit(session, "Updated product pack", `${name.trim()} · ${effectivePack}`), ...current.audit],
+          }));
+          toast.success("Product pack updated successfully");
+          close();
+          return;
         }
-        const updatedProduct: Product = {
-          ...editingProduct,
-          name: name.trim(),
-          category,
-          emoji: unitsByCategory[category]?.[0]?.emoji || "📦",
-          baseUnit: effectivePack,
-          vendorPrice: price,
-          stock,
-          foodType,
+
+        const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({
+          vendorId: vendor.id, name: name.trim(), category, unit: effectivePack, price, stock, active,
+          calories: nutrition.calories, protein: nutrition.protein, carbs: nutrition.carbs, fat: nutrition.fat, fibre: nutrition.fibre,
+          dietaryTags: [], packAmount: packSpec.amount, packMeasure: packSpec.measure, imageUrl: publishedImage, foodType,
           description: cleanDesc || undefined,
-          imageUrl: publishedImage,
-          originalImageUrl: originalImageUrl || undefined,
-          nutritionStatus,
-          nutritionConfidence,
-          nutritionNote: note,
-          ...nutrition,
-          packAmount: packSpec.amount,
-          packMeasure: packSpec.measure,
+          nutritionStatus: statusForDb, nutritionConfidence, nutritionNote: note,
+          skuGroupName: effectiveGroup,
+          packSize: effectivePack,
+          unitType: effectiveUnit,
+        }) : id("PRD");
+        const product: Product = {
+          id: productId, vendorId: vendor.id, name: name.trim(), category, emoji: unitsByCategory[category]?.[0]?.emoji || "📦", baseUnit: effectivePack,
+          quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: packSpec.amount,
+          packMeasure: packSpec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
+          description: cleanDesc || undefined,
+          nutritionStatus, nutritionConfidence, nutritionNote: note,
           skuGroupName: effectiveGroup,
           packSize: effectivePack,
           unitType: effectiveUnit,
         };
         setState((current) => ({
           ...current,
-          products: current.products.map((p) => p.id === editingProduct.id ? updatedProduct : p),
-          audit: [audit(session, "Updated product pack", `${name.trim()} · ${effectivePack}`), ...current.audit],
+          products: [product, ...current.products.filter((x) => x.id !== product.id)],
+          markups: { ...current.markups, [product.id]: 0 },
+          audit: [audit(session, "Published product pack", `${name.trim()} · ${effectivePack} · nutrition ${nutritionStatus?.toLowerCase()}${publishedImage ? " · image attached" : ""}`), ...current.audit],
         }));
-        toast.success("Product pack updated successfully");
+        if (!publishedImage && isLiveSupabaseMode()) void drawSampleImages([productId], setState);
+        if (nutritionStatus === "Pending review") {
+          if (isLiveSupabaseMode()) {
+            try { await notifyLiveNutritionReview({ productId, productName: name, reason: note }); } catch (error) { console.error("Nutrition review notification", error); }
+          }
+          toast.info("Product published. Operations has been flagged to review nutrition.");
+        } else toast.success("Product pack saved");
         close();
-        return;
-      }
+      } catch (error) { toast.error(errorMessage(error, "Product could not be saved")); }
+      finally { setBusy(false); }
+    }
 
-      const productId = isLiveSupabaseMode() ? await saveLiveVendorProduct({
-        vendorId: vendor.id, name: name.trim(), category, unit: effectivePack, price, stock, active,
-        calories: nutrition.calories, protein: nutrition.protein, carbs: nutrition.carbs, fat: nutrition.fat, fibre: nutrition.fibre,
-        dietaryTags: [], packAmount: packSpec.amount, packMeasure: packSpec.measure, imageUrl: publishedImage, foodType,
-        description: cleanDesc || undefined,
-        nutritionStatus: statusForDb, nutritionConfidence, nutritionNote: note,
-        skuGroupName: effectiveGroup,
-        packSize: effectivePack,
-        unitType: effectiveUnit,
-      }) : id("PRD");
-      const product: Product = {
-        id: productId, vendorId: vendor.id, name: name.trim(), category, emoji: unitsByCategory[category]?.[0]?.emoji || "📦", baseUnit: effectivePack,
-        quantityStep: 1, vendorPrice: price, stock, active, ...nutrition, dietaryTags: [], packAmount: packSpec.amount,
-        packMeasure: packSpec.measure, imageUrl: publishedImage, originalImageUrl: originalImageUrl || undefined, foodType,
-        description: cleanDesc || undefined,
-        nutritionStatus, nutritionConfidence, nutritionNote: note,
-        skuGroupName: effectiveGroup,
-        packSize: effectivePack,
-        unitType: effectiveUnit,
-      };
-      setState((current) => ({
-        ...current,
-        products: [product, ...current.products.filter((x) => x.id !== product.id)],
-        markups: { ...current.markups, [product.id]: 0 },
-        audit: [audit(session, "Published product pack", `${name.trim()} · ${effectivePack} · nutrition ${nutritionStatus?.toLowerCase()}${publishedImage ? " · image attached" : ""}`), ...current.audit],
-      }));
-      if (!publishedImage && isLiveSupabaseMode()) void drawSampleImages([productId], setState);
-      if (nutritionStatus === "Pending review") {
-        if (isLiveSupabaseMode()) {
-          try { await notifyLiveNutritionReview({ productId, productName: name, reason: note }); } catch (error) { console.error("Nutrition review notification", error); }
-        }
-        toast.info("Product published. Operations has been flagged to review nutrition.");
-      } else toast.success("Product pack saved");
-      close();
-    } catch (error) { toast.error(errorMessage(error, "Product could not be saved")); }
-    finally { setBusy(false); }
-  }
+    const metrics: Array<[keyof Nutrition, string]> = [["calories", "Calories"], ["protein", "Protein g"], ["carbs", "Carbs g"], ["fat", "Fat g"], ["fibre", "Fibre g"]];
+    return (
+      <>
+        <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
+          <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
+            <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
 
-  const metrics: Array<[keyof Nutrition, string]> = [["calories", "Calories"], ["protein", "Protein g"], ["carbs", "Carbs g"], ["fat", "Fat g"], ["fibre", "Fibre g"]];
-  return (
-    <>
-      <Dialog open={open} onOpenChange={(value) => !value && close()}><DialogContent className="sp-product-dialog max-h-[94vh] overflow-y-auto rounded-[26px] sm:max-w-4xl"><DialogHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><DialogTitle className="text-lg font-black">{editingProduct ? "Edit product pack" : "Add a sellable product pack"}</DialogTitle><DialogDescription>Select Category, Product / SKU Group and Pack Size from the Sheplates SKU Master, or choose Other for custom options.</DialogDescription></div><AiCreditsBadge vendor={vendor} /></div></DialogHeader>
-    <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="space-y-4"><fieldset className="rounded-2xl bg-[#EEF2F2] p-4"><legend className="px-1 text-sm font-semibold text-[#202827]">Food type <span className="text-[#b42332]">*</span></legend><p className="mb-3 text-xs text-[#55656A]">Customers see this mark on the product. Choose it yourself: Sheplates never guesses it from the category.</p><div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Food type">{FOOD_TYPES.map((type) => <button key={type.value} type="button" role="radio" aria-checked={foodType === type.value} onClick={() => setFoodType(type.value)} className={`inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${foodType === type.value ? "bg-[#155F65] text-white" : "bg-white text-[#202827] ring-1 ring-[#DDE3E4]"}`}><span className="grid size-5 place-items-center rounded-sm bg-white"><FoodTypeMark type={type.value} hideLabel /></span>{type.label}</button>)}</div></fieldset>
+              {/* SKU Master Cascading Selection */}
+              <div className="grid gap-4 sm:grid-cols-2 rounded-2xl bg-[#F7FAFA] border border-stone-200/80 p-4">
+                <Field label="Category">
+                  <Select value={category} onValueChange={handleCategoryChange}>
+                    <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {SKU_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
 
-        {/* SKU Master Cascading Selection */}
-        <div className="grid gap-4 sm:grid-cols-2 rounded-2xl bg-[#F7FAFA] border border-stone-200/80 p-4">
-          <Field label="Category">
-            <Select value={category} onValueChange={handleCategoryChange}>
-              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {SKU_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </Field>
+                <Field label="Product / SKU group" hint={skuGroup === "Other" ? "Custom product group" : `Groups in ${category}`}>
+                  <Select value={skuGroup} onValueChange={handleGroupChange}>
+                    <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose group" /></SelectTrigger>
+                    <SelectContent>
+                      {groupsForCat.map((grp) => <SelectItem key={grp} value={grp}>{grp}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {skuGroup === "Other" && (
+                    <input
+                      value={customGroup}
+                      onChange={(e) => {
+                        setCustomGroup(e.target.value);
+                        if (!editingProduct) {
+                          const ep = packSize === "Other" ? (customPackSize.trim() || "") : packSize;
+                          setName(formatProductPackLabel(e.target.value.trim() || "Product", ep));
+                        }
+                        setConfirmed(false);
+                      }}
+                      placeholder="Enter custom product group name"
+                      className={`mt-2 ${inputClass}`}
+                    />
+                  )}
+                </Field>
 
-          <Field label="Product / SKU group" hint={skuGroup === "Other" ? "Custom product group" : `Groups in ${category}`}>
-            <Select value={skuGroup} onValueChange={handleGroupChange}>
-              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose group" /></SelectTrigger>
-              <SelectContent>
-                {groupsForCat.map((grp) => <SelectItem key={grp} value={grp}>{grp}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {skuGroup === "Other" && (
-              <input
-                value={customGroup}
-                onChange={(e) => {
-                  setCustomGroup(e.target.value);
-                  if (!editingProduct) {
-                    const ep = packSize === "Other" ? (customPackSize.trim() || "") : packSize;
-                    setName(formatProductPackLabel(e.target.value.trim() || "Product", ep));
-                  }
-                  setConfirmed(false);
-                }}
-                placeholder="Enter custom product group name"
-                className={`mt-2 ${inputClass}`}
-              />
-            )}
-          </Field>
+                <Field label="Predefined pack size" hint={packSize === "Other" ? "Custom pack size" : "Verified pack size from SKU master"}>
+                  <Select value={packSize} onValueChange={handlePackChange}>
+                    <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose pack size" /></SelectTrigger>
+                    <SelectContent>
+                      {skusForGroup.map((sku) => (
+                        <SelectItem key={sku.packSize} value={sku.packSize}>
+                          {sku.packSize} ({sku.unitType})
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {packSize === "Other" && (
+                    <input
+                      value={customPackSize}
+                      onChange={(e) => {
+                        setCustomPackSize(e.target.value);
+                        if (!editingProduct) {
+                          const eg = skuGroup === "Other" ? (customGroup.trim() || "Product") : skuGroup;
+                          setName(formatProductPackLabel(eg, e.target.value.trim() || ""));
+                        }
+                        setConfirmed(false);
+                      }}
+                      placeholder="Enter custom pack size (e.g. 350 ml, 1.5 kg, 5 pcs)"
+                      className={`mt-2 ${inputClass}`}
+                    />
+                  )}
+                </Field>
 
-          <Field label="Predefined pack size" hint={packSize === "Other" ? "Custom pack size" : "Verified pack size from SKU master"}>
-            <Select value={packSize} onValueChange={handlePackChange}>
-              <SelectTrigger className="h-11 rounded-xl bg-white"><SelectValue placeholder="Choose pack size" /></SelectTrigger>
-              <SelectContent>
-                {skusForGroup.map((sku) => (
-                  <SelectItem key={sku.packSize} value={sku.packSize}>
-                    {sku.packSize} ({sku.unitType})
-                  </SelectItem>
-                ))}
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            {packSize === "Other" && (
-              <input
-                value={customPackSize}
-                onChange={(e) => {
-                  setCustomPackSize(e.target.value);
-                  if (!editingProduct) {
-                    const eg = skuGroup === "Other" ? (customGroup.trim() || "Product") : skuGroup;
-                    setName(formatProductPackLabel(eg, e.target.value.trim() || ""));
-                  }
-                  setConfirmed(false);
-                }}
-                placeholder="Enter custom pack size (e.g. 350 ml, 1.5 kg, 5 pcs)"
-                className={`mt-2 ${inputClass}`}
-              />
-            )}
-          </Field>
-
-          <Field label="Unit" hint={packSize === "Other" || skuGroup === "Other" ? "Choose custom unit type" : "Locked to selected product & SKU"}>
-            {packSize === "Other" || skuGroup === "Other" ? (
-              <Select value={customUnit} onValueChange={(val) => setCustomUnit(val as SkuUnitType)}>
-                <SelectTrigger className="h-11 rounded-xl bg-white font-black text-[#155F65]">
-                  <SelectValue placeholder="Select unit" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SKU_UNIT_TYPES.map((u) => (
-                    <SelectItem key={u} value={u}>{u}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-black text-[#155F65]">
-                <BadgeCheck className="size-4 shrink-0 text-[#155F65]" />
-                <span>{unitType || "—"}</span>
-                <span className="text-xs font-normal text-stone-400">· {effectivePack ? `Selected: ${effectivePack}` : "Select pack"}</span>
+                <Field label="Unit" hint={packSize === "Other" || skuGroup === "Other" ? "Choose custom unit type" : "Locked to selected product & SKU"}>
+                  {packSize === "Other" || skuGroup === "Other" ? (
+                    <Select value={customUnit} onValueChange={(val) => setCustomUnit(val as SkuUnitType)}>
+                      <SelectTrigger className="h-11 rounded-xl bg-white font-black text-[#155F65]">
+                        <SelectValue placeholder="Select unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SKU_UNIT_TYPES.map((u) => (
+                          <SelectItem key={u} value={u}>{u}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-black text-[#155F65]">
+                      <BadgeCheck className="size-4 shrink-0 text-[#155F65]" />
+                      <span>{unitType || "—"}</span>
+                      <span className="text-xs font-normal text-stone-400">· {effectivePack ? `Selected: ${effectivePack}` : "Select pack"}</span>
+                    </div>
+                  )}
+                </Field>
               </div>
-            )}
-          </Field>
-        </div>
 
-        <div className="space-y-4">
-          <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
-            <input
-              maxLength={60}
-              value={name}
-              onChange={handleNameChange}
-              className={`${inputClass}${foodNameValid === false ? " ring-2 ring-red-400" : ""}`}
-              placeholder="Example: Fresh Cow Milk (500 ml)"
-            />
-            {foodNameValid === false && (
-              <p className="mt-1 text-xs font-semibold text-red-500">Please enter a valid food or beverage product name.</p>
-            )}
-            {foodNameValidating && (
-              <p className="mt-1 text-xs text-stone-400">Validating product name…</p>
-            )}
-            {foodNameValid !== false && <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>}
-          </Field>
-          <Field
-            label="Description (optional)"
-            hint={`Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam. (${description.length}/${PRODUCT_DESCRIPTION_MAX_LENGTH})`}
-          >
-            <Textarea
-              maxLength={PRODUCT_DESCRIPTION_MAX_LENGTH}
-              value={description}
-              onChange={(e) => setDescription(e.target.value.slice(0, PRODUCT_DESCRIPTION_MAX_LENGTH))}
-              className="min-h-20 rounded-xl resize-y text-sm bg-white"
-              placeholder="Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam."
-            />
-            <p className="mt-1 text-xs text-stone-500">Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam.</p>
-          </Field>
-        </div>
+              <div className="space-y-4">
+                <Field label="Product display name" hint={`Appears on customer menu · Maximum 60 characters (${name.length}/60)`}>
+                  <input
+                    maxLength={60}
+                    value={name}
+                    onChange={handleNameChange}
+                    className={`${inputClass}${foodNameValid === false ? " ring-2 ring-red-400" : ""}`}
+                    placeholder="Example: Fresh Cow Milk (500 ml)"
+                  />
+                  {foodNameValid === false && (
+                    <p className="mt-1 text-xs font-semibold text-red-500">Please enter a valid food or beverage product name.</p>
+                  )}
+                  {foodNameValidating && (
+                    <p className="mt-1 text-xs text-stone-400">Validating product name…</p>
+                  )}
+                  {foodNameValid !== false && <p className="mt-1 text-xs text-stone-500">Note: Product name must be within 60 characters.</p>}
+                </Field>
+                <Field
+                  label="Description (optional)"
+                  hint={`Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam. (${description.length}/${PRODUCT_DESCRIPTION_MAX_LENGTH})`}
+                >
+                  <Textarea
+                    maxLength={PRODUCT_DESCRIPTION_MAX_LENGTH}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value.slice(0, PRODUCT_DESCRIPTION_MAX_LENGTH))}
+                    className="min-h-20 rounded-xl resize-y text-sm bg-white"
+                    placeholder="Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam."
+                  />
+                  <p className="mt-1 text-xs text-stone-500">Tell customers what is in this pack. Example: Rice, dal, 2 poriyal with payasam.</p>
+                </Field>
+              </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={`Your price for one ${packSize || "pack"}`}>
-            <input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} placeholder="₹" />
-          </Field>
-          <Field label="Available sealed packs" hint={`Count of ${packSize || "pack"} items ready to sell`}>
-            <input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} placeholder="Stock quantity" />
-          </Field>
-          <div className="flex items-end sm:col-span-2">
-            <Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button>
-          </div>
-        </div>
-        <div className="rounded-[22px] border border-stone-200/80 bg-[#EEF2F2] p-4"><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-stone-500">Nutrition source · optional</div><p className="mt-1 text-xs leading-5 text-stone-500">For a better estimate, paste package-label values or recipe/ingredient details, or upload a nutrition-label photo. You can also publish without nutrition.</p></div><Sparkles className="size-5 shrink-0 text-[#155F65]" /></div><Textarea value={nutritionSource} onChange={(e) => setNutritionSource(e.target.value)} className="mt-3 min-h-20 rounded-xl bg-white" placeholder="Example: 250 g cooked rice, 120 g chicken, 15 g oil... or paste label text" /><label className="mt-3 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white px-3 text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size === 0) { toast.error(`"${file.name}" is empty (0 bytes). Please upload a valid nutrition-label photo.`); e.target.value = ""; return; } readImage(file, setNutritionLabelImage); } }} /><ImageUp className="size-4" />{nutritionLabelImage ? "Nutrition label attached" : "Upload nutrition-label photo"}</label></div>
-        <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {packSize}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key, label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml", "litre", "L"].includes(packSpec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
-      </div>
-      <div className="surface-card-muted rounded-[28px] p-4"><div className="flex items-center justify-between"><div><div className="text-xs font-black uppercase tracking-[.14em] text-[#155F65]">Product media</div><h3 className="mt-1 font-black">Marketplace image</h3></div><ImageUp className="text-[#155F65]" /></div><div className="mt-4 grid aspect-square place-items-center overflow-hidden rounded-3xl shadow-inner" style={{ background: imageUrl ? undefined : categoryVisual(category).bg }}>{imageUrl ? <img src={imageUrl} alt="Product preview" className="h-full w-full object-cover" /> : <ProductGlyph category={category} iconClassName="size-12" />}</div><label className="mt-4 flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => chooseImage(e.target.files?.[0])} /><ImageUp className="size-4" />Upload real product photo</label><Button onClick={enhanceImage} disabled={!imageUrl || imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "AI enhance for marketplace"}</Button><Button onClick={() => void draftImage()} disabled={imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "Create a sample image with AI"}</Button>{originalImageUrl && imageUrl !== originalImageUrl && <button onClick={() => setImageUrl(originalImageUrl)} className="mt-2 w-full text-center text-xs font-black text-stone-500">Restore original image</button>}<p className="mt-3 text-[11px] leading-5 text-stone-500">Image enhancement preserves the real product and pack while improving presentation. Review the result before publishing. If you skip the photo, a sample image is drawn for you automatically; replace it any time with a real photo.</p></div>
-    </div>
-    {nutritionPresent && !nutritionConsistent && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">The entered calories and macros do not align. This does not block publishing; the product will be marked “Nutrition pending” and Operations will be notified.</div>}
-    {!nutritionPresent && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Nutrition is optional.</b> Publish now if you do not have it. Operations will receive a review notification and the marketplace will show nutrition as pending.</div>}
-    <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? (editingProduct ? "Updating…" : "Publishing…") : (editingProduct ? "Update product pack" : "Publish product pack")}</Button>
-  </DialogContent></Dialog>
-  <Dialog open={foodNameError} onOpenChange={(v) => { if (!v) setFoodNameError(false); }}>
-    <DialogContent className="rounded-[28px] sm:max-w-sm">
-      <DialogHeader>
-        <DialogTitle className="text-lg font-black">Invalid product name</DialogTitle>
-        <DialogDescription className="pt-2 text-sm leading-relaxed text-stone-600">
-          Please enter a valid food item name. Sheplates only supports food and beverage products.
-        </DialogDescription>
-      </DialogHeader>
-      <div className="mt-4 flex justify-end">
-        <Button onClick={() => setFoodNameError(false)} className="rounded-full bg-[#155F65] px-8">OK</Button>
-      </div>
-    </DialogContent>
-  </Dialog>
-  </>);
-}
-
-function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const isCrown = vendor.plan === "Crown";
-  const opportunities = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received").filter((x) => !x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id));
-  const myQuotes = state.quotes.filter((x) => x.vendorId === vendor.id);
-  const [draft, setDraft] = useState<Record<string, number>>({});
-
-  function quote(req: Requirement) {
-    if (!isCrown) return toast.error("Quotation requests (RFQ) and AI quotation assistance are exclusive to the Crown plan.");
-    if (req.closingDate && req.closingDate < new Date().toISOString().slice(0, 10)) return toast.error("This RFQ is closed");
-    const total = draft[req.id];
-    if (!total) return toast.error("Enter your best total");
-    const item: Quote = { id: id("QTE"), requirementId: req.id, vendorId: vendor.id, total, deliveryFee: 0, note: "Best local price", status: "Submitted" };
-    setState((s) => ({
-      ...s,
-      quotes: [item, ...s.quotes.filter((x) => !(x.vendorId === vendor.id && x.requirementId === req.id))],
-      requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Quotes received" } : x),
-      notifications: [notice(req.customerEmail, "customer", "Vendor accepted your RFQ", `${vendor.businessName} submitted ${money(total)}.`), ...s.notifications],
-      audit: [audit(session, "Accepted RFQ and submitted quote", `${req.id} · ${money(total)}`), ...s.audit],
-    }));
-    toast.success("RFQ accepted and quotation submitted");
-  }
-
-  return (
-    <div className="space-y-6">
-      <Heading eyebrow="PREMIUM FEATURE" title="Local RFQ opportunities" body="Only RFQs explicitly matched to this vendor are visible. Submit an independent best price before the customer closing date." />
-      {!isCrown && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
-          <p className="text-sm font-semibold">
-            Quotation requests (RFQ) and new quote opportunities are exclusive to the Crown plan. Upgrade to Crown to accept customer quotation requests.
-          </p>
-        </div>
-      )}
-      {myQuotes.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="font-bold text-sm text-stone-700">Your Quotation History ({myQuotes.length})</h3>
-          <div className="grid gap-3">
-            {myQuotes.map((q) => {
-              const req = state.requirements.find((r) => r.id === q.requirementId);
-              return (
-                <div key={q.id} className="surface-card rounded-2xl p-4 flex justify-between items-center">
-                  <div>
-                    <h4 className="font-bold text-sm">{req?.title || `Requirement ${q.requirementId}`}</h4>
-                    <p className="text-xs text-stone-500">{q.id} · {money(q.total + (q.deliveryFee || 0))}</p>
-                  </div>
-                  <Status>{q.status}</Status>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={`Your price for one ${packSize || "pack"}`}>
+                  <input type="number" min="1" value={price || ""} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} placeholder="₹" />
+                </Field>
+                <Field label="Available sealed packs" hint={`Count of ${packSize || "pack"} items ready to sell`}>
+                  <input type="number" min="1" step="1" value={stock || ""} onChange={(e) => setStock(Number(e.target.value))} className={inputClass} placeholder="Stock quantity" />
+                </Field>
+                <div className="flex items-end sm:col-span-2">
+                  <Button onClick={calculate} disabled={busy} variant="outline" title="Calculate for this pack" className="h-11 w-full"><Sparkles />{busy ? "Calculating…" : "Calculate with She Agent"}</Button>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {!isCrown && myQuotes.length === 0 ? (
-        <Empty icon={WalletCards} title="Quotation access is on the Crown plan" body="Upgrade to Crown to receive customer quotation requests and submit quotes." />
-      ) : isCrown && opportunities.length ? (
-        opportunities.map((req) => (
-          <div key={req.id} className="surface-card rounded-[28px] p-5">
-            <div className="flex justify-between">
-              <div>
-                <h3 className="font-black">{req.title}</h3>
-                <p className="text-xs text-stone-500">{req.items.length} items · closes {req.closingDate || "not set"} · needed {req.deliveryDate}</p>
               </div>
-              <Status>{state.quotes.some((x) => x.requirementId === req.id && x.vendorId === vendor.id) ? "Accepted / quoted" : "Invited"}</Status>
+              <div className="rounded-[22px] border border-stone-200/80 bg-[#EEF2F2] p-4"><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[.12em] text-stone-500">Nutrition source · optional</div><p className="mt-1 text-xs leading-5 text-stone-500">For a better estimate, paste package-label values or recipe/ingredient details, or upload a nutrition-label photo. You can also publish without nutrition.</p></div><Sparkles className="size-5 shrink-0 text-[#155F65]" /></div><Textarea value={nutritionSource} onChange={(e) => setNutritionSource(e.target.value)} className="mt-3 min-h-20 rounded-xl bg-white" placeholder="Example: 250 g cooked rice, 120 g chicken, 15 g oil... or paste label text" /><label className="mt-3 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white px-3 text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size === 0) { toast.error(`"${file.name}" is empty (0 bytes). Please upload a valid nutrition-label photo.`); e.target.value = ""; return; } readImage(file, setNutritionLabelImage); } }} /><ImageUp className="size-4" />{nutritionLabelImage ? "Nutrition label attached" : "Upload nutrition-label photo"}</label></div>
+              <div className="grid gap-4 lg:grid-cols-2"><div className={`rounded-2xl p-4 ${nutritionStatus === "Pending review" ? "bg-amber-50/80" : "bg-[#EEF2F2]"}`}><div className={`text-xs font-black uppercase tracking-wider ${nutritionStatus === "Pending review" ? "text-amber-800" : "text-[#202827]"}`}>Per selected pack: {packSize}</div><div className="mt-3 grid grid-cols-2 gap-2">{metrics.map(([key, label]) => <Field key={key} label={label}><input type="number" min="0" step="0.1" value={nutrition[key] || ""} placeholder="Optional" onChange={(e) => { setNutrition((x) => ({ ...x, [key]: Number(e.target.value || 0) })); setNutritionConfidence(undefined); setNutritionNote("Nutrition entered manually; Operations review may be required."); setConfirmed(false); }} className={inputClass} /></Field>)}</div></div><div className="surface-card rounded-[22px] p-4"><div className="flex items-center justify-between gap-2"><div className="text-xs font-black uppercase tracking-wider text-stone-500">Nutrition status</div><Status className={nutritionStatus === "Pending review" ? "border-amber-200 bg-amber-50 text-amber-800" : nutritionStatus === "Verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{nutritionStatus}</Status></div>{nutritionConfidence !== undefined && <p className="mt-2 text-xs text-stone-500">Estimate confidence: {Math.round(nutritionConfidence)}%</p>}{nutritionNote && <p className="mt-2 text-sm leading-5 text-stone-600">{nutritionNote}</p>}{per100 ? <div className="mt-3 space-y-2 text-sm"><div className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Comparable basis</div><Review label={`Calories / 100 ${["ml", "litre", "L"].includes(packSpec.measure) ? "ml" : "g"}`} value={`${per100.calories} kcal`} /><Review label="Protein" value={`${per100.protein} g`} /><Review label="Carbs" value={`${per100.carbs} g`} /><Review label="Fat" value={`${per100.fat} g`} /></div> : <p className="mt-3 text-sm text-stone-500">Nutrition can be left blank. Customers will see “Nutrition pending” until it is reviewed.</p>}{nutritionConsistent && <label className="mt-5 flex items-start gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><Switch checked={confirmed} onCheckedChange={setConfirmed} /><span><b>I verified these values.</b><br />I checked the estimate against the package label or recipe.</span></label>}</div></div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {req.items.map((item) => (
-                <span key={item.id} className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold">{item.name} · {item.quantity} {item.unit}</span>
-              ))}
+            <div className="surface-card-muted rounded-[28px] p-4"><div className="flex items-center justify-between"><div><div className="text-xs font-black uppercase tracking-[.14em] text-[#155F65]">Product media</div><h3 className="mt-1 font-black">Marketplace image</h3></div><ImageUp className="text-[#155F65]" /></div><div className="mt-4 grid aspect-square place-items-center overflow-hidden rounded-3xl shadow-inner" style={{ background: imageUrl ? undefined : categoryVisual(category).bg }}>{imageUrl ? <img src={imageUrl} alt="Product preview" className="h-full w-full object-cover" /> : <ProductGlyph category={category} iconClassName="size-12" />}</div><label className="mt-4 flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border bg-white text-sm font-black"><input type="file" accept="image/*" className="hidden" onChange={(e) => chooseImage(e.target.files?.[0])} /><ImageUp className="size-4" />Upload real product photo</label><Button onClick={enhanceImage} disabled={!imageUrl || imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "AI enhance for marketplace"}</Button><Button onClick={() => void draftImage()} disabled={imageBusy} variant="outline" className="mt-2 h-11 w-full rounded-xl"><Sparkles />{imageBusy ? "Working…" : "Create a sample image with AI"}</Button>{originalImageUrl && imageUrl !== originalImageUrl && <button onClick={() => setImageUrl(originalImageUrl)} className="mt-2 w-full text-center text-xs font-black text-stone-500">Restore original image</button>}<p className="mt-3 text-[11px] leading-5 text-stone-500">Image enhancement preserves the real product and pack while improving presentation. Review the result before publishing. If you skip the photo, a sample image is drawn for you automatically; replace it any time with a real photo.</p></div>
+          </div>
+          {nutritionPresent && !nutritionConsistent && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">The entered calories and macros do not align. This does not block publishing; the product will be marked “Nutrition pending” and Operations will be notified.</div>}
+          {!nutritionPresent && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><b>Nutrition is optional.</b> Publish now if you do not have it. Operations will receive a review notification and the marketplace will show nutrition as pending.</div>}
+          <Button onClick={save} disabled={!baseReady || !foodTypeReady || busy} className="h-12 bg-[#155F65]"><Check />{busy ? (editingProduct ? "Updating…" : "Publishing…") : (editingProduct ? "Update product pack" : "Publish product pack")}</Button>
+        </DialogContent></Dialog>
+        <Dialog open={foodNameError} onOpenChange={(v) => { if (!v) setFoodNameError(false); }}>
+          <DialogContent className="rounded-[28px] sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black">Invalid product name</DialogTitle>
+              <DialogDescription className="pt-2 text-sm leading-relaxed text-stone-600">
+                Please enter a valid food item name. Sheplates only supports food and beverage products.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 flex justify-end">
+              <Button onClick={() => setFoodNameError(false)} className="rounded-full bg-[#155F65] px-8">OK</Button>
             </div>
-            <div className="mt-5 flex max-w-md gap-2">
-              <input type="number" value={draft[req.id] || ""} onChange={(e) => setDraft((x) => ({ ...x, [req.id]: Number(e.target.value) }))} placeholder="Your best total ₹" className={inputClass} />
-              <Button onClick={() => quote(req)} className="rounded-xl bg-[#155F65]">Accept & quote</Button>
-            </div>
-          </div>
-        ))
-      ) : isCrown ? (
-        <Empty icon={ClipboardCheck} title="No RFQs matched to your store" body="Only serviceable customer requests sent to this vendor account will appear here." />
-      ) : null}
-    </div>
-  );
-}
-
-function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [editing, setEditing] = useState<Staff | null>(null);
-  const people = state.staff.filter((x) => x.vendorId === vendor.id);
-  async function savePerson() {
-    if (!name || !/^\+?[0-9 ]{10,15}$/.test(phone)) return toast.error("Enter a staff name and valid phone number");
-    if (!editing) {
-      const staffCheck = canAddDeliveryStaff(vendor.plan, people.length);
-      if (!staffCheck.allowed) {
-        return toast.error(staffCheck.reason);
-      }
-    }
-    try {
-      let staffId = editing?.id || id("STF");
-      if (isLiveSupabaseMode()) { const result = await saveLiveDeliveryStaff({ staffId: editing?.id, name, phone, active: editing?.active ?? true }); staffId = String(result.id); }
-      if (editing) setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === editing.id ? { ...x, id: staffId, name, phone } : x), audit: [audit(session, "Updated delivery staff", `${name} · ${phone}`), ...s.audit] }));
-      else { const person: Staff = { id: staffId, vendorId: vendor.id, name, phone, active: true }; setState((s) => ({ ...s, staff: [person, ...s.staff], audit: [audit(session, "Added delivery staff", `${name} · ${phone}`), ...s.audit] })); }
-      toast.success(editing ? "Delivery person updated" : "Delivery person added"); setName(""); setPhone(""); setEditing(null);
-    } catch (error) { toast.error(errorMessage(error, "Delivery person could not be saved")); }
+          </DialogContent>
+        </Dialog>
+      </>);
   }
-  async function remove(person: Staff) {
-    // A delivery person with an open order cannot be removed: that would leave the order with nobody to deliver it.
-    const openOrders = state.assignments.filter((x) => x.staffId === person.id).map((x) => state.orders.find((o) => o.id === x.orderId)).filter((o): o is Order => Boolean(o) && !["Completed", "Delivered", "Cancelled"].includes(o!.status));
-    if (openOrders.length) { toast.error(`${person.name} is assigned to ${openOrders.length} open order${openOrders.length === 1 ? "" : "s"}. Assign ${openOrders.length === 1 ? "it" : "them"} to someone else or finish ${openOrders.length === 1 ? "it" : "them"} before deleting this person.`); return; }
-    if (!confirm(`Delete ${person.name} from the delivery team? Existing completed-order history is retained.`)) return;
-    try { if (isLiveSupabaseMode()) await deleteLiveDeliveryStaff(person.id); setState((s) => ({ ...s, staff: s.staff.filter((x) => x.id !== person.id), assignments: s.assignments.filter((x) => x.staffId !== person.id), audit: [audit(session, "Deleted delivery staff", `${person.name} · ${person.phone}`), ...s.audit] })); toast.success("Delivery person deleted"); }
-    catch (error) { toast.error(errorMessage(error, "Delivery person could not be deleted")); }
-  }
-  return <div className="space-y-6"><Heading eyebrow="DELIVERY ACCOUNTABILITY" title="Your delivery team" body="Add, edit or remove delivery people. Active staff can be assigned to upcoming delivery orders." />
-    <div className="surface-card rounded-[28px] p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Staff name" className={inputClass} /><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" className={inputClass} /><Button onClick={savePerson} className="h-11 rounded-xl bg-[#155F65]">{editing ? <Pencil /> : <Plus />}{editing ? "Save changes" : "Add staff"}</Button></div>{editing && <button onClick={() => { setEditing(null); setName(""); setPhone(""); }} className="mt-3 text-xs font-black text-stone-500">Cancel editing</button>}</div>
-    {people.length ? <div className="grid gap-3 md:grid-cols-2">{people.map((person) => <div key={person.id} className="surface-card flex items-center gap-3 rounded-[22px] p-4"><div className="grid size-11 place-items-center rounded-full bg-[#EAF4F2] font-black text-[#155F65]">{person.name[0]}</div><div className="min-w-0 flex-1"><b className="block truncate">{person.name}</b><div className="text-xs text-stone-500">{person.phone}</div></div><button onClick={() => { setEditing(person); setName(person.name); setPhone(person.phone); }} className="grid size-9 place-items-center rounded-xl hover:bg-stone-100" title="Edit"><Pencil className="size-4" /></button><button onClick={() => remove(person)} className="grid size-9 place-items-center rounded-xl text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="size-4" /></button><Switch checked={person.active} onCheckedChange={(value) => { void (async () => { try { if (isLiveSupabaseMode()) await saveLiveDeliveryStaff({ staffId: person.id, name: person.name, phone: person.phone, active: value }); setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === person.id ? { ...x, active: value } : x) })); } catch (error) { toast.error(errorMessage(error, "Staff status could not be changed")); } })(); }} /></div>)}</div> : <Empty icon={Truck} title="No delivery staff" body="Add the first delivery person above." />}
-    <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Today&apos;s assignments</h3>
-      {(() => { const rows = state.orders.filter((o) => o.vendorId === vendor.id && o.payment === "Paid" && !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery").slice(0, 8); return rows.length ? <div className="mt-3 space-y-2">{rows.map((o) => { const a = state.assignments.find((x) => x.orderId === o.id); const who = state.staff.find((m) => m.id === a?.staffId); return <div key={o.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-[#EEF2F2] px-4 py-3 text-sm sm:grid-cols-[1.1fr_1fr_1.2fr_1fr_auto]"><b className="truncate">{o.id}</b><span>{o.slot}</span><span className="truncate text-[#2F3C3F]">{o.deliveryAddress || "Address on order"}</span><span className={who ? "font-medium" : "text-[#55656A]"}>{who?.name || "Not assigned"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${who ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]"}`}>{who ? o.status : "Assign in Orders"}</span></div>; })}</div> : <p className="mt-3 rounded-2xl bg-[#EEF2F2] p-4 text-sm text-[#55656A]">No open deliveries to assign right now.</p>; })()}
-    </section>
-    <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Customers see the delivery person&apos;s first name and phone number only while their order is on the way.</p>
-  </div>;
-}
 
-function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
+  function VendorQuotes({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+    const isCrown = vendor.plan === "Crown";
+    const opportunities = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received").filter((x) => !x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id));
+    const myQuotes = state.quotes.filter((x) => x.vendorId === vendor.id);
+    const [draft, setDraft] = useState<Record<string, number>>({});
 
-function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={navigate} />;
-  if (active === "AI insights") return <AIInsights role="operations" state={state} />;
-  if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
-  if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
-  if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
-  if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
-  if (active === "Store & radius") return <OperationsStoreRadius session={session} state={state} setState={setState} />;
-  if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
-  if (active === "RFQ desk") return isLiveSupabaseMode() ? <LiveRfqDesk /> : <RFQDesk state={state} />;
-  if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
-  if (active === "Cancellations") return <Cancellations session={session} state={state} setState={setState} />;
-  if (active === "Vendor payments") return <VendorPayments state={state} setState={setState} session={session} canManage />;
-  if (active === "Reports") return <ReportsCentre state={state} />;
-  if (active === "Stories monitor") return <StoriesMonitor />;
-  if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="manage" />;
-  const subscriptionVendors = state.vendors.filter((x) => x.vendorKind !== "p0_connect");
-  const activeOrders = state.orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)); const gmv = state.orders.reduce((sum, x) => sum + x.total, 0); const openVendors = subscriptionVendors.filter((x) => x.openToday && x.verification === "Verified").length;
-  const todayStr = todayISO();
-  const salesToday = state.orders.filter((x) => x.date === todayStr && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0);
-  const awaitingVerification = subscriptionVendors.filter((x) => ["Submitted", "Under review"].includes(x.verification));
-  const unassigned = state.orders.filter((o) => !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery" && !state.assignments.some((a) => a.orderId === o.id));
-  const cancelQueue = state.cancellations.filter((x) => x.status === "Awaiting operations");
-  const openTickets = state.tickets.filter((t) => t.status !== "Resolved");
-  const attention: { icon: typeof Store; tint: string; title: string; sub: string; go: string }[] = [
-    ...unassigned.slice(0, 2).map((o) => ({ icon: AlertTriangle, tint: "bg-[#EAF4F2]", title: `Order ${o.id} has no delivery partner`, sub: `${state.vendors.find((v) => v.id === o.vendorId)?.businessName || "Vendor"} · ${o.slot}`, go: "Orders" })),
-    ...awaitingVerification.slice(0, 2).map((v) => ({ icon: BadgeCheck, tint: "bg-[#EAF4F2]", title: `${v.businessName} is waiting for verification`, sub: "Review the certificate and approve or reject", go: "Vendor verification" })),
-    ...cancelQueue.slice(0, 2).map((c) => ({ icon: RefreshCcw, tint: "bg-[#EAF4F2]", title: `Cancellation request for ${c.orderId}`, sub: "Awaiting Operations review", go: "Cancellations" })),
-    ...openTickets.slice(0, 2).map((t) => ({ icon: TicketCheck, tint: "bg-[#EEF2F2]", title: t.subject, sub: `Ticket ${t.id} · ${t.status}`, go: "Ticket centre" })),
-  ].slice(0, 5);
-  const bySlot = Object.entries(activeOrders.reduce<Record<string, number>>((acc, o) => { acc[o.slot] = (acc[o.slot] || 0) + 1; return acc; }, {})).sort(([x], [y]) => x.localeCompare(y)).slice(0, 8).map(([label, value]) => ({ label: label.replace(/ to .*$/, ""), value }));
-  return <div className="space-y-5">
-    <Heading eyebrow="OPERATIONS COMMAND CENTRE" title="Live platform control" body={`${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })} · Verify vendors, track fulfilment and review cancellations`} />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Active orders" value={String(activeOrders.length)} icon={ReceiptText} note={`${unassigned.length} without a delivery partner`} />
-      <Metric label="Sales today" value={compactMoney(salesToday)} icon={IndianRupee} note={`${compactMoney(gmv)} in total`} />
-      <Metric label="Verification queue" value={String(awaitingVerification.length)} icon={BadgeCheck} note={`${openVendors} vendors open today`} />
-      <Metric label="Open tickets" value={String(openTickets.length)} icon={TicketCheck} note={`${cancelQueue.length} cancellation${cancelQueue.length === 1 ? "" : "s"} waiting`} />
-    </div>
-    <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
-      <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Needs attention</h3>
-        {attention.length ? <div className="mt-3 divide-y divide-[#DDE3E4]">{attention.map((item, i) => { const Icon = item.icon; return <div key={i} className="flex items-center gap-3 py-3"><div className={`grid size-11 shrink-0 place-items-center rounded-full ${item.tint}`}><Icon className="size-5" /></div><div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold">{item.title}</div><div className="truncate text-xs text-[#55656A]">{item.sub}</div></div><Button size="sm" onClick={() => navigate(item.go)}>Open</Button></div>; })}</div> : <p className="mt-3 rounded-[18px] bg-[#EEF2F2] p-4 text-sm text-[#55656A]">Nothing needs attention right now.</p>}</section>
-      <div className="space-y-5">
-        <section className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">Orders by slot</h3><span className="text-xs text-[#55656A]">Active</span></div><div className="mt-4">{bySlot.length ? <BarChart data={bySlot} height={130} /> : <p className="text-sm text-[#55656A]">No active orders.</p>}</div></section>
-        <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">She Agent for Operations</h3><p className="mt-1 text-xs text-[#55656A]">Ask across vendors, orders and delivery exceptions. It can recommend actions; final payment reversals remain human-controlled.</p><button type="button" onClick={openAgent} className="mt-3 flex h-12 w-full items-center justify-between rounded-full bg-[#EEF2F2] px-5 text-left text-sm text-[#5F6F74]">Ask about today&apos;s late orders…<Send className="size-5" /></button></section>
-      </div>
-    </div>
-  </div>;
-}
-
-function OperationsStoreRadius({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const list = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
-  const [pickId, setPickId] = useState("");
-  const [onlyOpen, setOnlyOpen] = useState(false);
-  const shown = onlyOpen ? list.filter((vendor) => vendor.openToday) : list;
-  const picked = shown.find((vendor) => vendor.id === pickId) || shown[0];
-  return <div className="space-y-5">
-    <Heading eyebrow="VENDOR COVERAGE" title="Store and radius" body="See every vendor's store pin and fix a wrong pin or radius on their behalf. Every change is written to the audit log with your name." />
-    {list.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-      <div className="space-y-3"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setOnlyOpen(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyOpen ? "bg-[#155F65] text-white" : "bg-white"}`}>All vendors · {list.length}</button><button type="button" onClick={() => setOnlyOpen(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyOpen ? "bg-[#155F65] text-white" : "bg-white"}`}>Open today · {list.filter((vendor) => vendor.openToday).length}</button></div>
-        {shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`block w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="flex items-start justify-between gap-2"><b>{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#EEF2F2] text-[#55656A]"}`}>{vendor.openToday ? "Open today" : "Closed"}</span></div><div className="mt-1 text-xs text-[#55656A]">{vendor.address || "Address not provided"} · {vendor.radiusKm} km</div></button>)}</div>
-      {picked && <OperationsVendorRadius key={picked.id} vendor={picked} session={session} setState={setState} />}
-    </div> : <Empty icon={Store} title="No vendors yet" body="Vendors appear here once they have a store pin." />}
-  </div>;
-}
-
-function OperationsVendorRadius({ vendor, session, setState }: { vendor: Vendor; session: DemoSession; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const [radius, setRadius] = useState(vendor.radiusKm);
-  async function saveRadius() {
-    try {
-      if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { service_radius_km: radius });
-      setState((current) => ({
-        ...current,
-        vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, radiusKm: radius } : item),
-        audit: [audit(session, "Updated vendor service radius", `${vendor.businessName} · ${radius} km`), ...current.audit],
-      }));
-      toast.success(`${vendor.businessName} service radius updated`);
-    } catch (error) {
-      toast.error(errorMessage(error, "Vendor service radius could not be saved"));
-    }
-  }
-  const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
-  return <div className="surface-card space-y-4 rounded-3xl p-5">
-    <div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{vendor.businessName}</h3><p className="mt-1 text-xs text-stone-500">{vendor.address || "Address not provided"}</p></div><Status>{vendor.verification}</Status></div>
-    <div className="text-xs text-stone-500">{hasPin ? `Store pin: ${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No exact store pin saved"}</div>
-    <Field label={`Service radius · ${radius} km`} hint="Customers within this distance of the vendor pin can be matched.">
-      <Slider value={[radius]} min={1} max={30} step={1} onValueChange={(value) => setRadius(value[0])} />
-    </Field>
-    <Button onClick={() => void saveRadius()} disabled={radius === vendor.radiusKm} className="rounded-xl bg-[#155F65]"><Check />Save radius</Button>
-  </div>;
-}
-
-function OperationsOnboard({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const [open, setOpen] = useState(false);
-  const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
-  return <div className="space-y-6"><Heading eyebrow="ASSISTED ONBOARDING" title="Create a vendor from Operations" body="Assign every vendor to an existing vendor login. After submission, the record stays visible below and appears to that exact vendor account." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><UserPlus />Start onboarding</Button>} />
-    <div className="surface-card rounded-[22px] border border-sky-200/70 bg-sky-50/85 p-4 text-sm leading-6 text-sky-900"><b>Testing rule:</b> choose either <code>vendor@sheplates.demo</code> or <code>newvendor@sheplates.demo</code> in the onboarding form. Sign in with the selected account to see that vendor. The vendor remains unavailable to customers until Operations verifies it, the vendor opens the store, and at least one product is active.</div>
-    {vendors.length ? <>
-      <div className="space-y-3 lg:hidden">{vendors.map((vendor) => {
-        const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length;
-        const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
-        const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0;
-        return <article key={vendor.id} className="surface-card min-w-0 space-y-4 rounded-3xl p-4">
-          <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.id}</div></div>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Assigned login</div><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="h-auto min-h-11 w-full min-w-0 rounded-xl py-2 text-left"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 break-words text-xs text-stone-500">Sign in with this exact vendor account</div></div>
-            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Location</div><div className="break-words text-sm">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></div>
-          </div>
-          <div className="grid min-w-0 gap-3 border-t border-[#DDE3E4] pt-3 sm:grid-cols-2">
-            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Status</div><Status>{vendor.verification}</Status></div>
-            <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Customer visibility</div>{visible ? <span className="break-words text-sm font-black text-[#202827]">Eligible by store status</span> : <span className="break-words text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</div>
-          </div>
-        </article>;
-      })}</div>
-      <div className="surface-card hidden overflow-x-auto rounded-[28px] md:block"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell className="max-w-sm"><div className="break-words">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div>
-    </> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="sr-only">Operations vendor onboarding</DialogTitle><DialogDescription className="sr-only">Create a vendor application</DialogDescription></DialogHeader><VendorOnboarding operationsCreated session={session} setState={setState} close={() => setOpen(false)} /></DialogContent></Dialog></div>;
-}
-function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
-  const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
-  // Live only: null = not known yet (or not live), so nothing is blocked; false = the agreement is not fully signed.
-  const [agreement, setAgreement] = useState<{ vendorId: string; done: boolean | null } | null>(null);
-  const reportAgreement = useCallback((vendorId: string, done: boolean | null) => setAgreement({ vendorId, done }), []);
-
-  async function decide(vendor: Vendor, verification: Verification, note = "") {
-    try {
-      if (isLiveSupabaseMode()) {
-        await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_"));
-        if (note.trim()) await sendVendorNote(vendor.id, note.trim());
-      }
+    function quote(req: Requirement) {
+      if (!isCrown) return toast.error("Quotation requests (RFQ) and AI quotation assistance are exclusive to the Crown plan.");
+      if (req.closingDate && req.closingDate < new Date().toISOString().slice(0, 10)) return toast.error("This RFQ is closed");
+      const total = draft[req.id];
+      if (!total) return toast.error("Enter your best total");
+      const item: Quote = { id: id("QTE"), requirementId: req.id, vendorId: vendor.id, total, deliveryFee: 0, note: "Best local price", status: "Submitted" };
       setState((s) => ({
         ...s,
-        vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x),
-        notifications: [
-          notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : note.trim() ? `Note from Operations: ${note.trim()}` : "Review the Operations decision in Verification."),
-          ...s.notifications,
-        ],
-        audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit],
+        quotes: [item, ...s.quotes.filter((x) => !(x.vendorId === vendor.id && x.requirementId === req.id))],
+        requirements: s.requirements.map((x) => x.id === req.id ? { ...x, status: "Quotes received" } : x),
+        notifications: [notice(req.customerEmail, "customer", "Vendor accepted your RFQ", `${vendor.businessName} submitted ${money(total)}.`), ...s.notifications],
+        audit: [audit(session, "Accepted RFQ and submitted quote", `${req.id} · ${money(total)}`), ...s.audit],
       }));
-      toast.success(`${vendor.businessName}: ${verification} saved`);
-    } catch (error) {
-      toast.error(errorMessage(error, "Verification decision could not be saved"));
+      toast.success("RFQ accepted and quotation submitted");
     }
-  }
-  const [tab, setTab] = useState<"Submitted" | "Under review" | "Changes required" | "All">("All");
-  const [pickedId, setPickedId] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-  const [vendorNote, setVendorNote] = useState("");
-  const [checkedDocs, setCheckedDocs] = useState<Record<string, Set<string>>>({});
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
-  const [rejectionReason, setRejectionReason] = useState("");
-  const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
 
-  const reloadData = useCallback(async () => {
-    if (!isLiveSupabaseMode()) return;
-    setRefreshing(true);
-    try {
-      const workspace = await loadLiveOperationsWorkspace();
-      setState((current) => ({
-        ...current,
-        vendors: workspace.vendors.map((row) => {
-          const profile = workspace.profiles.find((item) => item.vendor_id === row.id || item.id === row.owner_id);
-          const own = workspace.documents.filter((item) => item.vendor_id === row.id);
-          return vendorFromLive(
-            row,
-            { name: profile?.full_name },
-            own.find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || own[0],
-            own as Array<Record<string, unknown>>
-          );
-        }),
-      }));
-    } catch (err) {
-      console.error("Failed to reload operations data:", err);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [setState]);
-
-  useEffect(() => {
-    void reloadData();
-  }, [reloadData]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const checkDeepLink = (vendorId?: string | null) => {
-      const idToFind = vendorId || new URLSearchParams(window.location.search).get("vendorId");
-      if (idToFind) {
-        setPickedId(idToFind);
-        const match = vendors.find((v) => v.id === idToFind);
-        if (match && tab !== "All" && match.verification !== tab) {
-          setTab("All");
-        }
-      }
-    };
-    checkDeepLink();
-
-    const handleCustomNav = (e: Event) => {
-      const customEvent = e as CustomEvent<{ queryParams?: { vendorId?: string } }>;
-      const vId = customEvent.detail?.queryParams?.vendorId;
-      if (vId) checkDeepLink(vId);
-    };
-
-    window.addEventListener("popstate", () => checkDeepLink());
-    window.addEventListener("sheplates:navigation", handleCustomNav);
-    return () => {
-      window.removeEventListener("popstate", () => checkDeepLink());
-      window.removeEventListener("sheplates:navigation", handleCustomNav);
-    };
-  }, [vendors, tab]);
-
-  const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
-  const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
-  const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
-  const agreementDone = picked && agreement?.vendorId === picked.id ? agreement.done : null; // for the vendor shown now; null until it is known
-
-  const pickedDocs = picked
-    ? picked.documents?.length
-      ? picked.documents
-      : picked.fssaiNumber || picked.certificateName
-        ? [{ id: "cert-0", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)" }]
-        : []
-    : [];
-  const pickedChecked = (picked && checkedDocs[picked.id]) || new Set<string>();
-  const allDocsChecked = pickedDocs.length > 0 ? pickedDocs.every((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)) : true;
-
-  function toggleDoc(key: string) {
-    if (!picked) return;
-    setCheckedDocs((prev) => {
-      const cur = new Set(prev[picked.id] || []);
-      if (cur.has(key)) cur.delete(key);
-      else cur.add(key);
-      return { ...prev, [picked.id]: cur };
-    });
-  }
-
-  function verifyAllDocs() {
-    if (!picked) return;
-    const allKeys = new Set(pickedDocs.map((doc, idx) => doc.id || `${doc.documentType}-${idx}`));
-    setCheckedDocs((prev) => ({ ...prev, [picked.id]: allKeys }));
-    toast.success(`Marked all ${pickedDocs.length} documents as verified`);
-  }
-
-  function handleApprove() {
-    if (!picked) return;
-    if (picked.termsAccepted === false) {
-      toast.error("This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved.");
-      return;
-    }
-    if (isLiveSupabaseMode() && agreementDone === false) {
-      toast.error("The Partnership Agreement and Terms are not fully signed yet. Accept a hand-signed upload, or wait for the vendor to sign online.");
-      return;
-    }
-    if (!allDocsChecked && pickedDocs.length > 0) {
-      const verifiedCount = pickedDocs.filter((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)).length;
-      toast.error(`Please verify and tick all uploaded documents (${verifiedCount} of ${pickedDocs.length} checked). Ticking checkboxes confirms each document was inspected.`);
-      return;
-    }
-    void decide(picked, "Verified", vendorNote);
-    setVendorNote("");
-  }
-
-  function openRejectModal(decision: "Rejected" | "Changes required") {
-    setPendingDecision(decision);
-    setRejectionReason(vendorNote.trim());
-    setRejectModalOpen(true);
-  }
-
-  function confirmRejection() {
-    if (!picked) return;
-    if (!rejectionReason.trim()) {
-      toast.error("Please write a reason so the vendor understands what needs correction.");
-      return;
-    }
-    void decide(picked, pendingDecision, rejectionReason.trim());
-    setRejectModalOpen(false);
-    setRejectionReason("");
-    setVendorNote("");
-  }
-
-  return <div className="space-y-5">
-    <Heading
-      eyebrow="VENDOR TRUST"
-      title="Verification queue"
-      body="Check each vendor's documents, location and radius before they can sell."
-      action={
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={refreshing}
-          onClick={() => void reloadData()}
-          className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white shadow-sm"
-        >
-          <RefreshCcw className={`size-3.5 mr-1.5 text-[#155F65] ${refreshing ? "animate-spin" : ""}`} />
-          {refreshing ? "Refreshing…" : "Refresh queue"}
-        </Button>
-      }
-    />
-    {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-      <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
-        {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
-      {picked && (() => {
-        const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
-        const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
-        const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
-        const effectiveFileName = fssaiDoc?.fileName || (picked.certificateName && !picked.certificateName.includes("/") ? picked.certificateName : undefined) || "Food Certificate PDF";
-        return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
-          <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
-          <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{effectiveFileName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
-              {picked.verification !== "Verified" && pickedDocs.length > 0 && (
-                <button
-                  type="button"
-                  onClick={verifyAllDocs}
-                  className="text-xs font-bold text-[#155F65] hover:underline cursor-pointer"
-                >
-                  Tick all ({pickedDocs.length}) documents
-                </button>
-              )}
-            </div>
-            <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
-            <OpsAgreementPanel key={picked.id} vendorId={picked.id} live={isLiveSupabaseMode()} onComplete={reportAgreement} />
-            <CommercialTermsPanel vendor={picked} live={isLiveSupabaseMode()} onSaved={(terms) => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === picked.id ? { ...x, ...terms } : x), audit: [audit(session, "Set commercial terms", picked.businessName), ...s.audit] }))} />
+    return (
+      <div className="space-y-6">
+        <Heading eyebrow="PREMIUM FEATURE" title="Local RFQ opportunities" body="Only RFQs explicitly matched to this vendor are visible. Submit an independent best price before the customer closing date." />
+        {!isCrown && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+            <p className="text-sm font-semibold">
+              Quotation requests (RFQ) and new quote opportunities are exclusive to the Crown plan. Upgrade to Crown to accept customer quotation requests.
+            </p>
           </div>
-          <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
-          {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
-        </section>;
-      })()}
-    </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
-
-    <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
-      <DialogContent className="max-w-lg rounded-3xl p-6">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-black text-[#202827]">
-            {pendingDecision === "Rejected" ? "Reject Vendor Application" : "Request Changes from Vendor"}
-          </DialogTitle>
-          <DialogDescription className="text-xs text-stone-500">
-            Write the specific reason for {pendingDecision === "Rejected" ? "rejecting" : "requesting changes on"} <b>{picked?.businessName}</b>. The vendor will receive this note as an instant notification.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
-              Quick Reasons
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                "FSSAI certificate expired or invalid",
-                "Address proof illegible / address mismatch",
-                "Government ID name mismatch",
-                "Store outside active delivery radius",
-                "Bank details unverified / missing IFSC",
-                "Please upload menu catalogue PDF",
-              ].map((snippet) => (
-                <button
-                  key={snippet}
-                  type="button"
-                  onClick={() =>
-                    setRejectionReason((prev) =>
-                      prev ? `${prev}. ${snippet}` : snippet
-                    )
-                  }
-                  className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:border-[#155F65] hover:bg-[#EAF4F2] transition cursor-pointer"
-                >
-                  + {snippet}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="rejection-reason-textarea" className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
-              Reason / Instructions for Vendor <span className="text-rose-600">*</span>
-            </label>
-            <textarea
-              id="rejection-reason-textarea"
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              rows={4}
-              maxLength={600}
-              placeholder="Explain clearly what document or detail is required or why the application cannot be accepted..."
-              className="w-full rounded-2xl border border-stone-300 bg-white p-3.5 text-sm text-[#202827] outline-none focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10"
-            />
-            <p className="mt-1 text-right text-[11px] text-stone-400">{rejectionReason.length}/600</p>
-          </div>
-        </div>
-
-        <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={() => setRejectModalOpen(false)} className="rounded-xl">
-            Cancel
-          </Button>
-          <Button
-            onClick={confirmRejection}
-            className={`rounded-xl font-bold ${pendingDecision === "Rejected"
-                ? "bg-[#b42332] text-white hover:bg-rose-700"
-                : "bg-[#155F65] text-white hover:bg-[#0F4A4F]"
-              }`}
-          >
-            Confirm {pendingDecision === "Rejected" ? "Rejection" : "Changes Required"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-    {editingProfileVendor && (
-      <EditVendorProfileDialog
-        open
-        onClose={() => setEditingProfileVendor(null)}
-        vendor={editingProfileVendor}
-        setState={setState}
-        session={session}
-      />
-    )}
-  </div>;
-}
-function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const [vendorId, setVendorId] = useState(state.vendors[0]?.id || "");
-  const [q, setQ] = useState("");
-  const [onlyCustom, setOnlyCustom] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, number>>({});
-  const [saving, setSaving] = useState(false);
-
-  const products = state.products
-    .filter((x) => x.vendorId === vendorId)
-    .filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()))
-    .filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0);
-
-  const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length;
-  const hasDraftChanges = Object.keys(drafts).length > 0;
-
-  async function saveSingleMarkup(product: Product, markupVal: number) {
-    setSaving(true);
-    try {
-      const safeVal = Math.max(0, markupVal);
-      if (isLiveSupabaseMode()) {
-        await saveLiveItemMarkup(product.id, safeVal);
-      }
-      const newCustomerPrice = Math.round(product.vendorPrice * (1 + safeVal / 100) * 100) / 100;
-      setState((s) => ({
-        ...s,
-        markups: { ...s.markups, [product.id]: safeVal },
-        audit: [
-          audit(
-            session,
-            "Pricing change: item markup",
-            `${product.name} · Base: ${money(product.vendorPrice)} + ${safeVal}% markup → Customer: ${money(newCustomerPrice)}`
-          ),
-          ...s.audit,
-        ],
-      }));
-      setDrafts((prev) => {
-        const next = { ...prev };
-        delete next[product.id];
-        return next;
-      });
-      toast.success("Pricing changes saved successfully");
-    } catch (err) {
-      toast.error(errorMessage(err, "Could not save pricing changes"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveAllPricingChanges() {
-    setSaving(true);
-    try {
-      const changedProducts = state.products.filter((p) => p.id in drafts);
-      if (!changedProducts.length) {
-        toast.info("No pricing changes to save");
-        return;
-      }
-      for (const p of changedProducts) {
-        if (isLiveSupabaseMode()) {
-          await saveLiveItemMarkup(p.id, Math.max(0, drafts[p.id]));
-        }
-      }
-      const newAudits = changedProducts.map((p) => {
-        const val = Math.max(0, drafts[p.id]);
-        const custPrice = Math.round(p.vendorPrice * (1 + val / 100) * 100) / 100;
-        return audit(
-          session,
-          "Pricing change: item markup",
-          `${p.name} · Base: ${money(p.vendorPrice)} + ${val}% markup → Customer: ${money(custPrice)}`
-        );
-      });
-      setState((s) => ({
-        ...s,
-        markups: { ...s.markups, ...drafts },
-        audit: [...newAudits, ...s.audit],
-      }));
-      setDrafts({});
-      toast.success("Pricing changes saved successfully");
-    } catch (err) {
-      toast.error(errorMessage(err, "Could not save pricing changes"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <Heading
-        eyebrow="ITEM-LEVEL PRICING"
-        title="Operational percentage by vendor item"
-        body="Select a vendor, inspect its menu and apply a markup percentage on top of each vendor base price. Customer prices update only for future schedules."
-        action={
-          <Button
-            onClick={() => void saveAllPricingChanges()}
-            disabled={!hasDraftChanges || saving}
-            className="rounded-xl bg-[#155F65]"
-          >
-            <Check className="size-4 mr-1.5" />
-            Save pricing changes
-          </Button>
-        }
-      />
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Metric label="Items on the platform" value={String(state.products.length)} icon={Package} />
-        <Metric label="Items with their own %" value={String(customCount)} icon={Percent} />
-        <Metric label="Vendors" value={String(state.vendors.length)} icon={Store} />
-      </div>
-      <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4">
-        <Select value={vendorId} onValueChange={setVendorId}>
-          <SelectTrigger className="w-full max-w-sm rounded-xl">
-            <SelectValue placeholder="Select vendor" />
-          </SelectTrigger>
-          <SelectContent>
-            {state.vendors.map((x) => (
-              <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search item"
-          aria-label="Search item"
-          className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm"
-        />
-        <button
-          type="button"
-          onClick={() => setOnlyCustom(false)}
-          className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
-        >
-          All
-        </button>
-        <button
-          type="button"
-          onClick={() => setOnlyCustom(true)}
-          className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
-        >
-          Custom %
-        </button>
-      </div>
-      {products.length ? (
-        <div className="surface-card overflow-x-auto rounded-[28px]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Item</TableHead>
-                <TableHead>Vendor base</TableHead>
-                <TableHead>Operations %</TableHead>
-                <TableHead>Customer price</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => {
-                const markupVal = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
-                const isDraftModified = product.id in drafts && drafts[product.id] !== (state.markups[product.id] || 0);
-                const previewPrice = Math.round(product.vendorPrice * (1 + markupVal / 100) * 100) / 100;
+        )}
+        {myQuotes.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="font-bold text-sm text-stone-700">Your Quotation History ({myQuotes.length})</h3>
+            <div className="grid gap-3">
+              {myQuotes.map((q) => {
+                const req = state.requirements.find((r) => r.id === q.requirementId);
                 return (
-                  <TableRow key={product.id}>
-                    <TableCell>
-                      <b>{product.name}</b>
-                      <div className="text-xs text-stone-500">per {product.baseUnit}</div>
-                    </TableCell>
-                    <TableCell>{money(product.vendorPrice)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step=".5"
-                          value={markupVal}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setDrafts((prev) => ({ ...prev, [product.id]: val }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              const val = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
-                              void saveSingleMarkup(product, val);
-                            }
-                          }}
-                          className="h-10 w-24 rounded-xl border px-3 font-black"
-                          aria-label={`Markup for ${product.name}`}
-                        />
-                        <span>%</span>
-                        {isDraftModified && (
-                          <Button
-                            size="sm"
-                            onClick={() => void saveSingleMarkup(product, drafts[product.id])}
-                            disabled={saving}
-                            className="h-8 rounded-lg bg-[#155F65] px-2.5 text-xs text-white"
-                          >
-                            Save
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-lg font-bold">{money(previewPrice)}</TableCell>
-                  </TableRow>
+                  <div key={q.id} className="surface-card rounded-2xl p-4 flex justify-between items-center">
+                    <div>
+                      <h4 className="font-bold text-sm">{req?.title || `Requirement ${q.requirementId}`}</h4>
+                      <p className="text-xs text-stone-500">{q.id} · {money(q.total + (q.deliveryFee || 0))}</p>
+                    </div>
+                    <Status>{q.status}</Status>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <Empty
-          icon={Percent}
-          title="No vendor products selected"
-          body="Choose a vendor with products, or wait for a vendor to add their catalogue."
-        />
-      )}
-    </div>
-  );
-}
-function RFQDesk({ state }: { state: V3State }) {
-  const open = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received");
-  const awarded = state.requirements.filter((x) => x.status === "Awarded");
-  const needsAttention = open.filter((x) => !(x.invitedVendorIds || []).length);
-  const pill = (status: string) => status === "Awarded" ? "bg-[#EEF2F2] text-[#2F3C3F]" : status === "Quotes received" ? "bg-[#eaf5ec] text-[#21683b]" : status === "Quoting" ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]";
-  return <div className="space-y-5"><Heading eyebrow="RFQ CONTROL" title="Monthly requirement desk" body="Every customer requirement, who was invited and who quoted." />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Open RFQs" value={String(open.length)} icon={ClipboardCheck} /><Metric label="Quotes received" value={String(state.quotes.length)} icon={ReceiptText} /><Metric label="Awarded" value={String(awarded.length)} icon={BadgeCheck} /><Metric label="Need attention" value={String(needsAttention.length)} icon={AlertTriangle} note={needsAttention.length ? "No vendor was invited" : undefined} /></div>
-    {state.requirements.length ? <div className="surface-card overflow-x-auto rounded-3xl"><Table><TableHeader><TableRow><TableHead>Requirement</TableHead><TableHead>Customer</TableHead><TableHead>Invited</TableHead><TableHead>Quoted</TableHead><TableHead>Closes</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{state.requirements.map((req) => <TableRow key={req.id}><TableCell><b>{req.title}</b><div className="text-xs text-[#55656A]">{req.id} · {req.items.length} items</div></TableCell><TableCell className="text-sm">{req.customerEmail}</TableCell><TableCell>{(req.invitedVendorIds || []).length ? `${(req.invitedVendorIds || []).length} Crown vendors` : <span className="rounded-full bg-[#fdecef] px-3 py-1 text-xs font-semibold text-[#b42332]">0 vendors</span>}</TableCell><TableCell>{state.quotes.filter((x) => x.requirementId === req.id).length}</TableCell><TableCell>{req.closingDate || "Not set"}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pill(req.status)}`}>{req.status}</span></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ClipboardCheck} title="No RFQs yet" body="Customer monthly requirements will appear here." />}
-    <p className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-5 shrink-0" />Only vendors on the Crown plan whose own radius covers the customer are invited. If none are invited, ask a nearby vendor to upgrade or contact the customer.</p></div>;
-}
-function Cancellations({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const [amounts, setAmounts] = useState<Record<string, number>>({});
-  const [view, setView] = useState<"open" | "decided">("open");
-  const openItems = state.cancellations.filter((x) => x.status === "Awaiting operations");
-  const decidedItems = state.cancellations.filter((x) => x.status !== "Awaiting operations");
-  const listed = view === "open" ? openItems : decidedItems;
-  function decide(item: Cancellation, status: "Approved" | "Rejected") {
-    const order = state.orders.find((x) => x.id === item.orderId);
-    const transaction = state.transactions.find((x) => x.orderId === item.orderId);
-    const isQuality = item.kind === "quality_complaint";
-    const refundAmount = Math.max(0, Math.min(order?.total ?? Infinity, amounts[item.id] ?? item.recommendedRefundAmount ?? order?.total ?? 0));
-    const fullRefund = order ? refundAmount >= order.total : true;
-    setState((s) => ({
-      ...s,
-      cancellations: s.cancellations.map((x) => x.id === item.id ? { ...x, status, recommendedRefundAmount: isQuality ? refundAmount : x.recommendedRefundAmount } : x),
-      orders: s.orders.map((x) => x.id === item.orderId ? {
-        ...x,
-        status: status === "Approved" ? (isQuality ? x.status : "Cancelled") : (isQuality ? x.status : "Confirmed"),
-        payment: status === "Approved" && transaction ? (isQuality && !fullRefund ? "Reversal pending" : "Reversal pending") : x.payment,
-      } : x),
-      transactions: status === "Approved" && transaction ? s.transactions.map((x) => {
-        if (x.id !== transaction.id) return x;
-        if (x.payoutStatus === "Paid") return { ...x, note: `Already paid to vendor — recover ${money(refundAmount)} manually` };
-        if (isQuality && !fullRefund) return { ...x, vendorPayout: Math.max(0, Math.round((x.vendorPayout - refundAmount) * 100) / 100), note: `Vendor payout reduced by ${money(refundAmount)} for an approved quality-complaint refund` };
-        return { ...x, payoutStatus: "Reversed", note: isQuality ? "Voided: full refund approved for quality complaint" : "Voided: order cancelled before payout" };
-      }) : s.transactions,
-      notifications: order ? [
-        notice(order.customerEmail, "customer", `${isQuality ? "Quality complaint" : "Cancellation"} ${status.toLowerCase()}`, status === "Approved" ? `Operations approved a refund of ${money(refundAmount)}; it is now processing.` : "Operations reviewed this and did not approve a refund."),
-        ...s.notifications,
-      ] : s.notifications,
-      audit: [audit(session, `${status} ${isQuality ? "quality complaint" : "cancellation"}`, `${item.orderId}${status === "Approved" ? ` · refund ${money(refundAmount)}` : ""}`), ...s.audit],
-    }));
-    toast.success(`${isQuality ? "Quality complaint" : "Cancellation"} ${status.toLowerCase()}`);
-  }
-  return <div className="space-y-6"><Heading eyebrow="AI-ASSISTED REVIEW" title="Cancellations & quality-complaint refunds" body="She Agent checks evidence — including a customer-attached photo for quality complaints — and proposes a decision and refund amount first. Operations always owns the final call." /><div className="flex flex-wrap gap-2" role="tablist" aria-label="Decision status"><button type="button" role="tab" aria-selected={view === "open"} onClick={() => setView("open")} className={`h-10 rounded-full px-4 text-sm font-semibold ${view === "open" ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>Awaiting decision · {openItems.length}</button><button type="button" role="tab" aria-selected={view === "decided"} onClick={() => setView("decided")} className={`h-10 rounded-full px-4 text-sm font-semibold ${view === "decided" ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>Decided · {decidedItems.length}</button></div><p className="rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">Refunds are human-approved. She Agent can recommend but never moves money. Customers cannot cancel after a vendor accepts: those requests come through Support.</p>{listed.length ? listed.map((item) => { const order = state.orders.find((x) => x.id === item.orderId); const isQuality = item.kind === "quality_complaint"; return <div key={item.id} className="surface-card rounded-[26px] p-5"><div className="flex flex-col gap-4 lg:flex-row"><div className={`grid size-12 place-items-center rounded-2xl ${isQuality ? "bg-amber-50 text-amber-700" : "bg-[#EAF4F2] text-[#155F65]"}`}><Activity /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><b>{item.orderId}</b><Status>{item.status}</Status><Status className={isQuality ? "border-amber-200 bg-amber-50 text-amber-800" : ""}>{isQuality ? "Quality complaint" : "Cancellation"}</Status>{item.attachmentName && <Status>📷 {item.attachmentName}</Status>}</div><p className="mt-2 text-sm text-stone-500">Customer: {item.reason}</p><div className="mt-3 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><b>She Agent: {item.aiDecision}</b> · {item.confidence}% confidence</div>{order && <p className="mt-2 text-xs text-stone-400">Order total {money(order.total)} · current payment {order.payment}</p>}</div>{item.status === "Awaiting operations" && <div className="flex flex-col gap-2 lg:items-end"><Field label="Refund amount (₹)"><input type="number" min={0} max={order?.total ?? undefined} value={amounts[item.id] ?? item.recommendedRefundAmount ?? order?.total ?? 0} onChange={(e) => setAmounts((a) => ({ ...a, [item.id]: Number(e.target.value) }))} className={`${inputClass} w-40`} /></Field><div className="flex gap-2"><Button variant="outline" onClick={() => decide(item, "Rejected")} className="rounded-xl">Reject</Button><Button onClick={() => decide(item, "Approved")} className="rounded-xl bg-[#155F65]">{isQuality ? "Approve refund" : "Approve & reverse"}</Button></div></div>}</div></div>; }) : <Empty icon={RefreshCcw} title="No cancellation or quality-complaint reviews" body="Customer requests screened by She Agent — including photo-backed quality complaints — will appear here." />}</div>;
-}
-
-function vendorPayoutSummary(state: V3State, vendorId: string) {
-  const rows = state.transactions.filter((x) => x.vendorId === vendorId);
-  const gross = rows.reduce((sum, x) => sum + x.grossAmount, 0);
-  const commission = rows.reduce((sum, x) => sum + x.commissionAmount, 0);
-  const paidOut = rows.filter((x) => x.payoutStatus === "Paid").reduce((sum, x) => sum + x.vendorPayout, 0);
-  const pending = rows.filter((x) => x.payoutStatus === "Scheduled").reduce((sum, x) => sum + x.vendorPayout, 0);
-  const overdue = rows.filter((x) => x.payoutStatus === "Scheduled" && x.scheduledPayoutDate <= todayISO());
-  const nextPayoutDate = rows.filter((x) => x.payoutStatus === "Scheduled").map((x) => x.scheduledPayoutDate).sort()[0];
-  return { rows, gross, commission, paidOut, pending, overdueCount: overdue.length, nextPayoutDate };
-}
-
-function VendorSettlements({ vendor, state }: { vendor: Vendor; state: V3State }) {
-  const summary = vendorPayoutSummary(state, vendor.id);
-  return <div className="space-y-6"><Heading eyebrow="PAYMENTS" title="Settlements & payouts" body="Every customer payment collected on your orders, the platform commission retained and exactly when the remaining amount reaches you." /><div className="rounded-3xl bg-[#155F65] p-5 text-white"><div className="text-xs font-semibold">Next payout{summary.nextPayoutDate ? ` · ${summary.nextPayoutDate}` : ""}</div><div className="mt-1 text-[40px] font-bold leading-tight tabular-nums">{money(summary.pending)}</div><div className="text-xs font-medium">{summary.pending > 0 ? "Paid every Wednesday for completed orders from the previous Monday to Sunday." : "Nothing is waiting to be paid out right now."}</div></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total collected" value={money(summary.gross)} icon={IndianRupee} tone="green" /><Metric label="Already paid to you" value={money(summary.paidOut)} icon={CheckCircle2} tone="blue" /><Metric label="Pending payout" value={money(summary.pending)} icon={WalletCards} tone="amber" note={summary.nextPayoutDate ? `Next: ${summary.nextPayoutDate}` : undefined} /><Metric label="Platform commission" value={money(summary.commission)} icon={Percent} tone="violet" note={`${PLATFORM_COMMISSION_PERCENT}% per order`} /></div>{summary.overdueCount > 0 && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><AlertTriangle className="mr-2 inline size-4" />{summary.overdueCount} payout(s) have reached their scheduled date and are awaited from Operations.</div>}{summary.rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Collected</TableHead><TableHead>Gross</TableHead><TableHead>Commission</TableHead><TableHead>Your payout</TableHead><TableHead>Status</TableHead><TableHead>Expected / paid on</TableHead></TableRow></TableHeader><TableBody>{summary.rows.map((row) => <TableRow key={row.id}><TableCell className="font-mono text-xs">{row.orderId}</TableCell><TableCell>{row.collectedAt}</TableCell><TableCell>{money(row.grossAmount)}</TableCell><TableCell>{money(row.commissionAmount)}</TableCell><TableCell className="font-black">{money(row.vendorPayout)}</TableCell><TableCell><Status className={row.payoutStatus === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : row.payoutStatus === "Reversed" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-800"}>{row.payoutStatus}</Status></TableCell><TableCell>{row.paidAt || row.scheduledPayoutDate}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={WalletCards} title="No payments yet" body="Payouts appear here once a customer pays for one of your orders." />}</div>;
-}
-
-function VendorPayments({ state, setState, session, canManage }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; canManage: boolean }) {
-  const rows = state.vendors.map((vendor) => ({ vendor, ...vendorPayoutSummary(state, vendor.id) })).filter((row) => row.rows.length > 0);
-  const totals = rows.reduce((acc, row) => ({ gross: acc.gross + row.gross, commission: acc.commission + row.commission, pending: acc.pending + row.pending, paidOut: acc.paidOut + row.paidOut }), { gross: 0, commission: 0, pending: 0, paidOut: 0 });
-  function markPaid(vendorId: string) {
-    const due = state.transactions.filter((x) => x.vendorId === vendorId && x.payoutStatus === "Scheduled" && x.scheduledPayoutDate <= todayISO());
-    if (!due.length) return toast.error("No payouts have reached their scheduled date yet");
-    const vendor = state.vendors.find((x) => x.id === vendorId);
-    const total = due.reduce((sum, x) => sum + x.vendorPayout, 0);
-    setState((s) => ({
-      ...s,
-      transactions: s.transactions.map((x) => due.some((d) => d.id === x.id) ? { ...x, payoutStatus: "Paid", paidAt: todayISO() } : x),
-      notifications: vendor ? [notice(vendor.ownerEmail, "vendor", "Payout sent", `${money(total)} across ${due.length} order(s) was marked paid.`), ...s.notifications] : s.notifications,
-      audit: [audit(session, "Marked vendor payout as paid", `${vendor?.businessName || vendorId} · ${money(total)} · ${due.length} order(s)`), ...s.audit],
-    }));
-    toast.success(`${money(total)} marked paid to ${vendor?.businessName || "vendor"}`);
-  }
-  function downloadLedger() {
-    downloadWorkbook("sheplates-vendor-payments", [{
-      name: "Vendor payments",
-      rows: rows.flatMap((row) => row.rows.map((t) => ({ Vendor: row.vendor.businessName, "Order ID": t.orderId, "Collected on": t.collectedAt, "Gross amount": t.grossAmount, "Commission %": t.commissionPercent, "Commission amount": t.commissionAmount, "Vendor payout": t.vendorPayout, "Payout status": t.payoutStatus, "Expected / paid date": t.paidAt || t.scheduledPayoutDate }))),
-    }]);
-  }
-  return <div className="space-y-6"><Heading eyebrow="VENDOR SETTLEMENTS" title="Vendor-wise income & payouts" body={canManage ? "See exactly what each vendor earned, the platform's commission profit, and release payouts once they reach their scheduled date." : "Read-only oversight of vendor income, platform profit and payout status across the marketplace."} action={<Button variant="outline" onClick={downloadLedger} className="rounded-xl"><Download />Download Excel</Button>} />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total collected (GMV)" value={money(totals.gross)} icon={IndianRupee} /><Metric label="Platform profit (commission)" value={money(totals.commission)} icon={Percent} /><Metric label="Pending vendor payouts" value={money(totals.pending)} icon={WalletCards} /><Metric label="Already paid to vendors" value={money(totals.paidOut)} icon={CheckCircle2} /></div>
-    {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Income (gross)</TableHead><TableHead>Platform profit</TableHead><TableHead>Paid to vendor</TableHead><TableHead>Pending payout</TableHead><TableHead>Next payout</TableHead><TableHead>Status</TableHead>{canManage && <TableHead>Action</TableHead>}</TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.vendor.id}><TableCell><b>{row.vendor.businessName}</b><div className="text-xs text-stone-500">{row.vendor.ownerEmail}</div></TableCell><TableCell className="font-black">{money(row.gross)}</TableCell><TableCell className="text-[#155F65] font-black">{money(row.commission)}</TableCell><TableCell>{money(row.paidOut)}</TableCell><TableCell>{money(row.pending)}</TableCell><TableCell>{row.nextPayoutDate || "—"}</TableCell><TableCell>{row.overdueCount > 0 ? <Status className="border-amber-200 bg-amber-50 text-amber-800">Payout due</Status> : row.pending > 0 ? <Status className="border-sky-200 bg-sky-50 text-sky-700">Scheduled</Status> : <Status className="border-emerald-200 bg-emerald-50 text-emerald-700">Paid up</Status>}</TableCell>{canManage && <TableCell><Button size="sm" disabled={row.overdueCount === 0} onClick={() => markPaid(row.vendor.id)} className="rounded-xl bg-[#155F65] disabled:opacity-40"><WalletCards />Mark payout paid</Button></TableCell>}</TableRow>)}</TableBody></Table></div> : <Empty icon={WalletCards} title="No vendor payments yet" body="Vendor income and payouts will appear here once customers start paying for orders." />}
-    <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
-}
-
-function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void; onNavigate?: (view: string) => void }) {
-  const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
-  if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={onNavigate} />;
-  if (active === "AI insights") return <AIInsights role="admin" state={state} />;
-  if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
-  if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
-  if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
-  if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
-  if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
-  if (active === "Vendors") return <AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
-  if (active === "Vendor plans") return <Plans session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
-  if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
-  if (active === "Pricing policies") return <AdminPricing state={state} />;
-  if (active === "Stories monitor") return <StoriesMonitor />;
-  if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
-  if (active === "Vendor payments") return <VendorPayments state={state} setState={setState} session={session} canManage={false} />;
-  if (active === "Reports") return <ReportsCentre state={state} />;
-  if (active === "Audit log") return <AuditLog items={state.audit} vendors={state.vendors} />;
-  const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
-  const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
-  const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
-  const gross = inRange.reduce((sum, x) => sum + x.total, 0);
-  const days = lastDays(14).map((d) => ({ label: d.label, value: state.orders.filter((x) => x.date === d.key && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0) }));
-  const planFees: Record<string, number> = { Taster: 499, Crave: 699, Thrive: 799, Crown: 999 };
-  const planCounts = Object.keys(planFees).map((plan) => ({ plan, count: state.vendors.filter((v) => v.plan === plan && v.vendorKind !== "p0_connect").length }));
-  const maxPlan = Math.max(1, ...planCounts.map((x) => x.count));
-  const subscription = planCounts.reduce((sum, x) => sum + x.count * planFees[x.plan], 0);
-  const connectCount = state.vendors.filter((v) => v.vendorKind === "p0_connect").length;
-  const awaiting = state.vendors.filter((x) => ["Submitted", "Under review"].includes(x.verification)).length;
-  const attention = [awaiting ? `${awaiting} vendor${awaiting === 1 ? " is" : "s are"} waiting for verification` : "", state.cancellations.filter((x) => x.status === "Awaiting operations").length ? `${state.cancellations.filter((x) => x.status === "Awaiting operations").length} cancellation(s) waiting for Operations` : "", state.tickets.filter((t) => t.status !== "Resolved").length ? `${state.tickets.filter((t) => t.status !== "Resolved").length} open support ticket(s)` : ""].filter(Boolean);
-  return <div className="space-y-5">
-    <Heading eyebrow="SUPER ADMIN" title="Executive view" body={`The health of Sheplates at a glance · last ${range} days`} action={<div className="flex items-center gap-1 rounded-full bg-white p-1">{([[7, "7 days"], [30, "30 days"], [90, "Quarter"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setRange(value)} aria-pressed={range === value} className={`h-9 rounded-full px-4 text-sm font-semibold ${range === value ? "bg-[#155F65] text-white" : "text-[#55656A]"}`}>{label}</button>)}</div>} />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Gross sales" value={compactMoney(gross)} icon={IndianRupee} note={`${compactMoney(revenue)} all time`} />
-      <Metric label="Orders" value={String(inRange.length)} icon={ReceiptText} note={`${state.orders.filter((x) => x.status === "Completed").length} completed`} />
-      <Metric label="Active customers" value={String(state.customers.length)} icon={Users} />
-      <Metric label="Active vendors" value={String(state.vendors.length)} icon={Store} note={`${connectCount} Connect · ${planCounts.reduce((sum, x) => sum + x.count, 0)} on a plan`} />
-    </div>
-    <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-      <section className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">Sales by day</h3><span className="text-xs text-[#55656A]">last 14 days</span></div><div className="mt-4"><BarChart data={days} height={200} /></div></section>
-      <div className="space-y-5">
-        <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Vendors by plan</h3><div className="mt-3 space-y-3">{planCounts.map(({ plan, count }) => <div key={plan}><div className="flex items-center justify-between text-sm"><span>{plan} · ₹{planFees[plan]}</span><b>{count}</b></div><div className="mt-1 h-2 rounded-full bg-[#EEF2F2]"><div className="h-2 rounded-full" style={{ width: `${Math.round((count / maxPlan) * 100)}%`, background: plan === "Crown" ? "#3DBE74" : plan === "Taster" ? "#C5E3E4" : "#155F65" }} /></div></div>)}</div></section>
-        <div className="rounded-3xl bg-[#155F65] p-5 text-white"><div className="text-xs font-medium">Subscription revenue this month</div><div className="mt-1 text-[32px] font-bold leading-tight tabular-nums">{money(subscription)}</div><div className="text-xs font-medium">+ GST · plus commission on sales</div></div>
-      </div>
-    </div>
-    {attention.length > 0 && <div className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm text-[#795900]"><AlertTriangle className="mt-0.5 size-5 shrink-0" /><span>Needs your attention: {attention.join(" · ")}.</span></div>}
-  </div>;
-}
-function HomepageCampaigns({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const [busy, setBusy] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [prefill, setPrefill] = useState<Partial<Campaign> | null>(null);
-  const [pickQuery, setPickQuery] = useState(""), [pickVendor, setPickVendor] = useState("all");
-  const [suggestions, setSuggestions] = useState<Array<{ name: string; audience: string; offer: string; rationale: string; channel: string }>>([]);
-  const eligibleProducts = state.products.filter((product) => product.active && product.stock > 0).slice(0, 80);
-  const featured = state.merchandising.featuredProductIds;
-  const pickable = eligibleProducts.filter((product) => (pickVendor === "all" || product.vendorId === pickVendor) && (!pickQuery.trim() || product.name.toLowerCase().includes(pickQuery.trim().toLowerCase())));
-  async function saveHome(next = state.merchandising) {
-    // Persist first: the UI must not show a featured product as saved when the write
-    // actually failed (this previously happened silently whenever platform_settings
-    // was missing/unreachable — the toggle looked successful and reverted on next load
-    // with no explanation).
-    if (isLiveSupabaseMode()) {
-      try { await saveLiveMarketplaceHome(next); }
-      catch (error) { toast.error(errorMessage(error, "Marketplace settings could not be saved")); return; }
-    }
-    setState((current) => ({ ...current, merchandising: next, merchandisingError: null, audit: [audit(session, "Updated customer marketplace merchandising", `${next.featuredProductIds.length} featured products · AI popup ${next.recommendationPopupEnabled ? "on" : "off"}`), ...current.audit] }));
-    toast.success(isLiveSupabaseMode() ? "Marketplace home settings saved" : "Marketplace home settings saved locally");
-  }
-  function toggleFeatured(productId: string) {
-    const already = featured.includes(productId);
-    if (!already && featured.length >= state.merchandising.maxFeatured) return toast.error(`Choose up to ${state.merchandising.maxFeatured} featured products`);
-    const next = { ...state.merchandising, featuredProductIds: already ? featured.filter((id) => id !== productId) : [...featured, productId] };
-    void saveHome(next);
-  }
-  async function generateCampaigns() {
-    setBusy(true);
-    try {
-      const token = await getAccessToken();
-      const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "campaign_strategy", message: "Analyse current marketplace and purchase behaviour and suggest responsible campaigns for useful customer segments.", role: "admin" }) }, 60000);
-      const json = await response.json() as { result?: { campaigns?: Array<{ name: string; audience: string; offer: string; rationale: string; channel: string }> }; error?: string };
-      if (!response.ok) throw new Error(json.error || "AI campaign analysis failed");
-      const result = json.result?.campaigns || [];
-      if (result.length) setSuggestions(result);
-      else {
-        const topCategory = [...state.products].sort((a, b) => b.stock - a.stock)[0]?.category || "Groceries";
-        setSuggestions([{ name: `${topCategory} discovery`, audience: `Customers who have not purchased ${topCategory} recently`, offer: "Personalised discovery bundle or limited introductory offer", rationale: "Uses non-sensitive commerce behaviour only and gives customers a relevant reason to explore an available category.", channel: "In-app + WhatsApp opt-in" }]);
-      }
-    } catch (error) { toast.error(errorMessage(error, "Campaign suggestions could not be generated")); }
-    finally { setBusy(false); }
-  }
-  /** Save a campaign: to the database first in live mode (so a failure is never shown as saved), then to local data. */
-  async function saveCampaign(campaign: Campaign) {
-    const known = state.campaigns.some((item) => item.id === campaign.id);
-    let final = campaign;
-    if (isLiveSupabaseMode()) {
-      const liveId = await saveLiveCampaign({ id: known ? campaign.id : undefined, name: campaign.name, audience: campaign.audience, offer: campaign.offer, channel: campaign.channel, status: campaign.status, aiRationale: campaign.aiRationale, headline: campaign.headline, subline: campaign.subline, emoji: campaign.emoji, ctaLabel: campaign.ctaLabel, targetType: campaign.targetType, targetValue: campaign.targetValue, segment: campaign.segment, startsAt: campaign.startsAt, endsAt: campaign.endsAt, priority: campaign.priority });
-      final = { ...campaign, id: liveId };
-    }
-    setState((current) => ({ ...current, campaigns: known ? current.campaigns.map((item) => (item.id === campaign.id ? final : item)) : [final, ...current.campaigns], audit: [audit(session, known ? "Updated campaign" : "Created campaign", `${final.name} · ${final.status}`), ...current.audit] }));
-  }
-  async function setCampaignStatus(campaign: Campaign, status: Campaign["status"]) {
-    const next = { ...campaign, status };
-    if (isLiveSupabaseMode()) await saveLiveCampaign({ id: campaign.id, name: campaign.name, audience: campaign.audience, offer: campaign.offer, channel: campaign.channel, status, aiRationale: campaign.aiRationale, headline: campaign.headline || campaign.name, subline: campaign.subline, emoji: campaign.emoji, ctaLabel: campaign.ctaLabel, targetType: campaign.targetType, targetValue: campaign.targetValue, segment: campaign.segment, startsAt: campaign.startsAt, endsAt: campaign.endsAt, priority: campaign.priority });
-    setState((current) => ({ ...current, campaigns: current.campaigns.map((item) => item.id === campaign.id ? next : item), audit: [audit(session, status === "Active" ? "Campaign went live" : `Campaign ${status.toLowerCase()}`, campaign.name), ...current.audit] }));
-  }
-  async function removeCampaign(campaign: Campaign) {
-    if (isLiveSupabaseMode()) await deleteLiveCampaign(campaign.id);
-    setState((current) => ({ ...current, campaigns: current.campaigns.filter((item) => item.id !== campaign.id), audit: [audit(session, "Deleted campaign", campaign.name), ...current.audit] }));
-  }
-  return <div className="space-y-7"><Heading eyebrow="MARKETPLACE GROWTH" title="Homepage & campaigns" body="Super Admin controls which products are featured on the customer marketplace, can create offers manually, and can ask AI to propose behaviour-based campaigns. AI never sends a campaign automatically; a human approves every activation." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => { setPrefill(null); setCreateOpen(true); }} className="rounded-xl"><Plus />Create campaign</Button><Button onClick={generateCampaigns} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "AI suggest campaigns"}</Button></div>} />
-    {state.merchandisingError && <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><AlertTriangle className="mt-0.5 size-5 shrink-0" /><div><b>Homepage merchandising is not connected to the database.</b><p className="mt-1 leading-5">Featuring a product will not save and featured products will not appear to customers until this is fixed. Ask an engineer to run <code className="rounded bg-red-100 px-1 py-0.5 font-mono text-xs">supabase/V4_6_AGENTIC_COMMERCE.sql</code> in the Supabase SQL Editor. Database says: “{state.merchandisingError}”.</p></div></div>}
-    <div className="grid items-start gap-5 xl:grid-cols-[1.15fr_.85fr]"><section className="surface-card rounded-[28px] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">Customer home merchandising</h3><p className="mt-1 text-sm text-stone-500">Feature up to {state.merchandising.maxFeatured} active products. Featured products appear before algorithmic recommendations.</p></div><label className="flex items-center gap-2 rounded-full bg-[#EAF4F2] px-3 py-2 text-xs font-black text-[#155F65]"><Switch checked={state.merchandising.recommendationPopupEnabled} onCheckedChange={(value) => void saveHome({ ...state.merchandising, recommendationPopupEnabled: value })} />AI recommendation popup</label></div><div className="mt-4 flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#155F65] px-4 py-2 text-sm font-semibold text-white">Featured · {featured.length} of {state.merchandising.maxFeatured}</span><input value={pickQuery} onChange={(e) => setPickQuery(e.target.value)} placeholder="Search products" aria-label="Search products to feature" className="h-10 min-w-0 flex-1 rounded-full bg-[#EEF2F2] px-4 text-sm outline-none" /><Select value={pickVendor} onValueChange={setPickVendor}><SelectTrigger aria-label="Filter by vendor" className="h-10 w-48 rounded-full bg-[#EEF2F2]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All vendors</SelectItem>{state.vendors.filter((v) => eligibleProducts.some((p) => p.vendorId === v.id)).map((v) => <SelectItem key={v.id} value={v.id}>{v.businessName}</SelectItem>)}</SelectContent></Select></div><div className="mt-4 grid max-h-[560px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">{pickable.map((product) => { const selected = featured.includes(product.id); const vendor = state.vendors.find((item) => item.id === product.vendorId); return <button key={product.id} data-testid="featured-toggle" onClick={() => toggleFeatured(product.id)} className={`rounded-[22px] border p-3 text-left transition ${selected ? "border-[#155F65] bg-[#EAF4F2] ring-2 ring-[#155F65]/10" : "bg-white hover:border-stone-300"}`}><div className="flex items-center gap-3"><div className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="line-clamp-2 font-black leading-tight">{product.name}</div><div className="truncate text-xs text-stone-500">{vendor?.businessName || "Vendor"} · {money(finalPrice(product, state))}</div></div><span className={`grid size-6 place-items-center rounded-full ${selected ? "bg-[#155F65] text-white" : "border"}`}>{selected ? <Check className="size-3" /> : <Plus className="size-3" />}</span></div></button>; })}</div>{!eligibleProducts.length && <Empty icon={ShoppingBag} title="No active products" body="Verify vendors and publish products before choosing homepage features." />}</section>
-      <section className="surface-dark rounded-[28px] p-6 text-white"><Megaphone className="text-[#D9F5E7]" /><h3 className="mt-4 text-xl font-black">AI campaign guardrails</h3><p className="mt-2 text-sm leading-6 text-white/60">Campaign suggestions use commerce behaviour such as category affinity, purchase recency, frequency and budget bands. Sheplates does not ask AI to infer sensitive personal traits. Every draft requires Super Admin approval before activation.</p><div className="mt-5 space-y-2 text-xs text-white/70"><div className="rounded-xl bg-white/8 p-3">✓ Behavioural segmentation only</div><div className="rounded-xl bg-white/8 p-3">✓ Offers remain editable</div><div className="rounded-xl bg-white/8 p-3">✓ No automatic send or payment action</div></div></section></div>
-    {suggestions.length > 0 && <section><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-[.16em] text-[#155F65]">AI suggestions</p><h3 className="mt-1 text-lg font-black">Campaign drafts to consider</h3></div><button onClick={() => setSuggestions([])} className="text-xs font-black text-stone-500">Clear suggestions</button></div><div className="mt-4 grid gap-4 lg:grid-cols-3">{suggestions.map((suggestion, index) => <div key={`${suggestion.name}-${index}`} className="surface-card rounded-[26px] p-5"><div className="flex items-center gap-2"><Sparkles className="size-4 text-[#155F65]" /><Status>AI proposed</Status></div><h4 className="mt-3 text-lg font-black">{suggestion.name}</h4><div className="mt-4 space-y-3 text-sm"><Review label="Audience" value={suggestion.audience} /><Review label="Offer" value={suggestion.offer} /><Review label="Channel" value={suggestion.channel} /></div><p className="mt-4 rounded-xl bg-[#EEF2F2] p-3 text-xs leading-5 text-stone-600">{suggestion.rationale}</p><Button onClick={() => { setPrefill({ name: suggestion.name, offer: suggestion.offer, channel: suggestion.channel, aiRationale: suggestion.rationale }); setCreateOpen(true); }} className="mt-4 w-full rounded-xl bg-[#155F65]"><Plus />Edit and use</Button></div>)}</div></section>}
-    <CampaignManager campaigns={state.campaigns} categories={MARKET_GROUPS.map((group) => group.key)} vendors={state.vendors.filter((v) => v.verification === "Verified").map((v) => ({ id: v.id, name: v.businessName }))} products={eligibleProducts.map((p) => ({ id: p.id, name: p.name, vendor: state.vendors.find((v) => v.id === p.vendorId)?.businessName || "Vendor" }))} createOpen={createOpen} onCreateOpenChange={setCreateOpen} prefill={prefill} onPrefillUsed={() => setPrefill(null)} onSave={saveCampaign} onStatus={setCampaignStatus} onDelete={removeCampaign} />
-  </div>;
-}
-
-function UsersView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-  const [open, setOpen] = useState(false);
-  const live = isSupabaseConfigured();
-  const [roleTab, setRoleTab] = useState<"All" | "Customers" | "Vendors" | "Operations" | "Super Admin">("All");
-  const [viewing, setViewing] = useState<CustomerProfile | null>(null);
-  function openCustomer(email: string) {
-    const customer = state.customers.find((c) => c.email === email);
-    if (!customer) return;
-    setViewing(customer);
-    void logCustomerView(email, "Users");
-    setState((current) => ({ ...current, audit: [audit(session, "Viewed customer details", email), ...current.audit] }));
-  }
-  const [userQuery, setUserQuery] = useState("");
-  const roster = [
-    ...state.customers.map((c) => ({ key: `c-${c.email}`, name: c.email.split("@")[0], email: c.email, role: "Customers" as const, active: true })),
-    ...state.vendors.filter((v) => v.vendorKind !== "p0_connect").map((v) => ({ key: `v-${v.id}`, name: v.ownerName || v.businessName, email: v.ownerEmail, role: "Vendors" as const, active: v.operational === "Active" })),
-    ...state.staffAccounts.map((a) => ({ key: `s-${a.id}`, name: a.name, email: a.email, role: (a.role === "admin" ? "Super Admin" : "Operations") as "Super Admin" | "Operations", active: a.active })),
-  ];
-  const shownUsers = roster.filter((u) => (roleTab === "All" || u.role === roleTab) && (!userQuery.trim() || `${u.name} ${u.email}`.toLowerCase().includes(userQuery.trim().toLowerCase())));
-  return <div className="space-y-6">
-    <Heading eyebrow="ACCESS" title="Team & user access" body="Customers, vendors and the Sheplates team. Only Super Admin can create logins for the Operations team from this portal." action={<Button onClick={() => setOpen(true)}><UserCog />Create user</Button>} />
-    <div className="surface-card rounded-[22px] border border-sky-200/70 bg-sky-50/85 p-4 text-sm leading-6 text-sky-900">{live ? "Live account access is connected — new users are created as active role-based accounts." : "Live account access is not connected in this deployment, so new users are created as local test accounts for testing."}</div>
-    <section className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Role">{(["All", "Customers", "Vendors", "Operations", "Super Admin"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={roleTab === name} onClick={() => setRoleTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${roleTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? roster.length : roster.filter((u) => u.role === name).length}</button>)}<input value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder="Search name or email" aria-label="Search name or email" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>
-      {shownUsers.length ? <div className="mt-3 space-y-2">{shownUsers.slice(0, 80).map((u) => <div key={u.key} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-white px-4 py-3 text-sm sm:grid-cols-[1.2fr_1.6fr_auto_auto]"><span className="flex items-center gap-2 font-semibold"><span className="grid size-8 place-items-center rounded-full bg-[#C5E3E4] text-xs font-bold">{(u.name || "?").slice(0, 1).toUpperCase()}</span>{u.name}</span><span className="truncate text-[#2F3C3F]">{u.email}</span><span className="rounded-full bg-[#EEF2F2] px-3 py-1 text-xs font-semibold">{u.role === "Customers" ? "Customer" : u.role === "Vendors" ? "Vendor" : u.role}</span><span className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${u.active ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#FFF4CF] text-[#795900]"}`}>{u.active ? "Active" : "Inactive"}</span>{u.role === "Customers" && <button type="button" onClick={() => openCustomer(u.email)} className="h-8 rounded-full bg-[#EEF2F2] px-3 text-xs font-semibold">View details</button>}</span></div>)}</div> : <p className="mt-3 rounded-2xl bg-white p-4 text-sm text-[#55656A]">No users match.</p>}
-      <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">Customer data is visible only to authorised roles. Every time customer details are opened, it is recorded in the audit log.</p></section>
-    <Dialog open={!!viewing} onOpenChange={(value) => !value && setViewing(null)}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-[28px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-xl font-bold">Customer details</DialogTitle><DialogDescription>This view was recorded in the audit log.</DialogDescription></DialogHeader>{viewing && <div className="space-y-2 text-sm">{[["Email", viewing.email], ["Phone", viewing.phone || "Not given"], ["Default address", viewing.address || "Not given"], ["Household size", String(viewing.householdSize)], ["Diet", viewing.diet || "No preference"], ["Allergies", viewing.allergies.join(", ") || "None"], ["Goals", viewing.goals.join(", ") || "None"], ["Dislikes", viewing.dislikes || "None"]].map(([k, v]) => <div key={k} className="flex justify-between gap-4 rounded-2xl bg-[#EEF2F2] px-4 py-3"><span className="text-[#55656A]">{k}</span><b className="text-right">{v}</b></div>)}</div>}</DialogContent></Dialog>
-    <div className="surface-card overflow-x-auto rounded-[28px]"><div className="p-5 pb-0 text-sm font-black">Team accounts created from this portal</div>{state.staffAccounts.length ? <Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead>Created by</TableHead><TableHead>Created</TableHead><TableHead>Mode</TableHead></TableRow></TableHeader><TableBody>{state.staffAccounts.map((account) => <TableRow key={account.id}><TableCell><b>{account.name}</b></TableCell><TableCell>{account.email}</TableCell><TableCell className="capitalize">{account.role}</TableCell><TableCell>{account.createdBy}</TableCell><TableCell>{account.createdAt}</TableCell><TableCell><Status className={account.mode === "live" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{account.mode === "live" ? "Live account" : "Local test"}</Status></TableCell></TableRow>)}</TableBody></Table> : <div className="p-5"><Empty icon={UserCog} title="No team users created yet" body="Use Create user to give Operations teammates their own login." /></div>}</div>
-    <div className="surface-card overflow-x-auto rounded-[28px]"><div className="p-5 pb-0 text-sm font-black">Demo login identities (testing only)</div><Table><TableHeader><TableRow><TableHead>User</TableHead><TableHead>Role</TableHead><TableHead>Purpose</TableHead><TableHead>Password</TableHead></TableRow></TableHeader><TableBody>{demoAccounts.map((account) => <TableRow key={account.email}><TableCell><b>{account.name}</b><div className="text-xs text-stone-500">{account.email}</div></TableCell><TableCell className="capitalize">{account.role}</TableCell><TableCell>{account.detail}</TableCell><TableCell className="font-mono text-xs">{account.password}</TableCell></TableRow>)}</TableBody></Table></div>
-    <CreateUserDialog open={open} close={() => setOpen(false)} session={session} setState={setState} live={live} />
-  </div>;
-}
-
-function CreateUserDialog({ open, close, session, setState, live }: { open: boolean; close: () => void; session: DemoSession; setState: React.Dispatch<React.SetStateAction<V3State>>; live: boolean }) {
-  const [name, setName] = useState(""), [email, setEmail] = useState(""), [role, setRole] = useState<"operations" | "admin">("operations"), [busy, setBusy] = useState(false);
-  const [issuedPassword, setIssuedPassword] = useState<{ email: string; password: string } | null>(null);
-  const [showPassword, setShowPassword] = useState(true);
-  async function create() {
-    if (!name.trim() || !/^\S+@\S+\.\S+$/.test(email)) return toast.error("Enter a valid name and email address");
-    setBusy(true);
-    try {
-      let password: string;
-      let mode: "live" | "local";
-      if (live) {
-        const result = await createStaffUser({ name: name.trim(), email: email.trim().toLowerCase(), role });
-        password = result.temporaryPassword; mode = "live";
-      } else {
-        password = generatePassword(); mode = "local";
-        const existing = readLocalStaffAccounts();
-        if (existing.some((x) => x.email.toLowerCase() === email.trim().toLowerCase())) throw new Error("A local test account with this email already exists");
-        writeLocalStaffAccounts([...existing, { id: id("USR"), email: email.trim().toLowerCase(), name: name.trim(), role, password, createdBy: session.email, createdAt: now(), mode: "local", active: true }]);
-      }
-      const account: StaffAccount = { id: id("USR"), email: email.trim().toLowerCase(), name: name.trim(), role, createdBy: session.email, createdAt: now(), mode, active: true };
-      setState((s) => ({ ...s, staffAccounts: [account, ...s.staffAccounts], audit: [audit(session, "Created team user", `${account.name} · ${account.email} · ${role}`), ...s.audit] }));
-      setIssuedPassword({ email: account.email, password });
-      toast.success(`${account.email} created as ${role}`);
-    } catch (error) { toast.error(errorMessage(error, "User could not be created")); }
-    finally { setBusy(false); }
-  }
-  function reset() { setName(""); setEmail(""); setRole("operations"); setIssuedPassword(null); setShowPassword(true); close(); }
-  return <Dialog open={open} onOpenChange={(value) => !value && reset()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Create a team user</DialogTitle><DialogDescription>Only Super Admin can create Operations (or additional Super Admin) logins.</DialogDescription></DialogHeader>
-    {issuedPassword ? <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="mb-2 inline size-5" /><p><b>{issuedPassword.email}</b> was created.</p><p className="mt-1">Share this temporary password securely — it will not be shown again.</p></div>
-      <div className="surface-card-muted flex items-center gap-2 rounded-xl p-3 font-mono text-sm"><span className="flex-1">{showPassword ? issuedPassword.password : "•".repeat(issuedPassword.password.length)}</span><button onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button><button onClick={() => { navigator.clipboard?.writeText(issuedPassword.password); toast.success("Password copied"); }}><Copy className="size-4" /></button></div>
-      <Button onClick={reset} className="h-11 w-full rounded-xl bg-[#155F65] font-black">Done</Button>
-    </div> : <div className="space-y-4">
-      <Field label="Full name"><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} /></Field>
-      <Field label="Work email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} /></Field>
-      <Field label="Role"><Select value={role} onValueChange={(v) => setRole(v as "operations" | "admin")}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="operations">Operations</SelectItem><SelectItem value="admin">Super admin</SelectItem></SelectContent></Select></Field>
-      <Button onClick={() => void create()} disabled={busy} className="h-11 w-full rounded-xl bg-[#155F65] font-black">{busy ? "Creating…" : "Create user"}</Button>
-    </div>}
-  </DialogContent></Dialog>;
-}
-function AdminVendors({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
-  const allVendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
-  const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
-  const [vQuery, setVQuery] = useState("");
-  const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
-  const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
-  return <div className="space-y-6">
-    <Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." />
-    <ProductImageBackfill />
-    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">
-      {(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}
-      <input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" />
-    </div>
-    {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]">
-      <Table>
-        <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Products &amp; store</TableHead><TableHead>Plan</TableHead></TableRow></TableHeader>
-        <TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}>
-          <TableCell><div className="flex items-center gap-3">
-            <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2]">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-black text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div>
-            <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.ownerEmail}</div><div className="break-words text-[11px] font-semibold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div>
-          </div></TableCell>
-          <TableCell><Status>{vendor.verification}</Status></TableCell>
-          <TableCell><div className="flex min-w-32 flex-col items-start gap-1">
-            <span className="text-sm font-semibold">{state.products.filter((x) => x.vendorId === vendor.id).length} products</span>
-            <span className="text-xs text-stone-500">{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</span>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1">
-              {onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="mr-1 size-3.5 text-[#155F65]" />Preview</Button>}
-              <Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(vendor)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="mr-1 size-3.5 text-[#155F65]" />Edit Branding</Button>
             </div>
-          </div></TableCell>
-          <TableCell><Select value={vendor.plan} onValueChange={(value) => {
-            const plan = value as Vendor["plan"];
-            const oldPlan = vendor.plan;
-            if (plan === oldPlan) return;
-
-            const planPrices: Record<string, number> = { Taster: 499, Crave: 699, Thrive: 799, Crown: 999 };
-            const oldPrice = planPrices[oldPlan] ?? 0;
-            const newPrice = planPrices[plan] ?? 0;
-
-            const actorRole = session.role === "admin"
-              ? (session.name.toLowerCase().includes("super") || session.email.toLowerCase().includes("super") ? "Super Admin" : "Admin")
-              : (session.role === "operations" ? "Operations" : "Admin");
-
-            const auditEvent = createVendorPlanAuditEvent({
-              actorName: session.name,
-              actorEmail: session.email,
-              actorRole,
-              vendorId: vendor.id,
-              vendorName: vendor.businessName,
-              previousPlan: oldPlan,
-              newPlan: plan,
-              previousPrice: oldPrice,
-              newPrice: newPrice,
-              previousStatus: vendor.operational || "Active",
-              newStatus: vendor.operational || "Active",
-              reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
-            });
-
-            const newLimits = getPlanLimits(plan);
-            const activeProds = state.products.filter((p) => p.vendorId === vendor.id && p.active);
-            const excessProds = activeProds.length > newLimits.maxProducts
-              ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
-              : new Set<string>();
-
-            const activeStaff = state.staff.filter((st) => st.vendorId === vendor.id && st.active);
-            const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
-              ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
-              : new Set<string>();
-
-            const activeSlots = (state.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
-            const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
-              ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
-              : new Set<string>();
-
-            setState((s) => ({
-              ...s,
-              vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x),
-              products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
-              staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
-              deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
-              audit: [auditEvent, ...s.audit],
-            }));
-            if (isLiveSupabaseMode()) {
-              void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown", {
-                oldPlan,
-                vendorName: vendor.businessName,
-                session: {
-                  name: session.name,
-                  email: session.email,
-                  role: actorRole,
-                },
-                reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
-              }).then(() => {
-                toast.success(`${vendor.businessName} moved to ${plan}`);
-              }).catch((error: Error) => {
-                setState((s) => ({
-                  ...s,
-                  vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x),
-                  audit: s.audit.filter((a) => a.id !== auditEvent.id),
-                }));
-                toast.error(error.message || "Could not save the plan change");
-              });
-            } else {
-              toast.success(`${vendor.businessName} moved to ${plan}`);
-            }
-          }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
-        </TableRow>)}</TableBody>
-      </Table>
-    </div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}
-    {editingProfileVendor && (
-      <EditVendorProfileDialog
-        open
-        onClose={() => setEditingProfileVendor(null)}
-        vendor={editingProfileVendor}
-        setState={setState}
-        session={session}
-      />
-    )}
-  </div>;
-}
-function PlanFeatureTable() {
-  const plans = ["Taster", "Crave", "Thrive", "Crown"];
-  const rows: [string, boolean[]][] = [
-    ["Business information, description, catalogue", [true, true, true, true]],
-    ["Leads through WhatsApp", [true, false, false, false]],
-    ["Pre-orders, subscriptions, delivery fleet", [false, true, true, true]],
-    ["Food Shorts (Food Stories)", [false, true, true, true]],
-    ["Food Drops", [false, true, true, true]],
-    ["Request for Quote with AI assistance", [false, false, false, true]],
-  ];
-  return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
-}
-function Plans({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management, Food Stories and Food Drops (2/day)." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus 5 daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive (15 Food Drops/day), plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
-function AdminPricing({ state }: { state: V3State }) {
-  const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
-  const pct = (id: string) => state.markups[id] || 0;
-  const rows = state.products.filter((x) => vendorId === "all" || x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || pct(x.id) > 0);
-  const custom = state.products.filter((x) => pct(x.id) > 0);
-  const average = custom.length ? custom.reduce((sum, x) => sum + pct(x.id), 0) / custom.length : 0;
-  return <div className="space-y-6"><Heading eyebrow="PRICING GOVERNANCE" title="Published item percentages" body="Operations owns per-item percentages; Super Admin can inspect the full policy footprint." />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(custom.length)} icon={Percent} /><Metric label="Average % on those items" value={`${average.toFixed(1)}%`} icon={Activity} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div>
-    <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger aria-label="Vendor" className="w-full max-w-xs rounded-xl"><SelectValue placeholder="All vendors" /></SelectTrigger><SelectContent><SelectItem value="all">All vendors</SelectItem>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm outline-none" />{[["All", false], ["Custom %", true]].map(([label, value]) => <button key={String(label)} type="button" onClick={() => setOnlyCustom(Boolean(value))} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom === value ? "bg-[#155F65] text-white" : "bg-white"}`}>{String(label)}</button>)}</div>
-    {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Vendor</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{rows.map((x) => <TableRow key={x.id}><TableCell><b>{x.name}</b><div className="text-xs text-[#55656A]">per {x.baseUnit}</div></TableCell><TableCell className="text-sm">{state.vendors.find((v) => v.id === x.vendorId)?.businessName || "Vendor"}</TableCell><TableCell>{money(x.vendorPrice)}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pct(x.id) > 0 ? "bg-[#EAF4F2] text-[#155F65]" : "bg-[#EEF2F2] text-[#55656A]"}`}>{pct(x.id)}%</span></TableCell><TableCell className="font-black">{money(finalPrice(x, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title={state.products.length ? "No items match" : "No product pricing"} body={state.products.length ? "Try another vendor or search." : "Pricing rows appear after vendors add products."} />}</div>;
-}
-type ReportKey = "orders" | "zoho_orders" | "payments" | "tickets" | "vendors" | "cancellations" | "customers";
-const reportDefinitions: { key: ReportKey; label: string; dateField: string }[] = [
-  { key: "orders", label: "Orders", dateField: "date" },
-  { key: "zoho_orders", label: "Zoho Books daily order export", dateField: "date" },
-  { key: "payments", label: "Vendor payments", dateField: "collectedAt" },
-  { key: "tickets", label: "Support tickets", dateField: "at" },
-  { key: "vendors", label: "Vendor directory", dateField: "" },
-  { key: "cancellations", label: "Cancellations", dateField: "" },
-  { key: "customers", label: "Customers", dateField: "" },
-];
-function buildReportRows(key: ReportKey, state: V3State, from: string, to: string): Record<string, unknown>[] {
-  const inRange = (value?: string) => { if (!value) return true; const day = value.slice(0, 10); if (from && day < from) return false; if (to && day > to) return false; return true; };
-  if (key === "orders") return state.orders.filter((o) => inRange(o.date)).map((o) => ({ "Order ID": o.id, Customer: o.customerEmail, Vendor: state.vendors.find((v) => v.id === o.vendorId)?.businessName || o.vendorId, Description: o.description, Total: o.total, Date: o.date, Slot: o.slot, Status: o.status, Payment: o.payment }));
-  if (key === "zoho_orders") return state.orders.filter((o) => o.payment === "Paid" && inRange(o.date)).map((o) => ({ "Reference Number": o.id, "Customer Name": o.customerEmail, "Order Date": o.date, "Item Name": o.description, Quantity: o.quantity, Rate: o.quantity ? Math.round((o.total / o.quantity) * 100) / 100 : o.total, "Line Total": o.total, "Payment Status": o.payment, "Fulfilment Status": o.status, Vendor: state.vendors.find((v) => v.id === o.vendorId)?.businessName || o.vendorId, "Delivery Slot": o.slot }));
-  if (key === "payments") return state.transactions.filter((t) => inRange(t.collectedAt)).map((t) => ({ "Order ID": t.orderId, Vendor: state.vendors.find((v) => v.id === t.vendorId)?.businessName || t.vendorId, "Collected on": t.collectedAt, Gross: t.grossAmount, Commission: t.commissionAmount, "Vendor payout": t.vendorPayout, Status: t.payoutStatus, "Expected / paid": t.paidAt || t.scheduledPayoutDate }));
-  if (key === "tickets") return state.tickets.filter((t) => inRange(t.at)).map((t) => ({ "Ticket ID": t.id, "Raised by": t.creatorEmail, Role: t.creatorRole, Category: t.category, Subject: t.subject, Status: t.status, "Created via": t.createdVia, At: t.at }));
-  if (key === "vendors") return state.vendors.map((v) => ({ Vendor: v.businessName, Owner: v.ownerEmail, Category: v.category, Verification: v.verification, Operational: v.operational, Plan: v.plan, "Open today": v.openToday ? "Yes" : "No", "Radius (km)": v.radiusKm }));
-  if (key === "cancellations") return state.cancellations.map((c) => ({ "Cancellation ID": c.id, "Order ID": c.orderId, Customer: c.customerEmail, Reason: c.reason, "AI decision": c.aiDecision, "Confidence %": c.confidence, Status: c.status }));
-  return state.customers.map((c) => ({ Email: c.email, Address: c.address, "Household size": c.householdSize, Diet: c.diet, Allergies: c.allergies.join(", "), Goals: c.goals.join(", ") }));
-}
-function ReportsCentre({ state }: { state: V3State }) {
-  const [key, setKey] = useState<ReportKey>("orders");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const definition = reportDefinitions.find((x) => x.key === key)!;
-  const rows = buildReportRows(key, state, from, to);
-  function download() { downloadWorkbook(`sheplates-${key}-report`, [{ name: definition.label, rows }]); toast.success(`${definition.label} report downloaded (${rows.length} row(s))`); }
-  return <div className="space-y-6"><Heading eyebrow="REPORTING" title="Custom reports" body="Pick a report, a period and download it as a spreadsheet." />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{reportDefinitions.map((def) => { const count = buildReportRows(def.key, state, "", "").length; return <div key={def.key} className="surface-card flex flex-col gap-3 rounded-3xl p-5"><div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2"><span className="grid size-9 place-items-center rounded-xl bg-[#155F65]"><FileText className="size-5" /></span><b>{def.label}</b></div><button type="button" onClick={() => { const data = buildReportRows(def.key, state, "", ""); downloadWorkbook(`sheplates-${def.key}-report`, [{ name: def.label, rows: data }]); toast.success(`${def.label} report downloaded (${data.length} row(s))`); }} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold ring-1 ring-[#DDE3E4]"><Download className="size-4" />Excel</button></div><div className="text-2xl font-bold tabular-nums">{count} <span className="text-sm font-medium text-[#55656A]">row{count === 1 ? "" : "s"}</span></div></div>; })}</div>
-    <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Orders over the last 14 days</h3><div className="mt-4"><BarChart data={lastDays(14).map((d) => ({ label: d.label, value: state.orders.filter((o) => o.date === d.key && o.status !== "Cancelled").length }))} height={150} /></div></section>
-    <div className="surface-card grid gap-4 rounded-[28px] p-5 lg:grid-cols-[1.2fr_.8fr_.8fr_auto]">
-      <Field label="Report"><Select value={key} onValueChange={(v) => setKey(v as ReportKey)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{reportDefinitions.map((r) => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}</SelectContent></Select></Field>
-      <Field label="From" hint={definition.dateField ? undefined : "Not date-filterable"}><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} disabled={!definition.dateField} className={inputClass} /></Field>
-      <Field label="To"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} disabled={!definition.dateField} className={inputClass} /></Field>
-      <div className="flex items-end"><Button onClick={download} className="h-11 w-full rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><Download />Download Excel</Button></div>
-    </div>
-    <div className="surface-card rounded-[28px] p-5"><div className="flex items-center justify-between"><h3 className="font-black">{definition.label} preview</h3><Status>{rows.length} row(s)</Status></div>{rows.length ? <div className="mt-4 overflow-x-auto"><Table><TableHeader><TableRow>{Object.keys(rows[0]).map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.slice(0, 8).map((row, index) => <TableRow key={index}>{Object.keys(rows[0]).map((column) => <TableCell key={column}>{String(row[column] ?? "")}</TableCell>)}</TableRow>)}</TableBody></Table>{rows.length > 8 && <p className="mt-2 text-xs text-stone-400">Showing 8 of {rows.length} rows. Download the Excel file for the full dataset.</p>}</div> : <Empty icon={FileSpreadsheet} title="No rows for this selection" body="Widen the date range or choose a different report." />}</div>
-  </div>;
-}
-
-function NotificationDrawer({ open, setOpen, session, state, setState, onNavigate }: { open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onNavigate?: (view: string) => void }) {
-  const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
-  const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
-
-  useEffect(() => {
-    setDeviceStatus(getDeviceNotificationStatus());
-  }, []);
-
-  async function enable() {
-    const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
-    setDeviceStatus(result.status);
-    if (result.status === "granted") toast.success(result.message);
-    else if (result.status === "denied") toast.error(result.message);
-    else toast.info(result.message);
-  }
-
-  async function handleNotificationClick(item: Notification) {
-    if (!item.read) {
-      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => { });
-      setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
-    }
-    setOpen(false);
-    const route = resolveNotificationTarget(item, session, state);
-    executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
-      if (type === "error") toast.error(msg);
-      else if (type === "warning") toast.warning(msg);
-      else if (type === "success") toast.success(msg);
-      else toast.info(msg);
-    });
-  }
-
-  return <Sheet open={open} onOpenChange={setOpen}>
-    <SheetContent className="sp-notification-sheet w-full p-0 sm:max-w-md">
-      <SheetHeader className="border-b bg-[#155F65] p-6 text-left text-white">
-        <SheetTitle className="text-white">Notifications</SheetTitle>
-        <SheetDescription className="text-white/55">In-app updates plus optional device notifications for this installed web app.</SheetDescription>
-      </SheetHeader>
-      <div className="p-5">
-        <Button type="button" onClick={enable} variant="outline" disabled={deviceStatus === "granted"} className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}>
-          {deviceStatus === "granted" ? <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></> : deviceStatus === "denied" ? <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></> : deviceStatus === "ios_pwa_required" ? <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></> : <><Bell className="size-4" /><span>Enable device notifications</span></>}
-        </Button>
-        <button onClick={() => setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }))} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
-        <div className="space-y-3">
-          {items.map((item) => (
-            <div key={item.id} role="button" tabIndex={0} onClick={() => void handleNotificationClick(item)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }} className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}>
-              <div className="flex justify-between gap-3"><b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}</div>
-              <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
-              <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
-                <span>{item.at}</span>
-                <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+          </div>
+        )}
+        {!isCrown && myQuotes.length === 0 ? (
+          <Empty icon={WalletCards} title="Quotation access is on the Crown plan" body="Upgrade to Crown to receive customer quotation requests and submit quotes." />
+        ) : isCrown && opportunities.length ? (
+          opportunities.map((req) => (
+            <div key={req.id} className="surface-card rounded-[28px] p-5">
+              <div className="flex justify-between">
+                <div>
+                  <h3 className="font-black">{req.title}</h3>
+                  <p className="text-xs text-stone-500">{req.items.length} items · closes {req.closingDate || "not set"} · needed {req.deliveryDate}</p>
+                </div>
+                <Status>{state.quotes.some((x) => x.requirementId === req.id && x.vendorId === vendor.id) ? "Accepted / quoted" : "Invited"}</Status>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {req.items.map((item) => (
+                  <span key={item.id} className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold">{item.name} · {item.quantity} {item.unit}</span>
+                ))}
+              </div>
+              <div className="mt-5 flex max-w-md gap-2">
+                <input type="number" value={draft[req.id] || ""} onChange={(e) => setDraft((x) => ({ ...x, [req.id]: Number(e.target.value) }))} placeholder="Your best total ₹" className={inputClass} />
+                <Button onClick={() => quote(req)} className="rounded-xl bg-[#155F65]">Accept & quote</Button>
               </div>
             </div>
-          ))}
-          {!items.length && <Empty icon={Bell} title="No notifications" body="Schedule, quote, verification and order updates will appear here." />}
-        </div>
-      </div>
-    </SheetContent>
-  </Sheet>;
-}
-
-function NotificationDrawerV4({ page = false, open, setOpen, session, state, setState, people, onNavigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; people: PeopleApi; onNavigate?: (view: string) => void }) {
-  const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
-  const [busyRequest, setBusyRequest] = useState("");
-  const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
-
-  useEffect(() => {
-    setDeviceStatus(getDeviceNotificationStatus());
-  }, []);
-
-  async function enable() {
-    const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
-    setDeviceStatus(result.status);
-    if (result.status === "granted") toast.success(result.message);
-    else if (result.status === "denied") toast.error(result.message);
-    else toast.info(result.message);
-  }
-
-  async function markAll() {
-    try {
-      if (isLiveSupabaseMode()) await markLiveNotificationsRead();
-      setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }));
-    } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); }
-  }
-
-  async function handleNotificationClick(item: Notification) {
-    if (!item.read) {
-      if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => { });
-      setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
-    }
-    setOpen(false);
-    const route = resolveNotificationTarget(item, session, state);
-    executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
-      if (type === "error") toast.error(msg);
-      else if (type === "warning") toast.warning(msg);
-      else if (type === "success") toast.success(msg);
-      else toast.info(msg);
-    });
-  }
-
-  async function respondToFollowRequest(item: Notification, accept: boolean) {
-    if (!item.entityId) return;
-    setBusyRequest(item.id);
-    try {
-      await people.resolveRequest(item.entityId, accept);
-      setState((current) => ({ ...current, notifications: current.notifications.map((notification) => notification.id === item.id ? { ...notification, read: true } : notification) }));
-      toast.success(accept ? "Follow request approved" : "Follow request declined");
-    } catch (error) {
-      toast.error(errorMessage(error, "Follow request could not be updated"));
-    } finally { setBusyRequest(""); }
-  }
-
-  const notificationCard = (item: Notification) => (
-    <div
-      key={item.id}
-      role="button"
-      tabIndex={0}
-      onClick={() => void handleNotificationClick(item)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }}
-      className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}
-    >
-      <div className="flex justify-between gap-3">
-        <b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>
-        {!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}
-      </div>
-      <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
-      <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
-        <span>{item.at}</span>
-        <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
-      </div>
-      {session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people?.requests?.some?.((request) => request.id === item.entityId) && (
-        <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-          <Button type="button" size="sm" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, true); }} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button>
-          <Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, false); }} className="rounded-full font-black">Decline</Button>
-        </div>
-      )}
-    </div>
-  );
-
-  const deviceButton = (
-    <Button
-      type="button"
-      onClick={enable}
-      variant="outline"
-      disabled={deviceStatus === "granted"}
-      className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}
-    >
-      {deviceStatus === "granted" ? (
-        <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></>
-      ) : deviceStatus === "denied" ? (
-        <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></>
-      ) : deviceStatus === "ios_pwa_required" ? (
-        <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></>
-      ) : (
-        <><Bell className="size-4" /><span>Enable device notifications</span></>
-      )}
-    </Button>
-  );
-
-  if (page) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h1 className="text-[28px] font-bold leading-tight">Notifications</h1>
-            <p className="mt-1 text-sm text-[#55656A]">Private updates for {session.email}.</p>
-          </div>
-        </div>
-        <div className="space-y-3">
-          {deviceButton}
-          <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
-          <div className="space-y-3">
-            {items.map(notificationCard)}
-            {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
-          </div>
-        </div>
+          ))
+        ) : isCrown ? (
+          <Empty icon={ClipboardCheck} title="No RFQs matched to your store" body="Only serviceable customer requests sent to this vendor account will appear here." />
+        ) : null}
       </div>
     );
   }
 
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetContent className="w-full overflow-hidden p-0 sm:max-w-md">
-        <SheetHeader className="shrink-0 border-b bg-[#155F65] p-6 text-left text-white">
+  function DeliveryTeam({ vendor, state, setState, session }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession }) {
+    const [name, setName] = useState("");
+    const [phone, setPhone] = useState("");
+    const [editing, setEditing] = useState<Staff | null>(null);
+    const people = state.staff.filter((x) => x.vendorId === vendor.id);
+    async function savePerson() {
+      if (!name || !/^\+?[0-9 ]{10,15}$/.test(phone)) return toast.error("Enter a staff name and valid phone number");
+      if (!editing) {
+        const staffCheck = canAddDeliveryStaff(vendor.plan, people.length);
+        if (!staffCheck.allowed) {
+          return toast.error(staffCheck.reason);
+        }
+      }
+      try {
+        let staffId = editing?.id || id("STF");
+        if (isLiveSupabaseMode()) { const result = await saveLiveDeliveryStaff({ staffId: editing?.id, name, phone, active: editing?.active ?? true }); staffId = String(result.id); }
+        if (editing) setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === editing.id ? { ...x, id: staffId, name, phone } : x), audit: [audit(session, "Updated delivery staff", `${name} · ${phone}`), ...s.audit] }));
+        else { const person: Staff = { id: staffId, vendorId: vendor.id, name, phone, active: true }; setState((s) => ({ ...s, staff: [person, ...s.staff], audit: [audit(session, "Added delivery staff", `${name} · ${phone}`), ...s.audit] })); }
+        toast.success(editing ? "Delivery person updated" : "Delivery person added"); setName(""); setPhone(""); setEditing(null);
+      } catch (error) { toast.error(errorMessage(error, "Delivery person could not be saved")); }
+    }
+    async function remove(person: Staff) {
+      // A delivery person with an open order cannot be removed: that would leave the order with nobody to deliver it.
+      const openOrders = state.assignments.filter((x) => x.staffId === person.id).map((x) => state.orders.find((o) => o.id === x.orderId)).filter((o): o is Order => Boolean(o) && !["Completed", "Delivered", "Cancelled"].includes(o!.status));
+      if (openOrders.length) { toast.error(`${person.name} is assigned to ${openOrders.length} open order${openOrders.length === 1 ? "" : "s"}. Assign ${openOrders.length === 1 ? "it" : "them"} to someone else or finish ${openOrders.length === 1 ? "it" : "them"} before deleting this person.`); return; }
+      if (!confirm(`Delete ${person.name} from the delivery team? Existing completed-order history is retained.`)) return;
+      try { if (isLiveSupabaseMode()) await deleteLiveDeliveryStaff(person.id); setState((s) => ({ ...s, staff: s.staff.filter((x) => x.id !== person.id), assignments: s.assignments.filter((x) => x.staffId !== person.id), audit: [audit(session, "Deleted delivery staff", `${person.name} · ${person.phone}`), ...s.audit] })); toast.success("Delivery person deleted"); }
+      catch (error) { toast.error(errorMessage(error, "Delivery person could not be deleted")); }
+    }
+    return <div className="space-y-6"><Heading eyebrow="DELIVERY ACCOUNTABILITY" title="Your delivery team" body="Add, edit or remove delivery people. Active staff can be assigned to upcoming delivery orders." />
+      <div className="surface-card rounded-[28px] p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Staff name" className={inputClass} /><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" className={inputClass} /><Button onClick={savePerson} className="h-11 rounded-xl bg-[#155F65]">{editing ? <Pencil /> : <Plus />}{editing ? "Save changes" : "Add staff"}</Button></div>{editing && <button onClick={() => { setEditing(null); setName(""); setPhone(""); }} className="mt-3 text-xs font-black text-stone-500">Cancel editing</button>}</div>
+      {people.length ? <div className="grid gap-3 md:grid-cols-2">{people.map((person) => <div key={person.id} className="surface-card flex items-center gap-3 rounded-[22px] p-4"><div className="grid size-11 place-items-center rounded-full bg-[#EAF4F2] font-black text-[#155F65]">{person.name[0]}</div><div className="min-w-0 flex-1"><b className="block truncate">{person.name}</b><div className="text-xs text-stone-500">{person.phone}</div></div><button onClick={() => { setEditing(person); setName(person.name); setPhone(person.phone); }} className="grid size-9 place-items-center rounded-xl hover:bg-stone-100" title="Edit"><Pencil className="size-4" /></button><button onClick={() => remove(person)} className="grid size-9 place-items-center rounded-xl text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="size-4" /></button><Switch checked={person.active} onCheckedChange={(value) => { void (async () => { try { if (isLiveSupabaseMode()) await saveLiveDeliveryStaff({ staffId: person.id, name: person.name, phone: person.phone, active: value }); setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === person.id ? { ...x, active: value } : x) })); } catch (error) { toast.error(errorMessage(error, "Staff status could not be changed")); } })(); }} /></div>)}</div> : <Empty icon={Truck} title="No delivery staff" body="Add the first delivery person above." />}
+      <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Today&apos;s assignments</h3>
+        {(() => { const rows = state.orders.filter((o) => o.vendorId === vendor.id && o.payment === "Paid" && !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery").slice(0, 8); return rows.length ? <div className="mt-3 space-y-2">{rows.map((o) => { const a = state.assignments.find((x) => x.orderId === o.id); const who = state.staff.find((m) => m.id === a?.staffId); return <div key={o.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-[#EEF2F2] px-4 py-3 text-sm sm:grid-cols-[1.1fr_1fr_1.2fr_1fr_auto]"><b className="truncate">{o.id}</b><span>{o.slot}</span><span className="truncate text-[#2F3C3F]">{o.deliveryAddress || "Address on order"}</span><span className={who ? "font-medium" : "text-[#55656A]"}>{who?.name || "Not assigned"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${who ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]"}`}>{who ? o.status : "Assign in Orders"}</span></div>; })}</div> : <p className="mt-3 rounded-2xl bg-[#EEF2F2] p-4 text-sm text-[#55656A]">No open deliveries to assign right now.</p>; })()}
+      </section>
+      <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Customers see the delivery person&apos;s first name and phone number only while their order is on the way.</p>
+    </div>;
+  }
+
+  function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
+
+  function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+    if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={navigate} />;
+    if (active === "AI insights") return <AIInsights role="operations" state={state} />;
+    if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
+    if (active === "P0 Connect vendors") return <P0VendorManagement role="operations" />;
+    if (active === "Vendor onboarding") return <OperationsOnboard session={session} state={state} setState={setState} />;
+    if (active === "Vendor verification") return <OperationsVerification session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+    if (active === "Store & radius") return <OperationsStoreRadius session={session} state={state} setState={setState} />;
+    if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
+    if (active === "RFQ desk") return isLiveSupabaseMode() ? <LiveRfqDesk /> : <RFQDesk state={state} />;
+    if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
+    if (active === "Cancellations") return <Cancellations session={session} state={state} setState={setState} />;
+    if (active === "Vendor payments") return <VendorPayments state={state} setState={setState} session={session} canManage />;
+    if (active === "Reports") return <ReportsCentre state={state} />;
+    if (active === "Stories monitor") return <StoriesMonitor />;
+    if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="manage" />;
+    const subscriptionVendors = state.vendors.filter((x) => x.vendorKind !== "p0_connect");
+    const activeOrders = state.orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)); const gmv = state.orders.reduce((sum, x) => sum + x.total, 0); const openVendors = subscriptionVendors.filter((x) => x.openToday && x.verification === "Verified").length;
+    const todayStr = todayISO();
+    const salesToday = state.orders.filter((x) => x.date === todayStr && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0);
+    const awaitingVerification = subscriptionVendors.filter((x) => ["Submitted", "Under review"].includes(x.verification));
+    const unassigned = state.orders.filter((o) => !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery" && !state.assignments.some((a) => a.orderId === o.id));
+    const cancelQueue = state.cancellations.filter((x) => x.status === "Awaiting operations");
+    const openTickets = state.tickets.filter((t) => t.status !== "Resolved");
+    const attention: { icon: typeof Store; tint: string; title: string; sub: string; go: string }[] = [
+      ...unassigned.slice(0, 2).map((o) => ({ icon: AlertTriangle, tint: "bg-[#EAF4F2]", title: `Order ${o.id} has no delivery partner`, sub: `${state.vendors.find((v) => v.id === o.vendorId)?.businessName || "Vendor"} · ${o.slot}`, go: "Orders" })),
+      ...awaitingVerification.slice(0, 2).map((v) => ({ icon: BadgeCheck, tint: "bg-[#EAF4F2]", title: `${v.businessName} is waiting for verification`, sub: "Review the certificate and approve or reject", go: "Vendor verification" })),
+      ...cancelQueue.slice(0, 2).map((c) => ({ icon: RefreshCcw, tint: "bg-[#EAF4F2]", title: `Cancellation request for ${c.orderId}`, sub: "Awaiting Operations review", go: "Cancellations" })),
+      ...openTickets.slice(0, 2).map((t) => ({ icon: TicketCheck, tint: "bg-[#EEF2F2]", title: t.subject, sub: `Ticket ${t.id} · ${t.status}`, go: "Ticket centre" })),
+    ].slice(0, 5);
+    const bySlot = Object.entries(activeOrders.reduce<Record<string, number>>((acc, o) => { acc[o.slot] = (acc[o.slot] || 0) + 1; return acc; }, {})).sort(([x], [y]) => x.localeCompare(y)).slice(0, 8).map(([label, value]) => ({ label: label.replace(/ to .*$/, ""), value }));
+    return <div className="space-y-5">
+      <Heading eyebrow="OPERATIONS COMMAND CENTRE" title="Live platform control" body={`${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })} · Verify vendors, track fulfilment and review cancellations`} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Active orders" value={String(activeOrders.length)} icon={ReceiptText} note={`${unassigned.length} without a delivery partner`} />
+        <Metric label="Sales today" value={compactMoney(salesToday)} icon={IndianRupee} note={`${compactMoney(gmv)} in total`} />
+        <Metric label="Verification queue" value={String(awaitingVerification.length)} icon={BadgeCheck} note={`${openVendors} vendors open today`} />
+        <Metric label="Open tickets" value={String(openTickets.length)} icon={TicketCheck} note={`${cancelQueue.length} cancellation${cancelQueue.length === 1 ? "" : "s"} waiting`} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+        <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Needs attention</h3>
+          {attention.length ? <div className="mt-3 divide-y divide-[#DDE3E4]">{attention.map((item, i) => { const Icon = item.icon; return <div key={i} className="flex items-center gap-3 py-3"><div className={`grid size-11 shrink-0 place-items-center rounded-full ${item.tint}`}><Icon className="size-5" /></div><div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold">{item.title}</div><div className="truncate text-xs text-[#55656A]">{item.sub}</div></div><Button size="sm" onClick={() => navigate(item.go)}>Open</Button></div>; })}</div> : <p className="mt-3 rounded-[18px] bg-[#EEF2F2] p-4 text-sm text-[#55656A]">Nothing needs attention right now.</p>}</section>
+        <div className="space-y-5">
+          <section className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">Orders by slot</h3><span className="text-xs text-[#55656A]">Active</span></div><div className="mt-4">{bySlot.length ? <BarChart data={bySlot} height={130} /> : <p className="text-sm text-[#55656A]">No active orders.</p>}</div></section>
+          <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">She Agent for Operations</h3><p className="mt-1 text-xs text-[#55656A]">Ask across vendors, orders and delivery exceptions. It can recommend actions; final payment reversals remain human-controlled.</p><button type="button" onClick={openAgent} className="mt-3 flex h-12 w-full items-center justify-between rounded-full bg-[#EEF2F2] px-5 text-left text-sm text-[#5F6F74]">Ask about today&apos;s late orders…<Send className="size-5" /></button></section>
+        </div>
+      </div>
+    </div>;
+  }
+
+  function OperationsStoreRadius({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const list = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+    const [pickId, setPickId] = useState("");
+    const [onlyOpen, setOnlyOpen] = useState(false);
+    const shown = onlyOpen ? list.filter((vendor) => vendor.openToday) : list;
+    const picked = shown.find((vendor) => vendor.id === pickId) || shown[0];
+    return <div className="space-y-5">
+      <Heading eyebrow="VENDOR COVERAGE" title="Store and radius" body="See every vendor's store pin and fix a wrong pin or radius on their behalf. Every change is written to the audit log with your name." />
+      {list.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <div className="space-y-3"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setOnlyOpen(false)} className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyOpen ? "bg-[#155F65] text-white" : "bg-white"}`}>All vendors · {list.length}</button><button type="button" onClick={() => setOnlyOpen(true)} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyOpen ? "bg-[#155F65] text-white" : "bg-white"}`}>Open today · {list.filter((vendor) => vendor.openToday).length}</button></div>
+          {shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`block w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="flex items-start justify-between gap-2"><b>{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.openToday ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#EEF2F2] text-[#55656A]"}`}>{vendor.openToday ? "Open today" : "Closed"}</span></div><div className="mt-1 text-xs text-[#55656A]">{vendor.address || "Address not provided"} · {vendor.radiusKm} km</div></button>)}</div>
+        {picked && <OperationsVendorRadius key={picked.id} vendor={picked} session={session} setState={setState} />}
+      </div> : <Empty icon={Store} title="No vendors yet" body="Vendors appear here once they have a store pin." />}
+    </div>;
+  }
+
+  function OperationsVendorRadius({ vendor, session, setState }: { vendor: Vendor; session: DemoSession; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const [radius, setRadius] = useState(vendor.radiusKm);
+    async function saveRadius() {
+      try {
+        if (isLiveSupabaseMode()) await updateLiveVendorControls(vendor.id, { service_radius_km: radius });
+        setState((current) => ({
+          ...current,
+          vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, radiusKm: radius } : item),
+          audit: [audit(session, "Updated vendor service radius", `${vendor.businessName} · ${radius} km`), ...current.audit],
+        }));
+        toast.success(`${vendor.businessName} service radius updated`);
+      } catch (error) {
+        toast.error(errorMessage(error, "Vendor service radius could not be saved"));
+      }
+    }
+    const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
+    return <div className="surface-card space-y-4 rounded-3xl p-5">
+      <div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{vendor.businessName}</h3><p className="mt-1 text-xs text-stone-500">{vendor.address || "Address not provided"}</p></div><Status>{vendor.verification}</Status></div>
+      <div className="text-xs text-stone-500">{hasPin ? `Store pin: ${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No exact store pin saved"}</div>
+      <Field label={`Service radius · ${radius} km`} hint="Customers within this distance of the vendor pin can be matched.">
+        <Slider value={[radius]} min={1} max={30} step={1} onValueChange={(value) => setRadius(value[0])} />
+      </Field>
+      <Button onClick={() => void saveRadius()} disabled={radius === vendor.radiusKm} className="rounded-xl bg-[#155F65]"><Check />Save radius</Button>
+    </div>;
+  }
+
+  function OperationsOnboard({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const [open, setOpen] = useState(false);
+    const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+    return <div className="space-y-6"><Heading eyebrow="ASSISTED ONBOARDING" title="Create a vendor from Operations" body="Assign every vendor to an existing vendor login. After submission, the record stays visible below and appears to that exact vendor account." action={<Button onClick={() => setOpen(true)} className="rounded-xl bg-[#155F65]"><UserPlus />Start onboarding</Button>} />
+      <div className="surface-card rounded-[22px] border border-sky-200/70 bg-sky-50/85 p-4 text-sm leading-6 text-sky-900"><b>Testing rule:</b> choose either <code>vendor@sheplates.demo</code> or <code>newvendor@sheplates.demo</code> in the onboarding form. Sign in with the selected account to see that vendor. The vendor remains unavailable to customers until Operations verifies it, the vendor opens the store, and at least one product is active.</div>
+      {vendors.length ? <>
+        <div className="space-y-3 lg:hidden">{vendors.map((vendor) => {
+          const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length;
+          const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude);
+          const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0;
+          return <article key={vendor.id} className="surface-card min-w-0 space-y-4 rounded-3xl p-4">
+            <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.id}</div></div>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Assigned login</div><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="h-auto min-h-11 w-full min-w-0 rounded-xl py-2 text-left"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 break-words text-xs text-stone-500">Sign in with this exact vendor account</div></div>
+              <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Location</div><div className="break-words text-sm">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></div>
+            </div>
+            <div className="grid min-w-0 gap-3 border-t border-[#DDE3E4] pt-3 sm:grid-cols-2">
+              <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Status</div><Status>{vendor.verification}</Status></div>
+              <div className="min-w-0"><div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-stone-500">Customer visibility</div>{visible ? <span className="break-words text-sm font-black text-[#202827]">Eligible by store status</span> : <span className="break-words text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</div>
+            </div>
+          </article>;
+        })}</div>
+        <div className="surface-card hidden overflow-x-auto rounded-[28px] md:block"><Table><TableHeader><TableRow><TableHead>Created vendor</TableHead><TableHead>Assigned login</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Customer visibility</TableHead></TableRow></TableHeader><TableBody>{vendors.map((vendor) => { const products = state.products.filter((item) => item.vendorId === vendor.id && item.active && item.stock > 0).length; const hasPin = Number.isFinite(vendor.latitude) && Number.isFinite(vendor.longitude); const visible = hasPin && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday && products > 0; return <TableRow key={vendor.id}><TableCell><b>{vendor.businessName}</b><div className="text-xs text-stone-500">{vendor.id}</div></TableCell><TableCell><Select value={vendor.ownerEmail} onValueChange={(email) => { const account = demoAccounts.find((item) => item.email === email)!; setState((current) => ({ ...current, vendors: current.vendors.map((item) => item.id === vendor.id ? { ...item, ownerEmail: email, ownerName: account.name } : item), audit: [audit(session, "Reassigned vendor login", `${vendor.businessName} → ${email}`), ...current.audit] })); toast.success(`Vendor assigned to ${email}`); }}><SelectTrigger className="w-60 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{demoAccounts.filter((account) => account.role === "vendor").map((account) => <SelectItem key={account.email} value={account.email}>{account.email}</SelectItem>)}</SelectContent></Select><div className="mt-1 text-xs text-stone-500">Sign in with this exact vendor account</div></TableCell><TableCell className="max-w-sm"><div className="break-words">{vendor.address || "Address not provided"}</div><div className="break-words text-xs text-stone-500">{hasPin ? `${vendor.latitude?.toFixed(5)}, ${vendor.longitude?.toFixed(5)}` : "No store pin"} · {vendor.radiusKm} km radius</div></TableCell><TableCell><Status>{vendor.verification}</Status></TableCell><TableCell>{visible ? <span className="font-black text-[#202827]">Eligible by store status</span> : <span className="text-xs text-amber-700">Waiting: {!hasPin ? "exact store pin" : vendor.verification !== "Verified" ? "verification" : !vendor.openToday ? "store closed" : products === 0 ? "active product with stock" : "activation"}</span>}</TableCell></TableRow>; })}</TableBody></Table></div>
+      </> : <Empty icon={UserPlus} title="No vendor has been created yet" body="Start onboarding and assign it to one of the existing vendor login identities." />}
+      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[94vh] overflow-y-auto rounded-[28px] sm:max-w-5xl"><DialogHeader><DialogTitle className="sr-only">Operations vendor onboarding</DialogTitle><DialogDescription className="sr-only">Create a vendor application</DialogDescription></DialogHeader><VendorOnboarding operationsCreated session={session} setState={setState} close={() => setOpen(false)} /></DialogContent></Dialog></div>;
+  }
+  function OperationsVerification({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+    const vendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+    // Live only: null = not known yet (or not live), so nothing is blocked; false = the agreement is not fully signed.
+    const [agreement, setAgreement] = useState<{ vendorId: string; done: boolean | null } | null>(null);
+    const reportAgreement = useCallback((vendorId: string, done: boolean | null) => setAgreement({ vendorId, done }), []);
+
+    async function decide(vendor: Vendor, verification: Verification, note = "") {
+      try {
+        if (isLiveSupabaseMode()) {
+          await decideLiveVendorVerification(vendor.id, verification.toLowerCase().replaceAll(" ", "_"));
+          if (note.trim()) await sendVendorNote(vendor.id, note.trim());
+        }
+        setState((s) => ({
+          ...s,
+          vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, verification, operational: verification === "Verified" ? "Active" : "Inactive", openToday: verification === "Verified" ? x.openToday : false } : x),
+          notifications: [
+            notice(vendor.ownerEmail, "vendor", `Vendor ${verification.toLowerCase()}`, verification === "Verified" ? "Your store is approved. Open for the day and publish products." : note.trim() ? `Note from Operations: ${note.trim()}` : "Review the Operations decision in Verification."),
+            ...s.notifications,
+          ],
+          audit: [audit(session, `Vendor ${verification.toLowerCase()}`, vendor.businessName), ...s.audit],
+        }));
+        toast.success(`${vendor.businessName}: ${verification} saved`);
+      } catch (error) {
+        toast.error(errorMessage(error, "Verification decision could not be saved"));
+      }
+    }
+    const [tab, setTab] = useState<"Submitted" | "Under review" | "Changes required" | "All">("All");
+    const [pickedId, setPickedId] = useState("");
+    const [refreshing, setRefreshing] = useState(false);
+    const [vendorNote, setVendorNote] = useState("");
+    const [checkedDocs, setCheckedDocs] = useState<Record<string, Set<string>>>({});
+    const [rejectModalOpen, setRejectModalOpen] = useState(false);
+    const [pendingDecision, setPendingDecision] = useState<"Rejected" | "Changes required">("Rejected");
+    const [rejectionReason, setRejectionReason] = useState("");
+    const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
+
+    const reloadData = useCallback(async () => {
+      if (!isLiveSupabaseMode()) return;
+      setRefreshing(true);
+      try {
+        const workspace = await loadLiveOperationsWorkspace();
+        setState((current) => ({
+          ...current,
+          vendors: workspace.vendors.map((row) => {
+            const profile = workspace.profiles.find((item) => item.vendor_id === row.id || item.id === row.owner_id);
+            const own = workspace.documents.filter((item) => item.vendor_id === row.id);
+            return vendorFromLive(
+              row,
+              { name: profile?.full_name },
+              own.find((item) => item.document_type === "food_certificate" || item.document_type === "fssai") || own[0],
+              own as Array<Record<string, unknown>>
+            );
+          }),
+        }));
+      } catch (err) {
+        console.error("Failed to reload operations data:", err);
+      } finally {
+        setRefreshing(false);
+      }
+    }, [setState]);
+
+    useEffect(() => {
+      void reloadData();
+    }, [reloadData]);
+
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+      const checkDeepLink = (vendorId?: string | null) => {
+        const idToFind = vendorId || new URLSearchParams(window.location.search).get("vendorId");
+        if (idToFind) {
+          setPickedId(idToFind);
+          const match = vendors.find((v) => v.id === idToFind);
+          if (match && tab !== "All" && match.verification !== tab) {
+            setTab("All");
+          }
+        }
+      };
+      checkDeepLink();
+
+      const handleCustomNav = (e: Event) => {
+        const customEvent = e as CustomEvent<{ queryParams?: { vendorId?: string } }>;
+        const vId = customEvent.detail?.queryParams?.vendorId;
+        if (vId) checkDeepLink(vId);
+      };
+
+      window.addEventListener("popstate", () => checkDeepLink());
+      window.addEventListener("sheplates:navigation", handleCustomNav);
+      return () => {
+        window.removeEventListener("popstate", () => checkDeepLink());
+        window.removeEventListener("sheplates:navigation", handleCustomNav);
+      };
+    }, [vendors, tab]);
+
+    const tabs = ["All", "Submitted", "Under review", "Changes required"] as const;
+    const shown = tab === "All" ? vendors : vendors.filter((vendor) => vendor.verification === tab);
+    const picked = shown.find((vendor) => vendor.id === pickedId) || shown[0];
+    const agreementDone = picked && agreement?.vendorId === picked.id ? agreement.done : null; // for the vendor shown now; null until it is known
+
+    const pickedDocs = picked
+      ? picked.documents?.length
+        ? picked.documents
+        : picked.fssaiNumber || picked.certificateName
+          ? [{ id: "cert-0", documentType: "food_certificate", title: "Food Safety Certificate (FSSAI)" }]
+          : []
+      : [];
+    const pickedChecked = (picked && checkedDocs[picked.id]) || new Set<string>();
+    const allDocsChecked = pickedDocs.length > 0 ? pickedDocs.every((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)) : true;
+
+    function toggleDoc(key: string) {
+      if (!picked) return;
+      setCheckedDocs((prev) => {
+        const cur = new Set(prev[picked.id] || []);
+        if (cur.has(key)) cur.delete(key);
+        else cur.add(key);
+        return { ...prev, [picked.id]: cur };
+      });
+    }
+
+    function verifyAllDocs() {
+      if (!picked) return;
+      const allKeys = new Set(pickedDocs.map((doc, idx) => doc.id || `${doc.documentType}-${idx}`));
+      setCheckedDocs((prev) => ({ ...prev, [picked.id]: allKeys }));
+      toast.success(`Marked all ${pickedDocs.length} documents as verified`);
+    }
+
+    function handleApprove() {
+      if (!picked) return;
+      if (picked.termsAccepted === false) {
+        toast.error("This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved.");
+        return;
+      }
+      if (isLiveSupabaseMode() && agreementDone === false) {
+        toast.error("The Partnership Agreement and Terms are not fully signed yet. Accept a hand-signed upload, or wait for the vendor to sign online.");
+        return;
+      }
+      if (!allDocsChecked && pickedDocs.length > 0) {
+        const verifiedCount = pickedDocs.filter((doc, idx) => pickedChecked.has(doc.id || `${doc.documentType}-${idx}`)).length;
+        toast.error(`Please verify and tick all uploaded documents (${verifiedCount} of ${pickedDocs.length} checked). Ticking checkboxes confirms each document was inspected.`);
+        return;
+      }
+      void decide(picked, "Verified", vendorNote);
+      setVendorNote("");
+    }
+
+    function openRejectModal(decision: "Rejected" | "Changes required") {
+      setPendingDecision(decision);
+      setRejectionReason(vendorNote.trim());
+      setRejectModalOpen(true);
+    }
+
+    function confirmRejection() {
+      if (!picked) return;
+      if (!rejectionReason.trim()) {
+        toast.error("Please write a reason so the vendor understands what needs correction.");
+        return;
+      }
+      void decide(picked, pendingDecision, rejectionReason.trim());
+      setRejectModalOpen(false);
+      setRejectionReason("");
+      setVendorNote("");
+    }
+
+    return <div className="space-y-5">
+      <Heading
+        eyebrow="VENDOR TRUST"
+        title="Verification queue"
+        body="Check each vendor's documents, location and radius before they can sell."
+        action={
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={refreshing}
+            onClick={() => void reloadData()}
+            className="h-9 rounded-xl text-xs font-bold text-stone-700 bg-white shadow-sm"
+          >
+            <RefreshCcw className={`size-3.5 mr-1.5 text-[#155F65] ${refreshing ? "animate-spin" : ""}`} />
+            {refreshing ? "Refreshing…" : "Refresh queue"}
+          </Button>
+        }
+      />
+      {vendors.length ? <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+        <div className="space-y-3"><div className="flex flex-wrap gap-2" role="tablist" aria-label="Verification status">{tabs.map((name) => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => { setTab(name); setPickedId(""); }} className={`h-10 rounded-full px-4 text-sm font-semibold ${tab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? vendors.length : vendors.filter((vendor) => vendor.verification === name).length}</button>)}</div>
+          {shown.length ? shown.map((vendor) => <button key={vendor.id} type="button" onClick={() => setPickedId(vendor.id)} aria-pressed={picked?.id === vendor.id} className={`flex items-center gap-3 w-full rounded-3xl bg-white p-4 text-left ${picked?.id === vendor.id ? "ring-2 ring-[#155F65]" : "ring-1 ring-[#DDE3E4]"}`}><div className="size-10 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-sm text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><b className="truncate">{vendor.businessName}</b><span className={`rounded-full px-3 py-1 text-xs font-semibold ${vendor.verification === "Verified" ? "bg-[#eaf5ec] text-[#21683b]" : vendor.verification === "Rejected" ? "bg-[#fdecef] text-[#b42332]" : vendor.verification === "Changes required" ? "bg-[#FFF4CF] text-[#795900]" : "bg-[#edf3fd] text-[#285fba]"}`}>{vendor.verification}</span></div><div className="mt-1 truncate text-xs text-[#55656A]">{vendor.category} · {vendor.address}</div></div></button>) : <p className="rounded-3xl bg-white p-4 text-sm text-[#55656A]">No vendors in this status.</p>}</div>
+        {picked && (() => {
+          const fssaiDoc = picked.documents?.find((d) => d.documentType === "food_certificate" || (d.documentType as string) === "fssai");
+          const effectiveFssaiNumber = (fssaiDoc?.documentNumber && !/^(verified|submitted)$/i.test(fssaiDoc.documentNumber)) ? fssaiDoc.documentNumber : picked.fssaiNumber;
+          const effectiveExpiryDate = (fssaiDoc?.expiryDate && fssaiDoc.expiryDate !== "—") ? fssaiDoc.expiryDate : picked.expiryDate;
+          const effectiveFileName = fssaiDoc?.fileName || (picked.certificateName && !picked.certificateName.includes("/") ? picked.certificateName : undefined) || "Food Certificate PDF";
+          return <section className="surface-card h-fit space-y-4 rounded-3xl p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="flex items-center gap-3"><div className="size-12 shrink-0 overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2] grid place-items-center">{picked.logoUrl ? <img src={picked.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="font-black text-lg text-[#155F65]">{picked.businessName[0] || "V"}</span>}</div><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold">{picked.businessName}</h3>{onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(picked.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="size-3.5 mr-1 text-[#155F65]" />Preview Store</Button>}<Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(picked)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="size-3.5 mr-1 text-[#155F65]" />Edit Profile &amp; Branding</Button></div><p className="text-xs text-[#55656A]">{picked.ownerRole || "Proprietor"}: <span className="font-semibold text-stone-800">{picked.ownerName}</span> · {picked.ownerEmail}{picked.phone ? ` · 📞 ${picked.phone}` : ""} · {picked.plan} plan</p>{picked.bio && <p className="mt-1 text-xs text-stone-600 italic">“{picked.bio}”</p>}</div></div><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold">{picked.verification}</span></div>
+            <p className="text-xs text-[#55656A]" data-testid="terms-status"><b>Terms accepted:</b> {picked.termsAccepted ? `Yes (v${picked.termsVersion || "1.0"})${picked.termsAcceptedAt ? ` · ${new Date(picked.termsAcceptedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}` : picked.termsAccepted === false ? "No" : "Not recorded"}</p>
+            <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><BadgeCheck className="size-5" />FSSAI</div><div className="mt-1 break-all text-xs text-[#55656A]">No. {effectiveFssaiNumber || "not given"}</div><div className="text-xs text-[#55656A]">Expires {effectiveExpiryDate || "not given"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><FileCheck2 className="size-5" />Certificate file</div><div className="mt-1 break-all text-xs text-[#55656A]">{effectiveFileName || "No file uploaded"}</div></div><div className="rounded-2xl bg-white p-4 text-sm"><div className="flex items-center gap-2 font-semibold"><Truck className="size-5" />Service</div><div className="mt-1 text-xs text-[#55656A]">{[picked.delivery && "Delivery", picked.pickup && "Pickup"].filter(Boolean).join(" + ") || "No mode set"} · {picked.radiusKm} km radius</div></div></div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#55656A]">Document Verification Checklist</span>
+                {picked.verification !== "Verified" && pickedDocs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={verifyAllDocs}
+                    className="text-xs font-bold text-[#155F65] hover:underline cursor-pointer"
+                  >
+                    Tick all ({pickedDocs.length}) documents
+                  </button>
+                )}
+              </div>
+              <ComplianceDocumentList vendor={picked} checkedKeys={pickedChecked} onToggleDoc={toggleDoc} selectable={picked.verification !== "Verified"} />
+              <OpsAgreementPanel key={picked.id} vendorId={picked.id} live={isLiveSupabaseMode()} onComplete={reportAgreement} />
+              <CommercialTermsPanel vendor={picked} live={isLiveSupabaseMode()} onSaved={(terms) => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === picked.id ? { ...x, ...terms } : x), audit: [audit(session, "Set commercial terms", picked.businessName), ...s.audit] }))} />
+            </div>
+            <MapPreview lat={picked.latitude} lng={picked.longitude} radius={picked.radiusKm} label={`Radius ${picked.radiusKm} km`} />
+            {picked.verification !== "Verified" ? <div className="space-y-3">{isLiveSupabaseMode() && agreementDone === false && picked.termsAccepted !== false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">The Partnership Agreement and Terms are not fully signed yet, so this vendor cannot be approved. Accept their hand-signed upload above, or choose Ask for changes.</p>}{picked.termsAccepted === false && <p role="status" className="rounded-2xl bg-[#FFF4CF] p-3 text-sm font-medium text-[#795900]">This vendor has not accepted the Vendor Terms and Conditions yet, so they cannot be approved. Choose Ask for changes and tell them to accept the terms on their Verification page.</p>}<label className="block text-sm font-semibold text-[#2F3C3F]">Note to the vendor<textarea value={vendorNote} onChange={(e) => setVendorNote(e.target.value)} maxLength={500} rows={3} placeholder="For example: please upload a clearer photo of the FSSAI page" className="mt-2 w-full rounded-3xl bg-white p-4 text-sm outline-none" /></label><div className="flex flex-wrap gap-2"><Button disabled={picked.termsAccepted === false || (isLiveSupabaseMode() && agreementDone === false)} onClick={handleApprove}><BadgeCheck />Approve</Button><Button variant="outline" onClick={() => openRejectModal("Changes required")}>Ask for changes</Button><Button variant="outline" onClick={() => openRejectModal("Rejected")} className="text-[#b42332]">Reject</Button></div><p className="text-xs text-[#55656A]">The vendor receives your note as a notification.</p></div> : <p className="rounded-2xl bg-[#eaf5ec] p-3 text-sm font-medium text-[#21683b]">This vendor is verified and can sell.</p>}
+          </section>;
+        })()}
+      </div> : <Empty icon={FileCheck2} title="Verification queue is empty" body="A self-onboarded or Operations-created vendor will appear here." />}
+
+      <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
+        <DialogContent className="max-w-lg rounded-3xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-[#202827]">
+              {pendingDecision === "Rejected" ? "Reject Vendor Application" : "Request Changes from Vendor"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-500">
+              Write the specific reason for {pendingDecision === "Rejected" ? "rejecting" : "requesting changes on"} <b>{picked?.businessName}</b>. The vendor will receive this note as an instant notification.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
+                Quick Reasons
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "FSSAI certificate expired or invalid",
+                  "Address proof illegible / address mismatch",
+                  "Government ID name mismatch",
+                  "Store outside active delivery radius",
+                  "Bank details unverified / missing IFSC",
+                  "Please upload menu catalogue PDF",
+                ].map((snippet) => (
+                  <button
+                    key={snippet}
+                    type="button"
+                    onClick={() =>
+                      setRejectionReason((prev) =>
+                        prev ? `${prev}. ${snippet}` : snippet
+                      )
+                    }
+                    className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:border-[#155F65] hover:bg-[#EAF4F2] transition cursor-pointer"
+                  >
+                    + {snippet}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="rejection-reason-textarea" className="block text-xs font-black uppercase tracking-wider text-stone-600 mb-1.5">
+                Reason / Instructions for Vendor <span className="text-rose-600">*</span>
+              </label>
+              <textarea
+                id="rejection-reason-textarea"
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={4}
+                maxLength={600}
+                placeholder="Explain clearly what document or detail is required or why the application cannot be accepted..."
+                className="w-full rounded-2xl border border-stone-300 bg-white p-3.5 text-sm text-[#202827] outline-none focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10"
+              />
+              <p className="mt-1 text-right text-[11px] text-stone-400">{rejectionReason.length}/600</p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-row justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setRejectModalOpen(false)} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmRejection}
+              className={`rounded-xl font-bold ${pendingDecision === "Rejected"
+                ? "bg-[#b42332] text-white hover:bg-rose-700"
+                : "bg-[#155F65] text-white hover:bg-[#0F4A4F]"
+                }`}
+            >
+              Confirm {pendingDecision === "Rejected" ? "Rejection" : "Changes Required"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {editingProfileVendor && (
+        <EditVendorProfileDialog
+          open
+          onClose={() => setEditingProfileVendor(null)}
+          vendor={editingProfileVendor}
+          setState={setState}
+          session={session}
+        />
+      )}
+    </div>;
+  }
+  function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const [vendorId, setVendorId] = useState(state.vendors[0]?.id || "");
+    const [q, setQ] = useState("");
+    const [onlyCustom, setOnlyCustom] = useState(false);
+    const [drafts, setDrafts] = useState<Record<string, number>>({});
+    const [saving, setSaving] = useState(false);
+
+    const products = state.products
+      .filter((x) => x.vendorId === vendorId)
+      .filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()))
+      .filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0);
+
+    const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length;
+    const hasDraftChanges = Object.keys(drafts).length > 0;
+
+    async function saveSingleMarkup(product: Product, markupVal: number) {
+      setSaving(true);
+      try {
+        const safeVal = Math.max(0, markupVal);
+        if (isLiveSupabaseMode()) {
+          await saveLiveItemMarkup(product.id, safeVal);
+        }
+        const newCustomerPrice = Math.round(product.vendorPrice * (1 + safeVal / 100) * 100) / 100;
+        setState((s) => ({
+          ...s,
+          markups: { ...s.markups, [product.id]: safeVal },
+          audit: [
+            audit(
+              session,
+              "Pricing change: item markup",
+              `${product.name} · Base: ${money(product.vendorPrice)} + ${safeVal}% markup → Customer: ${money(newCustomerPrice)}`
+            ),
+            ...s.audit,
+          ],
+        }));
+        setDrafts((prev) => {
+          const next = { ...prev };
+          delete next[product.id];
+          return next;
+        });
+        toast.success("Pricing changes saved successfully");
+      } catch (err) {
+        toast.error(errorMessage(err, "Could not save pricing changes"));
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function saveAllPricingChanges() {
+      setSaving(true);
+      try {
+        const changedProducts = state.products.filter((p) => p.id in drafts);
+        if (!changedProducts.length) {
+          toast.info("No pricing changes to save");
+          return;
+        }
+        for (const p of changedProducts) {
+          if (isLiveSupabaseMode()) {
+            await saveLiveItemMarkup(p.id, Math.max(0, drafts[p.id]));
+          }
+        }
+        const newAudits = changedProducts.map((p) => {
+          const val = Math.max(0, drafts[p.id]);
+          const custPrice = Math.round(p.vendorPrice * (1 + val / 100) * 100) / 100;
+          return audit(
+            session,
+            "Pricing change: item markup",
+            `${p.name} · Base: ${money(p.vendorPrice)} + ${val}% markup → Customer: ${money(custPrice)}`
+          );
+        });
+        setState((s) => ({
+          ...s,
+          markups: { ...s.markups, ...drafts },
+          audit: [...newAudits, ...s.audit],
+        }));
+        setDrafts({});
+        toast.success("Pricing changes saved successfully");
+      } catch (err) {
+        toast.error(errorMessage(err, "Could not save pricing changes"));
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    return (
+      <div className="space-y-6">
+        <Heading
+          eyebrow="ITEM-LEVEL PRICING"
+          title="Operational percentage by vendor item"
+          body="Select a vendor, inspect its menu and apply a markup percentage on top of each vendor base price. Customer prices update only for future schedules."
+          action={
+            <Button
+              onClick={() => void saveAllPricingChanges()}
+              disabled={!hasDraftChanges || saving}
+              className="rounded-xl bg-[#155F65]"
+            >
+              <Check className="size-4 mr-1.5" />
+              Save pricing changes
+            </Button>
+          }
+        />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Metric label="Items on the platform" value={String(state.products.length)} icon={Package} />
+          <Metric label="Items with their own %" value={String(customCount)} icon={Percent} />
+          <Metric label="Vendors" value={String(state.vendors.length)} icon={Store} />
+        </div>
+        <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4">
+          <Select value={vendorId} onValueChange={setVendorId}>
+            <SelectTrigger className="w-full max-w-sm rounded-xl">
+              <SelectValue placeholder="Select vendor" />
+            </SelectTrigger>
+            <SelectContent>
+              {state.vendors.map((x) => (
+                <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search item"
+            aria-label="Search item"
+            className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setOnlyCustom(false)}
+            className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => setOnlyCustom(true)}
+            className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+          >
+            Custom %
+          </button>
+        </div>
+        {products.length ? (
+          <div className="surface-card overflow-x-auto rounded-[28px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Vendor base</TableHead>
+                  <TableHead>Operations %</TableHead>
+                  <TableHead>Customer price</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {products.map((product) => {
+                  const markupVal = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                  const isDraftModified = product.id in drafts && drafts[product.id] !== (state.markups[product.id] || 0);
+                  const previewPrice = Math.round(product.vendorPrice * (1 + markupVal / 100) * 100) / 100;
+                  return (
+                    <TableRow key={product.id}>
+                      <TableCell>
+                        <b>{product.name}</b>
+                        <div className="text-xs text-stone-500">per {product.baseUnit}</div>
+                      </TableCell>
+                      <TableCell>{money(product.vendorPrice)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step=".5"
+                            value={markupVal}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setDrafts((prev) => ({ ...prev, [product.id]: val }));
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const val = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                                void saveSingleMarkup(product, val);
+                              }
+                            }}
+                            className="h-10 w-24 rounded-xl border px-3 font-black"
+                            aria-label={`Markup for ${product.name}`}
+                          />
+                          <span>%</span>
+                          {isDraftModified && (
+                            <Button
+                              size="sm"
+                              onClick={() => void saveSingleMarkup(product, drafts[product.id])}
+                              disabled={saving}
+                              className="h-8 rounded-lg bg-[#155F65] px-2.5 text-xs text-white"
+                            >
+                              Save
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-lg font-bold">{money(previewPrice)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <Empty
+            icon={Percent}
+            title="No vendor products selected"
+            body="Choose a vendor with products, or wait for a vendor to add their catalogue."
+          />
+        )}
+      </div>
+    );
+  }
+  function RFQDesk({ state }: { state: V3State }) {
+    const open = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received");
+    const awarded = state.requirements.filter((x) => x.status === "Awarded");
+    const needsAttention = open.filter((x) => !(x.invitedVendorIds || []).length);
+    const pill = (status: string) => status === "Awarded" ? "bg-[#EEF2F2] text-[#2F3C3F]" : status === "Quotes received" ? "bg-[#eaf5ec] text-[#21683b]" : status === "Quoting" ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]";
+    return <div className="space-y-5"><Heading eyebrow="RFQ CONTROL" title="Monthly requirement desk" body="Every customer requirement, who was invited and who quoted." />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Open RFQs" value={String(open.length)} icon={ClipboardCheck} /><Metric label="Quotes received" value={String(state.quotes.length)} icon={ReceiptText} /><Metric label="Awarded" value={String(awarded.length)} icon={BadgeCheck} /><Metric label="Need attention" value={String(needsAttention.length)} icon={AlertTriangle} note={needsAttention.length ? "No vendor was invited" : undefined} /></div>
+      {state.requirements.length ? <div className="surface-card overflow-x-auto rounded-3xl"><Table><TableHeader><TableRow><TableHead>Requirement</TableHead><TableHead>Customer</TableHead><TableHead>Invited</TableHead><TableHead>Quoted</TableHead><TableHead>Closes</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{state.requirements.map((req) => <TableRow key={req.id}><TableCell><b>{req.title}</b><div className="text-xs text-[#55656A]">{req.id} · {req.items.length} items</div></TableCell><TableCell className="text-sm">{req.customerEmail}</TableCell><TableCell>{(req.invitedVendorIds || []).length ? `${(req.invitedVendorIds || []).length} Crown vendors` : <span className="rounded-full bg-[#fdecef] px-3 py-1 text-xs font-semibold text-[#b42332]">0 vendors</span>}</TableCell><TableCell>{state.quotes.filter((x) => x.requirementId === req.id).length}</TableCell><TableCell>{req.closingDate || "Not set"}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pill(req.status)}`}>{req.status}</span></TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={ClipboardCheck} title="No RFQs yet" body="Customer monthly requirements will appear here." />}
+      <p className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]"><AlertTriangle className="mt-0.5 size-5 shrink-0" />Only vendors on the Crown plan whose own radius covers the customer are invited. If none are invited, ask a nearby vendor to upgrade or contact the customer.</p></div>;
+  }
+  function Cancellations({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const [amounts, setAmounts] = useState<Record<string, number>>({});
+    const [view, setView] = useState<"open" | "decided">("open");
+    const openItems = state.cancellations.filter((x) => x.status === "Awaiting operations");
+    const decidedItems = state.cancellations.filter((x) => x.status !== "Awaiting operations");
+    const listed = view === "open" ? openItems : decidedItems;
+    function decide(item: Cancellation, status: "Approved" | "Rejected") {
+      const order = state.orders.find((x) => x.id === item.orderId);
+      const transaction = state.transactions.find((x) => x.orderId === item.orderId);
+      const isQuality = item.kind === "quality_complaint";
+      const refundAmount = Math.max(0, Math.min(order?.total ?? Infinity, amounts[item.id] ?? item.recommendedRefundAmount ?? order?.total ?? 0));
+      const fullRefund = order ? refundAmount >= order.total : true;
+      setState((s) => ({
+        ...s,
+        cancellations: s.cancellations.map((x) => x.id === item.id ? { ...x, status, recommendedRefundAmount: isQuality ? refundAmount : x.recommendedRefundAmount } : x),
+        orders: s.orders.map((x) => x.id === item.orderId ? {
+          ...x,
+          status: status === "Approved" ? (isQuality ? x.status : "Cancelled") : (isQuality ? x.status : "Confirmed"),
+          payment: status === "Approved" && transaction ? (isQuality && !fullRefund ? "Reversal pending" : "Reversal pending") : x.payment,
+        } : x),
+        transactions: status === "Approved" && transaction ? s.transactions.map((x) => {
+          if (x.id !== transaction.id) return x;
+          if (x.payoutStatus === "Paid") return { ...x, note: `Already paid to vendor — recover ${money(refundAmount)} manually` };
+          if (isQuality && !fullRefund) return { ...x, vendorPayout: Math.max(0, Math.round((x.vendorPayout - refundAmount) * 100) / 100), note: `Vendor payout reduced by ${money(refundAmount)} for an approved quality-complaint refund` };
+          return { ...x, payoutStatus: "Reversed", note: isQuality ? "Voided: full refund approved for quality complaint" : "Voided: order cancelled before payout" };
+        }) : s.transactions,
+        notifications: order ? [
+          notice(order.customerEmail, "customer", `${isQuality ? "Quality complaint" : "Cancellation"} ${status.toLowerCase()}`, status === "Approved" ? `Operations approved a refund of ${money(refundAmount)}; it is now processing.` : "Operations reviewed this and did not approve a refund."),
+          ...s.notifications,
+        ] : s.notifications,
+        audit: [audit(session, `${status} ${isQuality ? "quality complaint" : "cancellation"}`, `${item.orderId}${status === "Approved" ? ` · refund ${money(refundAmount)}` : ""}`), ...s.audit],
+      }));
+      toast.success(`${isQuality ? "Quality complaint" : "Cancellation"} ${status.toLowerCase()}`);
+    }
+    return <div className="space-y-6"><Heading eyebrow="AI-ASSISTED REVIEW" title="Cancellations & quality-complaint refunds" body="She Agent checks evidence — including a customer-attached photo for quality complaints — and proposes a decision and refund amount first. Operations always owns the final call." /><div className="flex flex-wrap gap-2" role="tablist" aria-label="Decision status"><button type="button" role="tab" aria-selected={view === "open"} onClick={() => setView("open")} className={`h-10 rounded-full px-4 text-sm font-semibold ${view === "open" ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>Awaiting decision · {openItems.length}</button><button type="button" role="tab" aria-selected={view === "decided"} onClick={() => setView("decided")} className={`h-10 rounded-full px-4 text-sm font-semibold ${view === "decided" ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>Decided · {decidedItems.length}</button></div><p className="rounded-3xl bg-[#FFF4CF] p-4 text-sm font-medium text-[#795900]">Refunds are human-approved. She Agent can recommend but never moves money. Customers cannot cancel after a vendor accepts: those requests come through Support.</p>{listed.length ? listed.map((item) => { const order = state.orders.find((x) => x.id === item.orderId); const isQuality = item.kind === "quality_complaint"; return <div key={item.id} className="surface-card rounded-[26px] p-5"><div className="flex flex-col gap-4 lg:flex-row"><div className={`grid size-12 place-items-center rounded-2xl ${isQuality ? "bg-amber-50 text-amber-700" : "bg-[#EAF4F2] text-[#155F65]"}`}><Activity /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><b>{item.orderId}</b><Status>{item.status}</Status><Status className={isQuality ? "border-amber-200 bg-amber-50 text-amber-800" : ""}>{isQuality ? "Quality complaint" : "Cancellation"}</Status>{item.attachmentName && <Status>📷 {item.attachmentName}</Status>}</div><p className="mt-2 text-sm text-stone-500">Customer: {item.reason}</p><div className="mt-3 rounded-2xl bg-[#EEF2F2] p-3 text-sm"><b>She Agent: {item.aiDecision}</b> · {item.confidence}% confidence</div>{order && <p className="mt-2 text-xs text-stone-400">Order total {money(order.total)} · current payment {order.payment}</p>}</div>{item.status === "Awaiting operations" && <div className="flex flex-col gap-2 lg:items-end"><Field label="Refund amount (₹)"><input type="number" min={0} max={order?.total ?? undefined} value={amounts[item.id] ?? item.recommendedRefundAmount ?? order?.total ?? 0} onChange={(e) => setAmounts((a) => ({ ...a, [item.id]: Number(e.target.value) }))} className={`${inputClass} w-40`} /></Field><div className="flex gap-2"><Button variant="outline" onClick={() => decide(item, "Rejected")} className="rounded-xl">Reject</Button><Button onClick={() => decide(item, "Approved")} className="rounded-xl bg-[#155F65]">{isQuality ? "Approve refund" : "Approve & reverse"}</Button></div></div>}</div></div>; }) : <Empty icon={RefreshCcw} title="No cancellation or quality-complaint reviews" body="Customer requests screened by She Agent — including photo-backed quality complaints — will appear here." />}</div>;
+  }
+
+  function vendorPayoutSummary(state: V3State, vendorId: string) {
+    const rows = state.transactions.filter((x) => x.vendorId === vendorId);
+    const gross = rows.reduce((sum, x) => sum + x.grossAmount, 0);
+    const commission = rows.reduce((sum, x) => sum + x.commissionAmount, 0);
+    const paidOut = rows.filter((x) => x.payoutStatus === "Paid").reduce((sum, x) => sum + x.vendorPayout, 0);
+    const pending = rows.filter((x) => x.payoutStatus === "Scheduled").reduce((sum, x) => sum + x.vendorPayout, 0);
+    const overdue = rows.filter((x) => x.payoutStatus === "Scheduled" && x.scheduledPayoutDate <= todayISO());
+    const nextPayoutDate = rows.filter((x) => x.payoutStatus === "Scheduled").map((x) => x.scheduledPayoutDate).sort()[0];
+    return { rows, gross, commission, paidOut, pending, overdueCount: overdue.length, nextPayoutDate };
+  }
+
+  function VendorSettlements({ vendor, state }: { vendor: Vendor; state: V3State }) {
+    const summary = vendorPayoutSummary(state, vendor.id);
+    return <div className="space-y-6"><Heading eyebrow="PAYMENTS" title="Settlements & payouts" body="Every customer payment collected on your orders, the platform commission retained and exactly when the remaining amount reaches you." /><div className="rounded-3xl bg-[#155F65] p-5 text-white"><div className="text-xs font-semibold">Next payout{summary.nextPayoutDate ? ` · ${summary.nextPayoutDate}` : ""}</div><div className="mt-1 text-[40px] font-bold leading-tight tabular-nums">{money(summary.pending)}</div><div className="text-xs font-medium">{summary.pending > 0 ? "Paid every Wednesday for completed orders from the previous Monday to Sunday." : "Nothing is waiting to be paid out right now."}</div></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total collected" value={money(summary.gross)} icon={IndianRupee} tone="green" /><Metric label="Already paid to you" value={money(summary.paidOut)} icon={CheckCircle2} tone="blue" /><Metric label="Pending payout" value={money(summary.pending)} icon={WalletCards} tone="amber" note={summary.nextPayoutDate ? `Next: ${summary.nextPayoutDate}` : undefined} /><Metric label="Platform commission" value={money(summary.commission)} icon={Percent} tone="violet" note={`${PLATFORM_COMMISSION_PERCENT}% per order`} /></div>{summary.overdueCount > 0 && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><AlertTriangle className="mr-2 inline size-4" />{summary.overdueCount} payout(s) have reached their scheduled date and are awaited from Operations.</div>}{summary.rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Collected</TableHead><TableHead>Gross</TableHead><TableHead>Commission</TableHead><TableHead>Your payout</TableHead><TableHead>Status</TableHead><TableHead>Expected / paid on</TableHead></TableRow></TableHeader><TableBody>{summary.rows.map((row) => <TableRow key={row.id}><TableCell className="font-mono text-xs">{row.orderId}</TableCell><TableCell>{row.collectedAt}</TableCell><TableCell>{money(row.grossAmount)}</TableCell><TableCell>{money(row.commissionAmount)}</TableCell><TableCell className="font-black">{money(row.vendorPayout)}</TableCell><TableCell><Status className={row.payoutStatus === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : row.payoutStatus === "Reversed" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-800"}>{row.payoutStatus}</Status></TableCell><TableCell>{row.paidAt || row.scheduledPayoutDate}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={WalletCards} title="No payments yet" body="Payouts appear here once a customer pays for one of your orders." />}</div>;
+  }
+
+  function VendorPayments({ state, setState, session, canManage }: { state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; session: DemoSession; canManage: boolean }) {
+    const rows = state.vendors.map((vendor) => ({ vendor, ...vendorPayoutSummary(state, vendor.id) })).filter((row) => row.rows.length > 0);
+    const totals = rows.reduce((acc, row) => ({ gross: acc.gross + row.gross, commission: acc.commission + row.commission, pending: acc.pending + row.pending, paidOut: acc.paidOut + row.paidOut }), { gross: 0, commission: 0, pending: 0, paidOut: 0 });
+    function markPaid(vendorId: string) {
+      const due = state.transactions.filter((x) => x.vendorId === vendorId && x.payoutStatus === "Scheduled" && x.scheduledPayoutDate <= todayISO());
+      if (!due.length) return toast.error("No payouts have reached their scheduled date yet");
+      const vendor = state.vendors.find((x) => x.id === vendorId);
+      const total = due.reduce((sum, x) => sum + x.vendorPayout, 0);
+      setState((s) => ({
+        ...s,
+        transactions: s.transactions.map((x) => due.some((d) => d.id === x.id) ? { ...x, payoutStatus: "Paid", paidAt: todayISO() } : x),
+        notifications: vendor ? [notice(vendor.ownerEmail, "vendor", "Payout sent", `${money(total)} across ${due.length} order(s) was marked paid.`), ...s.notifications] : s.notifications,
+        audit: [audit(session, "Marked vendor payout as paid", `${vendor?.businessName || vendorId} · ${money(total)} · ${due.length} order(s)`), ...s.audit],
+      }));
+      toast.success(`${money(total)} marked paid to ${vendor?.businessName || "vendor"}`);
+    }
+    function downloadLedger() {
+      downloadWorkbook("sheplates-vendor-payments", [{
+        name: "Vendor payments",
+        rows: rows.flatMap((row) => row.rows.map((t) => ({ Vendor: row.vendor.businessName, "Order ID": t.orderId, "Collected on": t.collectedAt, "Gross amount": t.grossAmount, "Commission %": t.commissionPercent, "Commission amount": t.commissionAmount, "Vendor payout": t.vendorPayout, "Payout status": t.payoutStatus, "Expected / paid date": t.paidAt || t.scheduledPayoutDate }))),
+      }]);
+    }
+    return <div className="space-y-6"><Heading eyebrow="VENDOR SETTLEMENTS" title="Vendor-wise income & payouts" body={canManage ? "See exactly what each vendor earned, the platform's commission profit, and release payouts once they reach their scheduled date." : "Read-only oversight of vendor income, platform profit and payout status across the marketplace."} action={<Button variant="outline" onClick={downloadLedger} className="rounded-xl"><Download />Download Excel</Button>} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total collected (GMV)" value={money(totals.gross)} icon={IndianRupee} /><Metric label="Platform profit (commission)" value={money(totals.commission)} icon={Percent} /><Metric label="Pending vendor payouts" value={money(totals.pending)} icon={WalletCards} /><Metric label="Already paid to vendors" value={money(totals.paidOut)} icon={CheckCircle2} /></div>
+      {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Income (gross)</TableHead><TableHead>Platform profit</TableHead><TableHead>Paid to vendor</TableHead><TableHead>Pending payout</TableHead><TableHead>Next payout</TableHead><TableHead>Status</TableHead>{canManage && <TableHead>Action</TableHead>}</TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.vendor.id}><TableCell><b>{row.vendor.businessName}</b><div className="text-xs text-stone-500">{row.vendor.ownerEmail}</div></TableCell><TableCell className="font-black">{money(row.gross)}</TableCell><TableCell className="text-[#155F65] font-black">{money(row.commission)}</TableCell><TableCell>{money(row.paidOut)}</TableCell><TableCell>{money(row.pending)}</TableCell><TableCell>{row.nextPayoutDate || "—"}</TableCell><TableCell>{row.overdueCount > 0 ? <Status className="border-amber-200 bg-amber-50 text-amber-800">Payout due</Status> : row.pending > 0 ? <Status className="border-sky-200 bg-sky-50 text-sky-700">Scheduled</Status> : <Status className="border-emerald-200 bg-emerald-50 text-emerald-700">Paid up</Status>}</TableCell>{canManage && <TableCell><Button size="sm" disabled={row.overdueCount === 0} onClick={() => markPaid(row.vendor.id)} className="rounded-xl bg-[#155F65] disabled:opacity-40"><WalletCards />Mark payout paid</Button></TableCell>}</TableRow>)}</TableBody></Table></div> : <Empty icon={WalletCards} title="No vendor payments yet" body="Vendor income and payouts will appear here once customers start paying for orders." />}
+      <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Operations and Super Admin see the same figures. Vendors see only their own row in Settlements.</p></div>;
+  }
+
+  function AdminArea({ active, session, state, setState, onOpenVendorProfile, onNavigate }: { active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void; onNavigate?: (view: string) => void }) {
+    const [range, setRange] = useState<7 | 30 | 90>(30); // before any early return, so the hooks run in the same order on every page
+    if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={onNavigate} />;
+    if (active === "AI insights") return <AIInsights role="admin" state={state} />;
+    if (active === "Vendor credits") return <AdminVendorCreditsManagement state={state} setState={setState} session={session} vendors={state.vendors} />;
+    if (active === "P0 Connect vendors") return <P0VendorManagement role="admin" />;
+    if (active === "Orders") return <OrdersV4 session={session} state={state} setState={setState} scope="operations" />;
+    if (active === "Homepage & campaigns") return <HomepageCampaigns session={session} state={state} setState={setState} />;
+    if (active === "Users") return <UsersView session={session} state={state} setState={setState} />;
+    if (active === "Vendors") return <AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+    if (active === "Vendor plans") return <Plans session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} />;
+    if (active === "Item pricing") return <ItemPricing session={session} state={state} setState={setState} />;
+    if (active === "Pricing policies") return <AdminPricing state={state} />;
+    if (active === "Stories monitor") return <StoriesMonitor />;
+    if (active === "Ticket centre") return <TicketCentre session={session} state={state} setState={setState} mode="oversight" />;
+    if (active === "Vendor payments") return <VendorPayments state={state} setState={setState} session={session} canManage={false} />;
+    if (active === "Reports") return <ReportsCentre state={state} />;
+    if (active === "Audit log") return <AuditLog items={state.audit} vendors={state.vendors} />;
+    const revenue = state.orders.reduce((sum, x) => sum + x.total, 0), markup = state.products.reduce((sum, x) => sum + (finalPrice(x, state) - x.vendorPrice), 0);
+    const since = (() => { const d = new Date(); d.setDate(d.getDate() - range); return localDateISO(d); })();
+    const inRange = state.orders.filter((x) => x.date >= since && x.status !== "Cancelled");
+    const gross = inRange.reduce((sum, x) => sum + x.total, 0);
+    const days = lastDays(14).map((d) => ({ label: d.label, value: state.orders.filter((x) => x.date === d.key && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0) }));
+    const planFees: Record<string, number> = { Taster: 499, Crave: 699, Thrive: 799, Crown: 999 };
+    const planCounts = Object.keys(planFees).map((plan) => ({ plan, count: state.vendors.filter((v) => v.plan === plan && v.vendorKind !== "p0_connect").length }));
+    const maxPlan = Math.max(1, ...planCounts.map((x) => x.count));
+    const subscription = planCounts.reduce((sum, x) => sum + x.count * planFees[x.plan], 0);
+    const connectCount = state.vendors.filter((v) => v.vendorKind === "p0_connect").length;
+    const awaiting = state.vendors.filter((x) => ["Submitted", "Under review"].includes(x.verification)).length;
+    const attention = [awaiting ? `${awaiting} vendor${awaiting === 1 ? " is" : "s are"} waiting for verification` : "", state.cancellations.filter((x) => x.status === "Awaiting operations").length ? `${state.cancellations.filter((x) => x.status === "Awaiting operations").length} cancellation(s) waiting for Operations` : "", state.tickets.filter((t) => t.status !== "Resolved").length ? `${state.tickets.filter((t) => t.status !== "Resolved").length} open support ticket(s)` : ""].filter(Boolean);
+    return <div className="space-y-5">
+      <Heading eyebrow="SUPER ADMIN" title="Executive view" body={`The health of Sheplates at a glance · last ${range} days`} action={<div className="flex items-center gap-1 rounded-full bg-white p-1">{([[7, "7 days"], [30, "30 days"], [90, "Quarter"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setRange(value)} aria-pressed={range === value} className={`h-9 rounded-full px-4 text-sm font-semibold ${range === value ? "bg-[#155F65] text-white" : "text-[#55656A]"}`}>{label}</button>)}</div>} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Gross sales" value={compactMoney(gross)} icon={IndianRupee} note={`${compactMoney(revenue)} all time`} />
+        <Metric label="Orders" value={String(inRange.length)} icon={ReceiptText} note={`${state.orders.filter((x) => x.status === "Completed").length} completed`} />
+        <Metric label="Active customers" value={String(state.customers.length)} icon={Users} />
+        <Metric label="Active vendors" value={String(state.vendors.length)} icon={Store} note={`${connectCount} Connect · ${planCounts.reduce((sum, x) => sum + x.count, 0)} on a plan`} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+        <section className="surface-card rounded-3xl p-5"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">Sales by day</h3><span className="text-xs text-[#55656A]">last 14 days</span></div><div className="mt-4"><BarChart data={days} height={200} /></div></section>
+        <div className="space-y-5">
+          <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Vendors by plan</h3><div className="mt-3 space-y-3">{planCounts.map(({ plan, count }) => <div key={plan}><div className="flex items-center justify-between text-sm"><span>{plan} · ₹{planFees[plan]}</span><b>{count}</b></div><div className="mt-1 h-2 rounded-full bg-[#EEF2F2]"><div className="h-2 rounded-full" style={{ width: `${Math.round((count / maxPlan) * 100)}%`, background: plan === "Crown" ? "#3DBE74" : plan === "Taster" ? "#C5E3E4" : "#155F65" }} /></div></div>)}</div></section>
+          <div className="rounded-3xl bg-[#155F65] p-5 text-white"><div className="text-xs font-medium">Subscription revenue this month</div><div className="mt-1 text-[32px] font-bold leading-tight tabular-nums">{money(subscription)}</div><div className="text-xs font-medium">+ GST · plus commission on sales</div></div>
+        </div>
+      </div>
+      {attention.length > 0 && <div className="flex items-start gap-3 rounded-3xl bg-[#FFF4CF] p-4 text-sm text-[#795900]"><AlertTriangle className="mt-0.5 size-5 shrink-0" /><span>Needs your attention: {attention.join(" · ")}.</span></div>}
+    </div>;
+  }
+  function HomepageCampaigns({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const [busy, setBusy] = useState(false);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [prefill, setPrefill] = useState<Partial<Campaign> | null>(null);
+    const [pickQuery, setPickQuery] = useState(""), [pickVendor, setPickVendor] = useState("all");
+    const [suggestions, setSuggestions] = useState<Array<{ name: string; audience: string; offer: string; rationale: string; channel: string }>>([]);
+    const eligibleProducts = state.products.filter((product) => product.active && product.stock > 0).slice(0, 80);
+    const featured = state.merchandising.featuredProductIds;
+    const pickable = eligibleProducts.filter((product) => (pickVendor === "all" || product.vendorId === pickVendor) && (!pickQuery.trim() || product.name.toLowerCase().includes(pickQuery.trim().toLowerCase())));
+    async function saveHome(next = state.merchandising) {
+      // Persist first: the UI must not show a featured product as saved when the write
+      // actually failed (this previously happened silently whenever platform_settings
+      // was missing/unreachable — the toggle looked successful and reverted on next load
+      // with no explanation).
+      if (isLiveSupabaseMode()) {
+        try { await saveLiveMarketplaceHome(next); }
+        catch (error) { toast.error(errorMessage(error, "Marketplace settings could not be saved")); return; }
+      }
+      setState((current) => ({ ...current, merchandising: next, merchandisingError: null, audit: [audit(session, "Updated customer marketplace merchandising", `${next.featuredProductIds.length} featured products · AI popup ${next.recommendationPopupEnabled ? "on" : "off"}`), ...current.audit] }));
+      toast.success(isLiveSupabaseMode() ? "Marketplace home settings saved" : "Marketplace home settings saved locally");
+    }
+    function toggleFeatured(productId: string) {
+      const already = featured.includes(productId);
+      if (!already && featured.length >= state.merchandising.maxFeatured) return toast.error(`Choose up to ${state.merchandising.maxFeatured} featured products`);
+      const next = { ...state.merchandising, featuredProductIds: already ? featured.filter((id) => id !== productId) : [...featured, productId] };
+      void saveHome(next);
+    }
+    async function generateCampaigns() {
+      setBusy(true);
+      try {
+        const token = await getAccessToken();
+        const response = await fetchWithDeadline("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "campaign_strategy", message: "Analyse current marketplace and purchase behaviour and suggest responsible campaigns for useful customer segments.", role: "admin" }) }, 60000);
+        const json = await response.json() as { result?: { campaigns?: Array<{ name: string; audience: string; offer: string; rationale: string; channel: string }> }; error?: string };
+        if (!response.ok) throw new Error(json.error || "AI campaign analysis failed");
+        const result = json.result?.campaigns || [];
+        if (result.length) setSuggestions(result);
+        else {
+          const topCategory = [...state.products].sort((a, b) => b.stock - a.stock)[0]?.category || "Groceries";
+          setSuggestions([{ name: `${topCategory} discovery`, audience: `Customers who have not purchased ${topCategory} recently`, offer: "Personalised discovery bundle or limited introductory offer", rationale: "Uses non-sensitive commerce behaviour only and gives customers a relevant reason to explore an available category.", channel: "In-app + WhatsApp opt-in" }]);
+        }
+      } catch (error) { toast.error(errorMessage(error, "Campaign suggestions could not be generated")); }
+      finally { setBusy(false); }
+    }
+    /** Save a campaign: to the database first in live mode (so a failure is never shown as saved), then to local data. */
+    async function saveCampaign(campaign: Campaign) {
+      const known = state.campaigns.some((item) => item.id === campaign.id);
+      let final = campaign;
+      if (isLiveSupabaseMode()) {
+        const liveId = await saveLiveCampaign({ id: known ? campaign.id : undefined, name: campaign.name, audience: campaign.audience, offer: campaign.offer, channel: campaign.channel, status: campaign.status, aiRationale: campaign.aiRationale, headline: campaign.headline, subline: campaign.subline, emoji: campaign.emoji, ctaLabel: campaign.ctaLabel, targetType: campaign.targetType, targetValue: campaign.targetValue, segment: campaign.segment, startsAt: campaign.startsAt, endsAt: campaign.endsAt, priority: campaign.priority });
+        final = { ...campaign, id: liveId };
+      }
+      setState((current) => ({ ...current, campaigns: known ? current.campaigns.map((item) => (item.id === campaign.id ? final : item)) : [final, ...current.campaigns], audit: [audit(session, known ? "Updated campaign" : "Created campaign", `${final.name} · ${final.status}`), ...current.audit] }));
+    }
+    async function setCampaignStatus(campaign: Campaign, status: Campaign["status"]) {
+      const next = { ...campaign, status };
+      if (isLiveSupabaseMode()) await saveLiveCampaign({ id: campaign.id, name: campaign.name, audience: campaign.audience, offer: campaign.offer, channel: campaign.channel, status, aiRationale: campaign.aiRationale, headline: campaign.headline || campaign.name, subline: campaign.subline, emoji: campaign.emoji, ctaLabel: campaign.ctaLabel, targetType: campaign.targetType, targetValue: campaign.targetValue, segment: campaign.segment, startsAt: campaign.startsAt, endsAt: campaign.endsAt, priority: campaign.priority });
+      setState((current) => ({ ...current, campaigns: current.campaigns.map((item) => item.id === campaign.id ? next : item), audit: [audit(session, status === "Active" ? "Campaign went live" : `Campaign ${status.toLowerCase()}`, campaign.name), ...current.audit] }));
+    }
+    async function removeCampaign(campaign: Campaign) {
+      if (isLiveSupabaseMode()) await deleteLiveCampaign(campaign.id);
+      setState((current) => ({ ...current, campaigns: current.campaigns.filter((item) => item.id !== campaign.id), audit: [audit(session, "Deleted campaign", campaign.name), ...current.audit] }));
+    }
+    return <div className="space-y-7"><Heading eyebrow="MARKETPLACE GROWTH" title="Homepage & campaigns" body="Super Admin controls which products are featured on the customer marketplace, can create offers manually, and can ask AI to propose behaviour-based campaigns. AI never sends a campaign automatically; a human approves every activation." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => { setPrefill(null); setCreateOpen(true); }} className="rounded-xl"><Plus />Create campaign</Button><Button onClick={generateCampaigns} disabled={busy} className="rounded-xl bg-[#155F65]"><Sparkles />{busy ? "Analysing…" : "AI suggest campaigns"}</Button></div>} />
+      {state.merchandisingError && <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><AlertTriangle className="mt-0.5 size-5 shrink-0" /><div><b>Homepage merchandising is not connected to the database.</b><p className="mt-1 leading-5">Featuring a product will not save and featured products will not appear to customers until this is fixed. Ask an engineer to run <code className="rounded bg-red-100 px-1 py-0.5 font-mono text-xs">supabase/V4_6_AGENTIC_COMMERCE.sql</code> in the Supabase SQL Editor. Database says: “{state.merchandisingError}”.</p></div></div>}
+      <div className="grid items-start gap-5 xl:grid-cols-[1.15fr_.85fr]"><section className="surface-card rounded-[28px] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">Customer home merchandising</h3><p className="mt-1 text-sm text-stone-500">Feature up to {state.merchandising.maxFeatured} active products. Featured products appear before algorithmic recommendations.</p></div><label className="flex items-center gap-2 rounded-full bg-[#EAF4F2] px-3 py-2 text-xs font-black text-[#155F65]"><Switch checked={state.merchandising.recommendationPopupEnabled} onCheckedChange={(value) => void saveHome({ ...state.merchandising, recommendationPopupEnabled: value })} />AI recommendation popup</label></div><div className="mt-4 flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#155F65] px-4 py-2 text-sm font-semibold text-white">Featured · {featured.length} of {state.merchandising.maxFeatured}</span><input value={pickQuery} onChange={(e) => setPickQuery(e.target.value)} placeholder="Search products" aria-label="Search products to feature" className="h-10 min-w-0 flex-1 rounded-full bg-[#EEF2F2] px-4 text-sm outline-none" /><Select value={pickVendor} onValueChange={setPickVendor}><SelectTrigger aria-label="Filter by vendor" className="h-10 w-48 rounded-full bg-[#EEF2F2]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All vendors</SelectItem>{state.vendors.filter((v) => eligibleProducts.some((p) => p.vendorId === v.id)).map((v) => <SelectItem key={v.id} value={v.id}>{v.businessName}</SelectItem>)}</SelectContent></Select></div><div className="mt-4 grid max-h-[560px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">{pickable.map((product) => { const selected = featured.includes(product.id); const vendor = state.vendors.find((item) => item.id === product.vendorId); return <button key={product.id} data-testid="featured-toggle" onClick={() => toggleFeatured(product.id)} className={`rounded-[22px] border p-3 text-left transition ${selected ? "border-[#155F65] bg-[#EAF4F2] ring-2 ring-[#155F65]/10" : "bg-white hover:border-stone-300"}`}><div className="flex items-center gap-3"><div className="grid size-12 place-items-center overflow-hidden rounded-xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="line-clamp-2 font-black leading-tight">{product.name}</div><div className="truncate text-xs text-stone-500">{vendor?.businessName || "Vendor"} · {money(finalPrice(product, state))}</div></div><span className={`grid size-6 place-items-center rounded-full ${selected ? "bg-[#155F65] text-white" : "border"}`}>{selected ? <Check className="size-3" /> : <Plus className="size-3" />}</span></div></button>; })}</div>{!eligibleProducts.length && <Empty icon={ShoppingBag} title="No active products" body="Verify vendors and publish products before choosing homepage features." />}</section>
+        <section className="surface-dark rounded-[28px] p-6 text-white"><Megaphone className="text-[#D9F5E7]" /><h3 className="mt-4 text-xl font-black">AI campaign guardrails</h3><p className="mt-2 text-sm leading-6 text-white/60">Campaign suggestions use commerce behaviour such as category affinity, purchase recency, frequency and budget bands. Sheplates does not ask AI to infer sensitive personal traits. Every draft requires Super Admin approval before activation.</p><div className="mt-5 space-y-2 text-xs text-white/70"><div className="rounded-xl bg-white/8 p-3">✓ Behavioural segmentation only</div><div className="rounded-xl bg-white/8 p-3">✓ Offers remain editable</div><div className="rounded-xl bg-white/8 p-3">✓ No automatic send or payment action</div></div></section></div>
+      {suggestions.length > 0 && <section><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-[.16em] text-[#155F65]">AI suggestions</p><h3 className="mt-1 text-lg font-black">Campaign drafts to consider</h3></div><button onClick={() => setSuggestions([])} className="text-xs font-black text-stone-500">Clear suggestions</button></div><div className="mt-4 grid gap-4 lg:grid-cols-3">{suggestions.map((suggestion, index) => <div key={`${suggestion.name}-${index}`} className="surface-card rounded-[26px] p-5"><div className="flex items-center gap-2"><Sparkles className="size-4 text-[#155F65]" /><Status>AI proposed</Status></div><h4 className="mt-3 text-lg font-black">{suggestion.name}</h4><div className="mt-4 space-y-3 text-sm"><Review label="Audience" value={suggestion.audience} /><Review label="Offer" value={suggestion.offer} /><Review label="Channel" value={suggestion.channel} /></div><p className="mt-4 rounded-xl bg-[#EEF2F2] p-3 text-xs leading-5 text-stone-600">{suggestion.rationale}</p><Button onClick={() => { setPrefill({ name: suggestion.name, offer: suggestion.offer, channel: suggestion.channel, aiRationale: suggestion.rationale }); setCreateOpen(true); }} className="mt-4 w-full rounded-xl bg-[#155F65]"><Plus />Edit and use</Button></div>)}</div></section>}
+      <CampaignManager campaigns={state.campaigns} categories={MARKET_GROUPS.map((group) => group.key)} vendors={state.vendors.filter((v) => v.verification === "Verified").map((v) => ({ id: v.id, name: v.businessName }))} products={eligibleProducts.map((p) => ({ id: p.id, name: p.name, vendor: state.vendors.find((v) => v.id === p.vendorId)?.businessName || "Vendor" }))} createOpen={createOpen} onCreateOpenChange={setCreateOpen} prefill={prefill} onPrefillUsed={() => setPrefill(null)} onSave={saveCampaign} onStatus={setCampaignStatus} onDelete={removeCampaign} />
+    </div>;
+  }
+
+  function UsersView({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+    const [open, setOpen] = useState(false);
+    const live = isSupabaseConfigured();
+    const [roleTab, setRoleTab] = useState<"All" | "Customers" | "Vendors" | "Operations" | "Super Admin">("All");
+    const [viewing, setViewing] = useState<CustomerProfile | null>(null);
+    function openCustomer(email: string) {
+      const customer = state.customers.find((c) => c.email === email);
+      if (!customer) return;
+      setViewing(customer);
+      void logCustomerView(email, "Users");
+      setState((current) => ({ ...current, audit: [audit(session, "Viewed customer details", email), ...current.audit] }));
+    }
+    const [userQuery, setUserQuery] = useState("");
+    const roster = [
+      ...state.customers.map((c) => ({ key: `c-${c.email}`, name: c.email.split("@")[0], email: c.email, role: "Customers" as const, active: true })),
+      ...state.vendors.filter((v) => v.vendorKind !== "p0_connect").map((v) => ({ key: `v-${v.id}`, name: v.ownerName || v.businessName, email: v.ownerEmail, role: "Vendors" as const, active: v.operational === "Active" })),
+      ...state.staffAccounts.map((a) => ({ key: `s-${a.id}`, name: a.name, email: a.email, role: (a.role === "admin" ? "Super Admin" : "Operations") as "Super Admin" | "Operations", active: a.active })),
+    ];
+    const shownUsers = roster.filter((u) => (roleTab === "All" || u.role === roleTab) && (!userQuery.trim() || `${u.name} ${u.email}`.toLowerCase().includes(userQuery.trim().toLowerCase())));
+    return <div className="space-y-6">
+      <Heading eyebrow="ACCESS" title="Team & user access" body="Customers, vendors and the Sheplates team. Only Super Admin can create logins for the Operations team from this portal." action={<Button onClick={() => setOpen(true)}><UserCog />Create user</Button>} />
+      <div className="surface-card rounded-[22px] border border-sky-200/70 bg-sky-50/85 p-4 text-sm leading-6 text-sky-900">{live ? "Live account access is connected — new users are created as active role-based accounts." : "Live account access is not connected in this deployment, so new users are created as local test accounts for testing."}</div>
+      <section className="surface-card rounded-3xl p-5"><div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Role">{(["All", "Customers", "Vendors", "Operations", "Super Admin"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={roleTab === name} onClick={() => setRoleTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${roleTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {name === "All" ? roster.length : roster.filter((u) => u.role === name).length}</button>)}<input value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder="Search name or email" aria-label="Search name or email" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" /></div>
+        {shownUsers.length ? <div className="mt-3 space-y-2">{shownUsers.slice(0, 80).map((u) => <div key={u.key} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-white px-4 py-3 text-sm sm:grid-cols-[1.2fr_1.6fr_auto_auto]"><span className="flex items-center gap-2 font-semibold"><span className="grid size-8 place-items-center rounded-full bg-[#C5E3E4] text-xs font-bold">{(u.name || "?").slice(0, 1).toUpperCase()}</span>{u.name}</span><span className="truncate text-[#2F3C3F]">{u.email}</span><span className="rounded-full bg-[#EEF2F2] px-3 py-1 text-xs font-semibold">{u.role === "Customers" ? "Customer" : u.role === "Vendors" ? "Vendor" : u.role}</span><span className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${u.active ? "bg-[#eaf5ec] text-[#21683b]" : "bg-[#FFF4CF] text-[#795900]"}`}>{u.active ? "Active" : "Inactive"}</span>{u.role === "Customers" && <button type="button" onClick={() => openCustomer(u.email)} className="h-8 rounded-full bg-[#EEF2F2] px-3 text-xs font-semibold">View details</button>}</span></div>)}</div> : <p className="mt-3 rounded-2xl bg-white p-4 text-sm text-[#55656A]">No users match.</p>}
+        <p className="mt-3 rounded-2xl bg-[#edf3fd] p-3 text-xs font-medium text-[#285fba]">Customer data is visible only to authorised roles. Every time customer details are opened, it is recorded in the audit log.</p></section>
+      <Dialog open={!!viewing} onOpenChange={(value) => !value && setViewing(null)}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-[28px] sm:max-w-lg"><DialogHeader><DialogTitle className="text-xl font-bold">Customer details</DialogTitle><DialogDescription>This view was recorded in the audit log.</DialogDescription></DialogHeader>{viewing && <div className="space-y-2 text-sm">{[["Email", viewing.email], ["Phone", viewing.phone || "Not given"], ["Default address", viewing.address || "Not given"], ["Household size", String(viewing.householdSize)], ["Diet", viewing.diet || "No preference"], ["Allergies", viewing.allergies.join(", ") || "None"], ["Goals", viewing.goals.join(", ") || "None"], ["Dislikes", viewing.dislikes || "None"]].map(([k, v]) => <div key={k} className="flex justify-between gap-4 rounded-2xl bg-[#EEF2F2] px-4 py-3"><span className="text-[#55656A]">{k}</span><b className="text-right">{v}</b></div>)}</div>}</DialogContent></Dialog>
+      <div className="surface-card overflow-x-auto rounded-[28px]"><div className="p-5 pb-0 text-sm font-black">Team accounts created from this portal</div>{state.staffAccounts.length ? <Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead>Created by</TableHead><TableHead>Created</TableHead><TableHead>Mode</TableHead></TableRow></TableHeader><TableBody>{state.staffAccounts.map((account) => <TableRow key={account.id}><TableCell><b>{account.name}</b></TableCell><TableCell>{account.email}</TableCell><TableCell className="capitalize">{account.role}</TableCell><TableCell>{account.createdBy}</TableCell><TableCell>{account.createdAt}</TableCell><TableCell><Status className={account.mode === "live" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{account.mode === "live" ? "Live account" : "Local test"}</Status></TableCell></TableRow>)}</TableBody></Table> : <div className="p-5"><Empty icon={UserCog} title="No team users created yet" body="Use Create user to give Operations teammates their own login." /></div>}</div>
+      <div className="surface-card overflow-x-auto rounded-[28px]"><div className="p-5 pb-0 text-sm font-black">Demo login identities (testing only)</div><Table><TableHeader><TableRow><TableHead>User</TableHead><TableHead>Role</TableHead><TableHead>Purpose</TableHead><TableHead>Password</TableHead></TableRow></TableHeader><TableBody>{demoAccounts.map((account) => <TableRow key={account.email}><TableCell><b>{account.name}</b><div className="text-xs text-stone-500">{account.email}</div></TableCell><TableCell className="capitalize">{account.role}</TableCell><TableCell>{account.detail}</TableCell><TableCell className="font-mono text-xs">{account.password}</TableCell></TableRow>)}</TableBody></Table></div>
+      <CreateUserDialog open={open} close={() => setOpen(false)} session={session} setState={setState} live={live} />
+    </div>;
+  }
+
+  function CreateUserDialog({ open, close, session, setState, live }: { open: boolean; close: () => void; session: DemoSession; setState: React.Dispatch<React.SetStateAction<V3State>>; live: boolean }) {
+    const [name, setName] = useState(""), [email, setEmail] = useState(""), [role, setRole] = useState<"operations" | "admin">("operations"), [busy, setBusy] = useState(false);
+    const [issuedPassword, setIssuedPassword] = useState<{ email: string; password: string } | null>(null);
+    const [showPassword, setShowPassword] = useState(true);
+    async function create() {
+      if (!name.trim() || !/^\S+@\S+\.\S+$/.test(email)) return toast.error("Enter a valid name and email address");
+      setBusy(true);
+      try {
+        let password: string;
+        let mode: "live" | "local";
+        if (live) {
+          const result = await createStaffUser({ name: name.trim(), email: email.trim().toLowerCase(), role });
+          password = result.temporaryPassword; mode = "live";
+        } else {
+          password = generatePassword(); mode = "local";
+          const existing = readLocalStaffAccounts();
+          if (existing.some((x) => x.email.toLowerCase() === email.trim().toLowerCase())) throw new Error("A local test account with this email already exists");
+          writeLocalStaffAccounts([...existing, { id: id("USR"), email: email.trim().toLowerCase(), name: name.trim(), role, password, createdBy: session.email, createdAt: now(), mode: "local", active: true }]);
+        }
+        const account: StaffAccount = { id: id("USR"), email: email.trim().toLowerCase(), name: name.trim(), role, createdBy: session.email, createdAt: now(), mode, active: true };
+        setState((s) => ({ ...s, staffAccounts: [account, ...s.staffAccounts], audit: [audit(session, "Created team user", `${account.name} · ${account.email} · ${role}`), ...s.audit] }));
+        setIssuedPassword({ email: account.email, password });
+        toast.success(`${account.email} created as ${role}`);
+      } catch (error) { toast.error(errorMessage(error, "User could not be created")); }
+      finally { setBusy(false); }
+    }
+    function reset() { setName(""); setEmail(""); setRole("operations"); setIssuedPassword(null); setShowPassword(true); close(); }
+    return <Dialog open={open} onOpenChange={(value) => !value && reset()}><DialogContent className="rounded-[26px] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black">Create a team user</DialogTitle><DialogDescription>Only Super Admin can create Operations (or additional Super Admin) logins.</DialogDescription></DialogHeader>
+      {issuedPassword ? <div className="space-y-4">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="mb-2 inline size-5" /><p><b>{issuedPassword.email}</b> was created.</p><p className="mt-1">Share this temporary password securely — it will not be shown again.</p></div>
+        <div className="surface-card-muted flex items-center gap-2 rounded-xl p-3 font-mono text-sm"><span className="flex-1">{showPassword ? issuedPassword.password : "•".repeat(issuedPassword.password.length)}</span><button onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button><button onClick={() => { navigator.clipboard?.writeText(issuedPassword.password); toast.success("Password copied"); }}><Copy className="size-4" /></button></div>
+        <Button onClick={reset} className="h-11 w-full rounded-xl bg-[#155F65] font-black">Done</Button>
+      </div> : <div className="space-y-4">
+        <Field label="Full name"><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} /></Field>
+        <Field label="Work email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} /></Field>
+        <Field label="Role"><Select value={role} onValueChange={(v) => setRole(v as "operations" | "admin")}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="operations">Operations</SelectItem><SelectItem value="admin">Super admin</SelectItem></SelectContent></Select></Field>
+        <Button onClick={() => void create()} disabled={busy} className="h-11 w-full rounded-xl bg-[#155F65] font-black">{busy ? "Creating…" : "Create user"}</Button>
+      </div>}
+    </DialogContent></Dialog>;
+  }
+  function AdminVendors({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
+    const allVendors = state.vendors.filter((vendor) => vendor.vendorKind !== "p0_connect");
+    const [vTab, setVTab] = useState<"All" | "Verified" | "Under review" | "Paused">("All");
+    const [vQuery, setVQuery] = useState("");
+    const [editingProfileVendor, setEditingProfileVendor] = useState<Vendor | null>(null);
+    const vendors = allVendors.filter((vendor) => (vTab === "All" || (vTab === "Verified" ? vendor.verification === "Verified" : vTab === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)) && (!vQuery.trim() || `${vendor.businessName} ${vendor.ownerEmail}`.toLowerCase().includes(vQuery.trim().toLowerCase())));
+    return <div className="space-y-6">
+      <Heading eyebrow="VENDOR GOVERNANCE" title="All vendors" body="Inspect verification, operating mode, radius, product count and subscription plan." />
+      <ProductImageBackfill />
+      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Vendor status">
+        {(["All", "Verified", "Under review", "Paused"] as const).map((name) => <button key={name} type="button" role="tab" aria-selected={vTab === name} onClick={() => setVTab(name)} className={`h-10 rounded-full px-4 text-sm font-semibold ${vTab === name ? "bg-[#155F65] text-white" : "bg-white text-[#2F3C3F]"}`}>{name} · {allVendors.filter((vendor) => name === "All" || (name === "Verified" ? vendor.verification === "Verified" : name === "Under review" ? ["Submitted", "Under review", "Changes required"].includes(vendor.verification) : vendor.operational === "Paused" || !vendor.openToday)).length}</button>)}
+        <input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Search vendor or owner" aria-label="Search vendor or owner" className="ml-auto h-10 w-full max-w-xs rounded-full bg-white px-4 text-sm" />
+      </div>
+      {vendors.length ? <div className="surface-card overflow-x-auto rounded-[28px]">
+        <Table>
+          <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Trust</TableHead><TableHead>Products &amp; store</TableHead><TableHead>Plan</TableHead></TableRow></TableHeader>
+          <TableBody>{vendors.map((vendor) => <TableRow key={vendor.id}>
+            <TableCell><div className="flex items-center gap-3">
+              <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl border border-stone-200 bg-[#EAF4F2]">{vendor.logoUrl ? <img src={vendor.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-black text-[#155F65]">{vendor.businessName[0] || "V"}</span>}</div>
+              <div className="min-w-0"><b className="break-words">{vendor.businessName}</b><div className="break-all text-xs text-stone-500">{vendor.ownerEmail}</div><div className="break-words text-[11px] font-semibold text-[#155F65]">{vendor.ownerRole || "Proprietor"}: {vendor.ownerName}</div></div>
+            </div></TableCell>
+            <TableCell><Status>{vendor.verification}</Status></TableCell>
+            <TableCell><div className="flex min-w-32 flex-col items-start gap-1">
+              <span className="text-sm font-semibold">{state.products.filter((x) => x.vendorId === vendor.id).length} products</span>
+              <span className="text-xs text-stone-500">{vendor.openToday ? "Open" : "Closed"} · {vendor.radiusKm} km</span>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                {onOpenVendorProfile && <Button type="button" size="sm" variant="outline" onClick={() => onOpenVendorProfile(vendor.id)} className="h-8 rounded-xl text-xs font-bold text-[#155F65]"><Eye className="mr-1 size-3.5 text-[#155F65]" />Preview</Button>}
+                <Button type="button" size="sm" variant="outline" onClick={() => setEditingProfileVendor(vendor)} className="h-8 rounded-xl text-xs font-bold text-stone-700 bg-white"><Store className="mr-1 size-3.5 text-[#155F65]" />Edit Branding</Button>
+              </div>
+            </div></TableCell>
+            <TableCell><Select value={vendor.plan} onValueChange={(value) => {
+              const plan = value as Vendor["plan"];
+              const oldPlan = vendor.plan;
+              if (plan === oldPlan) return;
+
+              const planPrices: Record<string, number> = { Taster: 499, Crave: 699, Thrive: 799, Crown: 999 };
+              const oldPrice = planPrices[oldPlan] ?? 0;
+              const newPrice = planPrices[plan] ?? 0;
+
+              const actorRole = session.role === "admin"
+                ? (session.name.toLowerCase().includes("super") || session.email.toLowerCase().includes("super") ? "Super Admin" : "Admin")
+                : (session.role === "operations" ? "Operations" : "Admin");
+
+              const auditEvent = createVendorPlanAuditEvent({
+                actorName: session.name,
+                actorEmail: session.email,
+                actorRole,
+                vendorId: vendor.id,
+                vendorName: vendor.businessName,
+                previousPlan: oldPlan,
+                newPlan: plan,
+                previousPrice: oldPrice,
+                newPrice: newPrice,
+                previousStatus: vendor.operational || "Active",
+                newStatus: vendor.operational || "Active",
+                reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
+              });
+
+              const newLimits = getPlanLimits(plan);
+              const activeProds = state.products.filter((p) => p.vendorId === vendor.id && p.active);
+              const excessProds = activeProds.length > newLimits.maxProducts
+                ? new Set(activeProds.slice(0, activeProds.length - newLimits.maxProducts).map((p) => p.id))
+                : new Set<string>();
+
+              const activeStaff = state.staff.filter((st) => st.vendorId === vendor.id && st.active);
+              const excessStaff = activeStaff.length > newLimits.maxDeliveryStaff
+                ? new Set(activeStaff.slice(0, activeStaff.length - newLimits.maxDeliveryStaff).map((st) => st.id))
+                : new Set<string>();
+
+              const activeSlots = (state.deliverySlots || []).filter((sl) => sl.vendorId === vendor.id && sl.isActive);
+              const excessSlots = activeSlots.length > newLimits.maxDeliverySlots
+                ? new Set(activeSlots.slice(0, activeSlots.length - newLimits.maxDeliverySlots).map((sl) => sl.id))
+                : new Set<string>();
+
+              setState((s) => ({
+                ...s,
+                vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan } : x),
+                products: excessProds.size ? s.products.map((p) => excessProds.has(p.id) ? { ...p, active: false } : p) : s.products,
+                staff: excessStaff.size ? s.staff.map((st) => excessStaff.has(st.id) ? { ...st, active: false } : st) : s.staff,
+                deliverySlots: excessSlots.size ? (s.deliverySlots || []).map((sl) => excessSlots.has(sl.id) ? { ...sl, isActive: false } : sl) : s.deliverySlots,
+                audit: [auditEvent, ...s.audit],
+              }));
+              if (isLiveSupabaseMode()) {
+                void saveLiveVendorPlan(vendor.id, plan.toLowerCase() as "taster" | "crave" | "thrive" | "crown", {
+                  oldPlan,
+                  vendorName: vendor.businessName,
+                  session: {
+                    name: session.name,
+                    email: session.email,
+                    role: actorRole,
+                  },
+                  reason: `Plan changed from ${oldPlan} to ${plan} via Admin console`,
+                }).then(() => {
+                  toast.success(`${vendor.businessName} moved to ${plan}`);
+                }).catch((error: Error) => {
+                  setState((s) => ({
+                    ...s,
+                    vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, plan: oldPlan } : x),
+                    audit: s.audit.filter((a) => a.id !== auditEvent.id),
+                  }));
+                  toast.error(error.message || "Could not save the plan change");
+                });
+              } else {
+                toast.success(`${vendor.businessName} moved to ${plan}`);
+              }
+            }}><SelectTrigger className="w-32 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{["Taster", "Crave", "Thrive", "Crown"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select></TableCell>
+          </TableRow>)}</TableBody>
+        </Table>
+      </div> : <Empty icon={Store} title="No vendors" body="Self-onboard a vendor or ask Operations to create one." />}
+      {editingProfileVendor && (
+        <EditVendorProfileDialog
+          open
+          onClose={() => setEditingProfileVendor(null)}
+          vendor={editingProfileVendor}
+          setState={setState}
+          session={session}
+        />
+      )}
+    </div>;
+  }
+  function PlanFeatureTable() {
+    const plans = ["Taster", "Crave", "Thrive", "Crown"];
+    const rows: [string, boolean[]][] = [
+      ["Business information, description, catalogue", [true, true, true, true]],
+      ["Leads through WhatsApp", [true, false, false, false]],
+      ["Pre-orders, subscriptions, delivery fleet", [false, true, true, true]],
+      ["Food Shorts (Food Stories)", [false, true, true, true]],
+      ["Food Drops", [false, true, true, true]],
+      ["Request for Quote with AI assistance", [false, false, false, true]],
+    ];
+    return <section className="surface-card overflow-x-auto rounded-3xl p-5"><h3 className="text-lg font-semibold">What each plan includes</h3><table className="mt-3 w-full min-w-[520px] border-separate border-spacing-y-2 text-sm"><thead><tr className="text-left text-xs uppercase tracking-[.06em] text-[#55656A]"><th className="px-3 py-1 font-semibold">Feature</th>{plans.map((plan) => <th key={plan} className="px-3 py-1 text-center font-semibold">{plan}</th>)}</tr></thead><tbody>{rows.map(([feature, has]) => <tr key={feature}><td className="rounded-l-[18px] bg-[#EEF2F2] px-3 py-3 font-medium">{feature}</td>{has.map((yes, i) => <td key={plans[i]} className={`bg-[#EEF2F2] px-3 py-3 text-center ${i === 3 ? "rounded-r-[18px]" : ""}`}>{yes ? <span aria-label="Included" className="inline-grid size-6 place-items-center rounded-full bg-[#155F65]"><Check className="size-4" /></span> : <span aria-label="Not included" className="text-[#5F6F74]">No</span>}</td>)}</tr>)}</tbody></table></section>;
+  }
+  function Plans({ session, state, setState, onOpenVendorProfile }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) { return <div className="space-y-6"><Heading eyebrow="VENDOR SUBSCRIPTIONS" title="Vendor plans" body="Monthly rates are exclusive of GST. Taster is the WhatsApp listing plan; Crave, Thrive and Crown are the ordering plans." /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ name: "Taster", price: 499, text: "Business listing, catalogue and leads through WhatsApp. No platform commission." }, { name: "Crave", price: 699, text: "Pre-orders, subscriptions, delivery fleet management, Food Stories and Food Drops (2/day)." }, { name: "Thrive", price: 799, text: "Everything in Crave, plus 5 daily Food Drops." }, { name: "Crown", price: 999, text: "Everything in Thrive (15 Food Drops/day), plus Request for Quote (RFQ) with AI assistance." }].map((plan) => <div key={plan.name} className="surface-card rounded-[28px] p-6"><div className="flex justify-between"><h3 className="text-xl font-black">{plan.name}</h3></div><div className="mt-5 text-lg font-black">{money(plan.price)}<span className="text-sm font-bold text-stone-500"> / month + GST</span></div><p className="mt-3 text-sm leading-6 text-stone-500">{plan.text}</p><p className="mt-2 text-xs font-semibold text-[#55656A]">{state.vendors.filter((v) => v.plan === plan.name && v.vendorKind !== "p0_connect").length} vendor(s) on this plan</p></div>)}</div><PlanFeatureTable /><AdminVendors session={session} state={state} setState={setState} onOpenVendorProfile={onOpenVendorProfile} /></div>; }
+  function AdminPricing({ state }: { state: V3State }) {
+    const [vendorId, setVendorId] = useState("all"), [q, setQ] = useState(""), [onlyCustom, setOnlyCustom] = useState(false);
+    const pct = (id: string) => state.markups[id] || 0;
+    const rows = state.products.filter((x) => vendorId === "all" || x.vendorId === vendorId).filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).filter((x) => !onlyCustom || pct(x.id) > 0);
+    const custom = state.products.filter((x) => pct(x.id) > 0);
+    const average = custom.length ? custom.reduce((sum, x) => sum + pct(x.id), 0) / custom.length : 0;
+    return <div className="space-y-6"><Heading eyebrow="PRICING GOVERNANCE" title="Published item percentages" body="Operations owns per-item percentages; Super Admin can inspect the full policy footprint." />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Items on the platform" value={String(state.products.length)} icon={Package} /><Metric label="Items with their own %" value={String(custom.length)} icon={Percent} /><Metric label="Average % on those items" value={`${average.toFixed(1)}%`} icon={Activity} /><Metric label="Vendors" value={String(state.vendors.length)} icon={Store} /></div>
+      <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4"><Select value={vendorId} onValueChange={setVendorId}><SelectTrigger aria-label="Vendor" className="w-full max-w-xs rounded-xl"><SelectValue placeholder="All vendors" /></SelectTrigger><SelectContent><SelectItem value="all">All vendors</SelectItem>{state.vendors.map((x) => <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>)}</SelectContent></Select><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search item" aria-label="Search item" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm outline-none" />{[["All", false], ["Custom %", true]].map(([label, value]) => <button key={String(label)} type="button" onClick={() => setOnlyCustom(Boolean(value))} className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom === value ? "bg-[#155F65] text-white" : "bg-white"}`}>{String(label)}</button>)}</div>
+      {rows.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Vendor</TableHead><TableHead>Vendor base</TableHead><TableHead>Operations %</TableHead><TableHead>Customer price</TableHead></TableRow></TableHeader><TableBody>{rows.map((x) => <TableRow key={x.id}><TableCell><b>{x.name}</b><div className="text-xs text-[#55656A]">per {x.baseUnit}</div></TableCell><TableCell className="text-sm">{state.vendors.find((v) => v.id === x.vendorId)?.businessName || "Vendor"}</TableCell><TableCell>{money(x.vendorPrice)}</TableCell><TableCell><span className={`rounded-full px-3 py-1 text-xs font-semibold ${pct(x.id) > 0 ? "bg-[#EAF4F2] text-[#155F65]" : "bg-[#EEF2F2] text-[#55656A]"}`}>{pct(x.id)}%</span></TableCell><TableCell className="font-black">{money(finalPrice(x, state))}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty icon={Percent} title={state.products.length ? "No items match" : "No product pricing"} body={state.products.length ? "Try another vendor or search." : "Pricing rows appear after vendors add products."} />}</div>;
+  }
+  type ReportKey = "orders" | "zoho_orders" | "payments" | "tickets" | "vendors" | "cancellations" | "customers";
+  const reportDefinitions: { key: ReportKey; label: string; dateField: string }[] = [
+    { key: "orders", label: "Orders", dateField: "date" },
+    { key: "zoho_orders", label: "Zoho Books daily order export", dateField: "date" },
+    { key: "payments", label: "Vendor payments", dateField: "collectedAt" },
+    { key: "tickets", label: "Support tickets", dateField: "at" },
+    { key: "vendors", label: "Vendor directory", dateField: "" },
+    { key: "cancellations", label: "Cancellations", dateField: "" },
+    { key: "customers", label: "Customers", dateField: "" },
+  ];
+  function buildReportRows(key: ReportKey, state: V3State, from: string, to: string): Record<string, unknown>[] {
+    const inRange = (value?: string) => { if (!value) return true; const day = value.slice(0, 10); if (from && day < from) return false; if (to && day > to) return false; return true; };
+    if (key === "orders") return state.orders.filter((o) => inRange(o.date)).map((o) => ({ "Order ID": o.id, Customer: o.customerEmail, Vendor: state.vendors.find((v) => v.id === o.vendorId)?.businessName || o.vendorId, Description: o.description, Total: o.total, Date: o.date, Slot: o.slot, Status: o.status, Payment: o.payment }));
+    if (key === "zoho_orders") return state.orders.filter((o) => o.payment === "Paid" && inRange(o.date)).map((o) => ({ "Reference Number": o.id, "Customer Name": o.customerEmail, "Order Date": o.date, "Item Name": o.description, Quantity: o.quantity, Rate: o.quantity ? Math.round((o.total / o.quantity) * 100) / 100 : o.total, "Line Total": o.total, "Payment Status": o.payment, "Fulfilment Status": o.status, Vendor: state.vendors.find((v) => v.id === o.vendorId)?.businessName || o.vendorId, "Delivery Slot": o.slot }));
+    if (key === "payments") return state.transactions.filter((t) => inRange(t.collectedAt)).map((t) => ({ "Order ID": t.orderId, Vendor: state.vendors.find((v) => v.id === t.vendorId)?.businessName || t.vendorId, "Collected on": t.collectedAt, Gross: t.grossAmount, Commission: t.commissionAmount, "Vendor payout": t.vendorPayout, Status: t.payoutStatus, "Expected / paid": t.paidAt || t.scheduledPayoutDate }));
+    if (key === "tickets") return state.tickets.filter((t) => inRange(t.at)).map((t) => ({ "Ticket ID": t.id, "Raised by": t.creatorEmail, Role: t.creatorRole, Category: t.category, Subject: t.subject, Status: t.status, "Created via": t.createdVia, At: t.at }));
+    if (key === "vendors") return state.vendors.map((v) => ({ Vendor: v.businessName, Owner: v.ownerEmail, Category: v.category, Verification: v.verification, Operational: v.operational, Plan: v.plan, "Open today": v.openToday ? "Yes" : "No", "Radius (km)": v.radiusKm }));
+    if (key === "cancellations") return state.cancellations.map((c) => ({ "Cancellation ID": c.id, "Order ID": c.orderId, Customer: c.customerEmail, Reason: c.reason, "AI decision": c.aiDecision, "Confidence %": c.confidence, Status: c.status }));
+    return state.customers.map((c) => ({ Email: c.email, Address: c.address, "Household size": c.householdSize, Diet: c.diet, Allergies: c.allergies.join(", "), Goals: c.goals.join(", ") }));
+  }
+  function ReportsCentre({ state }: { state: V3State }) {
+    const [key, setKey] = useState<ReportKey>("orders");
+    const [from, setFrom] = useState("");
+    const [to, setTo] = useState("");
+    const definition = reportDefinitions.find((x) => x.key === key)!;
+    const rows = buildReportRows(key, state, from, to);
+    function download() { downloadWorkbook(`sheplates-${key}-report`, [{ name: definition.label, rows }]); toast.success(`${definition.label} report downloaded (${rows.length} row(s))`); }
+    return <div className="space-y-6"><Heading eyebrow="REPORTING" title="Custom reports" body="Pick a report, a period and download it as a spreadsheet." />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{reportDefinitions.map((def) => { const count = buildReportRows(def.key, state, "", "").length; return <div key={def.key} className="surface-card flex flex-col gap-3 rounded-3xl p-5"><div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2"><span className="grid size-9 place-items-center rounded-xl bg-[#155F65]"><FileText className="size-5" /></span><b>{def.label}</b></div><button type="button" onClick={() => { const data = buildReportRows(def.key, state, "", ""); downloadWorkbook(`sheplates-${def.key}-report`, [{ name: def.label, rows: data }]); toast.success(`${def.label} report downloaded (${data.length} row(s))`); }} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold ring-1 ring-[#DDE3E4]"><Download className="size-4" />Excel</button></div><div className="text-2xl font-bold tabular-nums">{count} <span className="text-sm font-medium text-[#55656A]">row{count === 1 ? "" : "s"}</span></div></div>; })}</div>
+      <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Orders over the last 14 days</h3><div className="mt-4"><BarChart data={lastDays(14).map((d) => ({ label: d.label, value: state.orders.filter((o) => o.date === d.key && o.status !== "Cancelled").length }))} height={150} /></div></section>
+      <div className="surface-card grid gap-4 rounded-[28px] p-5 lg:grid-cols-[1.2fr_.8fr_.8fr_auto]">
+        <Field label="Report"><Select value={key} onValueChange={(v) => setKey(v as ReportKey)}><SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{reportDefinitions.map((r) => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="From" hint={definition.dateField ? undefined : "Not date-filterable"}><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} disabled={!definition.dateField} className={inputClass} /></Field>
+        <Field label="To"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} disabled={!definition.dateField} className={inputClass} /></Field>
+        <div className="flex items-end"><Button onClick={download} className="h-11 w-full rounded-xl bg-[#155F65] font-black hover:bg-[#0F4A4F]"><Download />Download Excel</Button></div>
+      </div>
+      <div className="surface-card rounded-[28px] p-5"><div className="flex items-center justify-between"><h3 className="font-black">{definition.label} preview</h3><Status>{rows.length} row(s)</Status></div>{rows.length ? <div className="mt-4 overflow-x-auto"><Table><TableHeader><TableRow>{Object.keys(rows[0]).map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.slice(0, 8).map((row, index) => <TableRow key={index}>{Object.keys(rows[0]).map((column) => <TableCell key={column}>{String(row[column] ?? "")}</TableCell>)}</TableRow>)}</TableBody></Table>{rows.length > 8 && <p className="mt-2 text-xs text-stone-400">Showing 8 of {rows.length} rows. Download the Excel file for the full dataset.</p>}</div> : <Empty icon={FileSpreadsheet} title="No rows for this selection" body="Widen the date range or choose a different report." />}</div>
+    </div>;
+  }
+
+  function NotificationDrawer({ open, setOpen, session, state, setState, onNavigate }: { open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onNavigate?: (view: string) => void }) {
+    const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
+    const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
+
+    useEffect(() => {
+      setDeviceStatus(getDeviceNotificationStatus());
+    }, []);
+
+    async function enable() {
+      const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
+      setDeviceStatus(result.status);
+      if (result.status === "granted") toast.success(result.message);
+      else if (result.status === "denied") toast.error(result.message);
+      else toast.info(result.message);
+    }
+
+    async function handleNotificationClick(item: Notification) {
+      if (!item.read) {
+        if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => { });
+        setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
+      }
+      setOpen(false);
+      const route = resolveNotificationTarget(item, session, state);
+      executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
+        if (type === "error") toast.error(msg);
+        else if (type === "warning") toast.warning(msg);
+        else if (type === "success") toast.success(msg);
+        else toast.info(msg);
+      });
+    }
+
+    return <Sheet open={open} onOpenChange={setOpen}>
+      <SheetContent className="sp-notification-sheet w-full p-0 sm:max-w-md">
+        <SheetHeader className="border-b bg-[#155F65] p-6 text-left text-white">
           <SheetTitle className="text-white">Notifications</SheetTitle>
-          <SheetDescription className="text-white/55">Private updates for {session.email}. Vendor and customer events are never mixed.</SheetDescription>
+          <SheetDescription className="text-white/55">In-app updates plus optional device notifications for this installed web app.</SheetDescription>
         </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
-          {deviceButton}
-          <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+        <div className="p-5">
+          <Button type="button" onClick={enable} variant="outline" disabled={deviceStatus === "granted"} className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}>
+            {deviceStatus === "granted" ? <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></> : deviceStatus === "denied" ? <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></> : deviceStatus === "ios_pwa_required" ? <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></> : <><Bell className="size-4" /><span>Enable device notifications</span></>}
+          </Button>
+          <button onClick={() => setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }))} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
           <div className="space-y-3">
-            {items.map(notificationCard)}
-            {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+            {items.map((item) => (
+              <div key={item.id} role="button" tabIndex={0} onClick={() => void handleNotificationClick(item)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }} className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}>
+                <div className="flex justify-between gap-3"><b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>{!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}</div>
+                <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+                  <span>{item.at}</span>
+                  <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+                </div>
+              </div>
+            ))}
+            {!items.length && <Empty icon={Bell} title="No notifications" body="Schedule, quote, verification and order updates will appear here." />}
           </div>
         </div>
       </SheetContent>
-    </Sheet>
-  );
-}
+    </Sheet>;
+  }
 
-function notice(recipient: string, recipientRole: Role, title: string, body: string, extra?: { entityType?: string; entityId?: string; href?: string; type?: string }): Notification {
-  return { id: id("NOT"), recipient, recipientRole, title, body, at: now(), read: false, ...extra };
-}
-function playNotificationSound() {
-  try {
-    const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextCtor) return;
-    const ctx = new AudioContextCtor(); const oscillator = ctx.createOscillator(); const gain = ctx.createGain();
-    oscillator.frequency.value = 880; gain.gain.setValueAtTime(0.0001, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
-    oscillator.connect(gain); gain.connect(ctx.destination); oscillator.start(); oscillator.stop(ctx.currentTime + 0.36);
-  } catch { /* sound is best-effort and requires browser interaction on some devices */ }
-}
-function showDeviceNotification(title: string, body: string) { if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body, icon: "/icon-192.png" }); }
+  function NotificationDrawerV4({ page = false, open, setOpen, session, state, setState, people, onNavigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; people: PeopleApi; onNavigate?: (view: string) => void }) {
+    const items = state.notifications.filter((item) => notificationBelongsToSession(item, session));
+    const [busyRequest, setBusyRequest] = useState("");
+    const [deviceStatus, setDeviceStatus] = useState<DeviceNotificationStatus>("default");
 
-function findRelevantOrderForComplaint(state: V3State, session: DemoSession): Order | undefined {
-  const orders = state.orders.filter((order) => order.customerEmail === session.email);
-  const delivered = orders.filter((order) => order.status === "Completed" || order.status === "Out for delivery" || order.status === "Ready for pickup");
-  const pool = delivered.length ? delivered : orders;
-  return [...pool].sort((a, b) => b.date.localeCompare(a.date))[0];
-}
-function availableCommerceProducts(state: V3State) {
-  return state.products.filter((product) => product.active && product.stock > 0 && state.vendors.some((vendor) => vendor.id === product.vendorId && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday));
-}
-function withAgentMemory(state: V3State, email: string, patch: Partial<AgentMemory>): V3State {
-  return { ...state, customers: state.customers.map((customer) => customer.email === email ? { ...customer, agentMemory: { ...customer.agentMemory, ...patch } } : customer) };
-}
-function rememberCategory(setState: React.Dispatch<React.SetStateAction<V3State>>, email: string, category: string) {
-  setState((state) => {
-    const existing = state.customers.find((customer) => customer.email === email)?.agentMemory?.favoriteCategories || [];
-    const next = existing.includes(category) ? existing : [...existing, category].slice(-5);
-    return withAgentMemory(state, email, { favoriteCategories: next });
-  });
-}
+    useEffect(() => {
+      setDeviceStatus(getDeviceNotificationStatus());
+    }, []);
 
-function SheAgent({ page = false, open, setOpen, session, state, setState, navigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void }) {
-  const customer = state.customers.find((c) => c.email === session.email);
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<AgentMessage[]>(() => {
-    if (typeof window !== "undefined" && session.email) {
-      try {
-        const stored = sessionStorage.getItem(`sheplates_agent_convo_${session.email}`);
-        if (stored) {
-          const parsed = JSON.parse(stored) as AgentMessage[];
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
+    async function enable() {
+      const result = await requestAndRegisterDeviceNotifications({ userId: session?.email, email: session?.email, role: session?.role });
+      setDeviceStatus(result.status);
+      if (result.status === "granted") toast.success(result.message);
+      else if (result.status === "denied") toast.error(result.message);
+      else toast.info(result.message);
     }
-    return [{ role: "agent", text: session.role === "customer" ? `Hi ${session.name.split(" ")[0]} 👋 Tell me what you're planning and I'll turn it into a local basket you can review.` : `Hello ${session.name}. I can analyse your ${roleName[session.role].toLowerCase()} workspace and recommend the next action.` }];
-  });
-  const [busy, setBusy] = useState(false);
-  const [awaitingPhoto, setAwaitingPhoto] = useState<{ orderId: string; complaintText: string } | null>(null);
-  const [kitchenConflict, setKitchenConflict] = useState<{ currentVendorName: string; requestedVendorName: string; conflictingProductId: string; requestedQuantity: number } | null>(null);
-  const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const abortRef = useRef<number | null>(null);
-  const conversationIdRef = useRef<string | null>(null);
-  const scope = useMemo(() => scopedContext(session, state), [session, state]);
-  const cartItems = state.cart.filter((item) => item.customerEmail === session.email);
-  const cartTotal = cartItems.reduce((sum, item) => { const product = state.products.find((p) => p.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
-  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
-  useEffect(() => { if (!open) setMessage(""); }, [open]);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && session.email && messages.length > 0) {
+    async function markAll() {
       try {
-        sessionStorage.setItem(`sheplates_agent_convo_${session.email}`, JSON.stringify(messages));
-      } catch {}
+        if (isLiveSupabaseMode()) await markLiveNotificationsRead();
+        setState((s) => ({ ...s, notifications: s.notifications.map((item) => notificationBelongsToSession(item, session) ? { ...item, read: true } : item) }));
+      } catch (error) { toast.error(errorMessage(error, "Notifications could not be updated")); }
     }
-  }, [messages, session.email]);
 
-  useEffect(() => {
-    if (session.role === "customer" && session.email) {
-      try {
-        const stored = sessionStorage.getItem("sheplates_pending_cart_action");
-        if (stored) {
-          sessionStorage.removeItem("sheplates_pending_cart_action");
-          const parsed = JSON.parse(stored) as { productId: string; quantity: number };
-          if (parsed?.productId) {
-            void syncAgentCart([parsed], [], "Restored your pending item to basket");
-          }
-        }
-      } catch {}
-    }
-  }, [session.email]);
-
-  useEffect(() => {
-    if (!isLiveSupabaseMode()) return;
-    let active = true;
-    (async () => {
-      try {
-        const token = await getAccessToken();
-        if (!token) return;
-        const res = await fetch("/api/agent", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
-        const data = await res.json() as { conversationId?: string; messages?: Array<{ id: string; role: "user" | "agent"; text: string; productIds?: string[]; intent?: string; basketTotal?: number }> };
-        if (!active) return;
-        if (data.conversationId) {
-          conversationIdRef.current = data.conversationId;
-        }
-        if (Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages(data.messages.map((m) => ({
-            role: m.role,
-            text: m.text,
-            productIds: m.productIds,
-            intent: m.intent,
-            basketTotal: m.basketTotal,
-          })));
-        }
-      } catch {
-        /* Fall back smoothly to default greeting */
+    async function handleNotificationClick(item: Notification) {
+      if (!item.read) {
+        if (isLiveSupabaseMode()) await markLiveNotificationsRead().catch(() => { });
+        setState((s) => ({ ...s, notifications: s.notifications.map((n) => n.id === item.id ? { ...n, read: true } : n) }));
       }
-    })();
-    return () => { active = false; };
-  }, [session.email]);
-
-  async function syncAgentCart(
-    addItems: Array<{ productId: string; quantity: number }> | string[] = [],
-    removeProductIds: string[] = [],
-    announce?: string,
-    replaceAll = false
-  ) {
-    if (session.role !== "customer" && !session.email) {
-      const first = addItems[0];
-      const firstId = typeof first === "string" ? first : first?.productId;
-      if (firstId) {
-        try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId: firstId, quantity: 1 })); } catch {}
-      }
-      toast.error("Please sign in to add items to your cart");
-      setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
-      return;
+      setOpen(false);
+      const route = resolveNotificationTarget(item, session, state);
+      executeNotificationNavigation(route, (view) => { if (onNavigate) onNavigate(view); }, Boolean(session), (type, msg) => {
+        if (type === "error") toast.error(msg);
+        else if (type === "warning") toast.warning(msg);
+        else if (type === "success") toast.success(msg);
+        else toast.info(msg);
+      });
     }
 
-    const normalizedAdd: Array<{ productId: string; quantity: number }> = addItems.map((item) =>
-      typeof item === "string" ? { productId: item, quantity: 1 } : item
+    async function respondToFollowRequest(item: Notification, accept: boolean) {
+      if (!item.entityId) return;
+      setBusyRequest(item.id);
+      try {
+        await people.resolveRequest(item.entityId, accept);
+        setState((current) => ({ ...current, notifications: current.notifications.map((notification) => notification.id === item.id ? { ...notification, read: true } : notification) }));
+        toast.success(accept ? "Follow request approved" : "Follow request declined");
+      } catch (error) {
+        toast.error(errorMessage(error, "Follow request could not be updated"));
+      } finally { setBusyRequest(""); }
+    }
+
+    const notificationCard = (item: Notification) => (
+      <div
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => void handleNotificationClick(item)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleNotificationClick(item); } }}
+        className={`group relative rounded-2xl border p-4 cursor-pointer transition-all duration-150 hover:border-[#155F65] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#155F65]/40 active:scale-[0.99] ${item.read ? "bg-white" : "border-[#155F65]/30 bg-[#EAF4F2]"}`}
+      >
+        <div className="flex justify-between gap-3">
+          <b className="text-sm text-[#202827] group-hover:text-[#155F65] transition-colors">{item.title}</b>
+          {!item.read && <span className="mt-1 size-2 rounded-full bg-[#b42332] shrink-0" />}
+        </div>
+        <p className="mt-1 text-sm leading-6 text-stone-600">{item.body}</p>
+        <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+          <span>{item.at}</span>
+          <span className="text-[10px] font-bold text-[#155F65] opacity-0 group-hover:opacity-100 transition-opacity">Open update →</span>
+        </div>
+        {session.role === "customer" && item.entityType === "customer_follow_request" && item.entityId && people?.requests?.some?.((request) => request.id === item.entityId) && (
+          <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+            <Button type="button" size="sm" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, true); }} className="rounded-full bg-[#155F65] font-black text-white">Accept</Button>
+            <Button type="button" size="sm" variant="outline" disabled={busyRequest === item.id} onClick={(e) => { e.stopPropagation(); void respondToFollowRequest(item, false); }} className="rounded-full font-black">Decline</Button>
+          </div>
+        )}
+      </div>
     );
 
-    const own = replaceAll ? [] : state.cart.filter((item) => item.customerEmail === session.email);
-    const existingKitchenVendorId = own.length > 0 ? state.products.find((p) => p.id === own[0].productId)?.vendorId : null;
+    const deviceButton = (
+      <Button
+        type="button"
+        onClick={enable}
+        variant="outline"
+        disabled={deviceStatus === "granted"}
+        className={`mb-5 w-full rounded-xl transition ${deviceStatus === "granted" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : deviceStatus === "denied" ? "border-rose-200 bg-rose-50 text-rose-800" : ""}`}
+      >
+        {deviceStatus === "granted" ? (
+          <><Check className="size-4 text-emerald-600" /><span>Device notifications active</span></>
+        ) : deviceStatus === "denied" ? (
+          <><Bell className="size-4 text-rose-600" /><span>Notifications blocked in settings</span></>
+        ) : deviceStatus === "ios_pwa_required" ? (
+          <><Bell className="size-4" /><span>Add to Home Screen for iOS notifications</span></>
+        ) : (
+          <><Bell className="size-4" /><span>Enable device notifications</span></>
+        )}
+      </Button>
+    );
 
-    if (!replaceAll && existingKitchenVendorId && normalizedAdd.length > 0) {
-      const conflictItem = normalizedAdd.find((item) => {
-        const prod = state.products.find((p) => p.id === item.productId);
-        return prod && prod.vendorId !== existingKitchenVendorId;
-      });
-      if (conflictItem) {
-        const reqProd = state.products.find((p) => p.id === conflictItem.productId);
-        const reqVendor = reqProd ? state.vendors.find((v) => v.id === reqProd.vendorId) : undefined;
-        const currProd = state.products.find((p) => p.id === own[0].productId);
-        const currVendor = currProd ? state.vendors.find((v) => v.id === currProd.vendorId) : undefined;
-        setKitchenConflict({
-          currentVendorName: currVendor?.businessName || "your current kitchen",
-          requestedVendorName: reqVendor?.businessName || "another kitchen",
-          conflictingProductId: conflictItem.productId,
-          requestedQuantity: conflictItem.quantity,
-        });
+    if (page) {
+      return (
+        <div className="mx-auto max-w-3xl space-y-4">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h1 className="text-[28px] font-bold leading-tight">Notifications</h1>
+              <p className="mt-1 text-sm text-[#55656A]">Private updates for {session.email}.</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {deviceButton}
+            <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+            <div className="space-y-3">
+              {items.map(notificationCard)}
+              {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent className="w-full overflow-hidden p-0 sm:max-w-md">
+          <SheetHeader className="shrink-0 border-b bg-[#155F65] p-6 text-left text-white">
+            <SheetTitle className="text-white">Notifications</SheetTitle>
+            <SheetDescription className="text-white/55">Private updates for {session.email}. Vendor and customer events are never mixed.</SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
+            {deviceButton}
+            <button onClick={() => void markAll()} className="mb-3 text-xs font-black text-[#155F65]">Mark all as read</button>
+            <div className="space-y-3">
+              {items.map(notificationCard)}
+              {!items.length && <Empty icon={Bell} title="No notifications" body="Verification, quote, schedule and order updates will appear here." />}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  function notice(recipient: string, recipientRole: Role, title: string, body: string, extra?: { entityType?: string; entityId?: string; href?: string; type?: string }): Notification {
+    return { id: id("NOT"), recipient, recipientRole, title, body, at: now(), read: false, ...extra };
+  }
+  function playNotificationSound() {
+    try {
+      const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const ctx = new AudioContextCtor(); const oscillator = ctx.createOscillator(); const gain = ctx.createGain();
+      oscillator.frequency.value = 880; gain.gain.setValueAtTime(0.0001, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      oscillator.connect(gain); gain.connect(ctx.destination); oscillator.start(); oscillator.stop(ctx.currentTime + 0.36);
+    } catch { /* sound is best-effort and requires browser interaction on some devices */ }
+  }
+  function showDeviceNotification(title: string, body: string) { if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body, icon: "/icon-192.png" }); }
+
+  function findRelevantOrderForComplaint(state: V3State, session: DemoSession): Order | undefined {
+    const orders = state.orders.filter((order) => order.customerEmail === session.email);
+    const delivered = orders.filter((order) => order.status === "Completed" || order.status === "Out for delivery" || order.status === "Ready for pickup");
+    const pool = delivered.length ? delivered : orders;
+    return [...pool].sort((a, b) => b.date.localeCompare(a.date))[0];
+  }
+  function availableCommerceProducts(state: V3State) {
+    return state.products.filter((product) => product.active && product.stock > 0 && state.vendors.some((vendor) => vendor.id === product.vendorId && vendor.verification === "Verified" && vendor.operational === "Active" && vendor.openToday));
+  }
+  function withAgentMemory(state: V3State, email: string, patch: Partial<AgentMemory>): V3State {
+    return { ...state, customers: state.customers.map((customer) => customer.email === email ? { ...customer, agentMemory: { ...customer.agentMemory, ...patch } } : customer) };
+  }
+  function rememberCategory(setState: React.Dispatch<React.SetStateAction<V3State>>, email: string, category: string) {
+    setState((state) => {
+      const existing = state.customers.find((customer) => customer.email === email)?.agentMemory?.favoriteCategories || [];
+      const next = existing.includes(category) ? existing : [...existing, category].slice(-5);
+      return withAgentMemory(state, email, { favoriteCategories: next });
+    });
+  }
+
+  function SheAgent({ page = false, open, setOpen, session, state, setState, navigate }: { page?: boolean; open: boolean; setOpen: (v: boolean) => void; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; navigate: (page: string) => void }) {
+    const customer = state.customers.find((c) => c.email === session.email);
+    const [message, setMessage] = useState("");
+    const [messages, setMessages] = useState<AgentMessage[]>(() => {
+      if (typeof window !== "undefined" && session.email) {
+        try {
+          const stored = sessionStorage.getItem(`sheplates_agent_convo_${session.email}`);
+          if (stored) {
+            const parsed = JSON.parse(stored) as AgentMessage[];
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          }
+        } catch { }
+      }
+      return [{ role: "agent", text: session.role === "customer" ? `Hi ${session.name.split(" ")[0]} 👋 Tell me what you're planning and I'll turn it into a local basket you can review.` : `Hello ${session.name}. I can analyse your ${roleName[session.role].toLowerCase()} workspace and recommend the next action.` }];
+    });
+    const [busy, setBusy] = useState(false);
+    const [awaitingPhoto, setAwaitingPhoto] = useState<{ orderId: string; complaintText: string } | null>(null);
+    const [kitchenConflict, setKitchenConflict] = useState<{ currentVendorName: string; requestedVendorName: string; conflictingProductId: string; requestedQuantity: number } | null>(null);
+    const bottom = useRef<HTMLDivElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const abortRef = useRef<number | null>(null);
+    const conversationIdRef = useRef<string | null>(null);
+    const scope = useMemo(() => scopedContext(session, state), [session, state]);
+    const cartItems = state.cart.filter((item) => item.customerEmail === session.email);
+    const cartTotal = cartItems.reduce((sum, item) => { const product = state.products.find((p) => p.id === item.productId); return sum + (product ? finalPrice(product, state) * item.quantity : 0); }, 0);
+    useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+    useEffect(() => { if (!open) setMessage(""); }, [open]);
+
+    useEffect(() => {
+      if (typeof window !== "undefined" && session.email && messages.length > 0) {
+        try {
+          sessionStorage.setItem(`sheplates_agent_convo_${session.email}`, JSON.stringify(messages));
+        } catch { }
+      }
+    }, [messages, session.email]);
+
+    useEffect(() => {
+      if (session.role === "customer" && session.email) {
+        try {
+          const stored = sessionStorage.getItem("sheplates_pending_cart_action");
+          if (stored) {
+            sessionStorage.removeItem("sheplates_pending_cart_action");
+            const parsed = JSON.parse(stored) as { productId: string; quantity: number };
+            if (parsed?.productId) {
+              void syncAgentCart([parsed], [], "Restored your pending item to basket");
+            }
+          }
+        } catch { }
+      }
+    }, [session.email]);
+
+    useEffect(() => {
+      if (!isLiveSupabaseMode()) return;
+      let active = true;
+      (async () => {
+        try {
+          const token = await getAccessToken();
+          if (!token) return;
+          const res = await fetch("/api/agent", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) return;
+          const data = await res.json() as { conversationId?: string; messages?: Array<{ id: string; role: "user" | "agent"; text: string; productIds?: string[]; intent?: string; basketTotal?: number }> };
+          if (!active) return;
+          if (data.conversationId) {
+            conversationIdRef.current = data.conversationId;
+          }
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(data.messages.map((m) => ({
+              role: m.role,
+              text: m.text,
+              productIds: m.productIds,
+              intent: m.intent,
+              basketTotal: m.basketTotal,
+            })));
+          }
+        } catch {
+          /* Fall back smoothly to default greeting */
+        }
+      })();
+      return () => { active = false; };
+    }, [session.email]);
+
+    async function syncAgentCart(
+      addItems: Array<{ productId: string; quantity: number }> | string[] = [],
+      removeProductIds: string[] = [],
+      announce?: string,
+      replaceAll = false
+    ) {
+      if (session.role !== "customer" && !session.email) {
+        const first = addItems[0];
+        const firstId = typeof first === "string" ? first : first?.productId;
+        if (firstId) {
+          try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId: firstId, quantity: 1 })); } catch { }
+        }
+        toast.error("Please sign in to add items to your cart");
+        setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
         return;
       }
-    }
 
-    const byProduct = new Map(own.map((item) => [item.productId, { ...item }]));
-    for (const add of normalizedAdd) {
-      const product = state.products.find((item) => item.id === add.productId);
-      if (!product) continue;
-      const existing = byProduct.get(add.productId);
-      byProduct.set(
-        add.productId,
-        existing
-          ? { ...existing, quantity: existing.quantity + add.quantity }
-          : { id: id("CRT"), customerEmail: session.email, productId: add.productId, quantity: add.quantity }
+      const normalizedAdd: Array<{ productId: string; quantity: number }> = addItems.map((item) =>
+        typeof item === "string" ? { productId: item, quantity: 1 } : item
       );
-      rememberCategory(setState, session.email, product.category);
-    }
-    for (const productId of removeProductIds) byProduct.delete(productId);
-    const nextOwn = [...byProduct.values()];
-    setState((current) => ({
-      ...current,
-      cart: replaceAll
-        ? nextOwn
-        : [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn],
-    }));
-    if (isLiveSupabaseMode()) {
-      const saved = await syncLiveCart({ items: nextOwn.map((item) => ({ productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId })), createdBy: "she_agent" });
-      if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
-    }
-    if (announce) toast.success(announce);
-  }
 
-  async function startNewCartWithProduct(productId: string, quantity: number, vendorName: string) {
-    await syncAgentCart([{ productId, quantity }], [], `Started new cart with ${vendorName}`, true);
-    setMessages((curr) => [...curr, { role: "agent", text: `Started a fresh basket with items from ${vendorName}. View cart to review.` }]);
-  }
+      const own = replaceAll ? [] : state.cart.filter((item) => item.customerEmail === session.email);
+      const existingKitchenVendorId = own.length > 0 ? state.products.find((p) => p.id === own[0].productId)?.vendorId : null;
 
-  async function addProduct(productId: string, announce = true) {
-    const product = state.products.find((item) => item.id === productId);
-    if (!product) return;
-    if (product.stock <= 0) {
-      toast.error("This item is currently out of stock");
-      return;
-    }
-    if (session.role !== "customer" && !session.email) {
-      try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId, quantity: 1 })); } catch {}
-      toast.error("Please sign in to add items to your cart");
-      setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
-      return;
-    }
-    try { await syncAgentCart([{ productId, quantity: 1 }], [], announce ? `Added ${product.name} to your cart` : undefined); }
-    catch (error) { toast.error(errorMessage(error, "Cart could not be saved")); }
-  }
-  async function addSuggestedBasket(productIds: string[]) {
-    try { await syncAgentCart(productIds, [], `${productIds.length} suggested item${productIds.length === 1 ? "" : "s"} added to your basket`); }
-    catch (error) { toast.error(errorMessage(error, "Basket could not be saved")); }
-  }
-
-  async function submitQualityComplaint(orderId: string, complaintText: string, fileName: string, imageDataUrl: string) {
-    const order = state.orders.find((o) => o.id === orderId); let aiDecision = "I reviewed the photo but could not reach live vision analysis, so this needs a careful manual look."; let confidence = 65; let recommendedRefundAmount = order ? Math.round(order.total * 0.5 * 100) / 100 : 0;
-    try { const token = await getAccessToken(); const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "quality_complaint", message: complaintText, context: { ...scope, order }, imageBase64: imageDataUrl, role: session.role, conversationId: conversationIdRef.current || undefined }) }); const json = await response.json() as { conversationId?: string; result?: { conversationId?: string; summary?: string; recommendedAction?: string; confidence?: number; quality?: { spoilageLikely?: boolean; recommendedRefundPercent?: number } } }; if (response.ok && json.result) { if (json.result.conversationId || json.conversationId) conversationIdRef.current = json.result.conversationId || json.conversationId || null; aiDecision = [json.result.summary, json.result.recommendedAction].filter(Boolean).join(" ") || aiDecision; if (typeof json.result.confidence === "number") confidence = json.result.confidence; const percent = json.result.quality?.recommendedRefundPercent; if (order && typeof percent === "number") recommendedRefundAmount = Math.max(0, Math.min(order.total, Math.round(order.total * (percent / 100) * 100) / 100)); } } catch { /* conservative fallback */ }
-    const cancellation: Cancellation = { id: id("CAN"), orderId, customerEmail: session.email, reason: complaintText, aiDecision, confidence, status: "Awaiting operations", kind: "quality_complaint", recommendedRefundAmount, attachmentName: fileName };
-    const ticket: Ticket = { id: id("TKT"), creatorEmail: session.email, creatorRole: session.role, subject: `Quality complaint — ${orderId}`, description: complaintText, category: "Order", priority: "High", status: "Open", attachmentName: fileName, createdVia: "She Agent", at: now() };
-    setState((current) => withAgentMemory({ ...current, cancellations: [cancellation, ...current.cancellations], tickets: [ticket, ...current.tickets], notifications: [notice("operations@sheplates.demo", "operations", "Quality complaint needs review", `${cancellation.id} for ${orderId} · She Agent suggests ${money(recommendedRefundAmount)}.`), ...current.notifications], audit: [audit(session, "Quality complaint submitted", `${orderId} · photo attached (${fileName})`), ...current.audit] }, session.email, { lastComplaintAt: now() }));
-    setMessages((x) => [...x, { role: "agent", text: `I've reviewed the photo for ${orderId}. ${aiDecision} I sent the evidence and a ${money(recommendedRefundAmount)} refund recommendation to Operations for final approval.` }]);
-  }
-  async function handlePhotoSelected(file: File) { if (!awaitingPhoto) return; const { orderId, complaintText } = awaitingPhoto; setAwaitingPhoto(null); setMessages((x) => [...x, { role: "user", text: `📷 Attached: ${file.name}` }]); setBusy(true); try { const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("The photo could not be read. Please try again.")); reader.readAsDataURL(file); }); await submitQualityComplaint(orderId, complaintText, file.name, dataUrl); } catch (error) { setMessages((x) => [...x, { role: "agent", text: errorMessage(error, "The photo could not be processed. Please try again.") }]); } finally { setBusy(false); } }
-
-  async function send(prefill?: string) {
-    const text = (prefill ?? message).trim();
-    if (!text || busy) return;
-    setMessage("");
-    const userMessage: AgentMessage = { role: "user", text };
-    setMessages((current) => [...current, userMessage]);
-    setBusy(true);
-    try {
-      const token = await getAccessToken();
-      const history = [...messages, userMessage].slice(-12).map((item) => ({ role: item.role, text: item.text, productIds: item.productIds || [] }));
-      // One deadline covers the wait for the first byte and the whole stream, so a stuck answer ends with a message, never a spinner.
-      const controller = new AbortController(); const deadline = window.setTimeout(() => controller.abort(), 90000); abortRef.current = deadline;
-      const response = await fetch("/api/agent", {
-        method: "POST",
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role, conversationId: conversationIdRef.current || undefined }),
-      });
-      type AgentJson = {
-        conversationId?: string;
-        result?: {
-          conversationId?: string;
-          reply?: string;
-          intent?: string;
-          budget?: number;
-          selectedProductIds?: string[];
-          basketProductIds?: string[];
-          basketItems?: Array<{ productId: string; quantity: number }>;
-          kitchenConflict?: {
-            currentVendorName: string;
-            requestedVendorName: string;
-            conflictingProductId: string;
-            requestedQuantity: number;
-          };
-          removeProductIds?: string[];
-          navigateTo?: string;
-          clarifyingQuestion?: string;
-          requiresPhoto?: boolean;
-          targetOrderId?: string;
-          selectableOrders?: SelectableOrder[];
-          createTicket?: boolean;
-          ticketSubject?: string;
-          ticketCategory?: Ticket["category"];
-          ticketPriority?: Ticket["priority"];
-          memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
-        };
-        error?: string;
-      };
-      const streamed = (response.headers.get("content-type") || "").includes("text/event-stream") && Boolean(response.body);
-      const json: AgentJson = streamed
-        ? await readAgentStream(response, (reply) => setMessages((current) => { const last = current[current.length - 1]; return last?.streaming ? [...current.slice(0, -1), { ...last, text: reply }] : [...current, { role: "agent", text: reply, streaming: true }]; })) as AgentJson
-        : await response.json() as AgentJson;
-      if ((!streamed && !response.ok) || !json.result) throw new Error(json.error || "She Agent is temporarily unavailable. Please try again shortly.");
-      const result = json.result;
-      if (result.conversationId || json.conversationId) {
-        conversationIdRef.current = result.conversationId || json.conversationId || null;
-      }
-      if (result.kitchenConflict) {
-        setKitchenConflict(result.kitchenConflict);
-      }
-
-      if (session.role === "customer" && result.memoryUpdates?.length) {
-        const patch: Partial<AgentMemory> = {};
-        for (const memory of result.memoryUpdates) {
-          if (memory.key === "preferred_budget") patch.lastBudget = Number(memory.value) || customer?.agentMemory?.lastBudget;
-          if (memory.key === "favorite_categories") patch.favoriteCategories = memory.value.split(",").map((item) => item.trim()).filter(Boolean);
-          if (memory.key === "favorite_products") patch.favoriteProducts = memory.value.split(",").map((item) => item.trim()).filter(Boolean);
-          if (memory.key === "calorie_target") patch.calorieTarget = Number(memory.value) || undefined;
-          if (memory.key === "protein_preference") patch.minProtein = Number(memory.value) || undefined;
-          if (memory.key === "dietary_preference") patch.preferredDietaryTags = memory.value.split(",").map((item) => item.trim()).filter(Boolean);
-          if (memory.key === "delivery_window") patch.preferredDeliveryPeriod = memory.value;
+      if (!replaceAll && existingKitchenVendorId && normalizedAdd.length > 0) {
+        const conflictItem = normalizedAdd.find((item) => {
+          const prod = state.products.find((p) => p.id === item.productId);
+          return prod && prod.vendorId !== existingKitchenVendorId;
+        });
+        if (conflictItem) {
+          const reqProd = state.products.find((p) => p.id === conflictItem.productId);
+          const reqVendor = reqProd ? state.vendors.find((v) => v.id === reqProd.vendorId) : undefined;
+          const currProd = state.products.find((p) => p.id === own[0].productId);
+          const currVendor = currProd ? state.vendors.find((v) => v.id === currProd.vendorId) : undefined;
+          setKitchenConflict({
+            currentVendorName: currVendor?.businessName || "your current kitchen",
+            requestedVendorName: reqVendor?.businessName || "another kitchen",
+            conflictingProductId: conflictItem.productId,
+            requestedQuantity: conflictItem.quantity,
+          });
+          return;
         }
-        if (Object.keys(patch).length) setState((current) => withAgentMemory(current, session.email, patch));
       }
 
-      const permittedProducts = new Map(state.products.map((product) => [product.id, product]));
-      const selectedProducts = [...new Set(result.selectedProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
-      const basketProducts = [...new Set(result.basketProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
-      const removeIds = new Set((result.removeProductIds || []).filter((productId) => permittedProducts.has(productId)));
-
-
-      if (result.createTicket) {
-        const vendor = session.role === "vendor" ? vendorFor(state, session) : undefined;
-        const ticket: Ticket = {
-          id: id("TKT"),
-          creatorEmail: session.email,
-          creatorRole: session.role,
-          vendorId: vendor?.id,
-          subject: (result.ticketSubject || text).slice(0, 80),
-          description: text,
-          category: result.ticketCategory || "Other",
-          priority: result.ticketPriority || "Normal",
-          status: "Open",
-          createdVia: "She Agent",
-          at: now(),
-        };
-        setState((current) => ({
-          ...current,
-          tickets: [ticket, ...current.tickets],
-          notifications: [notice(session.email, session.role, "Support request created", `${ticket.id} is open.`), notice("operations@sheplates.demo", "operations", "New support request", `${ticket.id}: ${ticket.subject}`), ...current.notifications],
-        }));
+      const byProduct = new Map(own.map((item) => [item.productId, { ...item }]));
+      for (const add of normalizedAdd) {
+        const product = state.products.find((item) => item.id === add.productId);
+        if (!product) continue;
+        const existing = byProduct.get(add.productId);
+        byProduct.set(
+          add.productId,
+          existing
+            ? { ...existing, quantity: existing.quantity + add.quantity }
+            : { id: id("CRT"), customerEmail: session.email, productId: add.productId, quantity: add.quantity }
+        );
+        rememberCategory(setState, session.email, product.category);
       }
-
-      if (session.role === "customer" && result.requiresPhoto) {
-        const order = state.orders.find((item) => item.customerEmail === session.email && (item.id === result.targetOrderId || item.description === result.targetOrderId)) || findRelevantOrderForComplaint(state, session);
-        if (order) setAwaitingPhoto({ orderId: order.id, complaintText: text });
+      for (const productId of removeProductIds) byProduct.delete(productId);
+      const nextOwn = [...byProduct.values()];
+      setState((current) => ({
+        ...current,
+        cart: replaceAll
+          ? nextOwn
+          : [...current.cart.filter((item) => item.customerEmail !== session.email), ...nextOwn],
+      }));
+      if (isLiveSupabaseMode()) {
+        const saved = await syncLiveCart({ items: nextOwn.map((item) => ({ productId: item.productId, quantity: item.quantity, foodDropId: item.foodDropId })), createdBy: "she_agent" });
+        if (saved.snapshot) setState((current) => mergeLiveCommerce(current, saved.snapshot as LiveCommerceStateSnapshot, session));
       }
-
-      const destination = result.navigateTo || "";
-      if (destination && nav[session.role].includes(destination)) {
-        navigate(destination);
-        if (destination !== "Marketplace") setOpen(false);
-      }
-
-      const productIds = selectedProducts.map((product) => product.id);
-      const basketTotal = result.intent === "recommend" && selectedProducts.length ? selectedProducts.reduce((sum, product) => sum + finalPrice(product, state), 0) : undefined;
-      let reply = result.clarifyingQuestion?.trim() || result.reply?.trim() || "I couldn't complete that request just now. Please try again.";
-      if (result.requiresPhoto && awaitingPhoto === null) reply = `${reply} You can attach the photo below.`;
-      setMessages((current) => [
-        ...current.filter((m) => !m.streaming),
-        {
-          role: "agent",
-          text: reply,
-          productIds: productIds.length ? productIds : undefined,
-          basketTotal,
-          intent: result.intent,
-          targetOrderId: typeof result.targetOrderId === "string" ? result.targetOrderId : undefined,
-          selectableOrders: Array.isArray(result.selectableOrders) ? (result.selectableOrders as SelectableOrder[]) : undefined,
-        },
-      ]);
-      // The reply is already on screen. Saving the basket is a network round trip, so it must not hold the answer back.
-      setBusy(false);
-      const basketAdditions: Array<{ productId: string; quantity: number }> =
-        result.basketItems && result.basketItems.length > 0
-          ? result.basketItems
-          : basketProducts.map((product) => ({ productId: product.id, quantity: 1 }));
-
-      if (basketAdditions.length || removeIds.size) {
-        try { await syncAgentCart(basketAdditions, [...removeIds]); }
-        catch (error) { toast.error(errorMessage(error, "Your basket could not be saved. Please try again")); }
-      }
-    } catch (error) {
-      const timedOut = error instanceof DOMException && error.name === "AbortError";
-      const errMsg = timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.");
-      setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: errMsg, isError: true, retryText: text }]);
-    } finally {
-      if (abortRef.current !== null) { window.clearTimeout(abortRef.current); abortRef.current = null; }
-      setBusy(false);
+      if (announce) toast.success(announce);
     }
-  }
 
-  if (!open) return null;
-  const scopeCopy = session.role === "customer" ? "Uses only your profile, nearby catalogue, basket, schedules and orders." : session.role === "vendor" ? "Uses only your vendor catalogue, staff and orders." : "Uses authorised platform operational data.";
-  return <div className={page ? "k-agent-page" : "fixed inset-0 z-70 sm:pointer-events-none"}>{!page && <button onClick={() => setOpen(false)} className="absolute inset-0 bg-[#202827]/35 backdrop-blur-[2px] sm:hidden" aria-label="Close She Agent" />}<section className="sp-agent-panel pointer-events-auto absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/60 bg-[#EEF2F2] shadow-[0_-20px_80px_rgba(25, 19, 21,.22)] sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(790px,calc(100vh-36px))] sm:w-120 sm:rounded-4xl sm:shadow-[0_24px_90px_rgba(25, 19, 21,.28)]">
-    <div className="relative overflow-hidden bg-[#155F65] px-5 pb-5 pt-5 text-white"><div className="absolute -right-12 -top-16 size-44 rounded-full bg-[#155F65]/30 blur-3xl" /><div className="absolute -bottom-20 left-12 size-40 rounded-full bg-[#b42332]/20 blur-3xl" /><div className="relative flex items-center gap-3"><div className="sp-agent-orb sp-agent-orb-large relative grid size-12 place-items-center rounded-[18px] text-white"><Activity className="size-5" /><span className="sp-agent-orb-status absolute -right-1 -top-1 size-3 rounded-full" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="text-lg font-black">She Agent</h2><span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-white/70">Commerce assistant</span></div><p className="mt-0.5 truncate text-xs text-white/55">{session.role === "customer" ? "Your local shopping copilot" : `${roleName[session.role]} copilot`}</p></div><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10 transition hover:bg-white/15" aria-label="Close"><X className="size-4" /></button></div>{session.role === "customer" && <div className="relative mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs"><ShoppingCart className="size-4 text-[#155F65]" /><span className="font-bold">Review basket</span><span className="text-white/45">{cartItems.length} item{cartItems.length === 1 ? "" : "s"}</span><span className="ml-auto font-black">{money(cartTotal)}</span>{cartItems.length > 0 && <button onClick={() => { navigate("Cart"); if (!page) setOpen(false); }} className="rounded-lg bg-white px-2.5 py-1.5 font-black text-[#202827]">View</button>}</div>}</div>
-    <div className="border-b border-stone-200/70 bg-white/80 px-5 py-3 text-[11px] font-semibold leading-5 text-stone-500 backdrop-blur"><ShieldCheck className="mr-1.5 inline size-3.5 text-[#155F65]" />{scopeCopy} Sensitive payments, refunds and approvals remain human-confirmed.</div>
-    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">{messages.length === 1 && session.role === "customer" && <div className="mb-5 grid grid-cols-2 gap-2">{[["Nearby now", "What products are available near me?"], ["Plan for me", "Plan something useful for me today"], ["Food preferences", "Show options that fit my preferences"], ["Track order", "Where is my next order?"]].map(([label, prompt]) => <button key={label} onClick={() => void send(prompt)} className="surface-card rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#155F65]/40 hover:shadow-md"><Sparkles className="size-4 text-[#155F65]" /><div className="mt-2 text-xs font-black">{label}</div><div className="mt-1 text-[10px] leading-4 text-stone-400">{prompt}</div></button>)}</div>}<div className="space-y-4">{messages.map((item, index) => <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] ${item.role === "user" ? "rounded-[22px_22px_8px_22px] bg-[#155F65] text-white shadow-[0_16px_36px_rgba(22, 17, 18,.18)]" : "rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 text-stone-700 shadow-[0_16px_40px_rgba(35,26,21,.08)]"} px-4 py-3 text-sm leading-6`}><div>{item.text}</div>{item.productIds?.length ? <div className="mt-3 space-y-2">{item.productIds.map((productId) => { const product = state.products.find((p) => p.id === productId); const vendor = product ? state.vendors.find((v) => v.id === product.vendorId) : undefined; if (!product) return null; const inCart = state.cart.some((x) => x.customerEmail === session.email && x.productId === product.id); const isOutOfStock = product.stock <= 0; return <div key={product.id} className="surface-card-muted rounded-[22px] p-3"><div className="flex items-center gap-3"><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-sm ring-1 ring-stone-100" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{product.name}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{vendor?.businessName || "Verified kitchen"} · <span className="font-semibold text-stone-700">{product.baseUnit}</span></div><div className="mt-1 flex items-center gap-2"><span className="text-sm font-black text-[#202827]">{money(finalPrice(product, state))}</span><span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold ${!isOutOfStock ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{!isOutOfStock ? (product.stock <= 5 ? `Only ${product.stock} left` : "In stock") : "Out of stock"}</span></div></div><button type="button" disabled={isOutOfStock} onClick={() => void addProduct(product.id)} className={`grid min-w-16 place-items-center rounded-xl px-2.5 py-2 text-[11px] font-black ${isOutOfStock ? "cursor-not-allowed bg-stone-200 text-stone-400" : inCart ? "bg-[#0F4A4F] text-white" : "bg-[#155F65] text-white transition hover:bg-[#0F4A4F]"}`}>{isOutOfStock ? "Sold out" : inCart ? "Add +" : "+ Add"}</button></div></div>; })}{item.basketTotal !== undefined && <div className="flex items-center justify-between gap-2 pt-1"><span className="text-[11px] font-bold text-stone-400">Suggested total {money(item.basketTotal)}</span><button onClick={() => void addSuggestedBasket(item.productIds || [])} className="rounded-xl bg-[#155F65] px-3 py-2 text-[11px] font-black text-white">Add suggested basket</button></div>}</div> : null}{item.selectableOrders?.length ? <div className="mt-3 space-y-2"><div className="text-[11px] font-bold text-stone-500">Other active orders:</div>{item.selectableOrders.map((ord) => <button type="button" onClick={() => void send(`Track order #${ord.orderNumber}`)} key={ord.id} className="surface-card-muted flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]"><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{ord.productNames.join(", ") || ord.orderNumber}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{ord.vendorName} · {ord.date}{ord.slot ? ` · ${ord.slot}` : ""}</div><div className="mt-1 text-xs font-bold text-[#155F65]">{ord.status}</div></div><div className="text-right"><div className="text-xs font-black text-[#202827]">{money(ord.total)}</div><span className="mt-1 inline-block rounded-lg bg-[#155F65] px-2 py-1 text-[10px] font-bold text-white">Track</span></div></button>)}</div> : null}{(item.text.includes("View cart") || item.text.includes("கூடையைப் பார்க்கவும்") || item.intent === "view_basket" || item.intent === "add_to_basket") && <div className="mt-2.5"><button type="button" onClick={() => { navigate("Cart"); if (!page) setOpen(false); }} className="inline-flex items-center gap-1.5 rounded-xl bg-[#155F65] px-3 py-1.5 text-xs font-black text-white shadow-xs transition hover:bg-[#0F4A4F]"><ShoppingCart className="size-3.5" />View cart</button></div>}{item.isError && item.retryText && <div className="mt-2.5"><button type="button" onClick={() => void send(item.retryText)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"><Sparkles className="size-3.5" />Try again</button></div>}</div></div>)}{kitchenConflict && <div className="surface-card rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 shadow-sm"><div className="flex items-center gap-1.5 font-black text-amber-900"><ShieldCheck className="size-4 text-amber-600" />One kitchen per order</div><p className="mt-1 leading-5">Your cart currently has items from <b>{kitchenConflict.currentVendorName}</b>. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { const currName = kitchenConflict.currentVendorName; setKitchenConflict(null); setMessages((curr) => [...curr, { role: "agent", text: `Kept your current basket from ${currName}.` }]); }} className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 font-bold text-amber-900 shadow-2xs hover:bg-amber-100">Keep current cart</button><button type="button" onClick={async () => { const { conflictingProductId, requestedQuantity, requestedVendorName } = kitchenConflict; setKitchenConflict(null); await startNewCartWithProduct(conflictingProductId, requestedQuantity, requestedVendorName); }} className="rounded-xl bg-[#155F65] px-3 py-1.5 font-black text-white shadow-2xs hover:bg-[#0F4A4F]">Start new cart with {kitchenConflict.requestedVendorName}</button></div></div>}{busy && !messages.some((m) => m.streaming) && <div className="flex justify-start"><div className="inline-flex items-center gap-2 rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 px-4 py-3 text-sm text-stone-500 shadow-[0_14px_36px_rgba(35,26,21,.08)]"><span className="flex gap-1"><span className="size-1.5 animate-bounce rounded-full bg-[#155F65]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:120ms]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:240ms]" /></span>Working on the best options…</div></div>}<div ref={bottom} /></div></div>
-    <div className="border-t border-stone-200/80 bg-white/96 p-3.5 backdrop-blur sm:p-4"><input ref={fileInputRef} type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handlePhotoSelected(file); e.target.value = ""; }} />{awaitingPhoto && <div className="mb-3 flex gap-2"><Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1 rounded-xl border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"><ImageUp />Attach photo for {awaitingPhoto.orderId}</Button><Button type="button" variant="ghost" onClick={() => setAwaitingPhoto(null)} className="rounded-xl">Cancel</Button></div>}<div className="mb-3 flex gap-2 overflow-x-auto pb-1">{agentPrompts(session.role).map((prompt) => <button key={prompt} onClick={() => void send(prompt)} disabled={busy} className="whitespace-nowrap rounded-full border border-stone-200 bg-[#EEF2F2] px-3 py-2 text-[11px] font-bold text-stone-600 transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]">{prompt}</button>)}</div><div className="flex items-end gap-2 rounded-[20px] border border-stone-200 bg-[#EEF2F2] p-2 focus-within:border-[#155F65]/50 focus-within:ring-4 focus-within:ring-[#155F65]/10"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder={session.role === "customer" ? "Ask naturally about food, products, orders or your plans…" : "Ask She Agent…"} className="min-h-10 max-h-28 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0" /><Button onClick={() => void send()} disabled={busy || !message.trim()} className="size-10 shrink-0 rounded-xl bg-[#155F65] p-0 hover:bg-[#0F4A4F]" aria-label="Send"><Send className="size-4" /></Button></div><p className="mt-2 px-1 text-[10px] leading-4 text-stone-400">She Agent can prepare and modify a proposal. You confirm checkout, payment and sensitive actions.</p></div>
-  </section></div>;
-}
-function scopedContext(session: DemoSession, state: V3State) {
-  if (session.role === "customer") return {
-    scope: "customer_self",
-    profile: state.customers.find((x) => x.email === session.email),
-    cart: state.cart.filter((x) => x.customerEmail === session.email),
-    tickets: state.tickets.filter((x) => x.creatorEmail === session.email),
-    schedules: state.schedules.filter((x) => x.customerEmail === session.email),
-    orders: state.orders.filter((x) => x.customerEmail === session.email),
-    requirements: state.requirements.filter((x) => x.customerEmail === session.email),
-    quotations: state.quotes.filter((quote) => state.requirements.some((requirement) => requirement.id === quote.requirementId && requirement.customerEmail === session.email)),
-    availableProducts: state.products.filter((product) => state.vendors.some((vendor) => vendor.id === product.vendorId && vendor.verification === "Verified" && vendor.openToday)),
-    vendors: state.vendors.filter((vendor) => vendor.verification === "Verified" && vendor.openToday),
-  };
-  if (session.role === "vendor") {
-    const vendor = vendorFor(state, session);
-    const isPaidOrFoodDrop = (x: Order) => (x.payment === "Paid" && x.status !== "Awaiting payment") || Boolean(x.foodDropId) || x.paymentProvider === "food_drop_pickup";
-    const isScheduleActiveForVendor = (x: Order) => {
-      if (!x.scheduleId) return true;
-      const sched = state.schedules.find((s) => s.id === x.scheduleId);
-      return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
+    async function startNewCartWithProduct(productId: string, quantity: number, vendorName: string) {
+      await syncAgentCart([{ productId, quantity }], [], `Started new cart with ${vendorName}`, true);
+      setMessages((curr) => [...curr, { role: "agent", text: `Started a fresh basket with items from ${vendorName}. View cart to review.` }]);
+    }
+
+    async function addProduct(productId: string, announce = true) {
+      const product = state.products.find((item) => item.id === productId);
+      if (!product) return;
+      if (product.stock <= 0) {
+        toast.error("This item is currently out of stock");
+        return;
+      }
+      if (session.role !== "customer" && !session.email) {
+        try { sessionStorage.setItem("sheplates_pending_cart_action", JSON.stringify({ productId, quantity: 1 })); } catch { }
+        toast.error("Please sign in to add items to your cart");
+        setMessages((curr) => [...curr, { role: "agent", text: "Please sign in to add items to your cart and place orders." }]);
+        return;
+      }
+      try { await syncAgentCart([{ productId, quantity: 1 }], [], announce ? `Added ${product.name} to your cart` : undefined); }
+      catch (error) { toast.error(errorMessage(error, "Cart could not be saved")); }
+    }
+    async function addSuggestedBasket(productIds: string[]) {
+      try { await syncAgentCart(productIds, [], `${productIds.length} suggested item${productIds.length === 1 ? "" : "s"} added to your basket`); }
+      catch (error) { toast.error(errorMessage(error, "Basket could not be saved")); }
+    }
+
+    async function submitQualityComplaint(orderId: string, complaintText: string, fileName: string, imageDataUrl: string) {
+      const order = state.orders.find((o) => o.id === orderId); let aiDecision = "I reviewed the photo but could not reach live vision analysis, so this needs a careful manual look."; let confidence = 65; let recommendedRefundAmount = order ? Math.round(order.total * 0.5 * 100) / 100 : 0;
+      try { const token = await getAccessToken(); const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ task: "quality_complaint", message: complaintText, context: { ...scope, order }, imageBase64: imageDataUrl, role: session.role, conversationId: conversationIdRef.current || undefined }) }); const json = await response.json() as { conversationId?: string; result?: { conversationId?: string; summary?: string; recommendedAction?: string; confidence?: number; quality?: { spoilageLikely?: boolean; recommendedRefundPercent?: number } } }; if (response.ok && json.result) { if (json.result.conversationId || json.conversationId) conversationIdRef.current = json.result.conversationId || json.conversationId || null; aiDecision = [json.result.summary, json.result.recommendedAction].filter(Boolean).join(" ") || aiDecision; if (typeof json.result.confidence === "number") confidence = json.result.confidence; const percent = json.result.quality?.recommendedRefundPercent; if (order && typeof percent === "number") recommendedRefundAmount = Math.max(0, Math.min(order.total, Math.round(order.total * (percent / 100) * 100) / 100)); } } catch { /* conservative fallback */ }
+      const cancellation: Cancellation = { id: id("CAN"), orderId, customerEmail: session.email, reason: complaintText, aiDecision, confidence, status: "Awaiting operations", kind: "quality_complaint", recommendedRefundAmount, attachmentName: fileName };
+      const ticket: Ticket = { id: id("TKT"), creatorEmail: session.email, creatorRole: session.role, subject: `Quality complaint — ${orderId}`, description: complaintText, category: "Order", priority: "High", status: "Open", attachmentName: fileName, createdVia: "She Agent", at: now() };
+      setState((current) => withAgentMemory({ ...current, cancellations: [cancellation, ...current.cancellations], tickets: [ticket, ...current.tickets], notifications: [notice("operations@sheplates.demo", "operations", "Quality complaint needs review", `${cancellation.id} for ${orderId} · She Agent suggests ${money(recommendedRefundAmount)}.`), ...current.notifications], audit: [audit(session, "Quality complaint submitted", `${orderId} · photo attached (${fileName})`), ...current.audit] }, session.email, { lastComplaintAt: now() }));
+      setMessages((x) => [...x, { role: "agent", text: `I've reviewed the photo for ${orderId}. ${aiDecision} I sent the evidence and a ${money(recommendedRefundAmount)} refund recommendation to Operations for final approval.` }]);
+    }
+    async function handlePhotoSelected(file: File) { if (!awaitingPhoto) return; const { orderId, complaintText } = awaitingPhoto; setAwaitingPhoto(null); setMessages((x) => [...x, { role: "user", text: `📷 Attached: ${file.name}` }]); setBusy(true); try { const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("The photo could not be read. Please try again.")); reader.readAsDataURL(file); }); await submitQualityComplaint(orderId, complaintText, file.name, dataUrl); } catch (error) { setMessages((x) => [...x, { role: "agent", text: errorMessage(error, "The photo could not be processed. Please try again.") }]); } finally { setBusy(false); } }
+
+    async function send(prefill?: string) {
+      const text = (prefill ?? message).trim();
+      if (!text || busy) return;
+      setMessage("");
+      const userMessage: AgentMessage = { role: "user", text };
+      setMessages((current) => [...current, userMessage]);
+      setBusy(true);
+      try {
+        const token = await getAccessToken();
+        const history = [...messages, userMessage].slice(-12).map((item) => ({ role: item.role, text: item.text, productIds: item.productIds || [] }));
+        // One deadline covers the wait for the first byte and the whole stream, so a stuck answer ends with a message, never a spinner.
+        const controller = new AbortController(); const deadline = window.setTimeout(() => controller.abort(), 90000); abortRef.current = deadline;
+        const response = await fetch("/api/agent", {
+          method: "POST",
+          signal: controller.signal,
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ task: "commerce", message: text, context: isLiveSupabaseMode() ? undefined : scope, history, role: session.role, conversationId: conversationIdRef.current || undefined }),
+        });
+        type AgentJson = {
+          conversationId?: string;
+          result?: {
+            conversationId?: string;
+            reply?: string;
+            intent?: string;
+            budget?: number;
+            selectedProductIds?: string[];
+            basketProductIds?: string[];
+            basketItems?: Array<{ productId: string; quantity: number }>;
+            kitchenConflict?: {
+              currentVendorName: string;
+              requestedVendorName: string;
+              conflictingProductId: string;
+              requestedQuantity: number;
+            };
+            removeProductIds?: string[];
+            navigateTo?: string;
+            clarifyingQuestion?: string;
+            requiresPhoto?: boolean;
+            targetOrderId?: string;
+            selectableOrders?: SelectableOrder[];
+            createTicket?: boolean;
+            ticketSubject?: string;
+            ticketCategory?: Ticket["category"];
+            ticketPriority?: Ticket["priority"];
+            memoryUpdates?: Array<{ key: string; value: string; confidence: number }>;
+          };
+          error?: string;
+        };
+        const streamed = (response.headers.get("content-type") || "").includes("text/event-stream") && Boolean(response.body);
+        const json: AgentJson = streamed
+          ? await readAgentStream(response, (reply) => setMessages((current) => { const last = current[current.length - 1]; return last?.streaming ? [...current.slice(0, -1), { ...last, text: reply }] : [...current, { role: "agent", text: reply, streaming: true }]; })) as AgentJson
+          : await response.json() as AgentJson;
+        if ((!streamed && !response.ok) || !json.result) throw new Error(json.error || "She Agent is temporarily unavailable. Please try again shortly.");
+        const result = json.result;
+        if (result.conversationId || json.conversationId) {
+          conversationIdRef.current = result.conversationId || json.conversationId || null;
+        }
+        if (result.kitchenConflict) {
+          setKitchenConflict(result.kitchenConflict);
+        }
+
+        if (session.role === "customer" && result.memoryUpdates?.length) {
+          const patch: Partial<AgentMemory> = {};
+          for (const memory of result.memoryUpdates) {
+            if (memory.key === "preferred_budget") patch.lastBudget = Number(memory.value) || customer?.agentMemory?.lastBudget;
+            if (memory.key === "favorite_categories") patch.favoriteCategories = memory.value.split(",").map((item) => item.trim()).filter(Boolean);
+            if (memory.key === "favorite_products") patch.favoriteProducts = memory.value.split(",").map((item) => item.trim()).filter(Boolean);
+            if (memory.key === "calorie_target") patch.calorieTarget = Number(memory.value) || undefined;
+            if (memory.key === "protein_preference") patch.minProtein = Number(memory.value) || undefined;
+            if (memory.key === "dietary_preference") patch.preferredDietaryTags = memory.value.split(",").map((item) => item.trim()).filter(Boolean);
+            if (memory.key === "delivery_window") patch.preferredDeliveryPeriod = memory.value;
+          }
+          if (Object.keys(patch).length) setState((current) => withAgentMemory(current, session.email, patch));
+        }
+
+        const permittedProducts = new Map(state.products.map((product) => [product.id, product]));
+        const selectedProducts = [...new Set(result.selectedProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
+        const basketProducts = [...new Set(result.basketProductIds || [])].map((productId) => permittedProducts.get(productId)).filter((product): product is Product => Boolean(product)).slice(0, 8);
+        const removeIds = new Set((result.removeProductIds || []).filter((productId) => permittedProducts.has(productId)));
+
+
+        if (result.createTicket) {
+          const vendor = session.role === "vendor" ? vendorFor(state, session) : undefined;
+          const ticket: Ticket = {
+            id: id("TKT"),
+            creatorEmail: session.email,
+            creatorRole: session.role,
+            vendorId: vendor?.id,
+            subject: (result.ticketSubject || text).slice(0, 80),
+            description: text,
+            category: result.ticketCategory || "Other",
+            priority: result.ticketPriority || "Normal",
+            status: "Open",
+            createdVia: "She Agent",
+            at: now(),
+          };
+          setState((current) => ({
+            ...current,
+            tickets: [ticket, ...current.tickets],
+            notifications: [notice(session.email, session.role, "Support request created", `${ticket.id} is open.`), notice("operations@sheplates.demo", "operations", "New support request", `${ticket.id}: ${ticket.subject}`), ...current.notifications],
+          }));
+        }
+
+        if (session.role === "customer" && result.requiresPhoto) {
+          const order = state.orders.find((item) => item.customerEmail === session.email && (item.id === result.targetOrderId || item.description === result.targetOrderId)) || findRelevantOrderForComplaint(state, session);
+          if (order) setAwaitingPhoto({ orderId: order.id, complaintText: text });
+        }
+
+        const destination = result.navigateTo || "";
+        if (destination && nav[session.role].includes(destination)) {
+          navigate(destination);
+          if (destination !== "Marketplace") setOpen(false);
+        }
+
+        const productIds = selectedProducts.map((product) => product.id);
+        const basketTotal = result.intent === "recommend" && selectedProducts.length ? selectedProducts.reduce((sum, product) => sum + finalPrice(product, state), 0) : undefined;
+        let reply = result.clarifyingQuestion?.trim() || result.reply?.trim() || "I couldn't complete that request just now. Please try again.";
+        if (result.requiresPhoto && awaitingPhoto === null) reply = `${reply} You can attach the photo below.`;
+        setMessages((current) => [
+          ...current.filter((m) => !m.streaming),
+          {
+            role: "agent",
+            text: reply,
+            productIds: productIds.length ? productIds : undefined,
+            basketTotal,
+            intent: result.intent,
+            targetOrderId: typeof result.targetOrderId === "string" ? result.targetOrderId : undefined,
+            selectableOrders: Array.isArray(result.selectableOrders) ? (result.selectableOrders as SelectableOrder[]) : undefined,
+          },
+        ]);
+        // The reply is already on screen. Saving the basket is a network round trip, so it must not hold the answer back.
+        setBusy(false);
+        const basketAdditions: Array<{ productId: string; quantity: number }> =
+          result.basketItems && result.basketItems.length > 0
+            ? result.basketItems
+            : basketProducts.map((product) => ({ productId: product.id, quantity: 1 }));
+
+        if (basketAdditions.length || removeIds.size) {
+          try { await syncAgentCart(basketAdditions, [...removeIds]); }
+          catch (error) { toast.error(errorMessage(error, "Your basket could not be saved. Please try again")); }
+        }
+      } catch (error) {
+        const timedOut = error instanceof DOMException && error.name === "AbortError";
+        const errMsg = timedOut ? "She Agent is taking longer than usual. Please try again in a moment." : errorMessage(error, "She Agent is temporarily unavailable. Please try again shortly.");
+        setMessages((current) => [...current.filter((m) => !m.streaming), { role: "agent", text: errMsg, isError: true, retryText: text }]);
+      } finally {
+        if (abortRef.current !== null) { window.clearTimeout(abortRef.current); abortRef.current = null; }
+        setBusy(false);
+      }
+    }
+
+    if (!open) return null;
+    const scopeCopy = session.role === "customer" ? "Uses only your profile, nearby catalogue, basket, schedules and orders." : session.role === "vendor" ? "Uses only your vendor catalogue, staff and orders." : "Uses authorised platform operational data.";
+    return <div className={page ? "k-agent-page" : "fixed inset-0 z-70 sm:pointer-events-none"}>{!page && <button onClick={() => setOpen(false)} className="absolute inset-0 bg-[#202827]/35 backdrop-blur-[2px] sm:hidden" aria-label="Close She Agent" />}<section className="sp-agent-panel pointer-events-auto absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/60 bg-[#EEF2F2] shadow-[0_-20px_80px_rgba(25, 19, 21,.22)] sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(790px,calc(100vh-36px))] sm:w-120 sm:rounded-4xl sm:shadow-[0_24px_90px_rgba(25, 19, 21,.28)]">
+      <div className="relative overflow-hidden bg-[#155F65] px-5 pb-5 pt-5 text-white"><div className="absolute -right-12 -top-16 size-44 rounded-full bg-[#155F65]/30 blur-3xl" /><div className="absolute -bottom-20 left-12 size-40 rounded-full bg-[#b42332]/20 blur-3xl" /><div className="relative flex items-center gap-3"><div className="sp-agent-orb sp-agent-orb-large relative grid size-12 place-items-center rounded-[18px] text-white"><Activity className="size-5" /><span className="sp-agent-orb-status absolute -right-1 -top-1 size-3 rounded-full" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="text-lg font-black">She Agent</h2><span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-white/70">Commerce assistant</span></div><p className="mt-0.5 truncate text-xs text-white/55">{session.role === "customer" ? "Your local shopping copilot" : `${roleName[session.role]} copilot`}</p></div><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full bg-white/10 transition hover:bg-white/15" aria-label="Close"><X className="size-4" /></button></div>{session.role === "customer" && <div className="relative mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs"><ShoppingCart className="size-4 text-[#155F65]" /><span className="font-bold">Review basket</span><span className="text-white/45">{cartItems.length} item{cartItems.length === 1 ? "" : "s"}</span><span className="ml-auto font-black">{money(cartTotal)}</span>{cartItems.length > 0 && <button onClick={() => { navigate("Cart"); if (!page) setOpen(false); }} className="rounded-lg bg-white px-2.5 py-1.5 font-black text-[#202827]">View</button>}</div>}</div>
+      <div className="border-b border-stone-200/70 bg-white/80 px-5 py-3 text-[11px] font-semibold leading-5 text-stone-500 backdrop-blur"><ShieldCheck className="mr-1.5 inline size-3.5 text-[#155F65]" />{scopeCopy} Sensitive payments, refunds and approvals remain human-confirmed.</div>
+      <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">{messages.length === 1 && session.role === "customer" && <div className="mb-5 grid grid-cols-2 gap-2">{[["Nearby now", "What products are available near me?"], ["Plan for me", "Plan something useful for me today"], ["Food preferences", "Show options that fit my preferences"], ["Track order", "Where is my next order?"]].map(([label, prompt]) => <button key={label} onClick={() => void send(prompt)} className="surface-card rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#155F65]/40 hover:shadow-md"><Sparkles className="size-4 text-[#155F65]" /><div className="mt-2 text-xs font-black">{label}</div><div className="mt-1 text-[10px] leading-4 text-stone-400">{prompt}</div></button>)}</div>}<div className="space-y-4">{messages.map((item, index) => <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] ${item.role === "user" ? "rounded-[22px_22px_8px_22px] bg-[#155F65] text-white shadow-[0_16px_36px_rgba(22, 17, 18,.18)]" : "rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 text-stone-700 shadow-[0_16px_40px_rgba(35,26,21,.08)]"} px-4 py-3 text-sm leading-6`}><div>{item.text}</div>{item.productIds?.length ? <div className="mt-3 space-y-2">{item.productIds.map((productId) => { const product = state.products.find((p) => p.id === productId); const vendor = product ? state.vendors.find((v) => v.id === product.vendorId) : undefined; if (!product) return null; const inCart = state.cart.some((x) => x.customerEmail === session.email && x.productId === product.id); const isOutOfStock = product.stock <= 0; return <div key={product.id} className="surface-card-muted rounded-[22px] p-3"><div className="flex items-center gap-3"><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-sm ring-1 ring-stone-100" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{product.name}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{vendor?.businessName || "Verified kitchen"} · <span className="font-semibold text-stone-700">{product.baseUnit}</span></div><div className="mt-1 flex items-center gap-2"><span className="text-sm font-black text-[#202827]">{money(finalPrice(product, state))}</span><span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold ${!isOutOfStock ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{!isOutOfStock ? (product.stock <= 5 ? `Only ${product.stock} left` : "In stock") : "Out of stock"}</span></div></div><button type="button" disabled={isOutOfStock} onClick={() => void addProduct(product.id)} className={`grid min-w-16 place-items-center rounded-xl px-2.5 py-2 text-[11px] font-black ${isOutOfStock ? "cursor-not-allowed bg-stone-200 text-stone-400" : inCart ? "bg-[#0F4A4F] text-white" : "bg-[#155F65] text-white transition hover:bg-[#0F4A4F]"}`}>{isOutOfStock ? "Sold out" : inCart ? "Add +" : "+ Add"}</button></div></div>; })}{item.basketTotal !== undefined && <div className="flex items-center justify-between gap-2 pt-1"><span className="text-[11px] font-bold text-stone-400">Suggested total {money(item.basketTotal)}</span><button onClick={() => void addSuggestedBasket(item.productIds || [])} className="rounded-xl bg-[#155F65] px-3 py-2 text-[11px] font-black text-white">Add suggested basket</button></div>}</div> : null}{item.selectableOrders?.length ? <div className="mt-3 space-y-2"><div className="text-[11px] font-bold text-stone-500">Other active orders:</div>{item.selectableOrders.map((ord) => <button type="button" onClick={() => void send(`Track order #${ord.orderNumber}`)} key={ord.id} className="surface-card-muted flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]"><div className="min-w-0 flex-1"><div className="truncate text-xs font-black text-[#202827]">{ord.productNames.join(", ") || ord.orderNumber}</div><div className="mt-0.5 truncate text-[10px] text-stone-500">{ord.vendorName} · {ord.date}{ord.slot ? ` · ${ord.slot}` : ""}</div><div className="mt-1 text-xs font-bold text-[#155F65]">{ord.status}</div></div><div className="text-right"><div className="text-xs font-black text-[#202827]">{money(ord.total)}</div><span className="mt-1 inline-block rounded-lg bg-[#155F65] px-2 py-1 text-[10px] font-bold text-white">Track</span></div></button>)}</div> : null}{(item.text.includes("View cart") || item.text.includes("கூடையைப் பார்க்கவும்") || item.intent === "view_basket" || item.intent === "add_to_basket") && <div className="mt-2.5"><button type="button" onClick={() => { navigate("Cart"); if (!page) setOpen(false); }} className="inline-flex items-center gap-1.5 rounded-xl bg-[#155F65] px-3 py-1.5 text-xs font-black text-white shadow-xs transition hover:bg-[#0F4A4F]"><ShoppingCart className="size-3.5" />View cart</button></div>}{item.isError && item.retryText && <div className="mt-2.5"><button type="button" onClick={() => void send(item.retryText)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"><Sparkles className="size-3.5" />Try again</button></div>}</div></div>)}{kitchenConflict && <div className="surface-card rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 shadow-sm"><div className="flex items-center gap-1.5 font-black text-amber-900"><ShieldCheck className="size-4 text-amber-600" />One kitchen per order</div><p className="mt-1 leading-5">Your cart currently has items from <b>{kitchenConflict.currentVendorName}</b>. Sheplates delivers from one kitchen per order to ensure hot, fresh delivery.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { const currName = kitchenConflict.currentVendorName; setKitchenConflict(null); setMessages((curr) => [...curr, { role: "agent", text: `Kept your current basket from ${currName}.` }]); }} className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 font-bold text-amber-900 shadow-2xs hover:bg-amber-100">Keep current cart</button><button type="button" onClick={async () => { const { conflictingProductId, requestedQuantity, requestedVendorName } = kitchenConflict; setKitchenConflict(null); await startNewCartWithProduct(conflictingProductId, requestedQuantity, requestedVendorName); }} className="rounded-xl bg-[#155F65] px-3 py-1.5 font-black text-white shadow-2xs hover:bg-[#0F4A4F]">Start new cart with {kitchenConflict.requestedVendorName}</button></div></div>}{busy && !messages.some((m) => m.streaming) && <div className="flex justify-start"><div className="inline-flex items-center gap-2 rounded-[22px_22px_22px_8px] border border-stone-200/80 bg-white/96 px-4 py-3 text-sm text-stone-500 shadow-[0_14px_36px_rgba(35,26,21,.08)]"><span className="flex gap-1"><span className="size-1.5 animate-bounce rounded-full bg-[#155F65]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:120ms]" /><span className="size-1.5 animate-bounce rounded-full bg-[#155F65] [animation-delay:240ms]" /></span>Working on the best options…</div></div>}<div ref={bottom} /></div></div>
+      <div className="border-t border-stone-200/80 bg-white/96 p-3.5 backdrop-blur sm:p-4"><input ref={fileInputRef} type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file && file.size <= 0) { toast.error(`"${file.name}" is empty (0 bytes). Please choose a valid image file.`); e.target.value = ""; return; } if (file) void handlePhotoSelected(file); e.target.value = ""; }} />{awaitingPhoto && <div className="mb-3 flex gap-2"><Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1 rounded-xl border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"><ImageUp />Attach photo for {awaitingPhoto.orderId}</Button><Button type="button" variant="ghost" onClick={() => setAwaitingPhoto(null)} className="rounded-xl">Cancel</Button></div>}<div className="mb-3 flex gap-2 overflow-x-auto pb-1">{agentPrompts(session.role).map((prompt) => <button key={prompt} onClick={() => void send(prompt)} disabled={busy} className="whitespace-nowrap rounded-full border border-stone-200 bg-[#EEF2F2] px-3 py-2 text-[11px] font-bold text-stone-600 transition hover:border-[#155F65]/40 hover:bg-[#EAF4F2]">{prompt}</button>)}</div><div className="flex items-end gap-2 rounded-[20px] border border-stone-200 bg-[#EEF2F2] p-2 focus-within:border-[#155F65]/50 focus-within:ring-4 focus-within:ring-[#155F65]/10"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder={session.role === "customer" ? "Ask naturally about food, products, orders or your plans…" : "Ask She Agent…"} className="min-h-10 max-h-28 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0" /><Button onClick={() => void send()} disabled={busy || !message.trim()} className="size-10 shrink-0 rounded-xl bg-[#155F65] p-0 hover:bg-[#0F4A4F]" aria-label="Send"><Send className="size-4" /></Button></div><p className="mt-2 px-1 text-[10px] leading-4 text-stone-400">She Agent can prepare and modify a proposal. You confirm checkout, payment and sensitive actions.</p></div>
+    </section></div>;
+  }
+  function scopedContext(session: DemoSession, state: V3State) {
+    if (session.role === "customer") return {
+      scope: "customer_self",
+      profile: state.customers.find((x) => x.email === session.email),
+      cart: state.cart.filter((x) => x.customerEmail === session.email),
+      tickets: state.tickets.filter((x) => x.creatorEmail === session.email),
+      schedules: state.schedules.filter((x) => x.customerEmail === session.email),
+      orders: state.orders.filter((x) => x.customerEmail === session.email),
+      requirements: state.requirements.filter((x) => x.customerEmail === session.email),
+      quotations: state.quotes.filter((quote) => state.requirements.some((requirement) => requirement.id === quote.requirementId && requirement.customerEmail === session.email)),
+      availableProducts: state.products.filter((product) => state.vendors.some((vendor) => vendor.id === product.vendorId && vendor.verification === "Verified" && vendor.openToday)),
+      vendors: state.vendors.filter((vendor) => vendor.verification === "Verified" && vendor.openToday),
     };
+    if (session.role === "vendor") {
+      const vendor = vendorFor(state, session);
+      const isPaidOrFoodDrop = (x: Order) => (x.payment === "Paid" && x.status !== "Awaiting payment") || Boolean(x.foodDropId) || x.paymentProvider === "food_drop_pickup";
+      const isScheduleActiveForVendor = (x: Order) => {
+        if (!x.scheduleId) return true;
+        const sched = state.schedules.find((s) => s.id === x.scheduleId);
+        return !sched || (sched.status !== "Paused" && sched.status !== "Closed");
+      };
+      return {
+        scope: "vendor_self",
+        vendor,
+        products: state.products.filter((x) => x.vendorId === vendor?.id),
+        orders: state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x)),
+        deliveryStaff: state.staff.filter((x) => x.vendorId === vendor?.id),
+        tickets: state.tickets.filter((x) => x.vendorId === vendor?.id || x.creatorEmail === session.email),
+        opportunities: vendor?.plan === "Crown" ? state.requirements.filter((x) => (x.status === "Quoting" || x.status === "Quotes received") && (!x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id))) : [],
+        quotations: state.quotes.filter((x) => x.vendorId === vendor?.id),
+        payouts: state.transactions.filter((x) => x.vendorId === vendor?.id),
+      };
+    }
+    const operationsContext = {
+      scope: "operations_authorised",
+      metrics: {
+        customers: state.customers.length,
+        vendors: state.vendors.length,
+        products: state.products.length,
+        schedules: state.schedules.length,
+        orders: state.orders.length,
+        openTickets: state.tickets.filter((x) => x.status !== "Resolved").length,
+      },
+      customers: state.customers,
+      vendors: state.vendors,
+      products: state.products,
+      orders: state.orders,
+      requirements: state.requirements,
+      cancellations: state.cancellations,
+      tickets: state.tickets,
+      payouts: state.transactions,
+    };
+    if (session.role === "operations") return operationsContext;
     return {
-      scope: "vendor_self",
-      vendor,
-      products: state.products.filter((x) => x.vendorId === vendor?.id),
-      orders: state.orders.filter((x) => x.vendorId === vendor?.id && isPaidOrFoodDrop(x) && isScheduleActiveForVendor(x)),
-      deliveryStaff: state.staff.filter((x) => x.vendorId === vendor?.id),
-      tickets: state.tickets.filter((x) => x.vendorId === vendor?.id || x.creatorEmail === session.email),
-      opportunities: vendor?.plan === "Crown" ? state.requirements.filter((x) => (x.status === "Quoting" || x.status === "Quotes received") && (!x.invitedVendorIds?.length || x.invitedVendorIds.includes(vendor.id))) : [],
-      quotations: state.quotes.filter((x) => x.vendorId === vendor?.id),
-      payouts: state.transactions.filter((x) => x.vendorId === vendor?.id),
+      ...operationsContext,
+      scope: "super_admin_authorised",
+      audit: state.audit.slice(0, 100),
+      campaigns: state.campaigns,
+      platformSettings: state.merchandising,
+      staffAccounts: state.staffAccounts,
     };
   }
-  const operationsContext = {
-    scope: "operations_authorised",
-    metrics: {
-      customers: state.customers.length,
-      vendors: state.vendors.length,
-      products: state.products.length,
-      schedules: state.schedules.length,
-      orders: state.orders.length,
-      openTickets: state.tickets.filter((x) => x.status !== "Resolved").length,
-    },
-    customers: state.customers,
-    vendors: state.vendors,
-    products: state.products,
-    orders: state.orders,
-    requirements: state.requirements,
-    cancellations: state.cancellations,
-    tickets: state.tickets,
-    payouts: state.transactions,
-  };
-  if (session.role === "operations") return operationsContext;
-  return {
-    ...operationsContext,
-    scope: "super_admin_authorised",
-    audit: state.audit.slice(0, 100),
-    campaigns: state.campaigns,
-    platformSettings: state.merchandising,
-    staffAccounts: state.staffAccounts,
-  };
-}
 
-function agentPrompts(role: Role) { return role === "customer" ? ["What’s available near me?", "Plan something for me", "Healthy options", "Track my next order"] : role === "vendor" ? ["What must I fulfil next?", "Summarise my inventory", "Create a delivery issue ticket"] : role === "operations" ? ["Show operational risks", "Prioritise open tickets", "Find unassigned deliveries"] : ["Summarise marketplace health", "Detect governance risks", "Compare vendor plan adoption"]; }
+  function agentPrompts(role: Role) { return role === "customer" ? ["What’s available near me?", "Plan something for me", "Healthy options", "Track my next order"] : role === "vendor" ? ["What must I fulfil next?", "Summarise my inventory", "Create a delivery issue ticket"] : role === "operations" ? ["Show operational risks", "Prioritise open tickets", "Find unassigned deliveries"] : ["Summarise marketplace health", "Detect governance risks", "Compare vendor plan adoption"]; }

@@ -373,7 +373,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
   async function uploadCertificate(vendorId: string) {
     const value = certificateInputs[vendorId];
     if (!value?.file || !value.number.trim() || !value.expiry) return setError("Enter the certificate number, expiry and file.");
-    if (value.file.size === 0) return setError("The selected certificate file is empty (0 bytes). Please upload a valid document.");
+    if (value.file.size <= 0 || /^blank[._-]/i.test(value.file.name)) return setError("The selected certificate file is empty (0 bytes). Please upload a valid document.");
     setBusy(true);
     setError("");
     setNotice("");
@@ -478,7 +478,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
               {vendor.p0_fssai_required && !certificateValid && hasPermission("can_upload") && !cancelled && <div className="mt-4 grid gap-2 rounded-xl bg-[#FFF4CF] p-3 sm:grid-cols-4">
                 <input aria-label="FSSAI number" placeholder="FSSAI number" value={certificateValue.number} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, number: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
                 <input aria-label="Certificate expiry" type="date" value={certificateValue.expiry} onChange={(event) => setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, expiry: event.target.value } }))} className="rounded-lg border border-amber-200 px-3 py-2 text-xs" />
-                <input aria-label="Certificate file" type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => { const f = event.target.files?.[0] || null; if (f && f.size === 0) { setError(`"${f.name}" is empty (0 bytes). Please upload a valid document.`); event.target.value = ""; return; } setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, file: f } })); }} className="min-w-0 rounded-lg border border-amber-200 px-3 py-2 text-xs" />
+                <input aria-label="Certificate file" type="file" accept=".pdf,image/png,image/jpeg,image/webp" onChange={(event) => { const f = event.target.files?.[0] || null; if (f && (f.size <= 0 || /^blank[._-]/i.test(f.name))) { setError(`"${f.name}" is empty (0 bytes). Please upload a valid document.`); event.target.value = ""; return; } setCertificateInputs((current) => ({ ...current, [vendor.id]: { ...certificateValue, file: f } })); }} className="min-w-0 rounded-lg border border-amber-200 px-3 py-2 text-xs" />
                 <button type="button" onClick={() => void uploadCertificate(vendor.id)} disabled={busy} className="rounded-full bg-[#155F65] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Upload certificate</button>
               </div>}
 
@@ -630,7 +630,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
               <span className="shrink-0 font-mono text-[10px] text-stone-500">{(shopImage.size / 1024).toFixed(0)} KB</span>
               <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50">
                 Replace
-                <input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const f = event.target.files?.[0]; if (!f) return; if (f.size === 0) { setShopImageError("The selected image is empty (0 bytes)."); return; } if (!["image/png","image/jpeg","image/webp"].includes(f.type)) { setShopImageError("Choose a PNG, JPG or WebP image."); return; } if (f.size > 10*1024*1024) { setShopImageError("Image must be under 10 MB."); return; } setShopImage(f); setShopImageError(""); event.target.value = ""; }} />
+                <input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const f = event.target.files?.[0]; if (!f) return; if (f.size <= 0) { setShopImageError("The selected image is empty (0 bytes)."); return; } if (!["image/png","image/jpeg","image/webp"].includes(f.type)) { setShopImageError("Choose a PNG, JPG or WebP image."); return; } if (f.size > 10*1024*1024) { setShopImageError("Image must be under 10 MB."); return; } setShopImage(f); setShopImageError(""); event.target.value = ""; }} />
               </label>
               <button type="button" aria-label="Remove shop image" onClick={() => { setShopImage(null); setShopImageError(""); if (shopImageInput.current) shopImageInput.current.value = ""; }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">Remove</button>
             </div>
@@ -638,7 +638,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
             <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-stone-300 bg-white px-3 py-2.5 transition hover:border-[#155F65]">
               <span className="text-stone-400">↑</span>
               <span className="font-normal text-stone-600">Choose PNG, JPG or WebP · max 10 MB</span>
-              <input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const f = event.target.files?.[0] || null; if (f && f.size === 0) { setShopImageError("The selected image is empty (0 bytes)."); return; } if (f && !["image/png","image/jpeg","image/webp"].includes(f.type)) { setShopImageError("Choose a PNG, JPG or WebP image."); return; } if (f && f.size > 10*1024*1024) { setShopImageError("Image must be under 10 MB."); return; } setShopImage(f); setShopImageError(""); }} />
+              <input ref={shopImageInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const f = event.target.files?.[0] || null; if (f && f.size <= 0) { setShopImageError("The selected image is empty (0 bytes)."); return; } if (f && !["image/png","image/jpeg","image/webp"].includes(f.type)) { setShopImageError("Choose a PNG, JPG or WebP image."); return; } if (f && f.size > 10*1024*1024) { setShopImageError("Image must be under 10 MB."); return; } setShopImage(f); setShopImageError(""); }} />
             </label>
           )}
           {shopImageError && <p role="alert" className="text-xs font-semibold text-red-600">{shopImageError}</p>}
@@ -694,7 +694,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
               <span className="shrink-0 font-mono text-[10px] text-stone-500">{(certificate.size / 1024).toFixed(0)} KB</span>
               <label className="cursor-pointer rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50">
                 Replace
-                <input ref={certInputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { const f = event.target.files?.[0]; if (!f) return; if (f.size === 0) { setCertError("The selected PDF file is empty (0 bytes)."); return; } if (f.type !== "application/pdf") { setCertError("Only PDF files are accepted."); return; } if (f.size > 10*1024*1024) { setCertError("File must be under 10 MB."); return; } setCertificate(f); setCertError(""); event.target.value = ""; }} />
+                <input ref={certInputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { const f = event.target.files?.[0]; if (!f) return; if (f.size <= 0 || /^blank[._-]/i.test(f.name)) { setCertError("The selected PDF file is empty (0 bytes)."); return; } if (f.type !== "application/pdf") { setCertError("Only PDF files are accepted."); return; } if (f.size > 10*1024*1024) { setCertError("File must be under 10 MB."); return; } setCertificate(f); setCertError(""); event.target.value = ""; }} />
               </label>
               <button type="button" aria-label="Remove certificate" onClick={() => { setCertificate(null); setCertError(""); if (certInputRef.current) certInputRef.current.value = ""; }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">Remove</button>
             </div>
@@ -702,7 +702,7 @@ export function P0VendorManagement({ role }: { role: "operations" | "admin" }) {
             <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-stone-300 bg-white px-3 py-2.5 transition hover:border-[#155F65]">
               <span className="text-stone-400">↑</span>
               <span className="font-normal text-stone-600">PDF only · max 10 MB</span>
-              <input ref={certInputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { const f = event.target.files?.[0] || null; if (!f) return; if (f.size === 0) { setCertError("The selected PDF file is empty (0 bytes)."); return; } if (f.type !== "application/pdf") { setCertError("Only PDF files are accepted."); return; } if (f.size > 10*1024*1024) { setCertError("File must be under 10 MB."); return; } setCertificate(f); setCertError(""); event.target.value = ""; }} />
+              <input ref={certInputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { const f = event.target.files?.[0] || null; if (!f) return; if (f.size <= 0 || /^blank[._-]/i.test(f.name)) { setCertError("The selected PDF file is empty (0 bytes)."); return; } if (f.type !== "application/pdf") { setCertError("Only PDF files are accepted."); return; } if (f.size > 10*1024*1024) { setCertError("File must be under 10 MB."); return; } setCertificate(f); setCertError(""); event.target.value = ""; }} />
             </label>
           )}
           {certError && <p role="alert" className="text-xs font-semibold text-red-600">{certError}</p>}

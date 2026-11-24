@@ -2610,6 +2610,7 @@ body {
 
 .sp-v7 .sp-customer-main {
   max-width: 1460px !important;
+  margin-inline: auto !important;
 }
 
 .sp-v7 .sp-page-heading h1 {

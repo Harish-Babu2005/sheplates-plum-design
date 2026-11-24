@@ -230,8 +230,8 @@ html .sp-auth-dialog .sp-auth-hero { background: var(--selected) !important; col
 @media (max-width: 640px) { .k-step-label { display: none; } .k-stepper li.now .k-step-label { display: inline; } }
 
 /* She Agent as a page (W27): the chat panel sits in the content area instead of floating */
-.k-agent-page { display: flex; justify-content: center; width: 100%; }
-.k-agent-page .sp-agent-panel { position: relative !important; inset: auto !important; width: 100% !important; max-width: 960px; margin-inline: auto !important; height: min(720px, calc(100dvh - 260px)) !important; min-height: 520px; border-radius: 28px !important; box-shadow: none !important; border: 0 !important; background: var(--surface-soft) !important; }
+.k-agent-page { display: flex; justify-content: center; width: 100%; margin-inline: auto; }
+.k-agent-page .sp-agent-panel { position: relative !important; inset: auto !important; width: 100% !important; max-width: 100% !important; margin-inline: auto !important; height: min(720px, calc(100dvh - 260px)) !important; min-height: 520px; border-radius: 28px !important; box-shadow: none !important; border: 0 !important; background: var(--surface-soft) !important; }
 .k-agent-page .sp-agent-panel > div:first-child { display: none; }
 
 /* Landing header on phones: the wordmark folds away (the logo stays) and the three buttons shrink so the row never outgrows the screen. */

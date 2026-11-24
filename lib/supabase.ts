@@ -1713,8 +1713,10 @@ export async function submitLiveVendorApplication(input: {
 }) {
   if (!input.termsAccepted) throw new Error("You must review and agree to the Sheplates Vendor Terms & Conditions before submitting onboarding.");
   if (!isPdfUpload(input.certificate)) throw new Error(`The certificate "${input.certificate.name}" must be in PDF format (.pdf).`);
+  if (input.certificate.size <= 0) throw new Error(`The certificate "${input.certificate.name}" is empty (0 bytes). Please upload a valid certificate in PDF format.`);
   for (const doc of input.additionalDocuments ?? []) {
     if (!isPdfUpload(doc.file)) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) must be in PDF format (.pdf).`);
+    if (doc.file.size <= 0) throw new Error(`Document "${doc.file.name}" (${doc.documentType}) is empty (0 bytes). Please upload a valid document in PDF format.`);
   }
 
   const supabase = getSupabaseBrowserClient();
@@ -2036,7 +2038,7 @@ export async function uploadLiveCertificate(input: {
   documentNumber?: string;
   expiryDate?: string;
 }) {
-  if (input.file.size === 0) {
+  if (input.file.size <= 0) {
     throw new Error(`"${input.file.name}" is empty (0 bytes). Please upload a valid certificate file.`);
   }
   const token = await getAccessToken();

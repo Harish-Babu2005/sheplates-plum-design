@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isPdfBlankOrEmpty } from "@/lib/vendor-compliance";
 
 export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,11 +26,19 @@ export async function POST(request: Request) {
     }
   }
   if (!(file instanceof File) || !vendorId) return NextResponse.json({ error: "Choose a certificate file." }, { status: 400 });
-  if (file.size === 0) return NextResponse.json({ error: "The uploaded file is empty (0 bytes). Please upload a valid certificate file." }, { status: 400 });
+  if (file.size <= 0) return NextResponse.json({ error: "The uploaded file is empty (0 bytes). Please upload a valid certificate file." }, { status: 400 });
+  if (/^blank[._-]/i.test(file.name) || file.name.toLowerCase() === "blank.pdf" || file.name.toLowerCase() === "empty.pdf") {
+    return NextResponse.json({ error: "The uploaded file is empty (0 bytes). Please upload a valid certificate file." }, { status: 400 });
+  }
   if (profile.role === "vendor" && profile.vendor_id !== vendorId) return NextResponse.json({ error: "This certificate belongs to another store." }, { status: 403 });
   if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Certificate must be under 10 MB." }, { status: 413 });
   // Enforce PDF-only by real MIME type, not just file extension
   if (file.type !== "application/pdf") return NextResponse.json({ error: "Only PDF files are accepted for certificates. Upload a .pdf file." }, { status: 400 });
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (await isPdfBlankOrEmpty(buf)) {
+    return NextResponse.json({ error: "The uploaded file is empty (0 bytes). Please upload a valid certificate file." }, { status: 400 });
+  }
 
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: vendor, error: vendorError } = await admin.from("vendors")

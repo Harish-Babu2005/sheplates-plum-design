@@ -161,6 +161,7 @@ function safeDemoContext(role: Role, input: Record<string, unknown>) {
     requirements: input.requirements,
     quotations: input.quotations,
     availableProducts: input.availableProducts,
+    vendors: input.vendors,
   };
   if (role === "vendor") return {
     scope: "vendor_self",
@@ -287,8 +288,18 @@ async function loadAuthorisedContext(auth: Authorised): Promise<{ role: Role; li
     const enrichedOrders = rawOrders.map((ord) => {
       const assignment = assignmentMap.get(String(ord.id || ""));
       const staff = assignment?.vendor_delivery_staff;
+      const orderNumber = ord.order_number || ord.orderNumber || (ord.id ? String(ord.id).slice(-8) : "");
+      const scheduledDate = ord.scheduled_date || ord.scheduledDate || ord.date || "";
+      const scheduledSlot = ord.scheduled_slot || ord.scheduledSlot || ord.slot || "";
+      const fulfilmentMode = ord.fulfilment_mode || ord.fulfilmentMode || ord.mode || "Vendor delivery";
+      const total = ord.customer_total ?? ord.totalAmount ?? ord.total ?? 0;
       return {
         ...ord,
+        orderNumber,
+        scheduledDate,
+        scheduledSlot,
+        fulfilmentMode,
+        total,
         vendorName: vendorMap.get(String(ord.vendor_id || "")) || "Verified kitchen",
         deliveryPartner: staff?.full_name || undefined,
         deliveryPartnerPhone: staff?.phone || undefined,
@@ -548,10 +559,15 @@ function validateCommerceResult(raw: CommerceResult, context: Record<string, unk
     return { productId: id, quantity: Math.max(1, Math.round(existing?.quantity || 1)) };
   });
 
+  const isVendorListing = /\b(vendors?|kitchens?|restaurants?|cooks?|sellers?|stores?|home\s*chefs?|விற்பனையாளர்(கள்)?|சமையலறை(கள்)?)\b/i.test(raw.reply);
+  const selectedProductIds = (raw.intent === "track" || isVendorListing)
+    ? []
+    : enforceBudget(raw.selectedProductIds || []);
+
   return {
     ...raw,
     budget: budgetCap ?? -1,
-    selectedProductIds: enforceBudget(raw.selectedProductIds || []),
+    selectedProductIds,
     basketProductIds: finalBasketProductIds,
     basketItems,
     kitchenConflict,
@@ -1012,7 +1028,7 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
 
     // Vendor / Kitchen listing query (e.g. "list the vendors", "show kitchens near me")
     const isVendorListQuery =
-      /(^|\b)(list|show|what|who|view|find|get|tell(\s+me)?(\s+about)?)?\s*(the\s*)?(vendors?|kitchens?|restaurants?|cooks?|sellers?|stores?)\b/i.test(msg) ||
+      /\b(vendors?|kitchens?|restaurants?|cooks?|sellers?|stores?|home\s*chefs?|விற்பனையாளர்(கள்)?|சமையலறை(கள்)?)\b/i.test(msg) ||
       /(vendors?\s+near\s+me|kitchens?\s+near\s+me|available\s+kitchens?|available\s+vendors?)/i.test(msg) ||
       /(விற்பனையாளர்கள்|சமையலறைகள்)/i.test(rawMsg);
 
@@ -1052,13 +1068,8 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
           ? `உங்கள் பகுதிக்கு அருகில் கிடைக்கும் சரிபார்க்கப்பட்ட சமையலறைகள் மற்றும் விற்பனையாளர்கள் இதோ:\n\n${vendorLines}\n\nஎந்த சமையலறையின் உணவுகளைப் பார்க்க விரும்புகிறீர்கள் என்று சொல்லுங்கள்!`
           : `Here are the verified kitchens and home chefs available near your address:\n\n${vendorLines}\n\nTell me which kitchen you'd like to explore, or ask for any specific dish!`;
 
-        const sampleProductIds: string[] = [];
-        for (const v of vendorList) {
-          const vProd = products.find((p) => pVendorId(p) === v.id || pVendor(p).toLowerCase() === v.name.toLowerCase());
-          if (vProd && pStock(vProd) > 0) sampleProductIds.push(pId(vProd));
-        }
-        base.selectedProductIds = sampleProductIds.slice(0, 6);
-        base.intent = "browse";
+        base.selectedProductIds = [];
+        base.intent = "answer";
         return base;
       } else {
         base.reply = isTamil
@@ -1383,6 +1394,16 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
         ? `உங்கள் கூடையில் ${requestedQty > 1 ? `${requestedQty} ` : ""}${pName(matched)} சேர்க்கப்பட்டது. கூடையைப் பார்க்கவும்.`
         : `Added ${requestedQty > 1 ? `${requestedQty} packs of ` : ""}${pName(matched)} to your cart. View cart.`;
       base.intent = "add_to_basket";
+      return base;
+    }
+
+    // If message is a tracking query, never treat it as product discovery
+    if (isExplicitTrackingQuery || isTrackingIntent || /^track\b/i.test(msg.trim())) {
+      base.reply = isTamil
+        ? "ஆர்டரைக் கண்காணிக்க முடியவில்லை. சரியான ஆர்டர் எண்ணைக் குறிப்பிடவும் அல்லது உங்கள் ஆர்டர்கள் பக்கத்தைப் பார்க்கவும்."
+        : "I couldn't locate that specific order to track. Please provide your order number (e.g. #84729101) or check your Orders tab.";
+      base.intent = "track";
+      base.selectedProductIds = [];
       return base;
     }
 

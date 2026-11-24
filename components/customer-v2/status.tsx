@@ -153,6 +153,10 @@ export function StatusComposer({ open, onClose, onPost, vendors }: {
 
   async function choose(next: File | undefined) {
     if (!next) return;
+    if (next.size <= 0) {
+      setError(`"${next.name}" is empty (0 bytes). Please choose a valid file.`);
+      return;
+    }
     setError(""); setInfo(null); setFile(null); setChecking(true);
     try {
       if (next.type.startsWith("video/")) { const inspected = await inspectVideo(next); setInfo(inspected); }

@@ -206,6 +206,11 @@ function customerTools(): ToolDefinition[] {
       description: "Get the signed-in customer's own monthly requirements and vendor quotations.",
       parameters: { type: "object", additionalProperties: false, properties: {}, required: [] }, strict: true,
     },
+    {
+      type: "function", name: "list_vendors",
+      description: "List verified kitchens, home chefs, and vendors currently available to the signed-in customer. Use whenever the customer asks to list or show vendors/kitchens.",
+      parameters: { type: "object", additionalProperties: false, properties: {}, required: [] }, strict: true,
+    },
   ];
 }
 
@@ -326,12 +331,30 @@ function executeTool(role: Role, context: Record<string, unknown>, name: string,
       const latestOrder = [...orders].sort((a, b) => text(b.created_at || b.date).localeCompare(text(a.created_at || a.date)))[0];
       const latestActive = [...activeOrders].sort((a, b) => text(b.created_at || b.date).localeCompare(text(a.created_at || a.date)))[0];
       const order = orders.find((row) => text(row.id).toLowerCase() === ref || text(row.order_number).toLowerCase() === ref || text(row.orderNumber).toLowerCase() === ref) ||
+        orders.find((row) => text(row.description).toLowerCase().includes(ref)) ||
         (ref === "next" || ref === "active" ? (latestActive || latestOrder) : undefined) ||
-        (["latest", "last", "recent"].includes(ref) ? (latestActive || latestOrder) : undefined);
-      return order ? { order, otherActiveOrders: activeOrders.filter((o) => o !== order) } : { error: "No matching order exists in this customer account." };
+        (["latest", "last", "recent", "order", "food", "parcel", "delivery"].includes(ref) ? (latestActive || latestOrder) : undefined);
+      return order ? { order, otherActiveOrders: activeOrders.filter((o) => o !== order) } : (latestActive || latestOrder ? { order: latestActive || latestOrder, note: `Could not find an order specifically for '${ref}'. Showing your active order instead.` } : { error: "No matching order exists in this customer account." });
     }
     if (name === "get_schedules") return { schedules: context.schedules || [] };
     if (name === "get_quotations") return { requirements: context.requirements || [], quotations: context.quotations || [] };
+    if (name === "list_vendors") {
+      const directVendors = asObjects(context.vendors);
+      if (directVendors.length > 0) {
+        return { count: directVendors.length, vendors: directVendors.map((v) => ({ id: v.id, name: v.businessName || v.name, category: v.category })) };
+      }
+      const vendorMap = new Map<string, { id: string; name: string; categories: string[] }>();
+      for (const row of products) {
+        const vId = text(row.vendor_id || row.vendorId);
+        const vName = text(row.vendor_name || row.vendorName || row.businessName);
+        if (vName && vName !== "Verified kitchen") {
+          const entry = vendorMap.get(vId) || { id: vId || vName, name: vName, categories: [] };
+          if (row.category && !entry.categories.includes(text(row.category))) entry.categories.push(text(row.category));
+          vendorMap.set(entry.id, entry);
+        }
+      }
+      return { count: vendorMap.size, vendors: Array.from(vendorMap.values()) };
+    }
   }
 
   if (role === "vendor") {
@@ -605,7 +628,7 @@ async function callResponses(apiKey: string, payload: Record<string, unknown>, o
 
 function instructionsForRole(role: Role) {
   const shared = `You are She Agent, Sheplates' natural agentic-commerce assistant. Understand normal human language semantically; never require command phrases. You achieve commerce outcomes by using the available business tools whenever current Sheplates facts are needed. Never invent a product, price, vendor, availability, nutrition value, order, schedule, quotation, payment state or business fact. Do not answer a current-data question from memory when a relevant business tool can verify it. Keep responses concise, natural and useful. Do not mention internal implementation, databases, APIs, model providers, tool protocols or developer configuration. Consequential actions remain human-confirmed.`;
-  if (role === "customer") return `${shared} You are scoped to this signed-in customer only. Support English and Tamil naturally (e.g. பால், முட்டை, கூடையில் சேர், ஆர்டர் செய்). For product discovery, use search_catalogue to return verified, active and open vendor products within service radius. If the customer request is unclear (e.g. 'Add an item'), ask which product they would like and offer suggestions in selectedProductIds. If multiple products match (e.g. 'Add eggs'), return the matching candidates in selectedProductIds and ask the customer to choose. When adding products with specific quantities (e.g. 'Add 3 packs of A2 milk'), validate stock availability and return the requested quantity. Understand the one-kitchen-per-order rule: if current cart already has items from Kitchen A and the customer requests Kitchen B, explain the restriction and offer to keep current cart or start a new cart, never replacing without confirmation. For out-of-stock or not-found items, explain unavailability clearly and suggest alternatives. For 'Place my order' or checkout, validate the cart and set navigateTo to Cart. For a multi-item recommendation, normally search first and then validate the proposed basket with build_cart. Use get_current_cart before answering basket/cart questions. When the customer naturally asks you to add, order, buy, keep, put, or remove products, use the catalogue/cart tools as needed and return the exact live product IDs in basketProductIds/removeProductIds; basketProductIds means the app should persist those items into the customer's saved cart, and navigateTo should normally be Cart when the customer wants to review or checkout. Do not claim that something was added unless the IDs are returned for the app to persist. Use get_customer_context for personalization when useful, not as a substitute for live catalogue search. Use get_order_history for previous/recent purchases and get_order_status for a specific/next/latest order; never invent past food names. Use get_schedules and get_quotations for those questions. If the user says 'near me', 'available', 'low calorie', 'under a budget', 'healthy', 'something for me', or any equivalent natural wording, infer the constraints and call the appropriate tools rather than asking the user to reformulate. Never treat missing nutrition as zero calories or zero protein; nutrition_available=false means nutrition is pending and must not be ranked as a low-calorie or high-protein choice. Use exact item IDs returned by tools in selectedProductIds/basketProductIds. Never reveal another customer's data. memoryUpdates may contain only stable, non-sensitive shopping preferences that the customer explicitly states or repeatedly confirms.`;
+  if (role === "customer") return `${shared} You are scoped to this signed-in customer only. Support English and Tamil naturally (e.g. பால், முட்டை, கூடையில் சேர், ஆர்டர் செய்). For product discovery, use search_catalogue to return verified, active and open vendor products within service radius. When the customer asks to list or view vendors, kitchens, sellers or home chefs, call list_vendors to present the verified kitchens and their offerings; do not return product IDs in selectedProductIds for vendor-listing questions. If the customer request is unclear (e.g. 'Add an item'), ask which product they would like and offer suggestions in selectedProductIds. If multiple products match (e.g. 'Add eggs'), return the matching candidates in selectedProductIds and ask the customer to choose. When adding products with specific quantities (e.g. 'Add 3 packs of A2 milk'), validate stock availability and return the requested quantity. Understand the one-kitchen-per-order rule: if current cart already has items from Kitchen A and the customer requests Kitchen B, explain the restriction and offer to keep current cart or start a new cart, never replacing without confirmation. For out-of-stock or not-found items, explain unavailability clearly and suggest alternatives. For 'Place my order' or checkout, validate the cart and set navigateTo to Cart. For a multi-item recommendation, normally search first and then validate the proposed basket with build_cart. Use get_current_cart before answering basket/cart questions. When the customer naturally asks you to add, order, buy, keep, put, or remove products, use the catalogue/cart tools as needed and return the exact live product IDs in basketProductIds/removeProductIds; basketProductIds means the app should persist those items into the customer's saved cart, and navigateTo should normally be Cart when the customer wants to review or checkout. Do not claim that something was added unless the IDs are returned for the app to persist. Use get_customer_context for personalization when useful, not as a substitute for live catalogue search. Use get_order_history for previous/recent purchases and get_order_status for a specific/next/latest order; never invent past food names. Use get_schedules and get_quotations for those questions. If the user says 'near me', 'available', 'low calorie', 'under a budget', 'healthy', 'something for me', or any equivalent natural wording, infer the constraints and call the appropriate tools rather than asking the user to reformulate. Never treat missing nutrition as zero calories or zero protein; nutrition_available=false means nutrition is pending and must not be ranked as a low-calorie or high-protein choice. Use exact item IDs returned by tools in selectedProductIds/basketProductIds. Never reveal another customer's data. memoryUpdates may contain only stable, non-sensitive shopping preferences that the customer explicitly states or repeatedly confirms.`;
   if (role === "vendor") return `${shared} You are scoped to this signed-in vendor only. Use vendor tools to answer about this store, its catalogue, stock, own orders, RFQs, staff and payouts. Never reveal another vendor's private records.`;
   if (role === "operations") return `${shared} You are scoped to authorised operational records. You may analyse cross-platform operational data through Operations tools, but do not claim Super Admin governance access.`;
   return `${shared} You are scoped to authorised Super Admin records. You may use operational and governance tools to analyse the platform, while leaving consequential actions for explicit human confirmation.`;

@@ -11,7 +11,7 @@ import { signedVendorDocumentUrl } from "@/lib/supabase";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   ADDRESS_PROOF_TYPES, BUSINESS_REG_TYPES, COMPLIANCE_DOCS, GOV_ID_TYPES, VENDOR_TERMS_EFFECTIVE, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION,
-  complianceFieldProblems, fssaiFieldProblem, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocument,
+  complianceFieldProblems, fssaiFieldProblem, pdfProblem, validatePdfDocument, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocument,
 } from "@/lib/vendor-compliance";
 
 const fieldInput = "h-11 w-full min-w-0 rounded-xl border border-stone-200 bg-white px-3.5 text-sm outline-none focus:border-[#155F65] focus:ring-2 focus:ring-[#155F65]/10";
@@ -92,9 +92,9 @@ export function TermsViewerDialog({ open, onClose, onAccept }: { open: boolean; 
 type UploadProps = { inputId: string; label: string; file: File | null; setFile: (file: File | null) => void; uploadLabel: string; onPreview: (file: File, title: string) => void; previewTitle: string };
 
 function PdfUpload({ inputId, label, file, setFile, uploadLabel, onPreview, previewTitle }: UploadProps) {
-  function choose(next: File | null) {
+  async function choose(next: File | null) {
     if (!next) return;
-    const problem = pdfProblem(next, label);
+    const problem = await validatePdfDocument(next, label);
     if (problem) return void toast.error(problem);
     setFile(next);
     toast.success(`${label} attached in PDF format`);
