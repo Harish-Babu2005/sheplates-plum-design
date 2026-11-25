@@ -53,9 +53,8 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = "popper",
-  sideOffset = 4,
-  align = "start",
+  position = "item-aligned",
+  align = "center",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -67,20 +66,21 @@ function SelectContent({
           // otherwise a Select opened inside a Dialog renders its dropdown behind the
           // dialog panel: invisible and unclickable by mouse, even though it's still
           // open per the accessibility tree (only keyboard selection still works).
-          "relative z-[1200] max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[var(--radix-select-trigger-width,8rem)] overflow-hidden rounded-2xl border border-stone-200/80 bg-white/96 text-popover-foreground shadow-[0_20px_60px_rgba(35,26,21,.16)] backdrop-blur-xl data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          "relative z-[1200] max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-2xl border border-stone-200/80 bg-white/96 text-popover-foreground shadow-[0_20px_60px_rgba(35,26,21,.16)] backdrop-blur-xl data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className
         )}
         position={position}
-        sideOffset={sideOffset}
         align={align}
         {...props}
       >
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
           className={cn(
-            "p-1 w-full min-w-[var(--radix-select-trigger-width)] max-h-[min(22rem,calc(var(--radix-select-content-available-height,22rem)-1rem))] overflow-y-auto overscroll-contain"
+            "p-1",
+            position === "popper" &&
+              "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1"
           )}
         >
           {children}

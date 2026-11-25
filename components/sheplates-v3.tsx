@@ -73,7 +73,7 @@ import {
   loadLiveCustomerPreference, loadLiveCustomerMemory, clearLiveCustomerMemory, loadLiveMarketplace, loadLiveOperationsWorkspace, loadLiveVendorWorkspace, loadLiveCommerceSnapshot,
   loadLiveNotifications, markLiveNotificationsRead, saveLiveCustomerProfile, saveLiveVendorProfile, saveLiveVendorBranding, uploadLiveVendorImage,
   liveSignOut, saveLiveCustomerLocation, saveLiveVendorLocation, saveLiveVendorProduct, updateLiveVendorProduct,
-  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, clearLiveVendorProducts, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, saveLiveItemMarkup, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
+  saveLiveMarketplaceHome, saveLiveCampaign, deleteLiveCampaign, uploadLiveProductImage, generateLiveProductImage, saveLiveProductFoodType, deleteLiveVendorProduct, clearLiveVendorProducts, setLiveProductActive, submitLiveVendorApplication, acceptLiveVendorTerms, updateLiveVendorControls, saveLiveVendorPlan, saveLiveItemMarkup, createLiveScheduledCheckout, syncLiveCart, checkoutLiveCart, markLiveOrderPaid, createLiveRazorpayOrder, verifyLiveRazorpayPayment, saveLiveDeliveryStaff, deleteLiveDeliveryStaff, saveLiveDeliverySlot, deleteLiveDeliverySlot, toggleLiveDeliverySlot, assignLiveDeliveryStaff, resubmitLiveVendorVerification, saveLiveOutletCertificate, uploadLiveCertificate, updateLiveOrderStatus, getLiveOrderVerificationCode, verifyLiveOrderVerificationCode, operationsOverrideLiveOrderCompletion, rescheduleLiveOrder, notifyLiveNutritionReview, saveLiveTourCompleted,
   pauseLiveSchedule, resumeLiveSchedule, closeLiveSchedule, reopenLiveSchedule,
   loadLiveTasteProfile, saveLiveTasteProfile, recordLiveTasteFeedback, fetchLiveFoodAttributes,
   loadLiveFoodDrops, loadLiveWeeklyMenus, loadLiveVendorFoodDrops, createLiveFoodDrop, updateLiveFoodDrop, cancelLiveFoodDrop, loadLiveFoodDropClaims, claimLiveFoodDrop,
@@ -4810,14 +4810,72 @@ const EditFoodDropDialog = memo(function EditFoodDropDialog({
   );
 });
 
+const VendorFoodDropCard = memo(function VendorFoodDropCard({
+  drop,
+  product,
+  claims,
+  onEdit,
+  onCancel,
+}: {
+  drop: FoodDrop;
+  product?: Product;
+  claims: FoodDropClaim[];
+  onEdit: (drop: FoodDrop) => void;
+  onCancel: (drop: FoodDrop) => void;
+}) {
+  const now = useTicker();
+  const currentTime = new Date(now);
+  const status = dropDisplayStatus(drop, currentTime);
+  const dropClaims = claims.filter((c) => c.dropId === drop.id);
+  const revenue = dropClaims.reduce((sum, c) => sum + c.totalPrice, 0);
+  const claimedUnits = drop.totalQuantity - drop.remainingQuantity;
+  const tone = status === "live" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : status === "sold_out" ? "border-amber-200 bg-amber-50 text-amber-800" : status === "scheduled" ? "border-sky-200 bg-sky-50 text-sky-800" : "border-stone-200 bg-stone-50 text-stone-500";
+  const statusLabel = status === "live" ? "LIVE" : status === "scheduled" ? "Scheduled — Starts at 12:00 PM" : status === "sold_out" ? "Sold out" : "Ended";
+  return (
+    <div key={drop.id} className="surface-card rounded-[26px] p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div><h3 className="font-black">{drop.title}</h3><p className="mt-1 text-xs text-stone-500">{product?.name || "Product"}</p></div>
+        <Status className={tone}>{statusLabel}</Status>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <Review label="Price" value={`${money(drop.dropPrice)} (was ${money(drop.originalPrice)})`} />
+        <Review label="Discount" value={`${discountPercent(drop)}%`} />
+        <Review label="Claimed" value={`${claimedUnits} / ${drop.totalQuantity}`} />
+        <Review label="Revenue" value={money(revenue)} />
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100">
+        <div className="h-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} />
+      </div>
+      {status === "live" && (
+        <p className="mt-3 text-xs font-bold text-stone-500">
+          <Timer className="mr-1 inline size-3.5" />Closes at 6:00 PM· {formatCountdown(foodDropSchedule(drop).endsAt.toISOString(), currentTime)}
+        </p>
+      )}
+      {(status === "live" || status === "scheduled") && (
+        <div className="mt-4 flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => onEdit(drop)} className="rounded-xl">
+            <Pencil className="mr-1 size-3.5" />Edit drop
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onCancel(drop)} className="rounded-xl text-red-600 hover:text-red-700">
+            End drop now
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+});
+
 function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
   const loadedRef = useRef(false);
   const [creating, setCreating] = useState(false);
   const [editingDrop, setEditingDrop] = useState<FoodDrop | null>(null);
-  const now = useTicker();
-  const drops = state.foodDrops.filter((d) => d.vendorId === vendor.id).sort((a, b) => b.startsAt.localeCompare(a.startsAt));
-  const dropIds = drops.map((d) => d.id);
-  const claims = state.foodDropClaims.filter((c) => dropIds.includes(c.dropId));
+  const handleCloseCreate = useCallback(() => setCreating(false), []);
+  const handleCloseEdit = useCallback(() => setEditingDrop(null), []);
+  const handleEditDrop = useCallback((drop: FoodDrop) => setEditingDrop(drop), []);
+
+  const drops = useMemo(() => state.foodDrops.filter((d) => d.vendorId === vendor.id).sort((a, b) => b.startsAt.localeCompare(a.startsAt)), [state.foodDrops, vendor.id]);
+  const dropIds = useMemo(() => drops.map((d) => d.id), [drops]);
+  const claims = useMemo(() => state.foodDropClaims.filter((c) => dropIds.includes(c.dropId)), [state.foodDropClaims, dropIds]);
   const products = useMemo(() => state.products.filter((p) => p.vendorId === vendor.id && p.active), [state.products, vendor.id]);
 
   useEffect(() => {
@@ -4834,7 +4892,7 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
     });
   }, [vendor.id, setState]);
 
-  async function cancel(drop: FoodDrop) {
+  const cancel = useCallback(async (drop: FoodDrop) => {
     if (!confirm(`End "${drop.title}" now? Customers will no longer be able to claim it.`)) return;
     try {
       if (isLiveSupabaseMode()) await cancelLiveFoodDrop(drop.id);
@@ -4845,7 +4903,7 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
       }));
       toast.success("Drop ended. Unclaimed units returned to stock.");
     } catch (error) { toast.error(errorMessage(error, "Drop could not be ended")); }
-  }
+  }, [setState]);
 
   const isPlanAllowed = ["Crave", "Thrive", "Crown"].includes(vendor.plan);
   return <div className="space-y-6">
@@ -4862,35 +4920,22 @@ function FoodDropsManager({ vendor, state, setState }: { vendor: Vendor; state: 
     {!products.length && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Add an active product in your Catalog first — a drop always discounts an existing product.</div>}
     {drops.length ? <div className="grid gap-4 lg:grid-cols-2">{drops.map((drop) => {
       const product = state.products.find((p) => p.id === drop.productId);
-      const currentTime = new Date(now);
-      const status = dropDisplayStatus(drop, currentTime);
-      const dropClaims = claims.filter((c) => c.dropId === drop.id);
-      const revenue = dropClaims.reduce((sum, c) => sum + c.totalPrice, 0);
-      const claimedUnits = drop.totalQuantity - drop.remainingQuantity;
-      const tone = status === "live" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : status === "sold_out" ? "border-amber-200 bg-amber-50 text-amber-800" : status === "scheduled" ? "border-sky-200 bg-sky-50 text-sky-800" : "border-stone-200 bg-stone-50 text-stone-500";
-      const statusLabel = status === "live" ? "LIVE" : status === "scheduled" ? "Scheduled — Starts at 12:00 PM" : status === "sold_out" ? "Sold out" : "Ended";
-      return <div key={drop.id} className="surface-card rounded-[26px] p-5">
-        <div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{drop.title}</h3><p className="mt-1 text-xs text-stone-500">{product?.name || "Product"}</p></div><Status className={tone}>{statusLabel}</Status></div>
-        <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><Review label="Price" value={`${money(drop.dropPrice)} (was ${money(drop.originalPrice)})`} /><Review label="Discount" value={`${discountPercent(drop)}%`} /><Review label="Claimed" value={`${claimedUnits} / ${drop.totalQuantity}`} /><Review label="Revenue" value={money(revenue)} /></div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full bg-[#155F65]" style={{ width: `${claimedPercent(drop)}%` }} /></div>
-        {status === "live" && <p className="mt-3 text-xs font-bold text-stone-500"><Timer className="mr-1 inline size-3.5" />Closes at 6:00 PM· {formatCountdown(foodDropSchedule(drop).endsAt.toISOString(), currentTime)}</p>}
-        {(status === "live" || status === "scheduled") && (
-          <div className="mt-4 flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setEditingDrop(drop)} className="rounded-xl">
-              <Pencil className="mr-1 size-3.5" />Edit drop
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void cancel(drop)} className="rounded-xl text-red-600 hover:text-red-700">
-              End drop now
-            </Button>
-          </div>
-        )}
-      </div>;
+      return (
+        <VendorFoodDropCard
+          key={drop.id}
+          drop={drop}
+          product={product}
+          claims={claims}
+          onEdit={handleEditDrop}
+          onCancel={cancel}
+        />
+      );
     })}</div> : <Empty icon={Zap} title="No drops yet" body="Create a flash offer on one of your products to drive same-day demand." />}
-    {creating && <CreateFoodDropDialog open close={() => setCreating(false)} vendor={vendor} products={products} state={state} setState={setState} />}
+    {creating && <CreateFoodDropDialog open close={handleCloseCreate} vendor={vendor} products={products} state={state} setState={setState} />}
     {editingDrop && (
       <EditFoodDropDialog
         open
-        close={() => setEditingDrop(null)}
+        close={handleCloseEdit}
         drop={editingDrop}
         product={state.products.find((p) => p.id === editingDrop.productId)}
         state={state}
@@ -4961,10 +5006,11 @@ function VendorArea({ active, session, state, setState, shorts, onOpenVendorProf
   const todayStr = todayISO();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const ordersToday = orders.filter((x) => x.date === todayStr && x.status !== "Cancelled");
+  const isVerifiedCompleted = (x: Order) => x.status === "Completed" || x.status === "Delivered";
+  const ordersToday = orders.filter((x) => x.date === todayStr && isVerifiedCompleted(x));
   const waiting = orders.filter((x) => x.status === "Scheduled");
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return { key: localDateISO(d), label: i === 6 ? "Today" : d.toLocaleDateString("en-IN", { weekday: "short" }) }; });
-  const byDay = days.map((d) => ({ ...d, total: orders.filter((x) => x.date === d.key && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0) }));
+  const byDay = days.map((d) => ({ ...d, total: orders.filter((x) => x.date === d.key && isVerifiedCompleted(x)).reduce((sum, x) => sum + x.total, 0) }));
   const maxDay = Math.max(1, ...byDay.map((d) => d.total));
   const lowStock = products.filter((x) => x.active && x.stock <= 5).sort((x, y) => x.stock - y.stock).slice(0, 4);
   async function accept(order: Order) {
@@ -5317,6 +5363,225 @@ function CompactDeliveryTimeline({ timeline }: { timeline: TimelineStep[] }) {
   );
 }
 
+function isOrderCodeVisibleToCustomer(status: string, mode: string): boolean {
+  const s = String(status || "").toLowerCase().replace(/[ -]+/g, "_");
+  if (["completed", "delivered", "cancelled", "payment_failed", "expired"].includes(s)) return false;
+  const m = String(mode || "").toLowerCase();
+  if (m.includes("pickup")) {
+    return s === "ready_for_pickup" || s === "ready" || s === "confirmed";
+  }
+  return s === "out_for_delivery" || s === "ready";
+}
+
+function customerOrderCodeLabel(mode: string): string {
+  return String(mode || "").toLowerCase().includes("pickup")
+    ? "Show this code at the store"
+    : "Share this code only when you receive your order";
+}
+
+function VerifyOrderCodeDialog({
+  order,
+  modeLabel,
+  close,
+  onSuccess,
+}: {
+  order: Order | null;
+  modeLabel: "pickup" | "delivery";
+  close: () => void;
+  onSuccess: (orderId: string, nextStatus: Order["status"]) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setCode("");
+    setErrorMsg("");
+    setSubmitting(false);
+  }, [order?.id]);
+
+  if (!order) return null;
+  const title = modeLabel === "pickup" ? "Enter pickup code" : "Enter delivery code";
+  const promptText = modeLabel === "pickup"
+    ? "Ask the customer for their 6-digit pickup verification code before marking this order Picked up / Completed."
+    : "Ask the customer for their 6-digit delivery verification code at the door before marking this order Delivered.";
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!order) return;
+    const clean = code.replace(/\D/g, "").slice(0, 6);
+    if (clean.length !== 6) {
+      setErrorMsg("Please enter the 6-digit verification code.");
+      return;
+    }
+    setErrorMsg("");
+    setSubmitting(true);
+    try {
+      const targetStatus: Order["status"] = modeLabel === "pickup" ? "Completed" : "Delivered";
+      if (isLiveSupabaseMode()) {
+        const res = await verifyLiveOrderVerificationCode(order.id, clean);
+        const mapped: Order["status"] = String(res.status || "").toLowerCase() === "completed" ? "Completed" : "Delivered";
+        onSuccess(order.id, mapped);
+      } else {
+        onSuccess(order.id, targetStatus);
+      }
+      toast.success(modeLabel === "pickup" ? "Pickup code verified! Order marked Completed." : "Delivery code verified! Order marked Delivered.");
+      close();
+    } catch (err) {
+      const msg = errorMessage(err, "Verification failed. Please check the code and try again.");
+      setErrorMsg(msg);
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
+      <DialogContent className="rounded-[28px] sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg font-black text-[#155F65]">
+            <KeyRound className="size-5" />
+            {title}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-stone-600">
+            Order {displayOrderNo} · {order.description}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+          <p className="text-xs leading-relaxed text-stone-600">{promptText}</p>
+          <Field label="6-digit customer code">
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={code}
+              onChange={(e) => {
+                setErrorMsg("");
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+              }}
+              placeholder="000000"
+              className={`${inputClass} text-center font-mono text-2xl font-black tracking-[0.3em]`}
+              autoFocus
+            />
+          </Field>
+          {errorMsg && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+              {errorMsg}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={close} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || code.length !== 6} className="rounded-xl bg-[#155F65] hover:bg-[#114d52]">
+              {submitting ? "Verifying…" : modeLabel === "pickup" ? "Verify & Complete" : "Verify & Mark Delivered"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OperationsOverrideDialog({
+  order,
+  close,
+  onSuccess,
+}: {
+  order: Order | null;
+  close: () => void;
+  onSuccess: (orderId: string, nextStatus: Order["status"], reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setReason("");
+    setErrorMsg("");
+    setSubmitting(false);
+  }, [order?.id]);
+
+  if (!order) return null;
+  const displayOrderNo = order.orderNumber ? `#${order.orderNumber}` : `#${order.id.slice(0, 8)}`;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!order) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      setErrorMsg("Please enter a valid audit reason (at least 3 characters).");
+      return;
+    }
+    setErrorMsg("");
+    setSubmitting(true);
+    try {
+      const targetStatus: Order["status"] = String(order.mode || "").toLowerCase().includes("pickup") ? "Completed" : "Delivered";
+      if (isLiveSupabaseMode()) {
+        const res = await operationsOverrideLiveOrderCompletion(order.id, trimmed);
+        const mapped: Order["status"] = String(res.status || "").toLowerCase() === "completed" ? "Completed" : "Delivered";
+        onSuccess(order.id, mapped, trimmed);
+      } else {
+        onSuccess(order.id, targetStatus, trimmed);
+      }
+      toast.success("Order completed via Operations override and recorded in audit log.");
+      close();
+    } catch (err) {
+      const msg = errorMessage(err, "Override could not be saved.");
+      setErrorMsg(msg);
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(order)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
+      <DialogContent className="rounded-[28px] sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg font-black text-amber-800">
+            <AlertTriangle className="size-5" />
+            Operations Override Completion
+          </DialogTitle>
+          <DialogDescription className="text-xs text-stone-600">
+            Complete order {displayOrderNo} without customer verification code. This action is permanently recorded in the audit log.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+          <Field label="Reason for completing without verification code">
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(e) => {
+                setErrorMsg("");
+                setReason(e.target.value);
+              }}
+              placeholder="e.g., Customer lost phone / verified identity over support call"
+              className={`${inputClass} h-auto py-2.5`}
+              autoFocus
+            />
+          </Field>
+          {errorMsg && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+              {errorMsg}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={close} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || reason.trim().length < 3} className="rounded-xl bg-amber-700 text-white hover:bg-amber-800">
+              {submitting ? "Completing…" : "Confirm Override"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OrderDetailsDialog({
   order,
   close,
@@ -5328,6 +5593,41 @@ function OrderDetailsDialog({
   state: V3State;
   session: DemoSession;
 }) {
+  const [liveCodeData, setLiveCodeData] = useState<{ code?: string; label?: string; loading: boolean }>({ loading: false });
+
+  useEffect(() => {
+    if (!order || session.role !== "customer") {
+      setLiveCodeData({ loading: false });
+      return;
+    }
+    const isFoodDrop = Boolean(order.foodDropId) || Boolean(order.verificationCode) || /food drop/i.test(order.description || "");
+    const isThirdParty = order.mode === "Third-party delivery";
+    if (isFoodDrop || isThirdParty || !isOrderCodeVisibleToCustomer(order.status, order.mode)) {
+      setLiveCodeData({ loading: false });
+      return;
+    }
+    if (!isLiveSupabaseMode()) {
+      // Deterministic 6-digit demo code for demo mode
+      const hash = Array.from(order.id).reduce((acc, c) => ((acc * 31 + c.charCodeAt(0)) % 900000), 100000);
+      setLiveCodeData({ code: String(hash).padStart(6, "0"), label: customerOrderCodeLabel(order.mode), loading: false });
+      return;
+    }
+    let cancelled = false;
+    setLiveCodeData({ loading: true });
+    getLiveOrderVerificationCode(order.id)
+      .then((res) => {
+        if (!cancelled && res.visible && res.code) {
+          setLiveCodeData({ code: res.code, label: res.label || customerOrderCodeLabel(order.mode), loading: false });
+        } else if (!cancelled) {
+          setLiveCodeData({ loading: false });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLiveCodeData({ loading: false });
+      });
+    return () => { cancelled = true; };
+  }, [order?.id, order?.status, order?.mode, session.role]);
+
   if (!order) return null;
   const product = order.productId ? state.products.find((p) => p.id === order.productId) : undefined;
   const vendor = state.vendors.find((v) => v.id === order.vendorId);
@@ -5516,6 +5816,33 @@ function OrderDetailsDialog({
               </div>
             </div>
           </div>
+
+          {/* Pickup / Vendor Delivery Verification Code (Customer only) */}
+          {session.role === "customer" && !order.verificationCode && (liveCodeData.loading || liveCodeData.code) && (
+            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="size-4 text-[#155F65]" />
+                  <b className="text-sm text-[#155F65]">
+                    {order.mode === "Self pickup" ? "Pickup Verification Code" : "Delivery Verification Code"}
+                  </b>
+                </div>
+                <Status className="border-amber-300 bg-amber-50 text-amber-800 font-bold">
+                  {order.status}
+                </Status>
+              </div>
+              <div className="mt-2 rounded-xl bg-white/95 p-3 text-center border border-emerald-100">
+                {liveCodeData.loading ? (
+                  <div className="py-2 text-xs font-medium text-stone-500">Loading your verification code…</div>
+                ) : (
+                  <>
+                    <div className="text-[11px] font-bold text-stone-600">{liveCodeData.label}</div>
+                    <div className="font-mono text-3xl font-black tracking-[0.25em] text-[#155F65] mt-1">{liveCodeData.code}</div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Food Drop Verification Code */}
           {order.verificationCode && (
@@ -5709,6 +6036,80 @@ function OrderTrackingDialog({
   );
 }
 
+function CustomerVerificationCodeBox({ order }: { order: Order }) {
+  const [codeData, setCodeData] = useState<{ code?: string; label?: string; loading: boolean }>({ loading: false });
+  const isFoodDrop = Boolean(order.foodDropId) || Boolean(order.verificationCode) || /food drop/i.test(order.description || "");
+  const isThirdParty = order.mode === "Third-party delivery";
+  const visible = !isFoodDrop && !isThirdParty && isOrderCodeVisibleToCustomer(order.status, order.mode);
+
+  useEffect(() => {
+    if (!visible) {
+      setCodeData({ loading: false });
+      return;
+    }
+    if (!isLiveSupabaseMode()) {
+      const hash = Array.from(order.id).reduce((acc, c) => ((acc * 31 + c.charCodeAt(0)) % 900000), 100000);
+      setCodeData({ code: String(hash).padStart(6, "0"), label: customerOrderCodeLabel(order.mode), loading: false });
+      return;
+    }
+    let cancelled = false;
+    setCodeData({ loading: true });
+    getLiveOrderVerificationCode(order.id)
+      .then((res) => {
+        if (!cancelled && res.visible && res.code) {
+          setCodeData({ code: res.code, label: res.label || customerOrderCodeLabel(order.mode), loading: false });
+        } else if (!cancelled) {
+          setCodeData({ loading: false });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCodeData({ loading: false });
+      });
+    return () => { cancelled = true; };
+  }, [order.id, order.status, order.mode, visible]);
+
+  if (!visible || (!codeData.loading && !codeData.code)) return null;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="grid size-7 place-items-center rounded-lg bg-[#155F65] text-white">
+            <KeyRound className="size-4" />
+          </span>
+          <div>
+            <b className="text-sm text-[#155F65]">
+              {order.mode === "Self pickup" ? "Pickup Verification Code" : "Delivery Verification Code"}
+            </b>
+          </div>
+        </div>
+        <Status className="border-amber-300 bg-amber-50 text-amber-800 font-bold">
+          {order.status}
+        </Status>
+      </div>
+      <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/95 rounded-xl p-3.5 border border-emerald-100">
+        {codeData.loading ? (
+          <div className="text-xs font-medium text-stone-500">Loading your verification code…</div>
+        ) : (
+          <>
+            <div>
+              <div className="text-xs font-bold text-stone-700">{codeData.label}</div>
+              <div className="text-[11px] text-stone-500 mt-0.5">
+                {order.mode === "Self pickup"
+                  ? "The store will enter this code to mark your order Picked up."
+                  : "The delivery partner will enter this code at handover."}
+              </div>
+            </div>
+            <div className="font-mono text-2xl sm:text-3xl font-black tracking-[0.25em] text-[#155F65]">
+              {codeData.code}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CustomerOrderCard({
   order,
   state,
@@ -5878,6 +6279,9 @@ function CustomerOrderCard({
         </div>
       )}
 
+      {/* Pickup / Vendor Delivery Verification Code */}
+      <CustomerVerificationCodeBox order={order} />
+
       {/* Food Drop Delivery / Pickup Verification Code */}
       {order.verificationCode && (
         <div className="mt-4 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 p-4 shadow-xs">
@@ -5997,6 +6401,8 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
   const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const [verifyingCodeOrder, setVerifyingCodeOrder] = useState<{ order: Order; modeLabel: "pickup" | "delivery" } | null>(null);
+  const [overridingOrder, setOverridingOrder] = useState<Order | null>(null);
   const dismissedOrderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -6230,11 +6636,11 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><b>{order.description}</b><Status>{order.status}</Status><Status className={order.payment === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{order.payment}</Status><span className="font-mono text-xs text-stone-400">{order.id}</span></div>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-5">{details.map(([label, value]) => <OrderDetail key={label} label={label} value={value} />)}</div>
-              {order.verificationCode && (
+              {isFoodDrop && order.verificationCode && (
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-emerald-950">
                   <div className="flex items-center gap-2">
                     <KeyRound className="size-4 text-[#155F65]" />
-                    <span><b>Pickup Code:</b> <span className="font-mono text-base font-black tracking-widest">{order.verificationCode}</span></span>
+                    <span><b>Food Drop Code:</b> <span className="font-mono text-base font-black tracking-widest">{order.verificationCode}</span></span>
                   </div>
                   <Status className={order.verificationStatus === "verified" || order.status === "Delivered" ? "border-emerald-300 bg-emerald-100 text-emerald-800 font-bold" : "border-amber-300 bg-amber-50 text-amber-800 font-bold"}>
                     {order.verificationStatus === "verified" || order.status === "Delivered" ? "Verified" : "Pending pickup"}
@@ -6259,15 +6665,38 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
               {!isFoodDrop && (
                 <Select value={person?.id || "unassigned"} onValueChange={(staffId) => void assign(order, staffId)}><SelectTrigger className="w-44"><SelectValue placeholder="Assign delivery" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
               )}
-              {order.mode !== "Third-party delivery" && (
+              {order.mode !== "Third-party delivery" && !["Completed", "Delivered", "Cancelled"].includes(order.status) && (
                 <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}>
                   <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {(isFoodDrop ? ["Confirmed", "Ready for pickup", "Delivered"] : ["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"]).map((status) => (
+                    {(isFoodDrop
+                      ? ["Confirmed", "Ready for pickup", "Delivered"]
+                      : order.mode === "Self pickup"
+                        ? ["Confirmed", "Preparing", "Ready for pickup"]
+                        : ["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery"]
+                    ).map((status) => (
                       <SelectItem key={status} value={status} disabled={DELIVERY_STATUSES.includes(status as Order["status"]) && order.date > todayISO()}>{status}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+              {scope === "vendor" && !isFoodDrop && order.mode === "Self pickup" && (order.status === "Ready for pickup" || order.status === "Ready") && (
+                <Button size="sm" onClick={() => setVerifyingCodeOrder({ order, modeLabel: "pickup" })} className="rounded-xl bg-[#155F65] hover:bg-[#114d52]">
+                  <KeyRound className="size-4" />
+                  Enter pickup code
+                </Button>
+              )}
+              {scope === "vendor" && !isFoodDrop && order.mode === "Vendor delivery" && order.status === "Out for delivery" && (
+                <Button size="sm" onClick={() => setVerifyingCodeOrder({ order, modeLabel: "delivery" })} className="rounded-xl bg-[#155F65] hover:bg-[#114d52]">
+                  <KeyRound className="size-4" />
+                  Enter delivery code
+                </Button>
+              )}
+              {scope === "operations" && !isFoodDrop && !["Completed", "Delivered", "Cancelled"].includes(order.status) && (
+                <Button size="sm" variant="outline" onClick={() => setOverridingOrder(order)} className="rounded-xl border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100">
+                  <AlertTriangle className="size-4" />
+                  Complete with override
+                </Button>
               )}
               {scope === "vendor" && ((order.status === "Scheduled" || order.status === "Expired") && order.date < todayISO()) && (
                 <Button
@@ -6292,6 +6721,29 @@ function OrdersV4({ session, state, setState, scope, vendor }: { session: DemoSe
     <OrderRescheduleDialog order={rescheduling} close={() => setRescheduling(null)} state={state} setState={setState} />
     <PaymentDialog order={paying} close={() => setPaying(null)} state={state} setState={setState} />
     <RateOrderDialog key={ratingOrder?.id || "closed"} order={ratingOrder} close={() => setRatingOrder(null)} state={state} setState={setState} session={session} />
+    <VerifyOrderCodeDialog
+      order={verifyingCodeOrder?.order || null}
+      modeLabel={verifyingCodeOrder?.modeLabel || "pickup"}
+      close={() => setVerifyingCodeOrder(null)}
+      onSuccess={(orderId, nextStatus) => {
+        setState((s) => ({
+          ...s,
+          orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: nextStatus, verificationStatus: "verified" } : x)),
+          audit: [audit(session, "Verified order completion code", `${orderId} → ${nextStatus}`), ...s.audit],
+        }));
+      }}
+    />
+    <OperationsOverrideDialog
+      order={overridingOrder}
+      close={() => setOverridingOrder(null)}
+      onSuccess={(orderId, nextStatus, reason) => {
+        setState((s) => ({
+          ...s,
+          orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: nextStatus, verificationStatus: "verified" } : x)),
+          audit: [audit(session, "Operations override order completion", `${orderId} → ${nextStatus} · Reason: ${reason}`), ...s.audit],
+        }));
+      }}
+    />
   </div>;
 }
 
@@ -8714,6 +9166,7 @@ function DeliverySlotsSection({
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
     const [editing, setEditing] = useState<Staff | null>(null);
+    const [verifyingOrder, setVerifyingOrder] = useState<Order | null>(null);
     const people = state.staff.filter((x) => x.vendorId === vendor.id);
     async function savePerson() {
       if (!name || !/^\+?[0-9 ]{10,15}$/.test(phone)) return toast.error("Enter a staff name and valid phone number");
@@ -8743,13 +9196,25 @@ function DeliverySlotsSection({
       <div className="surface-card rounded-[28px] p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Staff name" className={inputClass} /><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" className={inputClass} /><Button onClick={savePerson} className="h-11 rounded-xl bg-[#155F65]">{editing ? <Pencil /> : <Plus />}{editing ? "Save changes" : "Add staff"}</Button></div>{editing && <button onClick={() => { setEditing(null); setName(""); setPhone(""); }} className="mt-3 text-xs font-black text-stone-500">Cancel editing</button>}</div>
       {people.length ? <div className="grid gap-3 md:grid-cols-2">{people.map((person) => <div key={person.id} className="surface-card flex items-center gap-3 rounded-[22px] p-4"><div className="grid size-11 place-items-center rounded-full bg-[#EAF4F2] font-black text-[#155F65]">{person.name[0]}</div><div className="min-w-0 flex-1"><b className="block truncate">{person.name}</b><div className="text-xs text-stone-500">{person.phone}</div></div><button onClick={() => { setEditing(person); setName(person.name); setPhone(person.phone); }} className="grid size-9 place-items-center rounded-xl hover:bg-stone-100" title="Edit"><Pencil className="size-4" /></button><button onClick={() => remove(person)} className="grid size-9 place-items-center rounded-xl text-red-600 hover:bg-red-50" title="Delete"><Trash2 className="size-4" /></button><Switch checked={person.active} onCheckedChange={(value) => { void (async () => { try { if (isLiveSupabaseMode()) await saveLiveDeliveryStaff({ staffId: person.id, name: person.name, phone: person.phone, active: value }); setState((s) => ({ ...s, staff: s.staff.map((x) => x.id === person.id ? { ...x, active: value } : x) })); } catch (error) { toast.error(errorMessage(error, "Staff status could not be changed")); } })(); }} /></div>)}</div> : <Empty icon={Truck} title="No delivery staff" body="Add the first delivery person above." />}
       <section className="surface-card rounded-3xl p-5"><h3 className="text-lg font-semibold">Today&apos;s assignments</h3>
-        {(() => { const rows = state.orders.filter((o) => o.vendorId === vendor.id && o.payment === "Paid" && !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery").slice(0, 8); return rows.length ? <div className="mt-3 space-y-2">{rows.map((o) => { const a = state.assignments.find((x) => x.orderId === o.id); const who = state.staff.find((m) => m.id === a?.staffId); return <div key={o.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-[#EEF2F2] px-4 py-3 text-sm sm:grid-cols-[1.1fr_1fr_1.2fr_1fr_auto]"><b className="truncate">{o.id}</b><span>{o.slot}</span><span className="truncate text-[#2F3C3F]">{o.deliveryAddress || "Address on order"}</span><span className={who ? "font-medium" : "text-[#55656A]"}>{who?.name || "Not assigned"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${who ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]"}`}>{who ? o.status : "Assign in Orders"}</span></div>; })}</div> : <p className="mt-3 rounded-2xl bg-[#EEF2F2] p-4 text-sm text-[#55656A]">No open deliveries to assign right now.</p>; })()}
+        {(() => { const rows = state.orders.filter((o) => o.vendorId === vendor.id && o.payment === "Paid" && !["Completed", "Delivered", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery").slice(0, 8); return rows.length ? <div className="mt-3 space-y-2">{rows.map((o) => { const a = state.assignments.find((x) => x.orderId === o.id); const who = state.staff.find((m) => m.id === a?.staffId); return <div key={o.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[18px] bg-[#EEF2F2] px-4 py-3 text-sm sm:grid-cols-[1fr_0.9fr_1.2fr_0.9fr_auto_auto]"><b className="truncate">{o.orderNumber || o.id}</b><span>{o.slot}</span><span className="truncate text-[#2F3C3F]">{o.deliveryAddress || "Address on order"}</span><span className={who ? "font-medium" : "text-[#55656A]"}>{who?.name || "Not assigned"}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${who ? "bg-[#edf3fd] text-[#285fba]" : "bg-[#FFF4CF] text-[#795900]"}`}>{who ? o.status : "Assign in Orders"}</span>{o.status === "Out for delivery" ? <Button size="sm" onClick={() => setVerifyingOrder(o)} className="rounded-xl bg-[#155F65] hover:bg-[#114d52]"><KeyRound className="size-3.5" />Enter delivery code</Button> : <span />}</div>; })}</div> : <p className="mt-3 rounded-2xl bg-[#EEF2F2] p-4 text-sm text-[#55656A]">No open deliveries to assign right now.</p>; })()}
       </section>
-      <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Customers see the delivery person&apos;s first name and phone number only while their order is on the way.</p>
+      <p className="rounded-3xl bg-[#edf3fd] p-4 text-sm font-medium text-[#285fba]">Customers see the delivery person&apos;s first name and phone number only while their order is on the way. Delivery staff must enter the customer&apos;s 6-digit verification code to mark an order Delivered.</p>
+      <VerifyOrderCodeDialog
+        order={verifyingOrder}
+        modeLabel="delivery"
+        close={() => setVerifyingOrder(null)}
+        onSuccess={(orderId, nextStatus) => {
+          setState((s) => ({
+            ...s,
+            orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: nextStatus, verificationStatus: "verified" } : x)),
+            audit: [audit(session, "Verified delivery completion code", `${orderId} → ${nextStatus}`), ...s.audit],
+          }));
+        }}
+      />
     </div>;
   }
 
-  function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup", "Completed"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
+  function Orders({ session, state, setState, scope, vendor }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; scope: "customer" | "vendor" | "operations"; vendor?: Vendor }) { const baseOrders = scope === "customer" ? state.orders.filter((x) => x.customerEmail === session.email) : scope === "vendor" ? state.orders.filter((x) => x.vendorId === vendor?.id) : state.orders; const orders = [...baseOrders].sort((a, b) => { const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0; if (aTime && bTime && aTime !== bTime) return bTime - aTime; if (aTime && !bTime) return -1; if (!aTime && bTime) return 1; return (b.id || "").localeCompare(a.id || ""); }); function update(order: Order, status: Order["status"]) { const productVendor = state.vendors.find((x) => x.id === order.vendorId); setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status } : x), notifications: [notice(order.customerEmail, "customer", `Order ${status.toLowerCase()}`, `${order.description} is now ${status.toLowerCase()}.`), ...(productVendor ? [notice(productVendor.ownerEmail, "vendor", "Order updated", `${order.id} is ${status}.`)] : []), ...s.notifications], audit: [audit(session, "Updated order status", `${order.id} → ${status}`), ...s.audit] })); showDeviceNotification(`Order ${status}`, order.description); toast.success("Order status updated"); } function cancel(order: Order) { const reason = prompt("Why do you need to cancel this order?"); if (!reason) return; setState((s) => ({ ...s, orders: s.orders.map((x) => x.id === order.id ? { ...x, status: "Cancellation requested" } : x), cancellations: [{ id: id("CAN"), orderId: order.id, customerEmail: session.email, reason, aiDecision: "Eligible if before vendor preparation cut-off", confidence: 91, status: "Awaiting operations" }, ...s.cancellations], notifications: [notice("operations@sheplates.demo", "operations", "Cancellation needs review", `${order.id} was pre-screened by She Agent.`), ...s.notifications] })); toast.success("She Agent screened the request; Operations has the final decision"); } return <div className="space-y-6"><Heading eyebrow="ORDER CONTROL" title={scope === "customer" ? "Track your orders" : scope === "vendor" ? "Fulfil scheduled orders" : "Platform order tracking"} body="Every future order keeps a status, scheduled slot, payment state and accountable delivery person." />{orders.length ? <div className="surface-card overflow-x-auto rounded-[28px]"><Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Schedule</TableHead><TableHead>Quantity</TableHead><TableHead>Status</TableHead><TableHead>Delivery person</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{orders.map((order) => { const assignment = state.assignments.find((x) => x.orderId === order.id); const person = state.staff.find((x) => x.id === assignment?.staffId); const available = state.staff.filter((x) => x.vendorId === order.vendorId && x.active); return <TableRow key={order.id}><TableCell><b className="font-mono text-xs">{order.id}</b><div className="text-xs text-stone-500">{order.description}</div></TableCell><TableCell><b>{order.date}</b><div className="text-xs text-stone-500">{order.slot}</div></TableCell><TableCell>{order.quantity} {order.unit}<div className="text-xs font-bold">{money(order.total)}</div></TableCell><TableCell><Status>{order.status}</Status><div className="mt-1 text-xs text-stone-500">{order.payment}</div></TableCell><TableCell>{scope === "vendor" ? <Select value={person?.id || "unassigned"} onValueChange={(staffId) => { if (staffId === "unassigned") return; const next: Assignment = { id: id("ASN"), orderId: order.id, staffId, assignedAt: now() }; setState((s) => ({ ...s, assignments: [next, ...s.assignments.filter((x) => x.orderId !== order.id)], notifications: [notice(order.customerEmail, "customer", "Delivery person assigned", `${state.staff.find((x) => x.id === staffId)?.name} will handle ${order.id}.`), ...s.notifications] })); }}><SelectTrigger className="w-44 rounded-xl"><SelectValue placeholder="Assign staff" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Not assigned</SelectItem>{available.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent></Select> : person ? <div><b>{person.name}</b><div className="text-xs text-[#155F65]">{person.phone}</div></div> : <span className="text-xs text-stone-400">Not assigned</span>}</TableCell><TableCell className="text-right">{scope === "customer" ? <span className="text-xs font-bold text-stone-400">Contact Support to change</span> : <Select value={order.status} onValueChange={(value) => void update(order, value as Order["status"])}><SelectTrigger className="ml-auto w-44 rounded-lg"><SelectValue /></SelectTrigger><SelectContent>{["Scheduled", "Confirmed", "Preparing", "Ready", "Out for delivery", "Ready for pickup"].map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent></Select>}</TableCell></TableRow>; })}</TableBody></Table></div> : <Empty icon={Package} title="No orders yet" body="Orders will appear when customers schedule a product or select a monthly quotation." />}</div>; }
 
   function OperationsArea({ active, session, state, setState, navigate, openAgent, onOpenVendorProfile }: { navigate: (page: string) => void; openAgent: () => void; active: string; session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>>; onOpenVendorProfile?: (vendorId: string) => void }) {
     if (active === "Notifications") return <NotificationDrawerV4 page open setOpen={() => undefined} session={session} state={state} setState={setState} people={{ requests: [], resolveRequest: async () => { } } as unknown as PeopleApi} onNavigate={navigate} />;
@@ -8770,7 +9235,7 @@ function DeliverySlotsSection({
     const subscriptionVendors = state.vendors.filter((x) => x.vendorKind !== "p0_connect");
     const activeOrders = state.orders.filter((x) => !["Completed", "Cancelled"].includes(x.status)); const gmv = state.orders.reduce((sum, x) => sum + x.total, 0); const openVendors = subscriptionVendors.filter((x) => x.openToday && x.verification === "Verified").length;
     const todayStr = todayISO();
-    const salesToday = state.orders.filter((x) => x.date === todayStr && x.status !== "Cancelled").reduce((sum, x) => sum + x.total, 0);
+    const salesToday = state.orders.filter((x) => x.date === todayStr && (x.status === "Completed" || x.status === "Delivered")).reduce((sum, x) => sum + x.total, 0);
     const awaitingVerification = subscriptionVendors.filter((x) => ["Submitted", "Under review"].includes(x.verification));
     const unassigned = state.orders.filter((o) => !["Completed", "Cancelled"].includes(o.status) && o.mode === "Vendor delivery" && !state.assignments.some((a) => a.orderId === o.id));
     const cancelQueue = state.cancellations.filter((x) => x.status === "Awaiting operations");
@@ -9430,7 +9895,18 @@ function DeliverySlotsSection({
   }
 
   function vendorPayoutSummary(state: V3State, vendorId: string) {
-    const rows = state.transactions.filter((x) => x.vendorId === vendorId);
+    const completedOrderIds = new Set(
+      state.orders
+        .filter((o) => o.vendorId === vendorId && (o.status === "Completed" || o.status === "Delivered"))
+        .map((o) => o.id)
+    );
+    const rows = state.transactions.filter((x) => {
+      if (x.vendorId !== vendorId) return false;
+      if (x.payoutStatus === "Paid" || x.payoutStatus === "Reversed") return true;
+      const matchingOrder = state.orders.find((o) => o.id === x.orderId);
+      if (!matchingOrder) return true;
+      return completedOrderIds.has(x.orderId);
+    });
     const gross = rows.reduce((sum, x) => sum + x.grossAmount, 0);
     const commission = rows.reduce((sum, x) => sum + x.commissionAmount, 0);
     const paidOut = rows.filter((x) => x.payoutStatus === "Paid").reduce((sum, x) => sum + x.vendorPayout, 0);

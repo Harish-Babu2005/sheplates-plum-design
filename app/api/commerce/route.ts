@@ -3,6 +3,15 @@ import { insertOrderWithBilling, priceSchedule } from "@/lib/schedule-billing";
 import { pauseScheduleServer, resumeScheduleServer, closeScheduleServer, processScheduleDeadlines } from "@/lib/schedule-pause";
 import { createClient } from "@supabase/supabase-js";
 import { generateDeliveryVerificationCode, hashDeliveryVerificationCode } from "@/lib/third-party-delivery.mjs";
+import {
+  generateOrderVerificationCode,
+  hashOrderVerificationCode,
+  encryptOrderVerificationCode,
+  decryptOrderVerificationCode,
+  verifyOrderVerificationCode,
+  getCustomerCodeLabel,
+  isCodeVisibleToCustomer,
+} from "@/lib/order-verification";
 import { calculateBillingSummary } from "@/lib/billing";
 import { loadCustomerCoords, loadVendorBillingTerms } from "@/lib/billing-server";
 import { validateSkuSelection } from "@/lib/sku-master";
@@ -750,7 +759,31 @@ export async function POST(request: Request) {
       }
       const updated = await admin.from("payments").update({ status: "paid", provider: String(body.method || "checkout").toLowerCase(), provider_reference: String(body.reference || `SIM-${Date.now()}`), updated_at: new Date().toISOString() }).eq("order_id", order.id).eq("customer_id", profile.id);
       if (updated.error) throw updated.error;
-      await admin.from("orders").update({ status: "confirmed", updated_at: new Date().toISOString() }).eq("id", order.id);
+
+      const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || "sheplates-order-verification-secret";
+      const isThirdParty = String(order.fulfilment_mode || "").toLowerCase().includes("third_party");
+      let orderUpdatePayload: Record<string, unknown> = { status: "confirmed", updated_at: new Date().toISOString() };
+      if (!isThirdParty && secret) {
+        try {
+          const code = generateOrderVerificationCode();
+          const codeHash = hashOrderVerificationCode(order.id, code, secret);
+          const codeEncrypted = encryptOrderVerificationCode(order.id, code, secret);
+          orderUpdatePayload = {
+            ...orderUpdatePayload,
+            verification_code_hash: codeHash,
+            verification_code_encrypted: codeEncrypted,
+            verification_attempts: 0,
+          };
+        } catch (codeErr) {
+          console.error("Verification code generation error in mark_paid:", codeErr);
+        }
+      }
+
+      let orderUpdate = await admin.from("orders").update(orderUpdatePayload).eq("id", order.id);
+      if (orderUpdate.error && /verification_code/i.test(orderUpdate.error.message || "")) {
+        orderUpdate = await admin.from("orders").update({ status: "confirmed", updated_at: new Date().toISOString() }).eq("id", order.id);
+      }
+      if (orderUpdate.error) throw orderUpdate.error;
       if (order.schedule_id) await admin.from("product_schedules").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", order.schedule_id).eq("status", "awaiting_payment");
       const dates = rawSchedule ? scheduleDates(rawSchedule as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null }) : [String(order.scheduled_date)];
       const firstItem = Array.isArray(order.order_items) ? order.order_items[0] : order.order_items;
@@ -764,6 +797,18 @@ export async function POST(request: Request) {
           customer_total: Number(order.customer_total || 0), fulfilment_mode: order.fulfilment_mode, scheduled_date: date, scheduled_slot: order.scheduled_slot, status: "confirmed",
         }).select("id").single();
         if (created.error) throw created.error;
+        if (!isThirdParty && secret && created.data?.id) {
+          try {
+            const sCode = generateOrderVerificationCode();
+            const sHash = hashOrderVerificationCode(created.data.id, sCode, secret);
+            const sEnc = encryptOrderVerificationCode(created.data.id, sCode, secret);
+            await admin.from("orders").update({
+              verification_code_hash: sHash,
+              verification_code_encrypted: sEnc,
+              verification_attempts: 0,
+            }).eq("id", created.data.id);
+          } catch {}
+        }
         if (firstItem) {
           const item = firstItem as Record<string, unknown>;
           await admin.from("order_items").insert({ order_id: created.data.id, product_name: String(item.product_name || "Scheduled item"), quantity: Number(item.quantity || 1), unit: String(item.unit || "pack"), vendor_base_price: Number(item.vendor_base_price || 0), markup_percent: Number(item.markup_percent || 0), customer_price: Number(item.customer_price || 0) });
@@ -930,8 +975,20 @@ export async function POST(request: Request) {
       if (profile.role === "vendor" && !isPaid && !isFoodDrop) {
         return NextResponse.json({ error: "Cannot accept an order before payment is confirmed." }, { status: 403 });
       }
-      if (order.fulfilment_mode === "third_party_delivery" && nextStatus === "completed") {
+      if (order.fulfilment_mode === "third_party_delivery" && (nextStatus === "completed" || nextStatus === "delivered")) {
         return NextResponse.json({ error: "Third-party orders can only be marked delivered after the handover code is verified." }, { status: 409 });
+      }
+      if (!isFoodDrop && (nextStatus === "completed" || nextStatus === "delivered")) {
+        if (profile.role === "vendor") {
+          return NextResponse.json({
+            error: "Orders can only be completed by verifying the customer's verification code.",
+          }, { status: 409 });
+        }
+        if (profile.role === "operations" || profile.role === "admin") {
+          return NextResponse.json({
+            error: "Operations must use the override action with a mandatory reason to complete orders without a code.",
+          }, { status: 409 });
+        }
       }
       const deliveryStatuses = new Set(["preparing", "ready", "out_for_delivery", "ready_for_pickup", "completed", "delivered"]);
       if (deliveryStatuses.has(nextStatus) && order.scheduled_date && isFutureDate(order.scheduled_date)) {
@@ -939,8 +996,291 @@ export async function POST(request: Request) {
       }
       const updated = await admin.from("orders").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", orderId);
       if (updated.error) throw updated.error;
-      await admin.from("notifications").insert({ recipient_id: order.customer_id, kind: "order", title: `Order ${String(body.status || "updated").toLowerCase()}`, body: `${order.order_number} is now ${String(body.status || "updated").toLowerCase()}.`, entity_type: "order", entity_id: orderId });
+
+      let notifBody = `${order.order_number} is now ${String(body.status || "updated").toLowerCase()}.`;
+      if (nextStatus === "ready_for_pickup") {
+        notifBody = `${order.order_number} is ready for pickup. Show your pickup code at the store.`;
+      } else if (nextStatus === "out_for_delivery") {
+        notifBody = `${order.order_number} is out for delivery. Share your delivery code with the partner upon arrival.`;
+      }
+
+      await admin.from("notifications").insert({ recipient_id: order.customer_id, kind: "order", title: `Order ${String(body.status || "updated").toLowerCase()}`, body: notifBody, entity_type: "order", entity_id: orderId });
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "get_order_verification_code") {
+      if (profile.role !== "customer") return NextResponse.json({ error: "Customer access required." }, { status: 403 });
+      const orderId = String(body.orderId || "");
+      const { data: order, error: orderErr } = await admin
+        .from("orders")
+        .select("id,order_number,customer_id,fulfilment_mode,status,verification_code_hash,verification_code_encrypted,verification_locked_at")
+        .eq("id", orderId)
+        .eq("customer_id", profile.id)
+        .maybeSingle();
+
+      if (orderErr || !order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+
+      const visible = isCodeVisibleToCustomer(order.status, order.fulfilment_mode);
+      if (!visible) {
+        return NextResponse.json({
+          ok: true,
+          visible: false,
+          message: "Verification code is only visible during active pickup or delivery stages.",
+        });
+      }
+
+      const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || "sheplates-order-verification-secret";
+      let encryptedCode = order.verification_code_encrypted;
+
+      // Handle legacy orders in progress that didn't have a code generated at payment time
+      if (!encryptedCode && secret) {
+        try {
+          const freshCode = generateOrderVerificationCode();
+          const freshHash = hashOrderVerificationCode(order.id, freshCode, secret);
+          encryptedCode = encryptOrderVerificationCode(order.id, freshCode, secret);
+          await admin.from("orders").update({
+            verification_code_hash: freshHash,
+            verification_code_encrypted: encryptedCode,
+            verification_attempts: 0,
+            updated_at: new Date().toISOString(),
+          }).eq("id", order.id);
+        } catch (e) {
+          console.error("Failed to generate fallback code for legacy order:", e);
+        }
+      }
+
+      const decrypted = encryptedCode ? decryptOrderVerificationCode(order.id, encryptedCode, secret) : null;
+      if (!decrypted) {
+        return NextResponse.json({
+          error: "Verification code could not be retrieved securely.",
+        }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        visible: true,
+        code: decrypted,
+        label: getCustomerCodeLabel(order.fulfilment_mode),
+        status: order.status,
+      });
+    }
+
+    if (action === "verify_order_verification_code" || action === "verify_pickup_code" || action === "verify_delivery_code") {
+      if (!(["vendor", "operations", "admin"] as Role[]).includes(profile.role)) {
+        return NextResponse.json({ error: "Authorised vendor or operations access required." }, { status: 403 });
+      }
+      const orderId = String(body.orderId || "");
+      const rawCode = String(body.code || "").trim();
+      if (!/^\d{6}$/.test(rawCode)) {
+        return NextResponse.json({ error: "Enter the 6-digit verification code." }, { status: 400 });
+      }
+
+      const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || "sheplates-order-verification-secret";
+      const codeHash = hashOrderVerificationCode(orderId, rawCode, secret);
+
+      // Try stored procedure first if migration was run
+      try {
+        const rpcRes = await ctx.caller.rpc("verify_order_verification_code", {
+          p_order_id: orderId,
+          p_code_hash: codeHash,
+          p_actor_role: profile.role,
+        });
+        if (!rpcRes.error && rpcRes.data) {
+          const data = rpcRes.data as { ok?: boolean; error?: string; remaining_attempts?: number; status?: string };
+          if (data.ok) {
+            return NextResponse.json({ ok: true, status: data.status });
+          }
+          if (data.error === "attempt_limit") {
+            return NextResponse.json({ error: "Verification is locked after 5 failed attempts. Please contact Operations support.", locked: true, remainingAttempts: 0 }, { status: 429 });
+          }
+          if (data.error === "invalid_code") {
+            return NextResponse.json({ error: `The code is incorrect. ${data.remaining_attempts ?? 0} attempt(s) remain.`, remainingAttempts: data.remaining_attempts ?? 0 }, { status: 400 });
+          }
+          if (data.error === "already_completed") {
+            return NextResponse.json({ error: "This order has already been completed." }, { status: 409 });
+          }
+          if (data.error === "cancelled") {
+            return NextResponse.json({ error: "This order was cancelled." }, { status: 409 });
+          }
+          if (data.error === "not_found") {
+            return NextResponse.json({ error: "Order not found." }, { status: 404 });
+          }
+          if (data.error === "unauthorized") {
+            return NextResponse.json({ error: "Not authorised to verify this order." }, { status: 403 });
+          }
+        }
+      } catch {
+        // Fallback to pure TS/Node verification
+      }
+
+      // JS fallback implementation
+      const { data: order, error: fetchErr } = await admin
+        .from("orders")
+        .select("id,order_number,vendor_id,customer_id,fulfilment_mode,status,verification_code_hash,verification_attempts,verification_locked_at")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (fetchErr || !order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+
+      if (profile.role === "vendor" && order.vendor_id !== profile.vendor_id) {
+        return NextResponse.json({ error: "This order belongs to another store." }, { status: 403 });
+      }
+
+      const st = String(order.status || "").toLowerCase();
+      if (st === "completed" || st === "delivered") {
+        return NextResponse.json({ error: "This order has already been completed." }, { status: 409 });
+      }
+      if (st === "cancelled") {
+        return NextResponse.json({ error: "This order was cancelled." }, { status: 409 });
+      }
+
+      const currentAttempts = Number(order.verification_attempts || 0);
+      if (currentAttempts >= 5 || order.verification_locked_at) {
+        return NextResponse.json({ error: "Verification is locked after 5 failed attempts. Please contact Operations support.", locked: true, remainingAttempts: 0 }, { status: 429 });
+      }
+
+      const isMatch = verifyOrderVerificationCode(orderId, rawCode, order.verification_code_hash, secret);
+      if (isMatch) {
+        const isPickup = String(order.fulfilment_mode || "").toLowerCase().includes("pickup");
+        const nextStatus = isPickup ? "completed" : "delivered";
+        const verifiedAt = new Date().toISOString();
+
+        await admin.from("orders").update({
+          status: nextStatus,
+          verified_at: verifiedAt,
+          verification_attempts: 0,
+          updated_at: verifiedAt,
+        }).eq("id", orderId);
+
+        // Notify customer
+        await admin.from("notifications").insert({
+          recipient_id: order.customer_id,
+          kind: "order",
+          title: isPickup ? "Order Picked Up" : "Order Delivered",
+          body: `Order ${order.order_number} has been verified and marked ${nextStatus}.`,
+          entity_type: "order",
+          entity_id: orderId,
+        });
+
+        return NextResponse.json({ ok: true, status: nextStatus, verifiedAt });
+      } else {
+        const nextAttempts = currentAttempts + 1;
+        const isLocked = nextAttempts >= 5;
+        const updatePayload: Record<string, unknown> = {
+          verification_attempts: nextAttempts,
+          updated_at: new Date().toISOString(),
+        };
+        if (isLocked) {
+          updatePayload.verification_locked_at = new Date().toISOString();
+        }
+        await admin.from("orders").update(updatePayload).eq("id", orderId);
+
+        if (isLocked) {
+          const { data: ops } = await admin.from("profiles").select("id").in("role", ["operations", "admin"]);
+          if (ops?.length) {
+            await admin.from("notifications").insert(
+              ops.map((p) => ({
+                recipient_id: p.id,
+                kind: "security_alert",
+                title: "Order Verification Locked",
+                body: `Order ${order.order_number} locked after 5 failed code attempts. Requires Operations review.`,
+                entity_type: "order",
+                entity_id: orderId,
+              }))
+            );
+          }
+          return NextResponse.json({
+            error: "Verification is locked after 5 failed attempts. Please contact Operations support.",
+            locked: true,
+            remainingAttempts: 0,
+          }, { status: 429 });
+        }
+
+        return NextResponse.json({
+          error: `The code is incorrect. ${5 - nextAttempts} attempt(s) remain.`,
+          remainingAttempts: 5 - nextAttempts,
+        }, { status: 400 });
+      }
+    }
+
+    if (action === "operations_override_order_completion") {
+      if (!(["operations", "admin"] as Role[]).includes(profile.role)) {
+        return NextResponse.json({ error: "Only Operations or Admin can override order completion." }, { status: 403 });
+      }
+      const orderId = String(body.orderId || "");
+      const reason = String(body.reason || "").trim();
+      if (!reason || reason.length < 3) {
+        return NextResponse.json({ error: "A valid reason (at least 3 characters) is required to override order completion." }, { status: 400 });
+      }
+
+      const { data: order, error: orderErr } = await admin
+        .from("orders")
+        .select("id,order_number,customer_id,fulfilment_mode,status")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (orderErr || !order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+
+      const isPickup = String(order.fulfilment_mode || "").toLowerCase().includes("pickup");
+      const nextStatus = isPickup ? "completed" : "delivered";
+      const now = new Date().toISOString();
+
+      const updatePayload: Record<string, unknown> = {
+        status: nextStatus,
+        verified_at: now,
+        completed_via_override: true,
+        override_reason: reason,
+        override_by: profile.id,
+        updated_at: now,
+      };
+
+      let updRes = await admin.from("orders").update(updatePayload).eq("id", orderId);
+      if (updRes.error && /override|verified_at/i.test(updRes.error.message || "")) {
+        delete updatePayload.completed_via_override;
+        delete updatePayload.override_reason;
+        delete updatePayload.override_by;
+        delete updatePayload.verified_at;
+        updRes = await admin.from("orders").update(updatePayload).eq("id", orderId);
+      }
+      if (updRes.error) throw updRes.error;
+
+      try {
+        await admin.from("audit_log").insert({
+          actor_id: profile.id,
+          action: "operations_override_completion",
+          entity_type: "orders",
+          entity_id: orderId,
+          metadata: {
+            order_number: order.order_number,
+            reason,
+            previous_status: order.status,
+            new_status: nextStatus,
+            fulfilment_mode: order.fulfilment_mode,
+            actor_email: profile.email,
+          },
+        });
+      } catch {
+        try {
+          await admin.from("audit_logs").insert({
+            actor_id: profile.id,
+            actor_role: profile.role,
+            action: "operations_override_completion",
+            entity_type: "orders",
+            entity_id: orderId,
+          });
+        } catch {}
+      }
+
+      await admin.from("notifications").insert({
+        recipient_id: order.customer_id,
+        kind: "order",
+        title: isPickup ? "Order Completed (Support Override)" : "Order Delivered (Support Override)",
+        body: `Order ${order.order_number} has been completed by Operations support. Reason: ${reason}`,
+        entity_type: "order",
+        entity_id: orderId,
+      });
+
+      return NextResponse.json({ ok: true, status: nextStatus, completedViaOverride: true });
     }
 
     if (action === "reschedule_order") {

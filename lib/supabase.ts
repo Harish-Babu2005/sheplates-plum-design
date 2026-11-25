@@ -2057,6 +2057,15 @@ export async function uploadLiveCertificate(input: {
 export async function updateLiveOrderStatus(orderId: string, status: string) {
   return commerceRequest({ action: "update_order_status", orderId, status });
 }
+export async function getLiveOrderVerificationCode(orderId: string): Promise<{ ok: boolean; visible: boolean; code?: string; label?: string; status?: string; message?: string }> {
+  return commerceRequest({ action: "get_order_verification_code", orderId }) as Promise<{ ok: boolean; visible: boolean; code?: string; label?: string; status?: string; message?: string }>;
+}
+export async function verifyLiveOrderVerificationCode(orderId: string, code: string): Promise<{ ok: boolean; status?: string; verifiedAt?: string }> {
+  return commerceRequest({ action: "verify_order_verification_code", orderId, code }) as Promise<{ ok: boolean; status?: string; verifiedAt?: string }>;
+}
+export async function operationsOverrideLiveOrderCompletion(orderId: string, reason: string): Promise<{ ok: boolean; status?: string; completedViaOverride?: boolean }> {
+  return commerceRequest({ action: "operations_override_order_completion", orderId, reason }) as Promise<{ ok: boolean; status?: string; completedViaOverride?: boolean }>;
+}
 export async function rescheduleLiveOrder(orderId: string, date: string, slot: string) {
   return commerceRequest({ action: "reschedule_order", orderId, date, slot });
 }

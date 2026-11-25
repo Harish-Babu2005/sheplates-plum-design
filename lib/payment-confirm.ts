@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { enqueueEmail } from "@/lib/email/outbox";
 import { insertOrderWithBilling, priceExistingSchedule } from "@/lib/schedule-billing";
+import { generateOrderVerificationCode, hashOrderVerificationCode, encryptOrderVerificationCode } from "@/lib/order-verification";
 
 /**
  * Confirms a paid order: marks the payment paid, confirms the order, starts its schedule (creating the remaining delivery
@@ -47,7 +48,30 @@ export async function confirmPaidOrder(admin: SupabaseClient, input: { razorpayO
   if (!marked.data?.length) return { ok: true, alreadyPaid: true, orderId: payment.order_id };
 
   const orderId = String(order.id);
-  const orderUpdate = await admin.from("orders").update({ status: "confirmed", updated_at: new Date().toISOString() }).eq("id", orderId);
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || "sheplates-order-verification-secret";
+  const isThirdParty = String(order.fulfilment_mode || "").toLowerCase().includes("third_party");
+  let orderUpdatePayload: Record<string, unknown> = { status: "confirmed", updated_at: new Date().toISOString() };
+  if (!isThirdParty && secret) {
+    try {
+      const code = generateOrderVerificationCode();
+      const codeHash = hashOrderVerificationCode(orderId, code, secret);
+      const codeEncrypted = encryptOrderVerificationCode(orderId, code, secret);
+      orderUpdatePayload = {
+        ...orderUpdatePayload,
+        verification_code_hash: codeHash,
+        verification_code_encrypted: codeEncrypted,
+        verification_attempts: 0,
+      };
+    } catch (codeErr) {
+      console.error("Verification code generation error:", codeErr);
+    }
+  }
+
+  let orderUpdate = await admin.from("orders").update(orderUpdatePayload).eq("id", orderId);
+  if (orderUpdate.error && /verification_code/i.test(orderUpdate.error.message || "")) {
+    // If migration columns are missing on remote db, fallback without columns
+    orderUpdate = await admin.from("orders").update({ status: "confirmed", updated_at: new Date().toISOString() }).eq("id", orderId);
+  }
   if (orderUpdate.error) throw orderUpdate.error;
 
   const rawSchedule = (Array.isArray(order.product_schedules) ? order.product_schedules[0] : order.product_schedules) as { start_date: string; end_date?: string | null; recurrence: string; weekdays?: number[] | null } | null;
@@ -66,6 +90,18 @@ export async function confirmPaidOrder(admin: SupabaseClient, input: { razorpayO
         ? await insertOrderWithBilling(admin, orderRow, day)
         : await admin.from("orders").insert({ ...orderRow, vendor_base_total: Number(order.vendor_base_total || 0), markup_total: Number(order.markup_total || 0), tax_amount: Number(order.tax_amount || 0), delivery_fee: Number(order.delivery_fee || 0), customer_total: Number(order.customer_total || 0) }).select("id,order_number").single();
       if (created.error) throw created.error;
+      if (!isThirdParty && secret && created.data?.id) {
+        try {
+          const sCode = generateOrderVerificationCode();
+          const sHash = hashOrderVerificationCode(created.data.id, sCode, secret);
+          const sEnc = encryptOrderVerificationCode(created.data.id, sCode, secret);
+          await admin.from("orders").update({
+            verification_code_hash: sHash,
+            verification_code_encrypted: sEnc,
+            verification_attempts: 0,
+          }).eq("id", created.data.id);
+        } catch {}
+      }
       if (firstItem) await admin.from("order_items").insert({ order_id: created.data.id, product_name: day?.label || String(firstItem.product_name || "Scheduled item"), quantity: Number(firstItem.quantity || 1), unit: String(firstItem.unit || "pack"), vendor_base_price: day ? day.baseUnit : Number(firstItem.vendor_base_price || 0), markup_percent: day && pricedLater ? pricedLater.markupPercent : Number(firstItem.markup_percent || 0), customer_price: day ? day.customerUnit : Number(firstItem.customer_price || 0) });
       await admin.from("payments").insert({ order_id: created.data.id, customer_id: payment.customer_id, amount: 0, status: "paid", provider: "schedule_prepaid", provider_reference: `COVERED-${orderId}` });
     }

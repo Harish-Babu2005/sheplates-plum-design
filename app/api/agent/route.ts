@@ -7,6 +7,7 @@ import { adminClient } from "@/lib/product-image-server";
 import { checkVendorAiCredits, deductVendorAiCredits } from "@/lib/ai-credits-server";
 import type { AiAction } from "@/lib/ai-credits-config";
 import { getOrCreateConversation, saveAgentMessage, recordAiAction, loadConversationHistory, type SelectableOrder } from "@/lib/ai-conversation-server";
+import { decryptOrderVerificationCode, getCustomerCodeLabel, isCodeVisibleToCustomer } from "@/lib/order-verification";
 
 type Role = "customer" | "vendor" | "operations" | "admin";
 type AgentTask = "commerce" | "order_tracking" | "cancellation_review" | "nutrition" | "business_insights" | "quality_complaint" | "campaign_strategy" | "quotation_assistant";
@@ -244,7 +245,7 @@ async function loadAuthorisedContext(auth: Authorised): Promise<{ role: Role; li
     const [preferences, schedules, orders, requirements, memoryResult, carts, tickets] = await Promise.all([
       supabase.from("customer_preferences").select("address,latitude,longitude,household_size,diet,allergies,health_goals,dislikes_and_instructions").eq("customer_id", profile.id).maybeSingle(),
       supabase.from("product_schedules").select("id,menu_item_id,start_date,end_date,recurrence,weekdays,scheduled_slot,quantity,unit,fulfilment_mode,status").eq("customer_id", profile.id).order("start_date").limit(30),
-      supabase.from("orders").select("id,order_number,schedule_id,vendor_id,customer_total,fulfilment_mode,scheduled_date,scheduled_slot,status,created_at,order_items(product_name,quantity,unit,customer_price),payments(status,amount,provider,created_at)").eq("customer_id", profile.id).order("created_at", { ascending: false }).limit(100),
+      supabase.from("orders").select("id,order_number,schedule_id,vendor_id,customer_total,fulfilment_mode,scheduled_date,scheduled_slot,status,verification_code_encrypted,created_at,order_items(product_name,quantity,unit,customer_price),payments(status,amount,provider,created_at)").eq("customer_id", profile.id).order("created_at", { ascending: false }).limit(100),
       supabase.from("customer_requirements").select("id,title,delivery_date,status,created_at").eq("customer_id", profile.id).order("created_at", { ascending: false }).limit(20),
       supabase.from("customer_ai_memory").select("memory_key,memory_value,confidence,updated_at").eq("customer_id", profile.id).order("updated_at", { ascending: false }).limit(30),
       supabase.from("commerce_carts").select("id,status,created_at").eq("customer_id", profile.id).eq("status", "draft").order("updated_at", { ascending: false }).limit(1),
@@ -285,6 +286,7 @@ async function loadAuthorisedContext(auth: Authorised): Promise<{ role: Role; li
     const vendorMap = new Map(((vendorsRes.data || []) as Array<{ id: string; name: string }>).map((v) => [v.id, v.name]));
     const assignmentMap = new Map(((assignmentsRes.data || []) as Array<{ order_id: string; vendor_delivery_staff?: { full_name?: string; phone?: string } }>).map((a) => [a.order_id, a]));
 
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || "sheplates-order-verification-secret";
     const enrichedOrders = rawOrders.map((ord) => {
       const assignment = assignmentMap.get(String(ord.id || ""));
       const staff = assignment?.vendor_delivery_staff;
@@ -293,13 +295,20 @@ async function loadAuthorisedContext(auth: Authorised): Promise<{ role: Role; li
       const scheduledSlot = ord.scheduled_slot || ord.scheduledSlot || ord.slot || "";
       const fulfilmentMode = ord.fulfilment_mode || ord.fulfilmentMode || ord.mode || "Vendor delivery";
       const total = ord.customer_total ?? ord.totalAmount ?? ord.total ?? 0;
+      const statusStr = String(ord.status || "");
+      let verificationCode: string | undefined = undefined;
+      if (ord.verification_code_encrypted && isCodeVisibleToCustomer(statusStr, String(fulfilmentMode))) {
+        verificationCode = decryptOrderVerificationCode(String(ord.id), String(ord.verification_code_encrypted), secret) || undefined;
+      }
+      const { verification_code_encrypted: _omitEnc, ...safeOrd } = ord;
       return {
-        ...ord,
+        ...safeOrd,
         orderNumber,
         scheduledDate,
         scheduledSlot,
         fulfilmentMode,
         total,
+        verificationCode,
         vendorName: vendorMap.get(String(ord.vendor_id || "")) || "Verified kitchen",
         deliveryPartner: staff?.full_name || undefined,
         deliveryPartnerPhone: staff?.phone || undefined,
@@ -713,6 +722,7 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
       /\btrack(ing)?\b/i.test(msg) ||
       /(where('?s|\s+is)\s+(my\s+|that\s+|this\s+|the\s+|next\s+)?(next\s+)?(orders?|food|meal|delivery|package|parcel|[a-z0-9\-]+)|where('?s|\s+is)\s+it)\b/i.test(msg) ||
       /(order\s+status|status\s+of\s+(my\s+|that\s+|this\s+|the\s+)?orders?|any\s+update\s+(on\s+)?(my\s+|that\s+|this\s+|the\s+)?orders?|has\s+(my\s+|that\s+|this\s+|the\s+)?orders?\s+been\s+delivered|when\s+will\s+(it|my\s+order|that\s+order|the\s+order)\s+arrive|who\s+is\s+delivering(\s+it)?|is\s+(my\s+|that\s+|the\s+)?orders?\s+ready|delivery\s+(status|partner|driver|rider|boy|person|staff))\b/i.test(msg) ||
+      /(what('?s|\s+is)\s+(my\s+)?(verification|pickup|delivery|handover)?\s*code|my\s+(verification|pickup|delivery)\s+code|verification\s+code|pickup\s+code|delivery\s+code|என்\s*கோடு)/i.test(msg) ||
       /(^|\b)(track|where\s+is|status\s+of)\s*(the\s+|my\s+|that\s+|this\s+)?order\s*#?[a-z0-9\-]+/i.test(msg) ||
       /(ஆர்டர்\s*(ட்ராக்|நிலை|எங்கே|தகவல்|அப்டேட்|வந்துவிட்டதா)|எப்போது\s*வரும்|யார்\s*(கொண்டு\s*வருகிறார்|டெலிவரி\s*செய்கிறார்)|டெலிவரி\s*பார்ட்னர்|ட்ராக்)/i.test(rawMsg);
 
@@ -900,7 +910,23 @@ function groundedCommerceFallback(body: AgentRequest, role: Role, context: Recor
       const isPickup = fulfilmentMode.toLowerCase().includes("pickup");
 
       // Handle specific follow-up questions
-      if (/(when\s+will\s+it\s+arrive|when\s+will\s+my\s+order\s+arrive|எப்போது\s*வரும்)/i.test(msg)) {
+      if (/(what('?s|\s+is)\s+(my\s+)?(verification|pickup|delivery|handover)?\s*code|my\s+(verification|pickup|delivery)\s+code|verification\s+code|pickup\s+code|delivery\s+code|என்\s*கோடு)/i.test(msg)) {
+        const orderCode = targetOrder.verificationCode ? String(targetOrder.verificationCode) : null;
+        if (isDelivered || isCancelled) {
+          base.reply = isTamil
+            ? `ஆர்டர் #${orderNumber} ஏற்கனவே ${isCancelled ? "ரத்து செய்யப்பட்டது" : "முடிவடைந்தது"}. எனவே சரிபார்ப்பு குறியீடு இப்போது செயலில் இல்லை.`
+            : `Order #${orderNumber} has already been ${isCancelled ? "cancelled" : "completed"}, so its verification code is no longer active.`;
+        } else if (orderCode) {
+          const codeLabel = getCustomerCodeLabel(fulfilmentMode);
+          base.reply = isTamil
+            ? `உங்கள் ஆர்டர் #${orderNumber}-க்கான சரிபார்ப்பு குறியீடு: **${orderCode}**. ${isPickup ? "கடையில் காண்பிக்கவும்." : "உணவைப் பெறும்போது மட்டுமே பகிரவும்."}`
+            : `Your verification code for order #${orderNumber} (${itemsList}) is **${orderCode}**. ${codeLabel}.`;
+        } else {
+          base.reply = isTamil
+            ? `ஆர்டர் #${orderNumber} தற்போது ${status} நிலையில் உள்ளது. ஆர்டர் ${isPickup ? "எடுக்கத் தயாரானதும்" : "டெலிவரிக்குப் புறப்பட்டதும்"} உங்கள் சரிபார்ப்பு குறியீடு தோன்றும்.`
+            : `Your order #${orderNumber} is currently ${status.toLowerCase()}. Your 6-digit verification code will be displayed once the order is ${isPickup ? "ready for pickup" : "out for delivery"}.`;
+        }
+      } else if (/(when\s+will\s+it\s+arrive|when\s+will\s+my\s+order\s+arrive|எப்போது\s*வரும்)/i.test(msg)) {
         base.reply = isTamil
           ? `உங்கள் ஆர்டர் #${orderNumber} (${itemsList}) ${vendorName}-ல் தற்போது ${status} நிலையில் உள்ளது.${timeTextTa}${deliveryTextTa} அடுத்த கட்டம்: உணவு உங்கள் முகவரிக்கு புறப்பட்டதும் தெரிவிக்கப்படும்.`
           : `Your order #${orderNumber} (${itemsList}) from ${vendorName} is currently ${status.toLowerCase()}.${timeTextEn}${deliveryTextEn} Next step: You will receive an update once your delivery partner is on the way.`;
