@@ -1124,6 +1124,220 @@ function LocationSuggestions({ query, onSelect }: { query: string; onSelect: (pl
   );
 }
 
+function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
+  const [vendorId, setVendorId] = useState(state.vendors[0]?.id || "");
+  const [q, setQ] = useState("");
+  const [onlyCustom, setOnlyCustom] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState(false);
+
+  const products = state.products
+    .filter((x) => x.vendorId === vendorId)
+    .filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()))
+    .filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0);
+
+  const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length;
+  const hasDraftChanges = Object.keys(drafts).length > 0;
+
+  async function saveSingleMarkup(product: Product, markupVal: number) {
+    setSaving(true);
+    try {
+      const safeVal = Math.max(0, markupVal);
+      if (isLiveSupabaseMode()) {
+        await saveLiveItemMarkup(product.id, safeVal);
+      }
+      const newCustomerPrice = Math.round(product.vendorPrice * (1 + safeVal / 100) * 100) / 100;
+      setState((s) => ({
+        ...s,
+        markups: { ...s.markups, [product.id]: safeVal },
+        audit: [
+          audit(
+            session,
+            "Pricing change: item markup",
+            `${product.name} · Base: ${money(product.vendorPrice)} + ${safeVal}% markup → Customer: ${money(newCustomerPrice)}`
+          ),
+          ...s.audit,
+        ],
+      }));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[product.id];
+        return next;
+      });
+      toast.success("Pricing changes saved successfully");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save pricing changes"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAllPricingChanges() {
+    setSaving(true);
+    try {
+      const changedProducts = state.products.filter((p) => p.id in drafts);
+      if (!changedProducts.length) {
+        toast.info("No pricing changes to save");
+        return;
+      }
+      for (const p of changedProducts) {
+        if (isLiveSupabaseMode()) {
+          await saveLiveItemMarkup(p.id, Math.max(0, drafts[p.id]));
+        }
+      }
+      const newAudits = changedProducts.map((p) => {
+        const val = Math.max(0, drafts[p.id]);
+        const custPrice = Math.round(p.vendorPrice * (1 + val / 100) * 100) / 100;
+        return audit(
+          session,
+          "Pricing change: item markup",
+          `${p.name} · Base: ${money(p.vendorPrice)} + ${val}% markup → Customer: ${money(custPrice)}`
+        );
+      });
+      setState((s) => ({
+        ...s,
+        markups: { ...s.markups, ...drafts },
+        audit: [...newAudits, ...s.audit],
+      }));
+      setDrafts({});
+      toast.success("Pricing changes saved successfully");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save pricing changes"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Heading
+        eyebrow="ITEM-LEVEL PRICING"
+        title="Operational percentage by vendor item"
+        body="Select a vendor, inspect its menu and apply a markup percentage on top of each vendor base price. Customer prices update only for future schedules."
+        action={
+          <Button
+            onClick={() => void saveAllPricingChanges()}
+            disabled={!hasDraftChanges || saving}
+            className="rounded-xl bg-[#155F65]"
+          >
+            <Check className="size-4 mr-1.5" />
+            Save pricing changes
+          </Button>
+        }
+      />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Metric label="Items on the platform" value={String(state.products.length)} icon={Package} />
+        <Metric label="Items with their own %" value={String(customCount)} icon={Percent} />
+        <Metric label="Vendors" value={String(state.vendors.length)} icon={Store} />
+      </div>
+      <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4">
+        <Select value={vendorId} onValueChange={setVendorId}>
+          <SelectTrigger className="w-full max-w-sm rounded-xl">
+            <SelectValue placeholder="Select vendor" />
+          </SelectTrigger>
+          <SelectContent position="popper" side="bottom" avoidCollisions={false} className="max-h-60">
+            {state.vendors.map((x) => (
+              <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search item"
+          aria-label="Search item"
+          className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => setOnlyCustom(false)}
+          className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={() => setOnlyCustom(true)}
+          className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
+        >
+          Custom %
+        </button>
+      </div>
+      {products.length ? (
+        <div className="surface-card overflow-x-auto rounded-[28px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead>Vendor base</TableHead>
+                <TableHead>Operations %</TableHead>
+                <TableHead>Customer price</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {products.map((product) => {
+                const markupVal = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                const isDraftModified = product.id in drafts && drafts[product.id] !== (state.markups[product.id] || 0);
+                const previewPrice = Math.round(product.vendorPrice * (1 + markupVal / 100) * 100) / 100;
+                return (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <b>{product.name}</b>
+                      <div className="text-xs text-stone-500">per {product.baseUnit}</div>
+                    </TableCell>
+                    <TableCell>{money(product.vendorPrice)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step=".5"
+                          value={markupVal}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDrafts((prev) => ({ ...prev, [product.id]: val }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
+                              void saveSingleMarkup(product, val);
+                            }
+                          }}
+                          className="h-10 w-24 rounded-xl border px-3 font-black"
+                          aria-label={`Markup for ${product.name}`}
+                        />
+                        <span>%</span>
+                        {isDraftModified && (
+                          <Button
+                            size="sm"
+                            onClick={() => void saveSingleMarkup(product, drafts[product.id])}
+                            disabled={saving}
+                            className="h-8 rounded-lg bg-[#155F65] px-2.5 text-xs text-white"
+                          >
+                            Save
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-lg font-bold">{money(previewPrice)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <Empty
+          icon={Percent}
+          title="No vendor products selected"
+          body="Choose a vendor with products, or wait for a vendor to add their catalogue."
+        />
+      )}
+    </div>
+  );
+}
+
 export function SheplatesV3() {
   const [session, setSession] = useState<DemoSession | null>(null);
   const [state, setState] = useState<V3State>(EMPTY_STATE);
@@ -9754,219 +9968,6 @@ function DeliverySlotsSection({
         />
       )}
     </div>;
-  }
-  function ItemPricing({ session, state, setState }: { session: DemoSession; state: V3State; setState: React.Dispatch<React.SetStateAction<V3State>> }) {
-    const [vendorId, setVendorId] = useState(state.vendors[0]?.id || "");
-    const [q, setQ] = useState("");
-    const [onlyCustom, setOnlyCustom] = useState(false);
-    const [drafts, setDrafts] = useState<Record<string, number>>({});
-    const [saving, setSaving] = useState(false);
-
-    const products = state.products
-      .filter((x) => x.vendorId === vendorId)
-      .filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()))
-      .filter((x) => !onlyCustom || (state.markups[x.id] || 0) > 0);
-
-    const customCount = state.products.filter((x) => (state.markups[x.id] || 0) > 0).length;
-    const hasDraftChanges = Object.keys(drafts).length > 0;
-
-    async function saveSingleMarkup(product: Product, markupVal: number) {
-      setSaving(true);
-      try {
-        const safeVal = Math.max(0, markupVal);
-        if (isLiveSupabaseMode()) {
-          await saveLiveItemMarkup(product.id, safeVal);
-        }
-        const newCustomerPrice = Math.round(product.vendorPrice * (1 + safeVal / 100) * 100) / 100;
-        setState((s) => ({
-          ...s,
-          markups: { ...s.markups, [product.id]: safeVal },
-          audit: [
-            audit(
-              session,
-              "Pricing change: item markup",
-              `${product.name} · Base: ${money(product.vendorPrice)} + ${safeVal}% markup → Customer: ${money(newCustomerPrice)}`
-            ),
-            ...s.audit,
-          ],
-        }));
-        setDrafts((prev) => {
-          const next = { ...prev };
-          delete next[product.id];
-          return next;
-        });
-        toast.success("Pricing changes saved successfully");
-      } catch (err) {
-        toast.error(errorMessage(err, "Could not save pricing changes"));
-      } finally {
-        setSaving(false);
-      }
-    }
-
-    async function saveAllPricingChanges() {
-      setSaving(true);
-      try {
-        const changedProducts = state.products.filter((p) => p.id in drafts);
-        if (!changedProducts.length) {
-          toast.info("No pricing changes to save");
-          return;
-        }
-        for (const p of changedProducts) {
-          if (isLiveSupabaseMode()) {
-            await saveLiveItemMarkup(p.id, Math.max(0, drafts[p.id]));
-          }
-        }
-        const newAudits = changedProducts.map((p) => {
-          const val = Math.max(0, drafts[p.id]);
-          const custPrice = Math.round(p.vendorPrice * (1 + val / 100) * 100) / 100;
-          return audit(
-            session,
-            "Pricing change: item markup",
-            `${p.name} · Base: ${money(p.vendorPrice)} + ${val}% markup → Customer: ${money(custPrice)}`
-          );
-        });
-        setState((s) => ({
-          ...s,
-          markups: { ...s.markups, ...drafts },
-          audit: [...newAudits, ...s.audit],
-        }));
-        setDrafts({});
-        toast.success("Pricing changes saved successfully");
-      } catch (err) {
-        toast.error(errorMessage(err, "Could not save pricing changes"));
-      } finally {
-        setSaving(false);
-      }
-    }
-
-    return (
-      <div className="space-y-6">
-        <Heading
-          eyebrow="ITEM-LEVEL PRICING"
-          title="Operational percentage by vendor item"
-          body="Select a vendor, inspect its menu and apply a markup percentage on top of each vendor base price. Customer prices update only for future schedules."
-          action={
-            <Button
-              onClick={() => void saveAllPricingChanges()}
-              disabled={!hasDraftChanges || saving}
-              className="rounded-xl bg-[#155F65]"
-            >
-              <Check className="size-4 mr-1.5" />
-              Save pricing changes
-            </Button>
-          }
-        />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Metric label="Items on the platform" value={String(state.products.length)} icon={Package} />
-          <Metric label="Items with their own %" value={String(customCount)} icon={Percent} />
-          <Metric label="Vendors" value={String(state.vendors.length)} icon={Store} />
-        </div>
-        <div className="surface-card flex flex-wrap items-center gap-3 rounded-3xl p-4">
-          <Select value={vendorId} onValueChange={setVendorId}>
-            <SelectTrigger className="w-full max-w-sm rounded-xl">
-              <SelectValue placeholder="Select vendor" />
-            </SelectTrigger>
-            <SelectContent>
-              {state.vendors.map((x) => (
-                <SelectItem key={x.id} value={x.id}>{x.businessName}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search item"
-            aria-label="Search item"
-            className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm"
-          />
-          <button
-            type="button"
-            onClick={() => setOnlyCustom(false)}
-            className={`h-10 rounded-full px-4 text-sm font-semibold ${!onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={() => setOnlyCustom(true)}
-            className={`h-10 rounded-full px-4 text-sm font-semibold ${onlyCustom ? "bg-[#155F65] text-white" : "bg-white"}`}
-          >
-            Custom %
-          </button>
-        </div>
-        {products.length ? (
-          <div className="surface-card overflow-x-auto rounded-[28px]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Vendor base</TableHead>
-                  <TableHead>Operations %</TableHead>
-                  <TableHead>Customer price</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {products.map((product) => {
-                  const markupVal = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
-                  const isDraftModified = product.id in drafts && drafts[product.id] !== (state.markups[product.id] || 0);
-                  const previewPrice = Math.round(product.vendorPrice * (1 + markupVal / 100) * 100) / 100;
-                  return (
-                    <TableRow key={product.id}>
-                      <TableCell>
-                        <b>{product.name}</b>
-                        <div className="text-xs text-stone-500">per {product.baseUnit}</div>
-                      </TableCell>
-                      <TableCell>{money(product.vendorPrice)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step=".5"
-                            value={markupVal}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setDrafts((prev) => ({ ...prev, [product.id]: val }));
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                const val = product.id in drafts ? drafts[product.id] : (state.markups[product.id] || 0);
-                                void saveSingleMarkup(product, val);
-                              }
-                            }}
-                            className="h-10 w-24 rounded-xl border px-3 font-black"
-                            aria-label={`Markup for ${product.name}`}
-                          />
-                          <span>%</span>
-                          {isDraftModified && (
-                            <Button
-                              size="sm"
-                              onClick={() => void saveSingleMarkup(product, drafts[product.id])}
-                              disabled={saving}
-                              className="h-8 rounded-lg bg-[#155F65] px-2.5 text-xs text-white"
-                            >
-                              Save
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-lg font-bold">{money(previewPrice)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <Empty
-            icon={Percent}
-            title="No vendor products selected"
-            body="Choose a vendor with products, or wait for a vendor to add their catalogue."
-          />
-        )}
-      </div>
-    );
   }
   function RFQDesk({ state }: { state: V3State }) {
     const open = state.requirements.filter((x) => x.status === "Quoting" || x.status === "Quotes received");
