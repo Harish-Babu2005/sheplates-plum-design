@@ -871,7 +871,7 @@ export async function loadLiveOperationsWorkspace() {
     supabase.from("vendors").select("id,owner_id,vendor_kind,name,category,locality,address,latitude,longitude,service_radius_km,delivery_enabled,pickup_enabled,store_open_today,verification_status,operational_status,logo_url,banner_url,description,marketplace_visible,plan_id,terms_accepted,vendor_plans(code,name),terms_version,terms_accepted_at,terms_document_reference").order("created_at", { ascending: false }),
     supabase.from("vendor_menu_items").select("id,vendor_id,name,category,unit,quantity_step,stock_quantity,vendor_base_price,active,calories_per_unit,protein_g,carbs_g,fat_g,fibre_g,dietary_tags,pack_amount,pack_measure,image_url,food_type,description").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,role,vendor_id"),
-    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata,created_at,updated_at").order("created_at", { ascending: false }),
+    supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,file_name,expiry_date,verification_status,metadata,created_at").order("created_at", { ascending: false }),
     supabase.from("platform_settings").select("config").eq("setting_key", "marketplace_home").maybeSingle(),
     supabase.from("marketing_campaigns").select("*").order("created_at", { ascending: false }).limit(100),
   ]);
@@ -908,7 +908,15 @@ export async function loadLiveOperationsWorkspace() {
       }
     }
   } catch { /* ignore branding enrichment error */ }
-  for (const result of [products, profiles, documents]) if (result.error) throw result.error;
+  let documentsData = documents.data || [];
+  let documentsError = documents.error;
+  if (documentsError && (documentsError.code === "42703" || documentsError.code === "PGRST204" || /column .* does not exist/i.test(documentsError.message || ""))) {
+    const fallbackDocs = await supabase.from("vendor_documents").select("id,vendor_id,document_type,document_number,storage_path,expiry_date,verification_status,created_at").order("created_at", { ascending: false });
+    documentsData = (fallbackDocs.data || []).map((row) => ({ ...row, file_name: null, metadata: null }));
+    documentsError = fallbackDocs.error;
+  }
+  if (documentsError) throw documentsError;
+  for (const result of [products, profiles]) if (result.error) throw result.error;
   if (homeConfig.error) console.error("Homepage merchandising is unavailable:", homeConfig.error.message);
   if (campaigns.error) console.error("Marketing campaigns are unavailable:", campaigns.error.message);
   const config = homeConfig.error ? null : homeConfig.data?.config as { featuredProductIds?: string[]; recommendationPopupEnabled?: boolean; maxFeatured?: number } | null;
@@ -927,7 +935,7 @@ export async function loadLiveOperationsWorkspace() {
       );
     }
   } catch { /* ignore if table missing */ }
-  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documents.data || [], markups: liveMarkups, merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
+  return { vendors: vendorRows, products: allProductRows, profiles: profiles.data || [], documents: documentsData, markups: liveMarkups, merchandising: { featuredProductIds: config?.featuredProductIds || [], recommendationPopupEnabled: config?.recommendationPopupEnabled ?? true, maxFeatured: config?.maxFeatured || 6 }, campaigns: campaigns.error ? [] : (campaigns.data || []), merchandisingError };
 }
 
 export async function saveLiveItemMarkup(productId: string, markupPercent: number): Promise<void> {
