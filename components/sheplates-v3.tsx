@@ -2707,6 +2707,72 @@ function Marketplace({
   const [sortBy, setSortBy] = useState("Recommended");
   const [deliveryDate, setDeliveryDate] = useState(tomorrow());
   const [periodDays, setPeriodDays] = useState(1);
+
+  const [draftMaxPrice, setDraftMaxPrice] = useState(profile.agentMemory?.lastBudget || 0);
+  const [draftMaxCalories, setDraftMaxCalories] = useState(profile.agentMemory?.calorieTarget || 0);
+  const [draftMinProtein, setDraftMinProtein] = useState(profile.agentMemory?.minProtein || 0);
+  const [draftDietary, setDraftDietary] = useState("All");
+  const [draftSortBy, setDraftSortBy] = useState("Recommended");
+  const [draftDeliveryDate, setDraftDeliveryDate] = useState(tomorrow());
+  const [draftPeriodDays, setDraftPeriodDays] = useState(1);
+  const [dateFilterError, setDateFilterError] = useState("");
+
+  function validatePlanningDate(value: string): string {
+    if (!value) return "Please choose a planning date.";
+    if (value < todayISO()) return `Past dates are not allowed. Choose ${tomorrow()} or a future date.`;
+    if (value < tomorrow()) return `Planning starts from tomorrow (${tomorrow()}). Please choose a future date.`;
+    if (value > latestOrderDate()) return `Planning is available up to ${latestOrderDate()}.`;
+    return "";
+  }
+
+  function applyFilters() {
+    const dateErr = validatePlanningDate(draftDeliveryDate);
+    if (dateErr) {
+      setDateFilterError(dateErr);
+      toast.error(dateErr);
+      return;
+    }
+    setDateFilterError("");
+    setMaxPrice(draftMaxPrice);
+    setMaxCalories(draftMaxCalories);
+    setMinProtein(draftMinProtein);
+    setDietary(draftDietary);
+    setSortBy(draftSortBy);
+    setDeliveryDate(draftDeliveryDate);
+    setPeriodDays(draftPeriodDays);
+    setFiltersOpen(false);
+    toast.success("Filters applied");
+  }
+
+  function clearAllFilters(clearQueryToo = false) {
+    const defDate = tomorrow();
+    setDateFilterError("");
+    setDraftMaxPrice(0);
+    setDraftMaxCalories(0);
+    setDraftMinProtein(0);
+    setDraftDietary("All");
+    setDraftSortBy("Recommended");
+    setDraftDeliveryDate(defDate);
+    setDraftPeriodDays(1);
+    setMaxPrice(0);
+    setMaxCalories(0);
+    setMinProtein(0);
+    setDietary("All");
+    setSortBy("Recommended");
+    setDeliveryDate(defDate);
+    setPeriodDays(1);
+    setCategory("All");
+    if (clearQueryToo) setQuery("");
+  }
+
+  const hasPendingFilterChanges =
+    draftMaxPrice !== maxPrice ||
+    draftMaxCalories !== maxCalories ||
+    draftMinProtein !== minProtein ||
+    draftDietary !== dietary ||
+    draftSortBy !== sortBy ||
+    draftDeliveryDate !== deliveryDate ||
+    draftPeriodDays !== periodDays;
   const [showAiPicks, setShowAiPicks] = useState(true);
   const [aiPickIds, setAiPickIds] = useState<string[]>([]);
   const [aiPickMessage, setAiPickMessage] = useState("");
@@ -2961,19 +3027,74 @@ function Marketplace({
     {view === "search" ? <div className="k-search-layout">
       <aside className={`k-filters sh${filtersOpen ? " open" : ""}`} aria-label="Filters"><div className="k-filters-head"><h2>Filters</h2><button type="button" className="k-filters-x" onClick={() => setFiltersOpen(false)} aria-label="Close filters"><X className="size-5" /></button></div>
         <div className="grid gap-3">
-          <Field label="Planning from"><input type="date" min={tomorrow()} max={latestOrderDate()} value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} /></Field>
-          <Field label="Planning period"><Select value={String(periodDays)} onValueChange={(value) => setPeriodDays(Number(value))}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">This date</SelectItem><SelectItem value="7">Next 7 days</SelectItem><SelectItem value="14">Next 14 days</SelectItem><SelectItem value="30">Next 30 days</SelectItem></SelectContent></Select></Field>
-          <Field label="Max budget"><input type="number" min="0" value={maxPrice || ""} onChange={(e) => setMaxPrice(Number(e.target.value))} placeholder="Any ₹" className={inputClass} /></Field>
-          <Field label="Max calories / pack"><input type="number" min="0" value={maxCalories || ""} onChange={(e) => setMaxCalories(Number(e.target.value))} placeholder="Any kcal" className={inputClass} /></Field>
-          <Field label="Min protein"><input type="number" min="0" value={minProtein || ""} onChange={(e) => setMinProtein(Number(e.target.value))} placeholder="Any grams" className={inputClass} /></Field>
-          <Field label="Dietary tag"><Select value={dietary} onValueChange={setDietary}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="All">All dietary options</SelectItem>{dietaryOptions.map((tag) => <SelectItem key={tag} value={tag}>{tag}</SelectItem>)}</SelectContent></Select></Field>
-          <Field label="Sort"><Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{["Recommended", "Price low", "Protein high", "Calories low", "Nearest"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
-          <div className=" flex flex-wrap items-center gap-2"><span className="text-xs font-black text-stone-500">Quick:</span>{[150, 300, 500, 1000].map((budget) => <button key={budget} onClick={() => setMaxPrice(budget)} className="rounded-full border bg-white px-3 py-1.5 text-xs font-black">Under ₹{budget}</button>)}<button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setDeliveryDate(tomorrow()); setPeriodDays(1); setSortBy("Recommended"); }} className="ml-auto rounded-full px-3 py-1.5 text-xs font-black text-red-600">Clear filters</button></div>
+          <Field label="Planning from">
+            <input
+              type="date"
+              min={tomorrow()}
+              max={latestOrderDate()}
+              value={draftDeliveryDate}
+              onChange={(e) => {
+                const nextDate = e.target.value;
+                setDraftDeliveryDate(nextDate);
+                const err = validatePlanningDate(nextDate);
+                setDateFilterError(err);
+                if (err) toast.error(err);
+              }}
+              aria-invalid={Boolean(dateFilterError)}
+              className={`${inputClass}${dateFilterError ? " border-red-500 focus-visible:ring-red-500/30" : ""}`}
+            />
+            {dateFilterError && (
+              <p className="mt-1 text-xs font-bold text-red-600" role="alert">{dateFilterError}</p>
+            )}
+          </Field>
+          <Field label="Planning period"><Select value={String(draftPeriodDays)} onValueChange={(value) => setDraftPeriodDays(Number(value))}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">This date</SelectItem><SelectItem value="7">Next 7 days</SelectItem><SelectItem value="14">Next 14 days</SelectItem><SelectItem value="30">Next 30 days</SelectItem></SelectContent></Select></Field>
+          <Field label="Max budget"><input type="number" min="0" value={draftMaxPrice || ""} onChange={(e) => setDraftMaxPrice(Math.max(0, Number(e.target.value)))} placeholder="Any ₹" className={inputClass} /></Field>
+          <Field label="Max calories / pack"><input type="number" min="0" value={draftMaxCalories || ""} onChange={(e) => setDraftMaxCalories(Math.max(0, Number(e.target.value)))} placeholder="Any kcal" className={inputClass} /></Field>
+          <Field label="Min protein"><input type="number" min="0" value={draftMinProtein || ""} onChange={(e) => setDraftMinProtein(Math.max(0, Number(e.target.value)))} placeholder="Any grams" className={inputClass} /></Field>
+          <Field label="Dietary tag"><Select value={draftDietary} onValueChange={setDraftDietary}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="All">All dietary options</SelectItem>{dietaryOptions.map((tag) => <SelectItem key={tag} value={tag}>{tag}</SelectItem>)}</SelectContent></Select></Field>
+          <Field label="Sort"><Select value={draftSortBy} onValueChange={setDraftSortBy}><SelectTrigger className="h-11 rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{["Recommended", "Price low", "Protein high", "Calories low", "Nearest"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-black text-stone-500">Quick:</span>
+            {[150, 300, 500, 1000].map((budget) => {
+              const selectedBudget = draftMaxPrice === budget;
+              return (
+                <button
+                  key={budget}
+                  type="button"
+                  aria-pressed={selectedBudget}
+                  onClick={() => setDraftMaxPrice(selectedBudget ? 0 : budget)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${
+                    selectedBudget
+                      ? "border-[#155F65] bg-[#155F65] text-white shadow-sm"
+                      : "border-stone-200 bg-white text-stone-700 hover:border-[#155F65]/50 hover:bg-stone-50"
+                  }`}
+                >
+                  {selectedBudget ? `✓ Under ₹${budget}` : `Under ₹${budget}`}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-1 flex items-center gap-2 pt-1">
+            <Button
+              type="button"
+              onClick={applyFilters}
+              className="flex-1 rounded-xl bg-[#155F65] font-bold text-white hover:bg-[#114d52]"
+            >
+              Apply filters{hasPendingFilterChanges ? " •" : ""}
+            </Button>
+            <button
+              type="button"
+              onClick={() => clearAllFilters(false)}
+              className="rounded-xl border border-red-200 bg-red-50/70 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </aside>
       <div className="k-results"><div className="flex flex-wrap items-end justify-between gap-3"><Heading eyebrow="MARKETPLACE" title={query ? "Search results" : category !== "All" ? category : "Food near you"} body={`${visible.length} result${visible.length === 1 ? "" : "s"} near ${shortArea(profile.address)} · ${deliveryDate}${periodDays > 1 ? ` to ${periodEndDate}` : ""} · verified, open and serviceable vendors only`} /><Button variant="outline" onClick={() => void refreshMarketplace(true)} disabled={refreshing || !isLiveSupabaseMode()} className="rounded-xl"><RefreshCcw className={refreshing ? "animate-spin" : ""} />Refresh</Button></div>{catalogueError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{catalogueError}</div>}
         <div data-tour="products" className="k-plist">{visible.map(renderRow)}</div>
-        {!visible.length && (locationConfirmed ? <div className="mt-5 space-y-4"><Empty icon={Store} title="No matching products" body={serviceable.length ? "Your filters are narrowing the currently serviceable marketplace. Clear one or more filters, or ask She Agent for alternatives." : emptyReason} action={serviceable.length ? <Button onClick={() => { setMaxPrice(0); setMaxCalories(0); setMinProtein(0); setDietary("All"); setCategory("All"); setQuery(""); }} variant="outline" className="rounded-xl">Clear marketplace filters</Button> : undefined} /><div className="grid gap-3 sm:grid-cols-5">{diagnostics && [["Verified", diagnostics.verified_vendors], ["Open", diagnostics.open_vendors], ["With stock", diagnostics.vendors_with_products], ["In radius", diagnostics.vendors_in_radius], ["Products", diagnostics.serviceable_products]].map(([label, value]) => <div key={String(label)} className="surface-card rounded-2xl p-3 text-center"><div className="text-xl font-black">{value}</div><div className="text-xs text-stone-500">{label}</div></div>)}</div></div> : <Empty icon={LocateFixed} title="Confirm your actual location first" body="Products are hidden until GPS or a searched address creates a real service pin." action={<Button onClick={() => setLocationOpen(true)} className="rounded-xl bg-[#155F65]"><LocateFixed />Detect my location</Button>} />)}
+        {!visible.length && (locationConfirmed ? <div className="mt-5 space-y-4"><Empty icon={Store} title="No matching products" body={serviceable.length ? "Your filters are narrowing the currently serviceable marketplace. Clear one or more filters, or ask She Agent for alternatives." : emptyReason} action={serviceable.length ? <Button onClick={() => clearAllFilters(true)} variant="outline" className="rounded-xl">Clear marketplace filters</Button> : undefined} /><div className="grid gap-3 sm:grid-cols-5">{diagnostics && [["Verified", diagnostics.verified_vendors], ["Open", diagnostics.open_vendors], ["With stock", diagnostics.vendors_with_products], ["In radius", diagnostics.vendors_in_radius], ["Products", diagnostics.serviceable_products]].map(([label, value]) => <div key={String(label)} className="surface-card rounded-2xl p-3 text-center"><div className="text-xl font-black">{value}</div><div className="text-xs text-stone-500">{label}</div></div>)}</div></div> : <Empty icon={LocateFixed} title="Confirm your actual location first" body="Products are hidden until GPS or a searched address creates a real service pin." action={<Button onClick={() => setLocationOpen(true)} className="rounded-xl bg-[#155F65]"><LocateFixed />Detect my location</Button>} />)}
       </div></div> : <>
       <CategoryGrid selected={category} onSelect={(key) => { setCategory(key); if (key !== "All") navigate("Search"); }} />
       <CampaignBanner campaigns={campaigns} onView={countCampaignView} onCta={runCampaign} fallback={<PromoBanner onShop={() => navigate("Food Drops")} />} />
@@ -2986,7 +3107,7 @@ function Marketplace({
         <button onClick={() => setShowAiPicks(false)} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-stone-100" aria-label="Close recommendations"><X className="size-4" /></button>
         <div className="pr-12"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-[.16em] text-[#155F65]"><Sparkles className="size-4" />She Agent · for you {aiPicksLoading && <RefreshCcw className="size-3 animate-spin" />}</div><h2 className="mt-2 text-lg font-black tracking-[-.02em]">A few useful picks, based on your marketplace and preferences.</h2><p className="mt-1 max-w-3xl text-sm text-stone-500">{aiPickMessage || "These are grounded in currently serviceable products. She Agent can refine by budget, calories, protein, diet, schedule or anything you ask naturally."}</p></div>
         <div className="mt-5 flex snap-x gap-3 overflow-x-auto pb-2 hide-scrollbar md:grid md:grid-cols-3">{aiPicks.map((product) => <button key={product.id} onClick={() => openProduct(product)} className="surface-card-muted min-w-[82%] snap-start flex items-center gap-3 rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md md:min-w-0"><div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl" style={{ background: product.imageUrl ? undefined : categoryVisual(product.category).bg }}>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : <ProductGlyph category={product.category} />}</div><div className="min-w-0 flex-1"><div className="truncate font-black"><FoodTypeMark type={product.foodType} className="mr-1.5" />{product.name}</div><div className="mt-1 text-xs text-stone-500">{money(finalPrice(product, state))} · {product.nutritionStatus === "Pending review" || product.calories <= 0 ? "nutrition pending" : `${product.calories} kcal · ${product.protein}g protein`}</div></div><ArrowRight className="size-4 text-stone-400" /></button>)}</div>
-        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={openAgent} className="rounded-xl bg-[#155F65]"><Sparkles />Ask She Agent to refine</Button><Button onClick={() => { setMaxPrice(profile.agentMemory?.lastBudget || 300); setFiltersOpen(true); }} variant="outline" className="rounded-xl">Use my usual budget</Button></div>
+        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={openAgent} className="rounded-xl bg-[#155F65]"><Sparkles />Ask She Agent to refine</Button><Button onClick={() => { const b = profile.agentMemory?.lastBudget || 300; setDraftMaxPrice(b); setMaxPrice(b); setFiltersOpen(true); }} variant="outline" className="rounded-xl">Use my usual budget</Button></div>
       </section>}
       {!showAiPicks && <div className="flex justify-end"><button onClick={() => setShowAiPicks(true)} className="soft-chip"><Sparkles className="size-3.5" />Show AI picks</button></div>}
 
