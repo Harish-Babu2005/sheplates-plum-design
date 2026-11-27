@@ -35,7 +35,7 @@ import { CommercialTermsPanel } from "@/components/vendor-commercial";
 import { AgreementPanel, OpsAgreementPanel } from "@/components/vendor-signing";
 import { WeeklyMenuManager, type PlanPreset } from "@/components/weekly-menu";
 import { dayPrice, isOrderable, orderItemLabel, parsePlanName, weekdayOfDate, withMarkup, type MenuCell } from "@/lib/weekly-menu";
-import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, fssaiFieldProblem, pdfProblem, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
+import { COMPLIANCE_DOCS, EMPTY_COMPLIANCE_FIELDS, VENDOR_TERMS_PDF, VENDOR_TERMS_VERSION, complianceFieldProblems, documentEntry, documentTitle, fssaiFieldProblem, pdfProblem, validatePdfDocument, type ComplianceFields, type OptionalComplianceKey, type VendorComplianceDocType, type VendorComplianceDocument } from "@/lib/vendor-compliance";
 import { CATALOGUE_TEMPLATE_CSV, MAX_IMPORT_ROWS, matchCategory, readCatalogueText, rowProblems, type CatalogueDraftRow } from "@/lib/catalogue-import";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8304,6 +8304,9 @@ function DeliverySlotsSection({
     const [fileName, setFileName] = useState(vendor.certificateName || "");
     const [certificateFile, setCertificateFile] = useState<File | null>(null);
     const [expiry, setExpiry] = useState(vendor.expiryDate || "");
+    const [certError, setCertError] = useState("");
+    const [expiryError, setExpiryError] = useState("");
+    const [fileError, setFileError] = useState("");
     const [upgradingTo, setUpgradingTo] = useState<string | null>(null);
     const [profileEditOpen, setProfileEditOpen] = useState(false);
     const [downgradeConfirmOpen, setDowngradeConfirmOpen] = useState(false);
@@ -8401,14 +8404,37 @@ function DeliverySlotsSection({
     }
     async function save(resubmit = false) {
       if (resubmit && vendor.termsAccepted === false) return toast.error("Accept the Vendor Terms and Conditions first, then resubmit");
-      if (!certificate.trim()) return toast.error("Enter the certification / licence number");
-      if (certificateFile && certificateFile.size === 0) return toast.error(`"${certificateFile.name}" is empty (0 bytes). Please upload a valid certificate file.`);
-      if (expiry) {
-        const today = new Date().toISOString().slice(0, 10);
-        if (expiry < today) {
-          return toast.error("Expiry date cannot be in the past");
+      const certProblem = fssaiFieldProblem(certificate, true);
+      if (certProblem) {
+        setCertError(certProblem);
+        return toast.error(certProblem);
+      }
+      setCertError("");
+      const today = new Date().toISOString().slice(0, 10);
+      if (!expiry) {
+        const msg = "Please choose the FSSAI certificate expiry date.";
+        setExpiryError(msg);
+        return toast.error(msg);
+      }
+      if (expiry < today) {
+        const msg = "Expiry date cannot be in the past.";
+        setExpiryError(msg);
+        return toast.error(msg);
+      }
+      setExpiryError("");
+      if (!certificateFile && !fileName.trim()) {
+        const msg = "Please upload your Food Safety Certificate (FSSAI) PDF.";
+        setFileError(msg);
+        return toast.error(msg);
+      }
+      if (certificateFile) {
+        const fileProblem = await validatePdfDocument(certificateFile, "The Food Safety Certificate");
+        if (fileProblem) {
+          setFileError(fileProblem);
+          return toast.error(fileProblem);
         }
       }
+      setFileError("");
       try {
         let uploadedPath: string | undefined = undefined;
         let effectiveFileName = fileName;
@@ -8467,11 +8493,20 @@ function DeliverySlotsSection({
         setEditing(false); toast.success(resubmit ? "Verification resubmitted for review" : "Verification details saved");
       } catch (error) { toast.error(errorMessage(error, "Verification details could not be saved")); }
     }
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const canResubmit = Boolean(
+      vendor.termsAccepted !== false &&
+      !fssaiFieldProblem(certificate, true) &&
+      expiry &&
+      expiry >= todayIso &&
+      !fileError &&
+      (certificateFile || fileName.trim())
+    );
     return <div className="space-y-6"><Heading eyebrow="TRUST & COMPLIANCE" title="Vendor verification" body="Review your certification details at any time. If information changes, edit and resubmit it for Operations review." action={<div className="flex flex-wrap items-center gap-2">{onOpenVendorProfile && <Button variant="outline" onClick={onOpenVendorProfile} className="rounded-xl font-bold"><Eye className="size-4 text-[#155F65]" />Preview Public Store</Button>}<Button variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl font-bold"><Building2 className="size-4 text-[#155F65]" />Edit Store Profile</Button><Button variant="outline" onClick={() => setEditing((v) => !v)} className="rounded-xl"><Pencil className="size-4" />{editing ? "Close editor" : "Edit certification"}</Button></div>} />
       <AgreementPanel vendor={{ id: vendor.id, businessName: vendor.businessName, ownerName: vendor.ownerName, ownerRole: vendor.ownerRole, termsAccepted: vendor.termsAccepted }} live={isLiveSupabaseMode()} onViewTerms={() => setTermsViewOpen(true)} onSigned={() => setState((s) => ({ ...s, vendors: s.vendors.map((x) => x.id === vendor.id ? { ...x, termsAccepted: true, termsVersion: "1.0", termsAcceptedAt: new Date().toISOString() } : x), audit: [audit(session, "Signed the Partnership Agreement and Terms online", vendor.businessName), ...s.audit] }))} />
       <TermsViewerDialog open={termsViewOpen} onClose={() => setTermsViewOpen(false)} onAccept={vendor.termsAccepted === false ? () => { setTermsViewOpen(false); setSignOpen(true); } : undefined} />
       <div className="surface-card rounded-[28px] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-4"><div className="grid size-12 place-items-center rounded-2xl bg-[#EAF4F2] text-[#155F65]"><FileCheck2 /></div><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-lg">{vendor.businessName}</h3><span className="rounded-full bg-[#EAF4F2] border border-[#C5E3E4] px-2.5 py-0.5 text-xs font-bold text-[#155F65]">{vendor.ownerName || "Representative"} ({vendor.ownerRole || "Proprietor"})</span><span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-bold text-stone-600">{vendor.category}</span></div><p className="text-sm text-stone-500 mt-1">{vendor.address} · {vendor.radiusKm} km radius</p>{vendor.phone && <p className="text-xs text-stone-600 mt-0.5">📞 {vendor.phone}</p>}{vendor.bio && <p className="text-xs text-stone-500 italic mt-1 max-w-xl">&ldquo;{vendor.bio}&rdquo;</p>}</div></div><div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setProfileEditOpen(true)} className="rounded-xl text-xs font-bold"><Pencil className="size-3.5 mr-1 text-[#155F65]" />Edit Profile</Button><Status>{vendor.verification}</Status><Status className="border-stone-200 bg-stone-50 text-stone-700 font-bold">{vendor.plan} plan</Status></div></div>
-        {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} onChange={(e) => setCertificate(e.target.value)} className={inputClass} /></Field><Field label="Expiry date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(e) => setExpiry(e.target.value)} className={inputClass} /></Field><Field label="Certificate file"><label className="flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold"><input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => { const next = e.target.files?.[0] || null; if (next && next.size === 0) { toast.error(`"${next.name}" is empty (0 bytes). Please upload a valid certificate file.`); e.target.value = ""; return; } setCertificateFile(next); setFileName(next?.name || fileName); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label></Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
+        {editing ? <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Certification / licence number"><input value={certificate} maxLength={14} inputMode="numeric" placeholder="14-digit FSSAI licence number" onChange={(e) => { setCertificate(e.target.value); if (certError) setCertError(""); }} onBlur={() => setCertError(fssaiFieldProblem(certificate, true) || "")} className={`${inputClass} ${certError ? "border-[#b42332]" : ""}`} />{certError && <p className="mt-1.5 text-xs font-semibold text-[#b42332]">{certError}</p>}</Field><Field label="Expiry date"><input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(e) => { const val = e.target.value; setExpiry(val); if (expiryError) setExpiryError(""); }} onBlur={() => { const today = new Date().toISOString().slice(0, 10); if (!expiry) setExpiryError("Please choose the FSSAI certificate expiry date."); else if (expiry < today) setExpiryError("Expiry date cannot be in the past."); else setExpiryError(""); }} className={`${inputClass} ${expiryError ? "border-[#b42332]" : ""}`} />{expiryError && <p className="mt-1.5 text-xs font-semibold text-[#b42332]">{expiryError}</p>}</Field><Field label="Certificate file"><label className={`flex h-11 cursor-pointer items-center rounded-2xl border bg-white px-3.5 text-sm font-bold ${fileError ? "border-[#b42332]" : ""}`}><input type="file" className="hidden" accept=".pdf,application/pdf" onChange={async (e) => { const next = e.target.files?.[0] || null; if (!next) return; const problem = await validatePdfDocument(next, "The Food Safety Certificate"); if (problem) { setFileError(problem); toast.error(problem); e.target.value = ""; return; } setFileError(""); setCertificateFile(next); setFileName(next.name); }} /><Upload className="mr-2 size-4" />{fileName || "Choose file"}</label>{fileError && <p className="mt-1.5 text-xs font-semibold text-[#b42332]">{fileError}</p>}</Field><div className="flex items-end gap-2"><Button onClick={() => void save(false)} variant="outline" className="h-11 rounded-xl">Save only</Button><Button onClick={() => void save(true)} disabled={!canResubmit} className="h-11 rounded-xl bg-[#155F65]">Resubmit for review</Button></div></div> : <div className="mt-6 grid gap-3 sm:grid-cols-3"><Review label="Certificate" value={vendor.fssaiNumber || "Not added"} /><Review label="Uploaded file" value={vendor.certificateName || "Not added"} /><Review label="Expires" value={vendor.expiryDate || "Not set"} /><Review label="Representative" value={`${vendor.ownerName || "—"} (${vendor.ownerRole || "Proprietor"})`} /><Review label="Current plan" value={`${vendor.plan} plan`} /><Review label="Terms & Conditions" value={vendor.termsAccepted ? `Accepted (v${vendor.termsVersion || "1.0"})` : "Not accepted"} /><div className="sm:col-span-3"><Button type="button" variant="outline" size="sm" onClick={() => setTermsViewOpen(true)} className="rounded-xl"><FileText className="size-4" />View Terms &amp; Conditions</Button></div></div>}
       </div>
       <div className="surface-card rounded-[28px] p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
